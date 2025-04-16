@@ -12,18 +12,20 @@
 De-risk implementation by validating core architectural assumptions and tool compatibility.
 
 ### 🔬 Tasks:
-| ID     | Task Description                                                      | Est. |
-|--------|------------------------------------------------------------------------|------|
-| SPK-1  | Prototype `track-remote` to fetch metadata (e.g., ETag, size) from S3/GCS | 1d   |
-| SPK-2  | Simulate `.lfs-meta/metadata.json` usage in Git repo + commit/push     | 0.5d |
-| SPK-3  | Test `init-meta` to produce `DocumentReference.ndjson` via `g3t`-style logic | 1d   |
-| SPK-4  | Validate `git-sync` role mappings and diffs against Gen3 fence API     | 1d   |
-| SPK-5  | Evaluate GitHub template DX: hooks, portability, local usage           | 0.5d |
+| ID    | Task Description                                                             | Est. |
+|-------|------------------------------------------------------------------------------|------|
+| SPK-1 | Prototype `track-remote` to fetch metadata (e.g., ETag, size) from S3/GCS    | 1d   |
+| SPK-2 | Simulate `.lfs-meta/metadata.json` usage in Git repo + commit/push           | 0.5d |
+| SPK-3 | Test `init-meta` to produce `DocumentReference.ndjson` via `g3t`-style logic | 1d   |
+| SPK-4 | Validate `git-sync` role mappings and diffs against Gen3 fence API           | 1d   |
+| SPK-5 | Evaluate GitHub template DX: hooks, portability, local usage                 | 0.5d |
+| SPK-6 | Validate `auth-sync` deprecate client facing project management              | 4d   |
+| SPK-7 | Validate `gen3-client` can UChicago's go code be installed and called?       | 4d   |
 
 ### ✅ Deliverables:
-- Prototype CLI for `track-remote`
+- Prototype CLI for `track-remote` - not currently part of got-lfs
+  - How are user credentials handled?
 - Sample `.lfs-meta/metadata.json` and generated `META/DocumentReference.ndjson`
-- Credential access matrix (S3, GCS, Azure)
 - Feasibility report for Git-driven role syncing via `git-sync`
 - Recommendation on proceeding with full implementation
 

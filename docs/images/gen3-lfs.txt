@@ -1,0 +1,76 @@
+title gen3-lfs
+participant remote-bucket-or-filesystem
+participant local-filesystem
+actor user
+participant git
+participant gen3-lfs
+participant git-sync
+participant git-server
+participant gen3
+participant gen3-managed-bucket
+participant transfer-service
+note right of transfer-service: globus, rsync
+
+alt project-init
+user->git-server: create project, add collaborators
+note right of git-sync: cron | web-hook
+git-sync->git-server: harvest repo users and roles
+git-sync->gen3: create project, add users
+user->gen3: get credentials
+end
+
+alt add-local
+note right of user: upload local file to gen3-managed-bucket
+user->git: add local-file
+gen3-lfs->local-filesystem: read attributes
+user->git: commit
+git->gen3-lfs: create / update meta
+user->git: push
+git->gen3-lfs: hook: validate
+git->gen3-lfs: "clean"
+gen3-lfs->local-filesystem: read contents
+gen3-lfs->gen3: index
+gen3-lfs->gen3-managed-bucket: upload
+end
+
+alt add-remote-index
+note right of user: upload remote file to gen3 index only
+user->git: add remote-file
+gen3-lfs->remote-bucket-or-filesystem: read attributes
+user->git: commit
+git->gen3-lfs: create / update meta
+user->git: push
+git->gen3-lfs: hook: validate
+git->gen3-lfs: "clean"
+gen3-lfs->local-filesystem: read contents
+gen3-lfs->gen3: index
+end
+
+alt add-remote-content
+note right of user: schedule remote file to gen3 managed bucket
+user->git: add remote-file
+gen3-lfs->remote-bucket-or-filesystem: read attributes
+user->git: commit
+git->gen3-lfs: create / update meta
+user->git: push
+git->gen3-lfs: hook: validate
+git->gen3-lfs: "clean"
+gen3-lfs->transfer-service: xfer request
+gen3-lfs->gen3: index
+transfer-service->remote-bucket-or-filesystem: xfer read
+transfer-service->gen3-managed-bucket: xfer write
+end
+
+alt read/download/pull
+note right of user: git pull, website download
+user->gen3: read index
+alt index only
+note right of user: if index only generate scp or bucket copy commands
+end
+alt gen3 managed
+note right of user: download or pull
+git->gen3-lfs: "smudge"
+gen3-lfs->gen3-managed-bucket: read
+gen3-lfs->local-filesystem: write
+end
+end

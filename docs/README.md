@@ -79,13 +79,15 @@ To ensure seamless operation between these utilities:
   - Conduct training sessions to familiarize users with the new tools.
 
 
-## 📚 Documentation Files
+## 📚 Documentation Files 
+
+The following files provide **very rough, draft** information about the `git-gen3` project, its architecture, and its components:
 
 1. [README-comparison](README-comparison.md)
    - A comparison of the `lfs-meta` tool with other tools and approaches.
    - Discusses the advantages and disadvantages of each approach.
    - Provides a summary of the key features and capabilities of `lfs-meta`.
-2. [Architecture and Sprint Plan](README-epic.md)
+2. [Epics and Sprint Plan](README-epic.md)
    - Overview of project goals, sprint breakdowns, and deliverables.
 3. [Auth-sync](README-git-sync.md)
    - Details on how to sync authentication and authorization with github/synpase/etc as the system of record for project membership.

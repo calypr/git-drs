@@ -1,5 +1,5 @@
-# Comparison: Git LFS and g3t Integrated Data Platform (ACED-IDP)
-A comparative overview of two distinct approaches to managing and storing large project data files: Git Large File Storage (Git LFS) and the ACED Integrated Data Platform (ACED-IDP).
+# Comparison: Git LFS and g3t Integrated Data Platform (CALIPER-IDP)
+A comparative overview of two distinct approaches to managing and storing large project data files: Git Large File Storage (Git LFS) and the CALIPER Integrated Data Platform (CALIPER-IDP).
 
 ---
 
@@ -23,9 +23,9 @@ A comparative overview of two distinct approaches to managing and storing large 
 
 ---
 
-## ACED Integrated Data Platform (ACED-IDP)
+## CALIPER Integrated Data Platform (CALIPER-IDP)
 
-**Purpose:** ACED-IDP is a specialized data commons platform developed by the International Alliance for Cancer Early Detection (ACED) to facilitate secure and structured sharing of research data among member institutions.
+**Purpose:** CALIPER-IDP is a specialized data commons platform developed by the International Alliance for Cancer Early Detection (CALIPER) to facilitate secure and structured sharing of research data among member institutions.
 
 **Key Features:**
 
@@ -46,7 +46,7 @@ A comparative overview of two distinct approaches to managing and storing large 
 
 ## Comparative Summary
 
-| Feature                   | Git LFS                                               | ACED-IDP                                                  |
+| Feature                   | Git LFS                                               | CALIPER-IDP                                                  |
 |---------------------------|--------------------------------------------------------|-----------------------------------------------------------|
 | **Primary Use Case**      | Managing large files in software development projects  | Collaborative biomedical research data management         |
 | **Integration**           | Seamless with Git workflows                            | Built on Gen3 framework with specialized CLI tools        |
@@ -61,6 +61,6 @@ A comparative overview of two distinct approaches to managing and storing large 
 
 - **Git LFS** is ideal for developers seeking to manage large files within their existing Git workflows, offering a straightforward solution without the need for additional infrastructure.
 
-- **ACED-IDP** caters to the complex needs of collaborative biomedical research, providing a robust platform for secure data sharing, standardized metadata integration, and advanced data exploration capabilities.
+- **CALIPER-IDP** caters to the complex needs of collaborative biomedical research, providing a robust platform for secure data sharing, standardized metadata integration, and advanced data exploration capabilities.
 
-The choice between Git LFS and ACED-IDP depends on the specific requirements of the project, including the nature of the data, collaboration needs, and compliance considerations. 
+The choice between Git LFS and CALIPER-IDP depends on the specific requirements of the project, including the nature of the data, collaboration needs, and compliance considerations. 

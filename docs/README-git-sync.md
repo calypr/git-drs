@@ -26,9 +26,9 @@ Contents:
                | REST API
                v
      +---------------------+        +---------------------+
-     |    git-sync CLI   +------>+   Gen3 Access API   |
-     | - Fetch & map roles  |        | - Projects & ACLs  |
-     | - Transform to Gen3  |        | - Policies          |
+     |    git-sync CLI     +------> +   Gen3 Access API   |
+     | - Fetch & map roles |        | - Projects & ACLs   |
+     | - Transform to Gen3 |        | - Policies          |
      +---------------------+        +---------------------+
 ```
 
@@ -166,68 +166,6 @@ To enable support for **GitLab** or **other Git servers**, we introduce an **abs
 
 ---
 
-## 🧩 Interface Definition: `RoleSourceAdapter`
-
-```python
-from typing import List, Dict
-
-class RoleSourceAdapter:
-    def get_users_for_project(self, project_id: str) -> List[str]:
-        raise NotImplementedError
-
-    def get_teams_for_project(self, project_id: str) -> Dict[str, List[str]]:
-        raise NotImplementedError
-
-    def get_user_roles(self) -> Dict[str, str]:
-        """Optional: direct user-to-role mapping"""
-        raise NotImplementedError
-```
-
----
-
-## 🔌 GitHub Adapter Example
-
-```python
-class GitHubAdapter(RoleSourceAdapter):
-    def __init__(self, github_token: str, org: str):
-        self.token = github_token
-        self.org = org
-
-    def get_teams_for_project(self, project_id):
-        # use GitHub REST API to get team memberships
-        return {
-            "aced-project-xyz-admins": ["alice", "bob"],
-            "aced-project-xyz-members": ["carol", "dave"]
-        }
-
-    def get_user_roles(self):
-        # flatten and map to Gen3 roles
-        return {
-            "alice": "project-admin",
-            "carol": "project-member"
-        }
-```
-
----
-
-## 🔌 GitLab Adapter Example (Stub)
-
-```python
-class GitLabAdapter(RoleSourceAdapter):
-    def __init__(self, token: str, group_id: str):
-        self.token = token
-        self.group_id = group_id
-
-    def get_teams_for_project(self, project_id):
-        # use GitLab group and project member APIs
-        pass
-
-    def get_user_roles(self):
-        # similar mapping logic
-        pass
-```
-
----
 
 ## 🛠 CLI Usage Example
 
@@ -335,14 +273,14 @@ Set up mocks or test containers for GitHub API and Gen3 Fence.
 ```
 tests/
 ├── unit/
-│   ├── test_github_adapter.py
-│   ├── test_gitlab_adapter.py
-│   ├── test_core_logic.py
-│   └── test_config_loader.py
+│   ├── test_github_adapter
+│   ├── test_gitlab_adapter
+│   ├── test_core_logic
+│   └── test_config_loader
 ├── integration/
-│   ├── test_end_to_end_github_sync.py
-│   ├── test_error_handling.py
-│   └── test_gen3_interactions.py
+│   ├── test_end_to_end_github_sync
+│   ├── test_error_handling
+│   └── test_gen3_interactions
 └── fixtures/
     └── github_team_response.json
 ```

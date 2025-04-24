@@ -117,7 +117,7 @@ git push
 
 ### 📦 1. Install the `lfs-meta` Tool
 
-Install globally or per-project. Example (Python-based):
+Install globally or per-project. Example (GO Python-based):
 
 ```bash
 pip install git-lfs-meta
@@ -338,18 +338,4 @@ Absolutely — here’s a **test specification section** for the `lfs-meta` feat
 | `test_script_idempotency()`             | Run `init-meta` twice                     | Output is consistent and append-safe |
 | `test_no_metadata_file()`               | No `.lfs-meta/metadata.json`              | Graceful failure or warning message |
 
-
----
-
-### 📁 Suggested Test Structure
-
-```
-tests/
-├── unit/
-│   └── test_meta_generation.py
-├── integration/
-│   └── test_cli_init_meta.py
-└── fixtures/
-    └── sample_metadata.json
-```
 

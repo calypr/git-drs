@@ -86,7 +86,7 @@ git lfs track "*.bin"
 git add foo.bin
 
 # Add metadata via a companion command
-git lfs-meta track foo.bin --patient Patient/001 --specimen Specimen/XYZ
+git lfs-meta tag foo.bin --patient Patient/001 --specimen Specimen/XYZ
 
 git commit -m "Add patient-associated data"
 git push
@@ -163,7 +163,7 @@ git config alias.lfs-meta '!lfs-meta'
 Now you can run:
 
 ```bash
-git lfs-meta track path/to/file --patient Patient/1234
+git lfs-meta tag path/to/file --patient Patient/1234
 ```
 
 ---

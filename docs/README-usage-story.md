@@ -53,9 +53,9 @@ Codes are:
 Download a file
 
 ```bash
-$ $ git drs ls ./my-data/simple1.bam
+$ git drs ls ./my-data/simple1.bam
 R ./my-data/simple1.bam
-$ $ git drs pull ./my-data/sample1.bam
+$ git drs pull ./my-data/sample1.bam
 L ./my-data/simple1.bam
 ```
 

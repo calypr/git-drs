@@ -49,8 +49,7 @@ Codes are:
 |G | Git tracked file|
 +--+---------+
 
-
-Download a file
+## Download a file
 
 ```bash
 $ git drs ls ./my-data/simple1.bam
@@ -59,7 +58,7 @@ $ git drs pull ./my-data/sample1.bam
 L ./my-data/simple1.bam
 ```
 
-Add a local file
+## Add a local file
 ```bash 
 $ git drs add ./my-data/simple1.vcf
 M ./my-data/simple1.vcf
@@ -72,6 +71,7 @@ $ git drs add ./my-data/simple1.vcf -r alt-bucket
 M ./my-data/simple1.vcf
 ```
 
+## Add symlink
 
 Add a local file that is a symbolic link to a shared folder
 ```bash
@@ -88,7 +88,13 @@ L ./my-data/simple1.vcf
 ```
 This moves the file from the `Untracked` state to `Remote` state.
 
-Push
+## Add an Existing DRS object
+```bash
+$ git drs add ./my-data/simple1.vcf --drs drs://example.org/12345
+R ./my-data/simple1.vcf
+```
+
+# Push
 move any files in the modified state to remote repositories
 ```bash
 $ git drs ls ./data/
@@ -117,14 +123,28 @@ the list of host names (comma delimited with * wildcards) is host names where th
 storage should be valid
 
 
-Add remote server
+## Add remote server
 ```bash
-$ git drs remote add gen3 compbio/my-project
+$ git drs remote add gen3 origin compbio/my-project
+```
+The base command `git drs remote add` takes the arguments 
+`type` `name` and `URL`
+
+## Add a DRS server
+```bash
+$ git drs remote add drs anvil https://drs.anvilproject.org
 ```
 
+## Add a local shared folder
+This is a common drive, often network attached, that holds large common files. 
+When files are added or pulled from this resource, symlinks are used to point to the 
+original file.
+```bash 
+$ git drs remote add shared arc-data /mnt/shared/data
+```
 
 # DRS info
-
+View the DRS record for a file
 ```bash
 $ git drs info ./my-data/simple1.vcf
 ```

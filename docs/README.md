@@ -5,7 +5,7 @@ Welcome to the `git-gen3` documentation! Below is an index of the available docu
 ---
 ## Overview
 
-Based on the current structure of the ACED Integrated Data Platform (IDP), which utilizes the `g3t` command-line tool for project creation, file uploads, and metadata association citeturn0search0, it's advisable to refactor this monolithic approach into modular utilities. This will enhance maintainability, scalability, and facilitate targeted enhancements.
+Based on the current structure of the ACED Integrated Data Platform (IDP), which utilizes the `g3t` command-line tool for project creation, file uploads, and metadata association, it's advisable to refactor this monolithic approach into modular utilities. This will enhance maintainability, scalability, and facilitate targeted enhancements.
 
 ---
 

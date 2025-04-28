@@ -41,13 +41,15 @@ G ./my-data/sample1.txt
 ```
 
 Codes are:
-+-----+-------+
+
+| code| meaning |
+|-----|-------|
 |R | Remote |
 |L | Local  |
 |M | Modified |
 |U | Untracked |
 |G | Git tracked file|
-+--+---------+
+
 
 ## Download a file
 

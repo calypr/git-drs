@@ -81,7 +81,7 @@ To ensure seamless operation between these utilities:
 
 ## 📚 Documentation Files 
 
-The following files provide **very rough, draft** information about the `git-gen3` project, its architecture, and its components:
+The following files provide **very rough, draft 🚧 ** information about the `git-gen3` project, its architecture, and its components:
 
 1. [README-comparison](README-comparison.md)
    - A comparison of the `lfs-meta` tool with other tools and approaches.
@@ -97,6 +97,7 @@ The following files provide **very rough, draft** information about the `git-gen
     - Information on how to manage metadata for large files in Git.
 6. [Git LFS Remote Buckets](README-gitlfs-remote-buckets.md)
     - Details for tracking remote files without downloading them.
+    - See also [Hybrid OID](README-hybrid-oid.md) for more information.
 7. [Release Testing](README-release-test.md)
     - Guidelines for testing the release process and ensuring functionality.
 

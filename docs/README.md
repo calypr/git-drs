@@ -15,39 +15,47 @@ Transitioning to a modular architecture involves decomposing the monolith into d
 ### 1. **Project Management Utility**
 
 **Responsibilities:**
--Initialize and manage project structures
--Handle user roles and permissions
--Integrate with git servers for audit trails project membership
+
+- Initialize and manage project structures
+- Handle user roles and permissions
+- Integrate with git servers for audit trails project membership
 
 
 **Implementation Suggestions:**
--Develop a CLI tool, e.g., `auth-sync`, to manage project lifecycles
--Utilize configuration files (YAML/JSON) to define project metadata
--Integrate with Git for version control and collaboration
+
+- Develop a CLI tool, e.g., `auth-sync`, to manage project lifecycles
+- Utilize configuration files (YAML/JSON) to define project metadata
+- Integrate with Git for version control and collaboration
 
 ### 2. **File Transfer Utility**
 
 **Responsibilities:**
--Handle uploading and downloading of data files
--Support resumable transfers and integrity checks
--Manage storage backend interactions (e.g., S3, GCS)
+
+- Handle uploading and downloading of data files
+- Support resumable transfers and integrity checks
+- Manage storage backend interactions (e.g., S3, GCS)
 
 **Implementation Suggestions:**
--Create a tools, e.g., `git-lfs extentions, git add/pull url`, to abstract file operations
--Incorporate support for various storage backends using plugins or adapters
--Implement checksum verification to ensure data integrity
+
+- Create a tools, e.g., `git-lfs extentions, git add/pull url`, to abstract file operations
+- Incorporate support for various storage backends using plugins or adapters
+- Implement checksum verification to ensure data integrity
 
 ### 3. **Metadata Management Utility**
 
 **Responsibilities:**
--Facilitate the creation, validation, and submission of metadata
--Transform metadata into required formats (e.g., FHIR resources)
--Ensure compliance with data standards and schemas
+
+- Facilitate the creation, validation, and submission of metadata
+- Transform metadata into required formats (e.g., FHIR resources)
+- Ensure compliance with data standards and schemas
+- See [General Discussion](https://github.com/bmeg/git-gen3/pull/3#issuecomment-2835614773)
+- See [Bulk tagging](https://github.com/bmeg/git-gen3/pull/3#issuecomment-2835728266)
 
 **Implementation Suggestions:**
--Develop a utility, e.g., `git meta init/validate/etc`, to manage metadata workflows
--Leverage existing tools like `g3t_etl` for data transformation 
--Incorporate schema validation to enforce data quality
+
+- Develop a utility, e.g., `git meta init/validate/etc`, to manage metadata workflows
+- Leverage existing tools like `g3t_etl` for data transformation 
+- Incorporate schema validation to enforce data quality
 
 ---
 
@@ -87,6 +95,8 @@ The following files provide **very rough, draft 🚧 ** information about the `g
    - A comparison of the `lfs-meta` tool with other tools and approaches.
    - Discusses the advantages and disadvantages of each approach.
    - Provides a summary of the key features and capabilities of `lfs-meta`.
+   - [DRS Useage Story](README-usage-story.md)
+     - [Comparison with git lfs](https://github.com/bmeg/git-gen3/pull/3#issuecomment-2835614773)
 2. [Epics and Sprint Plan](README-epic.md)
    - Overview of project goals, sprint breakdowns, and deliverables.
 3. [Auth-sync](README-git-sync.md)

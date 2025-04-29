@@ -14,6 +14,7 @@ De-risk implementation by validating core architectural assumptions and tool com
 ### 🔬 Tasks:
 | ID    | Task Description                                                             | Est. |
 |-------|------------------------------------------------------------------------------|------|
+| SPK-0 | Learning - team spends time, becomes familiar with "stock" git-lfs           | 1d   |
 | SPK-1 | Prototype `track-remote` to fetch metadata (e.g., ETag, size) from S3/GCS    | 1d   |
 | SPK-2 | Simulate `.lfs-meta/metadata.json` usage in Git repo + commit/push           | 0.5d |
 | SPK-3 | Test `init-meta` to produce `DocumentReference.ndjson` via `g3t`-style logic | 1d   |
@@ -23,6 +24,7 @@ De-risk implementation by validating core architectural assumptions and tool com
 | SPK-7 | Validate `gen3-client` can UChicago's go code be installed and called?       | 4d   |
 
 ### ✅ Deliverables:
+
 - Prototype CLI for `track-remote` - not currently part of got-lfs
   - How are user credentials handled?
 - Sample `.lfs-meta/metadata.json` and generated `META/DocumentReference.ndjson`

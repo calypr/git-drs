@@ -3,16 +3,18 @@ package cmd
 import (
 	"os"
 
-	"github.com/bmeg/git-gen3/cmd/initialize"
-	"github.com/bmeg/git-gen3/cmd/list"
-	"github.com/bmeg/git-gen3/cmd/pull"
-	"github.com/bmeg/git-gen3/cmd/push"
+	"github.com/bmeg/git-drs/cmd/add"
+	"github.com/bmeg/git-drs/cmd/filterprocess"
+	"github.com/bmeg/git-drs/cmd/initialize"
+	"github.com/bmeg/git-drs/cmd/list"
+	"github.com/bmeg/git-drs/cmd/pull"
+	"github.com/bmeg/git-drs/cmd/push"
 	"github.com/spf13/cobra"
 )
 
 // RootCmd represents the root command
 var RootCmd = &cobra.Command{
-	Use:           "git-gen3",
+	Use:           "git-drs",
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -25,6 +27,8 @@ func init() {
 	RootCmd.AddCommand(push.Cmd)
 	RootCmd.AddCommand(pull.Cmd)
 	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(add.Cmd)
+	RootCmd.AddCommand(filterprocess.Cmd)
 	RootCmd.AddCommand(genBashCompletionCmd)
 }
 

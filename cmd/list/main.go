@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bmeg/git-gen3/git"
+	"github.com/bmeg/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var Cmd = &cobra.Command{
 	Long:    ``,
 	Args:    cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		gitTop, err := git.GitTopLevel()
+		gitTop, err := utils.GitTopLevel()
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
 			return err

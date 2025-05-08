@@ -9,6 +9,7 @@ import (
 	"github.com/bmeg/git-drs/cmd/list"
 	"github.com/bmeg/git-drs/cmd/pull"
 	"github.com/bmeg/git-drs/cmd/push"
+	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +30,7 @@ func init() {
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(add.Cmd)
 	RootCmd.AddCommand(filterprocess.Cmd)
+	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(genBashCompletionCmd)
 }
 

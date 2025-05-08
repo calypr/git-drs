@@ -15,13 +15,13 @@ type Authorizations struct {
 }
 
 type AccessMethod struct {
-	Type           string         `json:"type"`
-	AccessURL      AccessURL      `json:"access_url"`
-	AccessID       string         `json:"access_id"`
-	Cloud          string         `json:"cloud"`
-	Region         string         `json:"region"`
-	Avalible       string         `json:"available"`
-	Authorizations Authorizations `json:"Authorizations"`
+	Type           string          `json:"type"`
+	AccessURL      AccessURL       `json:"access_url"`
+	AccessID       string          `json:"access_id,omitempty"`
+	Cloud          string          `json:"cloud,omitempty"`
+	Region         string          `json:"region,omitempty"`
+	Avalible       string          `json:"available,omitempty"`
+	Authorizations *Authorizations `json:"Authorizations,omitempty"`
 }
 
 type Contents struct {
@@ -30,15 +30,15 @@ type Contents struct {
 type DRSObject struct {
 	Id            string         `json:"id"`
 	Name          string         `json:"name"`
-	SelfURL       string         `json:"self_url"`
+	SelfURL       string         `json:"self_url,omitempty"`
 	Size          int64          `json:"size"`
-	CreatedTime   string         `json:"created_time"`
-	UpdatedTime   string         `json:"updated_time"`
-	Version       string         `json:"version"`
-	MimeType      string         `json:"mime_type"`
-	Checksums     []Checksum     `json:"checksum"`
+	CreatedTime   string         `json:"created_time,omitempty"`
+	UpdatedTime   string         `json:"updated_time,omitempty"`
+	Version       string         `json:"version,omitempty"`
+	MimeType      string         `json:"mime_type,omitempty"`
+	Checksums     []Checksum     `json:"checksums"`
 	AccessMethods []AccessMethod `json:"access_methods"`
-	Contents      []Contents     `json:"contents"`
-	Description   string         `json:"description"`
-	Aliases       []string       `json:"aliases"`
+	Contents      []Contents     `json:"contents,omitempty"`
+	Description   string         `json:"description,omitempty"`
+	Aliases       []string       `json:"aliases,omitempty"`
 }

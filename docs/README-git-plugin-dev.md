@@ -17,7 +17,7 @@ Then to add tracking in a project, add entries to `.gitattributes` in the workin
 ```
 
 For when `git status` or `git diff` are invoked on `*.tsv` file, the process `git-drs filter-process` will be
-invoked. The communication between git and the subprocess is outlined in (gitprotocol-common)[https://git-scm.com/docs/gitprotocol-common]. A library for parsing this event stream is part of the git-lfs code base https://github.com/git-lfs/git-lfs/blob/main/git/filter_process_scanner.go 
+invoked. The communication between git and the subprocess is outlined in [gitprotocol-common](https://git-scm.com/docs/gitprotocol-common). A library for parsing this event stream is part of the git-lfs code base https://github.com/git-lfs/git-lfs/blob/main/git/filter_process_scanner.go 
 An example of responding to these requests can be found at https://github.com/git-lfs/git-lfs/blob/main/commands/command_filter_process.go 
 
 My understanding: The main set of command the the filter-process command responds to are `clean` and `smudge`. 

@@ -1,4 +1,4 @@
-package query
+package download
 
 import (
 	"encoding/json"
@@ -8,23 +8,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var server string = "https://calypr.ohsu.edu/ga4gh"
+
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "query",
+	Use:   "download",
 	Short: "Query server for DRS ID",
 	Long:  ``,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		cfg, err := client.LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		//fix this later
-		baseURL := cfg.QueryServer.BaseURL
-
-		client, err := client.NewIndexDClient(baseURL)
+		client, err := client.NewIndexDClient(server)
 		if err != nil {
 			return err
 		}

@@ -18,7 +18,6 @@ var Cmd = &cobra.Command{
 			matches, err := filepath.Glob(fileArg)
 			if err == nil {
 				for _, f := range matches {
-
 					fmt.Printf("Adding %s\n", f)
 				}
 			}

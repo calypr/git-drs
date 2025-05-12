@@ -1,0 +1,14 @@
+package client
+
+import "github.com/bmeg/git-drs/drs"
+
+type ObjectStoreClient interface {
+	//Given a DRS string ID, retrieve the object describing it
+	QueryID(id string) (*drs.DRSObject, error)
+
+	//Put file into object storage and obtain a DRS record pointing to it
+	RegisterFile(path string, name string) (*drs.DRSObject, error)
+
+	//Download file given a DRS ID
+	DownloadFile(id string, dstPath string) (*drs.DRSObject, error)
+}

@@ -13,7 +13,7 @@ var server string = "https://calypr.ohsu.edu/ga4gh"
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "download",
-	Short: "Query server for DRS ID",
+	Short: "Download file using s3",
 	Long:  ``,
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -23,11 +23,18 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.QueryID(args[0])
+		// // get file name from DRS object
+		// drs_obj, err := client.QueryID(args[0])
+		// if err != nil {
+		// 	return err
+		// }
+
+		access_url, err := client.DownloadFile(args[0], "s3", "cbds-prod", "./file.txt")
 		if err != nil {
 			return err
 		}
-		out, err := json.MarshalIndent(*obj, "", "  ")
+
+		out, err := json.MarshalIndent(*access_url, "", "  ")
 		if err != nil {
 			return err
 		}

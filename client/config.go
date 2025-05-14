@@ -18,6 +18,7 @@ type Server struct {
 type Config struct {
 	QueryServer Server `json:"queryServer"`
 	WriteServer Server `json:"writeServer"`
+	Gen3Profile string `json:"gen3Profile"`
 }
 
 const (

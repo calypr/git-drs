@@ -1,0 +1,9 @@
+{
+  "queryServer": {
+    "baseURL": "https://calypr.ohsu.edu/ga4gh"
+  },
+  "writeServer": {
+    "baseURL": "https://calypr.ohsu.edu/ga4gh"
+  },
+  "gen3Profile": "<calypr-prod-profile-name-here>"
+}

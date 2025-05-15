@@ -10,9 +10,9 @@ import (
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "query",
-	Short: "Query server for DRS ID",
-	Long:  ``,
+	Use:   "query <drs_id>",
+	Short: "Query DRS server by DRS ID",
+	Long:  "Query DRS server by DRS ID",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 

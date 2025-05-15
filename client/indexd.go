@@ -17,7 +17,8 @@ var conf jwt.Configure
 var profileConfig jwt.Credential
 
 type IndexDClient struct {
-	base *url.URL
+	base    *url.URL
+	profile string
 }
 
 func NewIndexDClient(base string) (ObjectStoreClient, error) {
@@ -26,35 +27,44 @@ func NewIndexDClient(base string) (ObjectStoreClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Base URL: %s\n", baseURL.String())
 
-	return &IndexDClient{baseURL}, err
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	// get the gen3Profile from the config
+	profile := cfg.Gen3Profile
+	if profile == "" {
+		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
+	}
+
+	fmt.Printf("Base URL: %s\n", baseURL.String())
+	fmt.Printf("Profile: %s\n", profile)
+
+	return &IndexDClient{baseURL, profile}, err
 }
 
-// DownloadFile implements ObjectStoreClient.
-func (cl *IndexDClient) DownloadFile(id string, access_id string, profile string, dstPath string) (*drs.AccessURL, error) {
-
+// DownloadFile implements ObjectStoreClient
+func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string) (*drs.AccessURL, error) {
 	// get file from indexd
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "drs/v1/objects", id, "access", access_id)
 	// a.Path = filepath.Join("https://calypr.ohsu.edu/user/data/download/", id)
-
-	fmt.Print("Getting URL: ", a.String(), "\n")
 
 	// unmarshal response
 	req, err := http.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	// extract accessToken from config and insert into header of request
-	profileConfig = conf.ParseConfig(profile)
+	// extract accessToken from gen3 profile and insert into header of request
+	profileConfig = conf.ParseConfig(cl.profile)
 	if profileConfig.AccessToken == "" {
 		return nil, fmt.Errorf("access token not found in profile config")
 	}
 
 	// Add headers to the request
-	authStr := fmt.Sprintf("Bearer %s", profileConfig.AccessToken)
-	fmt.Printf("Authorization header: %s\n", authStr)
+	authStr := "Bearer " + profileConfig.AccessToken
 	req.Header.Set("Authorization", authStr)
 
 	client := &http.Client{}
@@ -69,9 +79,6 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, profile string
 		return nil, err
 	}
 
-	// print body
-	fmt.Printf("Response body: %s\n", string(body))
-
 	out := drs.AccessURL{}
 	err = json.Unmarshal(body, &out)
 	if err != nil {
@@ -79,12 +86,10 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, profile string
 	}
 
 	// Extract the signed URL from the response
-	signedURL := out.URL // Assuming `out.url` contains the signed URL
+	signedURL := out.URL
 	if signedURL == "" {
-		return nil, fmt.Errorf("signed URL not found in response")
+		return nil, fmt.Errorf("signed URL not found in response.")
 	}
-
-	fmt.Print("Signed URL: ", signedURL, "\n")
 
 	// Download the file using the signed URL
 	fileResponse, err := http.Get(signedURL)
@@ -93,7 +98,16 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, profile string
 	}
 	defer fileResponse.Body.Close()
 
-	fmt.Printf("File response status: %s\n", fileResponse.Status)
+	// Check if the response status is OK
+	if fileResponse.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
+	}
+
+	// Create the destination directory if it doesn't exist
+	err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create the destination file
 	dstFile, err := os.Create(dstPath)
@@ -102,14 +116,13 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, profile string
 	}
 	defer dstFile.Close()
 
-	// print file response as string
-	fmt.Printf("File response contents: %s\n", fileResponse.Body)
-
 	// Write the file content to the destination file
 	_, err = io.Copy(dstFile, fileResponse.Body)
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("File written to %s\n", dstFile.Name())
 
 	return &out, nil
 }
@@ -143,8 +156,6 @@ func (cl *IndexDClient) QueryID(id string) (*drs.DRSObject, error) {
 	if err != nil {
 		return nil, err
 	}
-	//log.Printf("Getting URL %s\n", a.String())
-	//fmt.Printf("%s\n", string(body))
 
 	out := drs.DRSObject{}
 	err = json.Unmarshal(body, &out)

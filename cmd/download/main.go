@@ -1,44 +1,57 @@
 package download
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/bmeg/git-drs/client"
+	"github.com/bmeg/git-drs/drs"
 	"github.com/spf13/cobra"
 )
 
-var server string = "https://calypr.ohsu.edu/ga4gh"
+var (
+	server  string
+	dstPath string
+	drsObj  *drs.DRSObject
+)
 
 // Cmd line declaration
+// Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download",
-	Short: "Download file using s3",
-	Long:  ``,
-	Args:  cobra.MinimumNArgs(1),
+	Use:   "download <drsId> <accessId>",
+	Short: "Download file using DRS ID and access ID",
+	Long:  "Download file using DRS ID and access ID. The access ID is the access method used to download the file.",
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
-		client, err := client.NewIndexDClient(server)
+		drsId := args[0]
+		accessId := args[1]
+		cfg, err := client.LoadConfig()
 		if err != nil {
 			return err
 		}
 
-		// // get file name from DRS object
-		// drs_obj, err := client.QueryID(args[0])
-		// if err != nil {
-		// 	return err
-		// }
+		baseURL := cfg.QueryServer.BaseURL
 
-		access_url, err := client.DownloadFile(args[0], "s3", "cbds-prod", "./file.txt")
+		client, err := client.NewIndexDClient(baseURL)
 		if err != nil {
 			return err
 		}
 
-		out, err := json.MarshalIndent(*access_url, "", "  ")
+		if dstPath == "" {
+
+			drsObj, err = client.QueryID(drsId)
+			if err != nil {
+				return err
+			}
+			dstPath = drsObj.Name
+		}
+
+		_, err = client.DownloadFile(drsId, accessId, dstPath)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s\n", string(out))
+
 		return nil
 	},
+}
+
+func init() {
+	Cmd.Flags().StringVarP(&dstPath, "dstPath", "d", "", "Optional destination file path")
 }

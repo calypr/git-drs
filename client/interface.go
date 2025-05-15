@@ -10,5 +10,5 @@ type ObjectStoreClient interface {
 	RegisterFile(path string, name string) (*drs.DRSObject, error)
 
 	//Download file given a DRS ID
-	DownloadFile(id string, access_id string, profile string, dstPath string) (*drs.AccessURL, error)
+	DownloadFile(id string, access_id string, dstPath string) (*drs.AccessURL, error)
 }

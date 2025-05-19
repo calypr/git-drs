@@ -13,7 +13,7 @@ import (
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "filter-process",
-	Short: "filter proces",
+	Short: "filter process",
 	Long:  ``,
 	Args:  cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {

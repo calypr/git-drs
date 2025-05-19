@@ -2,7 +2,7 @@
 # Notes about the development of git plugins
 
 
-To attach the plugin into the configutation. In the global config `~/.gitconfig` add the lines:
+To attach the plugin into the configuration. In the global config `~/.gitconfig` add the lines:
 ```
 [filter "drs"]
 	clean = git-drs clean -- %f

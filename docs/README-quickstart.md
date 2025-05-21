@@ -142,9 +142,7 @@ Validate FHIR Metadata using the `git meta validate` command:
 git meta validate 
 ```
 
-To customize the metadata, see `TODO` 🔗 Useful FHIR Links
-
-```bash
+To customize the metadata, see `TODO` 🔗 Add Useful FHIR Links
 
 
 

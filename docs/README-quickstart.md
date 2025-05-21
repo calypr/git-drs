@@ -1,6 +1,6 @@
 ---
 
-````markdown
+```markdown
 # 🧬 CALYPER Project Template with Git LFS Support
 
 This repository provides a template for starting a new CALYPER data project with best practices for:

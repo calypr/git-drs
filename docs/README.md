@@ -86,6 +86,9 @@ To ensure seamless operation between these utilities:
   - Update documentation to reflect the new modular structure.
   - Conduct training sessions to familiarize users with the new tools.
 
+## User Guide
+
+See [User Guide](README-quickstart.md) for a comprehensive guide on how to use the `git-gen3` tools.
 
 ## 📚 Documentation Files 
 

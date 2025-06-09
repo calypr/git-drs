@@ -6,6 +6,7 @@ require (
 	github.com/git-lfs/git-lfs/v3 v3.6.1
 	github.com/spf13/cobra v1.9.1
 	github.com/uc-cdis/gen3-client v0.0.23
+	github.com/google/uuid v1.6.0
 	sigs.k8s.io/yaml v1.4.0
 )
 

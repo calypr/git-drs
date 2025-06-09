@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 // output of git lfs ls-files
@@ -30,9 +31,10 @@ const (
 )
 
 var (
-	lfsFiles       LfsLsOutput
-	drsMap         = make(map[string]string)
-	drsMapFilePath = filepath.Join(LFS_OBJS_PATH, DRS_MAP_FILE_NAME)
+	lfsFiles LfsLsOutput
+	drsMap   = make(map[string]string)
+	// drsMapFilePath = filepath.Join(LFS_OBJS_PATH, DRS_MAP_FILE_NAME)
+	drsMapFilePath = DRS_MAP_FILE_NAME
 )
 
 func main() {
@@ -45,6 +47,8 @@ func main() {
 
 	// Get all LFS file and info using json
 	// FIXME: use git-lfs internally instead of exec?
+	// eg use git-lfs git.GetTrackedFiles
+	// https://github.com/git-lfs/git-lfs/blob/main/git/git.go/#L1515
 	cmd := exec.Command("git", "lfs", "ls-files", "--long", "--json")
 	out, err := cmd.Output()
 	if err != nil {
@@ -63,13 +67,11 @@ func main() {
 	}
 	fmt.Println("Repo Name:", repoName)
 
-	// for each LFS file, calculate the UUID using repoName and the oid
+	// for each LFS file, calculate the DRS ID using repoName and the oid
 	for _, file := range lfsFiles.Files {
-		// Example: UUID = sha256(repoName + ":" + oid)
+		// Example: DRS ID = sha1(repoName + ":" + oid)
 		hashStr := fmt.Sprintf("%s:%s", repoName, file.Oid)
-		hash := sha256.New()
-		hash.Write([]byte(hashStr))
-		drsId := fmt.Sprintf("%x", hash.Sum(nil))
+		drsId := V5UUID(hashStr).String()
 
 		// If the oid exists in drsMap, check if it matches the calculated uuid
 		if existing, ok := drsMap[file.Oid]; ok {
@@ -97,6 +99,7 @@ func main() {
 	fmt.Println("Updated drs-map.json with", len(drsMap), "entries.")
 
 	// stage the drsMap file
+	// FIXME: should this be in th pre-commit hook as opposed to the Go code?
 	cmd = exec.Command("git", "add", drsMapFilePath)
 	_, err = cmd.Output()
 	if err != nil {
@@ -115,4 +118,9 @@ func getRepoNameFromGit() (string, error) {
 	remoteURL := strings.TrimSpace(string(out))
 	repoName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
 	return repoName, nil
+}
+
+func V5UUID(data string) uuid.UUID {
+	// FIXME: use different UUID method? Used same method as g3t
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(data))
 }

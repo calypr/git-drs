@@ -7,7 +7,7 @@ type ObjectStoreClient interface {
 	QueryID(id string) (*drs.DRSObject, error)
 
 	//Put file into object storage and obtain a DRS record pointing to it
-	RegisterFile(path string, name string) (*drs.DRSObject, error)
+	RegisterFile(oid string) (*drs.DRSObject, error)
 
 	//Download file given a DRS ID
 	DownloadFile(id string, access_id string, dstPath string) (*drs.AccessURL, error)

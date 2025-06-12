@@ -1,9 +1,9 @@
 {
   "queryServer": {
-    "baseURL": "https://calypr.ohsu.edu/ga4gh"
+    "baseURL": "https://caliper-training.ohsu.edu"
   },
   "writeServer": {
-    "baseURL": "https://calypr.ohsu.edu/ga4gh"
+    "baseURL": "https://caliper-training.ohsu.edu"
   },
   "gen3Profile": "<calypr-prod-profile-name-here>"
 }

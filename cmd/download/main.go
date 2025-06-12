@@ -1,6 +1,8 @@
 package download
 
 import (
+	"fmt"
+
 	"github.com/bmeg/git-drs/client"
 	"github.com/bmeg/git-drs/drs"
 	"github.com/spf13/cobra"
@@ -29,10 +31,15 @@ var Cmd = &cobra.Command{
 
 		baseURL := cfg.QueryServer.BaseURL
 
+		// print random string to stdout
+		fmt.Println("Using server:", cfg.QueryServer.BaseURL)
+
 		client, err := client.NewIndexDClient(baseURL)
 		if err != nil {
 			return err
 		}
+
+		fmt.Println("created indexd client:", cfg.QueryServer.BaseURL)
 
 		if dstPath == "" {
 
@@ -43,10 +50,14 @@ var Cmd = &cobra.Command{
 			dstPath = drsObj.Name
 		}
 
+		fmt.Println("downloading file:", drsObj.Name)
+
 		_, err = client.DownloadFile(drsId, accessId, dstPath)
 		if err != nil {
 			return err
 		}
+
+		fmt.Println("file downloaded")
 
 		return nil
 	},

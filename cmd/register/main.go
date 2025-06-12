@@ -2,7 +2,6 @@ package register
 
 import (
 	"log"
-	"path/filepath"
 
 	"github.com/bmeg/git-drs/client"
 	"github.com/spf13/cobra"
@@ -24,7 +23,7 @@ var Cmd = &cobra.Command{
 		}
 
 		//upload the file, name would probably be relative to the base of the git repo
-		client.RegisterFile(args[0], filepath.Base(args[0]))
+		client.RegisterFile(args[0])
 
 		//remove later
 		_ = client

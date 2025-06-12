@@ -2,7 +2,6 @@ package client
 
 import (
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -36,7 +35,7 @@ func LoadConfig() (*Config, error) {
 
 	configPath := filepath.Join(topLevel, DRS_CONFIG)
 
-	log.Printf("Looking for %s", configPath)
+	// log.Printf("Looking for %s", configPath)
 	//check if config exists
 	reader, err := os.Open(configPath)
 	if err != nil {
@@ -54,6 +53,6 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	log.Printf("Config: %s %#v", string(b), conf)
+	// log.Printf("Config: %s %#v", string(b), conf)
 	return &conf, nil
 }

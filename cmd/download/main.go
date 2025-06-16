@@ -36,6 +36,7 @@ var Cmd = &cobra.Command{
 
 		client, err := client.NewIndexDClient(baseURL)
 		if err != nil {
+			fmt.Printf("\nerror creating indexd client: %s", err)
 			return err
 		}
 
@@ -45,6 +46,7 @@ var Cmd = &cobra.Command{
 
 			drsObj, err = client.QueryID(drsId)
 			if err != nil {
+				fmt.Printf("\nerror querying DRS ID %s: %s", drsId, err)
 				return err
 			}
 			dstPath = drsObj.Name
@@ -54,6 +56,7 @@ var Cmd = &cobra.Command{
 
 		_, err = client.DownloadFile(drsId, accessId, dstPath)
 		if err != nil {
+			fmt.Printf("\nerror downloading file %s: %s", drsId, err)
 			return err
 		}
 

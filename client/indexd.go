@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/bmeg/git-drs/drs"
 	"github.com/uc-cdis/gen3-client/gen3-client/commonUtils"
+	"github.com/uc-cdis/gen3-client/gen3-client/g3cmd"
 	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 	"github.com/uc-cdis/gen3-client/gen3-client/logs"
 )
@@ -23,8 +25,10 @@ var conf jwt.Configure
 var profileConfig jwt.Credential
 
 type IndexDClient struct {
-	base    *url.URL
-	profile string
+	base       *url.URL
+	profile    string
+	projectId  string
+	bucketName string
 }
 
 // subset of the OpenAPI spec for the InputInfo object in indexd
@@ -93,16 +97,26 @@ func NewIndexDClient(base string) (ObjectStoreClient, error) {
 		return nil, err
 	}
 
-	// get the gen3Profile from the config
+	// get the gen3Profile, gen3Project, and gen3Bucket from the config
 	profile := cfg.Gen3Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
 	}
 
+	projectId := cfg.Gen3Project
+	if projectId == "" {
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drsconfig")
+	}
+
+	bucketName := cfg.Gen3Bucket
+	if bucketName == "" {
+		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drsconfig")
+	}
+
 	// fmt.Printf("Base URL: %s\n", baseURL.String())
 	// fmt.Printf("Profile: %s\n", profile)
 
-	return &IndexDClient{baseURL, profile}, err
+	return &IndexDClient{baseURL, profile, projectId, bucketName}, err
 }
 
 // DownloadFile implements ObjectStoreClient
@@ -198,25 +212,32 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 // and returns the successful DRS object.
 // This is done atomically, so a failed upload will not leave a record in indexd.
 func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
+	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
 		// Handle error (e.g., print to stderr and exit)
 		log.Fatalf("Failed to open log file: %v", err)
 	}
 	defer myLogger.Close() // Ensures cleanup
-	myLogger.Log("register file started for oid:%s", oid)
+	myLogger.Log("register file started for oid: %s", oid)
 
+	// create indexd record
 	drsObj, err := cl.registerIndexdRecord(*myLogger, oid)
 	if err != nil {
 		myLogger.Log("error registering indexd record: %s", err)
 		return nil, fmt.Errorf("error registering indexd record: %v", err)
 	}
 
-	// // TODO: upload file to bucket using gen3-client code
-	// // pulled from gen3-client/g3cmd/upload.go
-	// // https://github.com/uc-cdis/cdis-data-client/blob/df9c0820ab30e25ba8399c2cc6cccbecc2f0407a/gen3-client/g3cmd/upload.go/#L106-L150
+	// TODO: upload file to bucket using gen3-client code
+	// pulled from gen3-client/g3cmd/upload.go
+	// https://github.com/uc-cdis/cdis-data-client/blob/df9c0820ab30e25ba8399c2cc6cccbecc2f0407a/gen3-client/g3cmd/upload.go/#L106-L150
+
+	filePath := GetObjectPath(oid)
+	g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
+
 	// filePath := GetObjectPath(oid)
 
+	// // get file
 	// file, _ := os.Open(filePath)
 	// if fi, _ := file.Stat(); !fi.IsDir() {
 	// 	fmt.Println("\t" + filePath)
@@ -225,29 +246,55 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// myLogger.Log("file path: %s", filePath)
 
+	// // get file info
 	// uploadPath := filePath
 	// includeSubDirName := true
 	// hasMetadata := false
 
 	// fileInfo, err := g3cmd.ProcessFilename(uploadPath, filePath, includeSubDirName, hasMetadata)
 	// if err != nil {
+	// 	myLogger.Log("error processing filename: %s", err)
 	// 	logs.AddToFailedLog(filePath, filepath.Base(filePath), commonUtils.FileMetadata{}, "", 0, false, true)
 	// 	log.Println("Process filename error for file: " + err.Error())
 	// }
-	// // The following flow is for singlepart upload flow
+
+	// // connect up gen3 profile for auth
 	// gen3Interface := g3cmd.NewGen3Interface()
-	// bucketName := "cbds"
+	// myLogger.Log("parsing profile: %s", cl.profile)
+	// profileConfig = conf.ParseConfig(cl.profile)
+
+	// // if hasMetadata {
+	// // 	hasShepherd, err := gen3Interface.CheckForShepherdAPI(&profileConfig)
+	// // 	if err != nil {
+	// // 		myLogger.Log("WARNING: Error when checking for Shepherd API: %v", err)
+	// // 	} else {
+	// // 		if !hasShepherd {
+	// // 			myLogger.Log("ERROR: Metadata upload (`--metadata`) is not supported in the environment you are uploading to. Double check that you are uploading to the right profile.")
+	// // 		}
+	// // 	}
+	// // }
+
+	// a, b, err := gen3Interface.CheckPrivileges(&profileConfig)
+
+	// myLogger.Log("Privileges: %s ---- %s ----- %s", a, b, err)
+
+	// // get presigned URL for upload
+	// bucketName := "cbds"                                                 // TODO: match bucket to program or project (as determined by fence config?)
+	// fileInfo.FileMetadata.Authz = []string{"/programs/cbds/projects/qw"} // TODO: determine how to define gen3 project name
 	// respURL, guid, err := g3cmd.GeneratePresignedURL(gen3Interface, fileInfo.Filename, fileInfo.FileMetadata, bucketName)
 	// if err != nil {
+	// 	myLogger.Log("error generating presigned URL: %s", err)
 	// 	logs.AddToFailedLog(fileInfo.FilePath, fileInfo.Filename, fileInfo.FileMetadata, guid, 0, false, true)
 	// 	log.Println(err.Error())
 	// }
 	// // update failed log with new guid
 	// logs.AddToFailedLog(fileInfo.FilePath, fileInfo.Filename, fileInfo.FileMetadata, guid, 0, false, true)
 
+	// // upload actual file
 	// furObject := commonUtils.FileUploadRequestObject{FilePath: drsObj.Name, Filename: drsObj.Name, GUID: drsObj.Id, PresignedURL: respURL}
 	// furObject, err = g3cmd.GenerateUploadRequest(gen3Interface, furObject, file)
 	// if err != nil {
+	// 	myLogger.Log("Error occurred during request generation: %s", err)
 	// 	log.Printf("Error occurred during request generation: %s\n", err.Error())
 	// }
 	// err = uploadFile(furObject, 0)
@@ -258,6 +305,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	// }
 
 	// TODO: if upload unsuccessful, delete record from indexd
+
+	// return
 	return drsObj, nil
 }
 
@@ -317,7 +366,11 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	var tempIndexdObj, _ = json.Marshal(indexdObj)
 	json.Unmarshal(tempIndexdObj, &data)
 	data["form"] = "object"
-	data["authz"] = []string{"/programs/cbds/projects/qw"}
+
+	// parse project ID to form authz string
+	projectId := strings.Split(cl.projectId, "-")
+	authz := fmt.Sprintf("/programs/%s/projects/%s", projectId[0], projectId[1])
+	data["authz"] = []string{authz}
 
 	jsonBytes, _ := json.Marshal(data)
 	myLogger.Log("retrieved IndexdObj: %s", string(jsonBytes))
@@ -336,20 +389,14 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	// err = addGen3AuthHeader(req, cl.profile)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
-	// }
-	profileConfig = conf.ParseConfig(cl.profile)
-	if profileConfig.AccessToken == "" {
-		myLogger.Log("access token not found in profile config")
+	// FIXME: token expires earlier than expected, error looks like
+	// [401] - request to arborist failed: error decoding token: expired at time: 1749844905
+	addGen3AuthHeader(req, cl.profile)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	// Add headers to the request
-	authStr := "Bearer " + profileConfig.AccessToken
-	req.Header.Set("Authorization", authStr)
-
-	myLogger.Log("POST request created for Indexd:%s", a.String())
+	myLogger.Log("POST request created for indexd: %s", a.String())
 
 	client := &http.Client{}
 	response, err := client.Do(req)

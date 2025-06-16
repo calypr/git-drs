@@ -99,10 +99,21 @@ func UpdateDrsMap() error {
 		// 	return fmt.Errorf("error getting file info: %v", err)
 		// }
 
+		// get url using bucket name, drsId, and file name
+		cfg, err := LoadConfig() // should this be handled only via indexd client?
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+		bucketName := cfg.Gen3Bucket
+		if bucketName == "" {
+			return fmt.Errorf("error: bucket name is empty in config file")
+		}
+		fileURL := fmt.Sprintf("s3://" + filepath.Join(bucketName, drsId, file.Name))
+
 		// If the oid exists in drsMap, check if it matches the calculated uuid
 		// FIXME: naive method, where only the first file with the same oid is stored
-		// need to handle multiple files with the same oid
-		if existing, ok := drsMap[file.Name]; ok {
+		// in the future, will need to handle multiple files with the same oid
+		if existing, ok := drsMap[drsId]; ok {
 			if existing.Did != drsId {
 				return fmt.Errorf("Error: OID %s for file %s has mismatched UUID (existing: %s, calculated: %s). Aborting.", file.Oid, file.Name, existing.Did, drsId)
 			}
@@ -111,7 +122,7 @@ func UpdateDrsMap() error {
 			drsMap[file.Oid] = IndexdRecord{
 				Did:      drsId,
 				FileName: file.Name,
-				URLs:     []string{file.Name}, // FIXME: This should be the URL to the file in the bucket
+				URLs:     []string{fileURL},
 				Hashes:   HashInfo{SHA256: file.Oid},
 				Size:     file.Size,
 				Authz:    []string{repoName},
@@ -136,7 +147,6 @@ func UpdateDrsMap() error {
 	logger.Log("Updated %s with %d entries", DRS_MAP_FILE_NAME, len(drsMap))
 
 	// stage the drsMap file
-	// FIXME: should this be in the pre-commit hook (.git/hooks/pre-commit) as opposed to the Go code?
 	cmd = exec.Command("git", "add", drsMapFilePath)
 	_, err = cmd.Output()
 	if err != nil {

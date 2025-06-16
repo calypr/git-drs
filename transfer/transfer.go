@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/bmeg/git-drs/client"
 )
@@ -22,8 +23,8 @@ type InitMessage struct {
 // CompleteMessage is a minimal response to signal transfer is "complete"
 type CompleteMessage struct {
 	Event string `json:"event"`
-	Oid   string `json:"oid,omitempty"`
-	Path  string `json:"path,omitempty"`
+	Oid   string `json:"oid"`
+	Path  string `json:"path"`
 }
 
 // UploadMessage represents a request to upload an object.
@@ -49,10 +50,14 @@ type TerminateMessage struct {
 	Event string `json:"event"` // "terminate"
 }
 
-// ErrorResponse is sent when an error occurs during a transfer.
-type ErrorResponse struct {
-	Event   string `json:"event"`   // "error"
-	Oid     string `json:"oid"`     // Object ID involved in the error
+// ErrorMessage is sent when an error occurs during a transfer.
+type ErrorMessage struct {
+	Event string `json:"event"` // "error"
+	Oid   string `json:"oid"`   // Object ID involved in the error
+	Error Error  `json:"error"` // Error details
+}
+
+type Error struct {
 	Code    int    `json:"code"`    // Error code (standard or custom)
 	Message string `json:"message"` // Human-readable error message
 }
@@ -130,7 +135,66 @@ func main() {
 			// Handle download event
 			myLogger.Log(fmt.Sprintf("Handling download event: %s", msg))
 
-			// FIXME: Here you would implement the logic to handle the download
+			// get download message
+			var downloadMsg DownloadMessage
+			if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
+				myLogger.Log(fmt.Sprintf("Error parsing downloadMessage: %v\n", err))
+				continue
+			}
+
+			// get the DRS object using the OID
+			indexdObj, err := client.DrsInfoFromOid(downloadMsg.Oid)
+			if err != nil {
+				myLogger.Log(fmt.Sprintf("Error getting DRS info for OID %s: %v", downloadMsg.Oid, err))
+				// create failure message and send it back
+				errorResponse := ErrorMessage{
+					Event: "complete",
+					Oid:   downloadMsg.Oid,
+					Error: Error{
+						Code:    500,
+						Message: "Error retrieving DRS info: " + err.Error(),
+					},
+				}
+				encoder.Encode(errorResponse)
+				continue
+			}
+
+			// download file using the DRS object
+			myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", downloadMsg.Oid, indexdObj))
+
+			// FIXME: generalize access ID method,
+			// naively get access ID from splitting first path into :
+			accessId := strings.Split(indexdObj.URLs[0], ":")[0]
+			myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", downloadMsg.Oid, accessId, indexdObj.FileName))
+
+			// download the file using the indexd client
+			dstPath := client.GetObjectPath(downloadMsg.Oid)
+			_, err = drsClient.DownloadFile(indexdObj.Did, accessId, dstPath)
+			if err != nil {
+				myLogger.Log(fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err))
+
+				// create failure message and send it back
+				errorResponse := ErrorMessage{
+					Event: "complete",
+					Oid:   downloadMsg.Oid,
+					Error: Error{
+						Code:    500,
+						Message: "Error downloading file: " + err.Error(),
+					},
+				}
+				encoder.Encode(errorResponse)
+				continue
+			}
+			myLogger.Log(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+
+			// send success message back
+			completeMsg := CompleteMessage{
+				Event: "complete",
+				Oid:   downloadMsg.Oid,
+				Path:  dstPath,
+			}
+			encoder.Encode(completeMsg)
+
 		} else if evt, ok := msg["event"]; ok && evt == "upload" {
 			// Handle upload event
 			myLogger.Log(fmt.Sprintf("Handling upload event: %s", msg))
@@ -143,10 +207,21 @@ func main() {
 			}
 			myLogger.Log(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
 
-			// FIXME: Here you would implement the logic to handle the upload
+			// handle the upload via drs client (indexd client)
 			drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 			if err != nil {
 				myLogger.Log(fmt.Sprintf("Error, DRS Object: %+v\n", drsObj))
+
+				// create failure message and send it to back
+				errorResponse := ErrorMessage{
+					Event: "complete",
+					Oid:   uploadMsg.Oid,
+					Error: Error{
+						Code:    500,
+						Message: "Error registering file: " + err.Error(),
+					},
+				}
+				encoder.Encode(errorResponse)
 				continue
 			}
 
@@ -156,6 +231,7 @@ func main() {
 			completeMsg := CompleteMessage{
 				Event: "complete",
 				Oid:   uploadMsg.Oid,
+				Path:  drsObj.Name,
 			}
 			myLogger.Log(fmt.Sprintf("Complete message: %+v", completeMsg))
 			encoder.Encode(completeMsg)

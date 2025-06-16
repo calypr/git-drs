@@ -117,11 +117,20 @@ func NewIndexDClient(base string) (ObjectStoreClient, error) {
 
 // DownloadFile implements ObjectStoreClient
 func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string) (*drs.AccessURL, error) {
+	// setup logging
+	myLogger, err := NewLogger("")
+	if err != nil {
+		// Handle error (e.g., print to stderr and exit)
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer myLogger.Close() // Ensures cleanup
+	myLogger.Log("download file started for id: %s", id)
+
 	// get file from indexd
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id, "access", access_id)
 
-	fmt.Printf("\nusing API: %s\n", a.String())
+	myLogger.Log("using API: %s\n", a.String())
 
 	// unmarshal response
 	req, err := http.NewRequest("GET", a.String(), nil)
@@ -134,7 +143,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	fmt.Printf("\nadded auth header")
+	myLogger.Log("added auth header")
 
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -143,7 +152,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 	}
 	defer response.Body.Close()
 
-	fmt.Printf("\ngot a response")
+	myLogger.Log("got a response")
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
@@ -156,12 +165,12 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
 	}
 
-	fmt.Printf("\nunmarshaled response into AccessURL struct")
+	myLogger.Log("unmarshaled response into AccessURL struct")
 
 	// Extract the signed URL from the response
 	signedURL := out.URL
 	if signedURL == "" {
-		return nil, fmt.Errorf("\nsigned URL not found in response.")
+		return nil, fmt.Errorf("signed URL not found in response.")
 	}
 
 	// Download the file using the signed URL
@@ -171,7 +180,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 	}
 	defer fileResponse.Body.Close()
 
-	fmt.Printf("\nfile download response status: %s\n", fileResponse.Status)
+	myLogger.Log("file download response status: %s\n", fileResponse.Status)
 
 	// Check if the response status is OK
 	if fileResponse.StatusCode != http.StatusOK {
@@ -197,7 +206,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, err
 	}
 
-	fmt.Printf("\nFile written to %s\n", dstFile.Name())
+	myLogger.Log("File written to %s\n", dstFile.Name())
 
 	return &out, nil
 }
@@ -223,12 +232,11 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error registering indexd record: %v", err)
 	}
 
-	// TODO: upload file to bucket using gen3-client code
-	// pulled from gen3-client/g3cmd/upload.go
-	// https://github.com/uc-cdis/cdis-data-client/blob/df9c0820ab30e25ba8399c2cc6cccbecc2f0407a/gen3-client/g3cmd/upload.go/#L106-L150
-
+	// upload file to bucket using gen3-client code
+	// modified from gen3-client/g3cmd/upload-single.go
 	filePath := GetObjectPath(oid)
 	g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
+
 	// TODO: if upload unsuccessful, delete record from indexd
 
 	// return

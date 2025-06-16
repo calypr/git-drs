@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,14 +10,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/bmeg/git-drs/drs"
-	"github.com/uc-cdis/gen3-client/gen3-client/commonUtils"
 	"github.com/uc-cdis/gen3-client/gen3-client/g3cmd"
 	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
-	"github.com/uc-cdis/gen3-client/gen3-client/logs"
 )
 
 var conf jwt.Configure
@@ -124,9 +120,8 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 	// get file from indexd
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id, "access", access_id)
-	// a.Path = filepath.Join("https://calypr.ohsu.edu/user/data/download/", id)
 
-	fmt.Printf("using API: %s\n", a.String())
+	fmt.Printf("\nusing API: %s\n", a.String())
 
 	// unmarshal response
 	req, err := http.NewRequest("GET", a.String(), nil)
@@ -139,7 +134,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	fmt.Printf("added auth header")
+	fmt.Printf("\nadded auth header")
 
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -148,7 +143,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 	}
 	defer response.Body.Close()
 
-	fmt.Printf("got a response")
+	fmt.Printf("\ngot a response")
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
@@ -161,12 +156,12 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
 	}
 
-	fmt.Printf("unmarshaled response into AccessURL struct")
+	fmt.Printf("\nunmarshaled response into AccessURL struct")
 
 	// Extract the signed URL from the response
 	signedURL := out.URL
 	if signedURL == "" {
-		return nil, fmt.Errorf("signed URL not found in response.")
+		return nil, fmt.Errorf("\nsigned URL not found in response.")
 	}
 
 	// Download the file using the signed URL
@@ -176,7 +171,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 	}
 	defer fileResponse.Body.Close()
 
-	fmt.Printf("file download response status: %s\n", fileResponse.Status)
+	fmt.Printf("\nfile download response status: %s\n", fileResponse.Status)
 
 	// Check if the response status is OK
 	if fileResponse.StatusCode != http.StatusOK {
@@ -202,7 +197,7 @@ func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string
 		return nil, err
 	}
 
-	// fmt.Printf("File written to %s\n", dstFile.Name())
+	fmt.Printf("\nFile written to %s\n", dstFile.Name())
 
 	return &out, nil
 }
@@ -234,76 +229,6 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	filePath := GetObjectPath(oid)
 	g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
-
-	// filePath := GetObjectPath(oid)
-
-	// // get file
-	// file, _ := os.Open(filePath)
-	// if fi, _ := file.Stat(); !fi.IsDir() {
-	// 	fmt.Println("\t" + filePath)
-	// }
-	// defer file.Close()
-
-	// myLogger.Log("file path: %s", filePath)
-
-	// // get file info
-	// uploadPath := filePath
-	// includeSubDirName := true
-	// hasMetadata := false
-
-	// fileInfo, err := g3cmd.ProcessFilename(uploadPath, filePath, includeSubDirName, hasMetadata)
-	// if err != nil {
-	// 	myLogger.Log("error processing filename: %s", err)
-	// 	logs.AddToFailedLog(filePath, filepath.Base(filePath), commonUtils.FileMetadata{}, "", 0, false, true)
-	// 	log.Println("Process filename error for file: " + err.Error())
-	// }
-
-	// // connect up gen3 profile for auth
-	// gen3Interface := g3cmd.NewGen3Interface()
-	// myLogger.Log("parsing profile: %s", cl.profile)
-	// profileConfig = conf.ParseConfig(cl.profile)
-
-	// // if hasMetadata {
-	// // 	hasShepherd, err := gen3Interface.CheckForShepherdAPI(&profileConfig)
-	// // 	if err != nil {
-	// // 		myLogger.Log("WARNING: Error when checking for Shepherd API: %v", err)
-	// // 	} else {
-	// // 		if !hasShepherd {
-	// // 			myLogger.Log("ERROR: Metadata upload (`--metadata`) is not supported in the environment you are uploading to. Double check that you are uploading to the right profile.")
-	// // 		}
-	// // 	}
-	// // }
-
-	// a, b, err := gen3Interface.CheckPrivileges(&profileConfig)
-
-	// myLogger.Log("Privileges: %s ---- %s ----- %s", a, b, err)
-
-	// // get presigned URL for upload
-	// bucketName := "cbds"                                                 // TODO: match bucket to program or project (as determined by fence config?)
-	// fileInfo.FileMetadata.Authz = []string{"/programs/cbds/projects/qw"} // TODO: determine how to define gen3 project name
-	// respURL, guid, err := g3cmd.GeneratePresignedURL(gen3Interface, fileInfo.Filename, fileInfo.FileMetadata, bucketName)
-	// if err != nil {
-	// 	myLogger.Log("error generating presigned URL: %s", err)
-	// 	logs.AddToFailedLog(fileInfo.FilePath, fileInfo.Filename, fileInfo.FileMetadata, guid, 0, false, true)
-	// 	log.Println(err.Error())
-	// }
-	// // update failed log with new guid
-	// logs.AddToFailedLog(fileInfo.FilePath, fileInfo.Filename, fileInfo.FileMetadata, guid, 0, false, true)
-
-	// // upload actual file
-	// furObject := commonUtils.FileUploadRequestObject{FilePath: drsObj.Name, Filename: drsObj.Name, GUID: drsObj.Id, PresignedURL: respURL}
-	// furObject, err = g3cmd.GenerateUploadRequest(gen3Interface, furObject, file)
-	// if err != nil {
-	// 	myLogger.Log("Error occurred during request generation: %s", err)
-	// 	log.Printf("Error occurred during request generation: %s\n", err.Error())
-	// }
-	// err = uploadFile(furObject, 0)
-	// if err != nil {
-	// 	log.Println(err.Error())
-	// } else {
-	// 	logs.IncrementScore(0)
-	// }
-
 	// TODO: if upload unsuccessful, delete record from indexd
 
 	// return
@@ -420,29 +345,4 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	}
 	myLogger.Log("GET for DRS ID successful: %s", drsObj.Id)
 	return drsObj, nil
-}
-
-// copied from
-// https://github.com/uc-cdis/cdis-data-client/blob/master/gen3-client/g3cmd/utils.go#L540
-func uploadFile(furObject commonUtils.FileUploadRequestObject, retryCount int) error {
-	log.Println("Uploading data ...")
-	furObject.Bar.Start()
-
-	client := &http.Client{}
-	resp, err := client.Do(furObject.Request)
-	if err != nil {
-		logs.AddToFailedLog(furObject.FilePath, furObject.Filename, furObject.FileMetadata, furObject.GUID, retryCount, false, true)
-		furObject.Bar.Finish()
-		return errors.New("Error occurred during upload: " + err.Error())
-	}
-	if resp.StatusCode != 200 {
-		logs.AddToFailedLog(furObject.FilePath, furObject.Filename, furObject.FileMetadata, furObject.GUID, retryCount, false, true)
-		furObject.Bar.Finish()
-		return errors.New("Upload request got a non-200 response with status code " + strconv.Itoa(resp.StatusCode))
-	}
-	furObject.Bar.Finish()
-	log.Printf("Successfully uploaded file \"%s\" to GUID %s.\n", furObject.FilePath, furObject.GUID)
-	logs.DeleteFromFailedLog(furObject.FilePath, true)
-	logs.WriteToSucceededLog(furObject.FilePath, furObject.GUID, false)
-	return nil
 }

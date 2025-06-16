@@ -108,7 +108,7 @@ func UpdateDrsMap() error {
 		if bucketName == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}
-		fileURL := fmt.Sprintf("s3://" + filepath.Join(bucketName, drsId, file.Name))
+		fileURL := fmt.Sprintf("s3://" + filepath.Join(bucketName, drsId, file.Oid))
 
 		// If the oid exists in drsMap, check if it matches the calculated uuid
 		// FIXME: naive method, where only the first file with the same oid is stored

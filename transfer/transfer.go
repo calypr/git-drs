@@ -84,23 +84,12 @@ var (
 )
 
 func main() {
-	// f, err := os.OpenFile("transfer.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	// fallback to stderr
-	// 	log.SetOutput(os.Stderr)
-	// } else {
-	// 	log.SetOutput(f)
-	// 	defer f.Close()
-	// }
-	// log.Println("~~~~~~~~~~~~~ custom transfer started ~~~~~~~~~~~~~")
-
 	//setup logging to file for debugging
 	myLogger, err := client.NewLogger("")
 	if err != nil {
-		// Handle error (e.g., print to stderr and exit)
 		log.Fatalf("Failed to open log file: %v", err)
 	}
-	defer myLogger.Close() // Ensures cleanup
+	defer myLogger.Close()
 
 	myLogger.Log("~~~~~~~~~~~~~ START: custom transfer ~~~~~~~~~~~~~")
 

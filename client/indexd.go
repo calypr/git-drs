@@ -29,7 +29,7 @@ type IndexDClient struct {
 
 // subset of the OpenAPI spec for the InputInfo object in indexd
 // https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
-// TODO: use VersionInputInfo and indexd/<GUID> instead to allow writes to content_created_date
+// TODO: make another object based on VersionInputInfo that has content_created_date and so can handle a POST of dates via indexd/<GUID>
 type IndexdRecord struct {
 	// Unique identifier for the record (UUID)
 	Did string `json:"did"`
@@ -58,10 +58,10 @@ type IndexdRecord struct {
 	Version string `json:"version,omitempty"`
 
 	// // Created timestamp (RFC3339 format)
-	// CreatedDate string `json:"created_date,omitempty"`
+	// ContentCreatedDate string `json:"content_created_date,omitempty"`
 
 	// // Updated timestamp (RFC3339 format)
-	// UpdatedDate string `json:"updated_date,omitempty"`
+	// ContentUpdatedDate string `json:"content_updated_date,omitempty"`
 }
 
 // HashInfo represents file hash information as per OpenAPI spec
@@ -310,10 +310,10 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 
 	// register DRS object via /index POST
 	// (setup post request to indexd)
-	a := *cl.base
-	a.Path = filepath.Join(a.Path, "index", "index")
+	endpt := *cl.base
+	endpt.Path = filepath.Join(endpt.Path, "index", "index")
 
-	req, err := http.NewRequest("POST", a.String(), bytes.NewBuffer(jsonBytes))
+	req, err := http.NewRequest("POST", endpt.String(), bytes.NewBuffer(jsonBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +329,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	myLogger.Log("POST request created for indexd: %s", a.String())
+	myLogger.Log("POST request created for indexd: %s", endpt.String())
 
 	client := &http.Client{}
 	response, err := client.Do(req)

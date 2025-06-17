@@ -86,10 +86,11 @@ func UpdateDrsMap() error {
 			continue
 		}
 
+		// FIXME: do we want to hash this with the project ID instead?
 		drsId := DrsUUID(repoName, file.Oid)
 		logger.Log("Working with file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
-		// stat the file to use modification time later
+		// get file info needed to create indexd record
 		path := GetObjectPath(file.Oid)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
@@ -98,6 +99,7 @@ func UpdateDrsMap() error {
 		// if err != nil {
 		// 	return fmt.Errorf("error getting file info: %v", err)
 		// }
+		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
 		// get url using bucket name, drsId, and file name
 		cfg, err := LoadConfig() // should this be handled only via indexd client?
@@ -111,7 +113,7 @@ func UpdateDrsMap() error {
 		fileURL := fmt.Sprintf("s3://" + filepath.Join(bucketName, drsId, file.Oid))
 
 		// If the oid exists in drsMap, check if it matches the calculated uuid
-		// FIXME: naive method, where only the first file with the same oid is stored
+		// TODO: naive method, where only the first file with the same oid is stored
 		// in the future, will need to handle multiple files with the same oid
 		if existing, ok := drsMap[drsId]; ok {
 			if existing.Did != drsId {
@@ -126,7 +128,8 @@ func UpdateDrsMap() error {
 				Hashes:   HashInfo{SHA256: file.Oid},
 				Size:     file.Size,
 				Authz:    []string{repoName},
-				// CreatedDate: fileInfo.ModTime().Format("2025-05-07T21:29:09.585275"), // created date per RFC3339?
+				// ContentCreatedDate: modDate,
+				// ContentUpdatedDate: modDate,
 			}
 			logger.Log("Adding to drsMap: %s -> %s", file.Name, drsMap[file.Name].Did)
 		}
@@ -157,7 +160,7 @@ func UpdateDrsMap() error {
 }
 
 func GetRepoNameFromGit() (string, error) {
-	// FIXME: change to retrieve from git config directly? Or use go-git?
+	// TODO: change to retrieve from git config directly? Or use go-git?
 	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
 	out, err := cmd.Output()
 	if err != nil {

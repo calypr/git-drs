@@ -34,4 +34,4 @@ require (
 	gopkg.in/ini.v1 v1.66.3 // indirect
 )
 
-replace github.com/uc-cdis/gen3-client => ../cdis-data-client
+replace github.com/uc-cdis/gen3-client => ./cdis-data-client

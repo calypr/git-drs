@@ -235,9 +235,15 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	// upload file to bucket using gen3-client code
 	// modified from gen3-client/g3cmd/upload-single.go
 	filePath := GetObjectPath(oid)
-	g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
+	err = g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
 
 	// TODO: if upload unsuccessful, delete record from indexd
+	if err != nil {
+		myLogger.Log("error uploading file to bucket: %s", err)
+		myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+		myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+	}
 
 	// return
 	return drsObj, nil

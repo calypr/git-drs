@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -38,15 +39,6 @@ var (
 )
 
 func UpdateDrsMap() error {
-	// f, err := os.OpenFile("transfer.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	// fallback to stderr
-	// 	log.SetOutput(os.Stderr)
-	// } else {
-	// 	log.SetOutput(f)
-	// 	defer f.Close()
-	// }
-
 	logger, err := NewLogger("")
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
@@ -91,7 +83,10 @@ func UpdateDrsMap() error {
 		logger.Log("Working with file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path := GetObjectPath(file.Oid)
+		path, err := GetObjectPath(file.Oid)
+		if err != nil {
+			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
+		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
@@ -110,7 +105,7 @@ func UpdateDrsMap() error {
 		if bucketName == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}
-		fileURL := fmt.Sprintf("s3://" + filepath.Join(bucketName, drsId, file.Oid))
+		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
 
 		// If the oid exists in drsMap, check if it matches the calculated uuid
 		// TODO: naive method, where only the first file with the same oid is stored
@@ -210,11 +205,11 @@ func DrsInfoFromOid(oid string) (IndexdRecord, error) {
 	return IndexdRecord{}, fmt.Errorf("DRS object not found for oid %s in %s", oid, DRS_MAP_FILE_NAME)
 }
 
-func GetObjectPath(oid string) string {
+func GetObjectPath(oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
-		return fmt.Sprintf("Error: %s is not a valid sha256 hash", oid)
+		return "", errors.New(fmt.Sprintf("Error: %s is not a valid sha256 hash", oid))
 	}
 
-	return filepath.Join(LFS_OBJS_PATH, oid[:2], oid[2:4], oid)
+	return filepath.Join(LFS_OBJS_PATH, oid[:2], oid[2:4], oid), nil
 }

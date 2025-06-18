@@ -8,10 +8,12 @@ import (
 	"github.com/bmeg/git-drs/cmd/filterprocess"
 	"github.com/bmeg/git-drs/cmd/initialize"
 	"github.com/bmeg/git-drs/cmd/list"
+	"github.com/bmeg/git-drs/cmd/precommit"
 	"github.com/bmeg/git-drs/cmd/pull"
 	"github.com/bmeg/git-drs/cmd/push"
 	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/bmeg/git-drs/cmd/register"
+	"github.com/bmeg/git-drs/cmd/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -26,16 +28,18 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	RootCmd.AddCommand(add.Cmd)
+	RootCmd.AddCommand(download.Cmd)
+	RootCmd.AddCommand(filterprocess.Cmd)
+	RootCmd.AddCommand(genBashCompletionCmd)
 	RootCmd.AddCommand(initialize.Cmd)
+	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(push.Cmd)
 	RootCmd.AddCommand(pull.Cmd)
-	RootCmd.AddCommand(list.Cmd)
-	RootCmd.AddCommand(add.Cmd)
-	RootCmd.AddCommand(filterprocess.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(register.Cmd)
-	RootCmd.AddCommand(download.Cmd)
-	RootCmd.AddCommand(genBashCompletionCmd)
+	RootCmd.AddCommand(transfer.Cmd)
 }
 
 var genBashCompletionCmd = &cobra.Command{

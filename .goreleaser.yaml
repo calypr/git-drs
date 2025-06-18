@@ -1,0 +1,28 @@
+builds:
+  - binary: git-drs
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    ldflags: >
+      -X github.com/bmed/git-drs/version.BuildDate={{.Date}}
+      -X github.com/bmed/git-drs/version.GitCommit={{.ShortCommit}}
+      -X github.com/bmed/git-drs/version.GitBranch={{.Env.GIT_BRANCH}}
+      -X github.com/bmed/git-drs/version.GitUpstream={{.Env.GIT_UPSTREAM}}
+      -X github.com/bmed/git-drs/version.Version={{.Version}}
+
+dist: build/release
+
+release:
+  draft: true
+
+env_files:
+  github_token: .github_token
+
+archives:
+  - format: tar.gz
+    name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-{{.Version}}"

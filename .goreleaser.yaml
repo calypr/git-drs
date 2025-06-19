@@ -1,0 +1,22 @@
+builds:
+  - binary: git-drs
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+
+dist: build/release
+
+release:
+  draft: false
+
+env_files:
+  github_token: .github_token
+
+archives:
+  - format: tar.gz
+    name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-{{.Version}}"

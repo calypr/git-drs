@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bmeg/git-gen3/cmd"
+	"github.com/bmeg/git-drs/cmd"
 )
 
 func main() {

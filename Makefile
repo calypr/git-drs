@@ -70,9 +70,10 @@ release:
 		--release-notes <(github-release-notes -org bmeg -repo git-drs -stop-at ${LAST_PR_NUMBER})
 
 # Install dependencies for release
+# https://goreleaser.com/install/#linux-packages
 release-dep:
-	@go get github.com/goreleaser/goreleaser
-	@go get github.com/buchanae/github-release-notes
+	@go install github.com/goreleaser/goreleaser
+	@go install github.com/buchanae/github-release-notes
 
 # Make everything usually needed to prepare for a pull request
 full: proto install tidy lint test website webdash

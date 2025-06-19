@@ -1,4 +1,4 @@
 [submodule "cdis-data-client"]
 	path = cdis-data-client
 	url = https://github.com/ACED-IDP/cdis-data-client.git
-	branch = fixes/code-cleanup
+	branch = feature/lfs-usage

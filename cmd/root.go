@@ -19,9 +19,9 @@ import (
 
 // RootCmd represents the root command
 var RootCmd = &cobra.Command{
-	Use:           "git-drs",
-	SilenceErrors: true,
-	SilenceUsage:  true,
+	Use:   "git-drs",
+	Short: "Git DRS - Git-LFS file management for DRS servers",
+	Long:  "Git DRS provides the benefits of Git-LFS file management using DRS for seamless integration with Gen3 servers",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		//pre-run code can go here
 	},

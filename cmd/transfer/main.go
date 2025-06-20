@@ -173,7 +173,7 @@ var Cmd = &cobra.Command{
 				myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", downloadMsg.Oid, accessId, indexdObj.FileName))
 
 				// download the file using the indexd client
-				dstPath, err := client.GetObjectPath(downloadMsg.Oid)
+				dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, downloadMsg.Oid)
 				_, err = drsClient.DownloadFile(indexdObj.Did, accessId, dstPath)
 				if err != nil {
 					myLogger.Log(fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err))

@@ -281,7 +281,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// upload file to bucket using gen3-client code
 	// modified from gen3-client/g3cmd/upload-single.go
-	filePath, err := GetObjectPath(oid)
+	filePath, err := GetObjectPath(LFS_OBJS_PATH, oid)
 	if err != nil {
 		myLogger.Log("error getting object path for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v6"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,8 @@ type LfsLsOutput struct {
 
 const (
 	LFS_OBJS_PATH     = ".git/lfs/objects"
+	DRS_DIR           = ".drs"
+	DRS_OBJS_PATH     = DRS_DIR + "/lfs/objects"
 	DRS_MAP_FILE_NAME = "drs-map.json"
 )
 
@@ -38,7 +41,7 @@ var (
 	drsMapFilePath = DRS_MAP_FILE_NAME
 )
 
-func UpdateDrsMap() error {
+func UpdateDrsObjects() error {
 	logger, err := NewLogger("")
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
@@ -46,11 +49,8 @@ func UpdateDrsMap() error {
 	defer logger.Close() // Ensures cleanup
 	logger.Log("updateDrsMap started")
 
-	// [naive method] Get all LFS file and info using json
-	// and replace the drsMap file with the new data
+	// [naive method] Get all LFS files' info using json and overwrite file with new drsMap
 	// FIXME: use git-lfs internally instead of exec? (eg git.GetTrackedFiles)
-	// https://github.com/git-lfs/git-lfs/blob/main/git/git.go/#L1515
-	// or get diff directly in the commit ie git cat-files (if pointer info is stored there)?
 	cmd := exec.Command("git", "lfs", "ls-files", "--json")
 	out, err := cmd.Output()
 	if err != nil {
@@ -78,12 +78,13 @@ func UpdateDrsMap() error {
 			continue
 		}
 
-		// FIXME: do we want to hash this with the project ID instead?
+		// FIXME: do we want to hash this with the project ID instead of the repoName?
+		// TODO: determine git to gen3 project hierarchy mapping
 		drsId := DrsUUID(repoName, file.Oid)
 		logger.Log("Working with file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(file.Oid)
+		path, err := GetObjectPath(LFS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -138,41 +139,42 @@ func UpdateDrsMap() error {
 		}
 	}
 
-	// write drsMap to json at drsMapPath
-	drsMapBytes, err := json.Marshal(drsMap)
-	if err != nil {
-		logger.Log("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
-		return fmt.Errorf("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
-	}
-	logger.Log("Writing drsMap to %s", drsMapFilePath)
+	// write drs objects to DRS_OBJS_PATH
+	for oid, indexdObj := range drsMap {
+		// get object bytes
+		indexdObjBytes, err := json.Marshal(indexdObj)
+		if err != nil {
+			logger.Log("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
+			return fmt.Errorf("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
+		}
 
-	err = os.WriteFile(drsMapFilePath, drsMapBytes, 0644)
-	if err != nil {
-		return fmt.Errorf("error writing %s: %v", DRS_MAP_FILE_NAME, err)
-	}
-	logger.Log("Updated %s with %d entries", DRS_MAP_FILE_NAME, len(drsMap))
+		// get and create obj file path
+		objFilePath, err := GetObjectPath(DRS_OBJS_PATH, oid)
+		if err != nil {
+			logger.Log("error getting object path for oid %s: %v", oid, err)
+			return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(objFilePath), 0755); err != nil {
+			return fmt.Errorf("error creating directory for %s: %v", objFilePath, err)
+		}
 
-	// stage the drsMap file
-	cmd = exec.Command("git", "add", drsMapFilePath)
-	_, err = cmd.Output()
-	if err != nil {
-		return fmt.Errorf("error adding %s to git: %v", DRS_MAP_FILE_NAME, err)
+		// write indexd obj to file as json
+		logger.Log("Writing drsMap to %s", objFilePath)
+		err = os.WriteFile(objFilePath, indexdObjBytes, 0644)
+		if err != nil {
+			return fmt.Errorf("error writing %s: %v", DRS_MAP_FILE_NAME, err)
+		}
+		logger.Log("Created %s for file %s", objFilePath, indexdObjBytes)
+
+		// stage the object file
+		cmd = exec.Command("git", "add", objFilePath)
+		_, err = cmd.Output()
+		if err != nil {
+			return fmt.Errorf("error adding %s to git: %v", objFilePath, err)
+		}
 	}
 
 	return nil
-}
-
-func GetRepoNameFromGit() (string, error) {
-	// TODO: change to retrieve from git config directly? Or use go-git?
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-
-	remoteURL := strings.TrimSpace(string(out))
-	repoName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
-	return repoName, nil
 }
 
 func DrsUUID(repoName string, hash string) string {
@@ -201,24 +203,67 @@ func loadDrsMap() (map[string]IndexdRecord, error) {
 }
 
 func DrsInfoFromOid(oid string) (IndexdRecord, error) {
-
 	drsMap, err := loadDrsMap()
 	if err != nil {
 		return IndexdRecord{}, fmt.Errorf("error loading %s: %v", DRS_MAP_FILE_NAME, err)
 	}
 
-	// Check if the oid exists in the drsMap
 	if indexdObj, ok := drsMap[oid]; ok {
 		return indexdObj, nil
 	}
 	return IndexdRecord{}, fmt.Errorf("DRS object not found for oid %s in %s", oid, DRS_MAP_FILE_NAME)
 }
 
-func GetObjectPath(oid string) (string, error) {
+func GetObjectPath(basePath string, oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
 		return "", errors.New(fmt.Sprintf("Error: %s is not a valid sha256 hash", oid))
 	}
 
-	return filepath.Join(LFS_OBJS_PATH, oid[:2], oid[2:4], oid), nil
+	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil
+}
+
+////////////////
+// git helpers /
+////////////////
+
+func getStagedFiles() (git.Status, error) {
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return nil, errors.New(fmt.Sprintln("Could not open repo:", err))
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		return nil, errors.New(fmt.Sprintln("Could not get worktree:", err))
+	}
+
+	status, err := wt.Status()
+	if err != nil {
+		return nil, errors.New(fmt.Sprintln("Could not get status:", err))
+	}
+	return status, nil
+}
+
+func GetRepoNameFromGit() (string, error) {
+	// Open the Git repository in the current directory
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		log.Fatalf("Failed to open repo: %v", err)
+	}
+
+	// Get the config object
+	config, err := repo.Config()
+	if err != nil {
+		log.Fatalf("Failed to get config: %v", err)
+	}
+
+	// Get the remote origin URL
+	if remote, ok := config.Remotes["origin"]; ok && len(remote.URLs) > 0 {
+		remoteURL := strings.TrimSpace(string(remote.URLs[0]))
+		repoName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
+		return repoName, nil
+	} else {
+		return "", errors.New("Origin remote not found")
+	}
 }

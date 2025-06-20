@@ -32,7 +32,7 @@ var Cmd = &cobra.Command{
 
 		myLogger.Log("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
-		err = client.UpdateDrsMap()
+		err = client.UpdateDrsObjects()
 		if err != nil {
 			fmt.Println("updateDrsMap failed:", err)
 			log.Fatalf("updateDrsMap failed: %v", err)

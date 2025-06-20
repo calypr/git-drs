@@ -20,7 +20,7 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "precommit",
 	Short: "pre-commit hook to create DRS objects",
-	Long:  "Pre-commit hook that creates DRS objects based on LFS files in the repo. Stores it to a drs-map.json",
+	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger

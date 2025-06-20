@@ -28,17 +28,14 @@ type LfsLsOutput struct {
 }
 
 const (
-	LFS_OBJS_PATH     = ".git/lfs/objects"
-	DRS_DIR           = ".drs"
-	DRS_OBJS_PATH     = DRS_DIR + "/lfs/objects"
-	DRS_MAP_FILE_NAME = "drs-map.json"
+	LFS_OBJS_PATH = ".git/lfs/objects"
+	DRS_DIR       = ".drs"
+	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
 )
 
 var (
 	lfsFiles LfsLsOutput
 	drsMap   = make(map[string]IndexdRecord)
-	// drsMapFilePath = filepath.Join(LFS_OBJS_PATH, DRS_MAP_FILE_NAME)
-	drsMapFilePath = DRS_MAP_FILE_NAME
 )
 
 func UpdateDrsObjects() error {
@@ -117,8 +114,7 @@ func UpdateDrsObjects() error {
 		authzStr := "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1]
 
 		// If the oid exists in drsMap, check if it matches the calculated uuid
-		// TODO: naive method, where only the first file with the same oid is stored
-		// in the future, will need to handle multiple files with the same oid
+		// TODO: currently only the first filename for a given oid is used
 		if existing, ok := drsMap[drsId]; ok {
 			if existing.Did != drsId {
 				return fmt.Errorf("Error: OID %s for file %s has mismatched UUID (existing: %s, calculated: %s). Aborting.", file.Oid, file.Name, existing.Did, drsId)
@@ -144,8 +140,8 @@ func UpdateDrsObjects() error {
 		// get object bytes
 		indexdObjBytes, err := json.Marshal(indexdObj)
 		if err != nil {
-			logger.Log("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
-			return fmt.Errorf("error marshalling %s: %v", DRS_MAP_FILE_NAME, err)
+			logger.Log("error marshalling indexd object for oid %s: %v", oid, err)
+			return fmt.Errorf("error marshalling  indexd object for oid %s: %v", oid, err)
 		}
 
 		// get and create obj file path
@@ -162,7 +158,7 @@ func UpdateDrsObjects() error {
 		logger.Log("Writing drsMap to %s", objFilePath)
 		err = os.WriteFile(objFilePath, indexdObjBytes, 0644)
 		if err != nil {
-			return fmt.Errorf("error writing %s: %v", DRS_MAP_FILE_NAME, err)
+			return fmt.Errorf("error writing %s: %v", objFilePath, err)
 		}
 		logger.Log("Created %s for file %s", objFilePath, indexdObjBytes)
 
@@ -183,35 +179,25 @@ func DrsUUID(repoName string, hash string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
 }
 
-func loadDrsMap() (map[string]IndexdRecord, error) {
-	// Load the DRSMap json file
-	// FIXME: need to load the committed version as opposed to the working directory version
-	// see https://github.com/copilot/c/c56f0baa-66d0-4d33-924f-27ca701591e5
-	if _, err := os.Stat(drsMapFilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("%s does not exist at %s", DRS_MAP_FILE_NAME, drsMapFilePath)
-	}
-	data, err := os.ReadFile(drsMapFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading %s: %v", DRS_MAP_FILE_NAME, err)
-	}
-	var drsMap map[string]IndexdRecord
-	err = json.Unmarshal(data, &drsMap)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling %s: %v", DRS_MAP_FILE_NAME, err)
-	}
-	return drsMap, nil
-}
-
 func DrsInfoFromOid(oid string) (IndexdRecord, error) {
-	drsMap, err := loadDrsMap()
+	// unmarshal the DRS object
+	path, err := GetObjectPath(DRS_OBJS_PATH, oid)
 	if err != nil {
-		return IndexdRecord{}, fmt.Errorf("error loading %s: %v", DRS_MAP_FILE_NAME, err)
+		return IndexdRecord{}, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
 
-	if indexdObj, ok := drsMap[oid]; ok {
-		return indexdObj, nil
+	indexdObjBytes, err := os.ReadFile(path)
+	if err != nil {
+		return IndexdRecord{}, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
 	}
-	return IndexdRecord{}, fmt.Errorf("DRS object not found for oid %s in %s", oid, DRS_MAP_FILE_NAME)
+
+	var indexdObj IndexdRecord
+	err = json.Unmarshal(indexdObjBytes, &indexdObj)
+	if err != nil {
+		return IndexdRecord{}, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
+	}
+
+	return indexdObj, nil
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {

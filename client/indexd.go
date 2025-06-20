@@ -253,8 +253,10 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// if upload unsuccessful (panic or error), delete record from indexd
 	defer func() {
-		myLogger.Log("registration incomplete, cleaning up indexd record for oid %s", oid)
+
 		if r := recover(); r != nil {
+			// TODO: this panic isn't getting triggered
+			myLogger.Log("panic occurred, cleaning up indexd record for oid %s", oid)
 			// Handle panic
 			cl.deleteIndexdRecord(drsObj.Id)
 			if err != nil {
@@ -268,6 +270,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			panic(r) // re-throw if you want the CLI to still terminate
 		}
 		if err != nil {
+			myLogger.Log("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.deleteIndexdRecord(drsObj.Id)
 			if err != nil {
 				myLogger.Log("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)

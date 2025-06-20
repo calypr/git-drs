@@ -30,14 +30,12 @@ func LoadConfig() (*Config, error) {
 	//look in Git base dir and find .drsconfig file
 
 	topLevel, err := utils.GitTopLevel()
-
 	if err != nil {
 		return nil, err
 	}
 
 	configPath := filepath.Join(topLevel, DRS_CONFIG)
 
-	// log.Printf("Looking for %s", configPath)
 	//check if config exists
 	reader, err := os.Open(configPath)
 	if err != nil {
@@ -55,6 +53,5 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	// log.Printf("Config: %s %#v", string(b), conf)
 	return &conf, nil
 }

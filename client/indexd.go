@@ -64,6 +64,25 @@ type IndexdRecord struct {
 	// ContentUpdatedDate string `json:"content_updated_date,omitempty"`
 }
 
+type OutputInfo struct {
+	Did          string                 `json:"did"`
+	BaseID       string                 `json:"baseid"`
+	Rev          string                 `json:"rev"`
+	Form         string                 `json:"form"`
+	Size         int64                  `json:"size"`
+	FileName     string                 `json:"file_name"`
+	Version      string                 `json:"version"`
+	Uploader     string                 `json:"uploader"`
+	URLs         []string               `json:"urls"`
+	ACL          []string               `json:"acl"`
+	Authz        []string               `json:"authz"`
+	Hashes       HashInfo               `json:"hashes"`
+	UpdatedDate  string                 `json:"updated_date"`
+	CreatedDate  string                 `json:"created_date"`
+	Metadata     map[string]interface{} `json:"metadata"`
+	URLsMetadata map[string]interface{} `json:"urls_metadata"`
+}
+
 // HashInfo represents file hash information as per OpenAPI spec
 // Patterns are documented for reference, but not enforced at struct level
 // md5:    ^[0-9a-f]{32}$
@@ -232,6 +251,34 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error registering indexd record: %v", err)
 	}
 
+	// if upload unsuccessful (panic or error), delete record from indexd
+	defer func() {
+		myLogger.Log("registration incomplete, cleaning up indexd record for oid %s", oid)
+		if r := recover(); r != nil {
+			// Handle panic
+			cl.deleteIndexdRecord(drsObj.Id)
+			if err != nil {
+				myLogger.Log("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
+				myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+				myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+				panic(r)
+			}
+			myLogger.Log("cleaned up indexd record for oid %s", oid)
+			myLogger.Log("exiting: %v", r)
+			panic(r) // re-throw if you want the CLI to still terminate
+		}
+		if err != nil {
+			err = cl.deleteIndexdRecord(drsObj.Id)
+			if err != nil {
+				myLogger.Log("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
+				myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+				myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+				return
+			}
+			myLogger.Log("cleaned up indexd record for oid %s", oid)
+		}
+	}()
+
 	// upload file to bucket using gen3-client code
 	// modified from gen3-client/g3cmd/upload-single.go
 	filePath, err := GetObjectPath(oid)
@@ -240,12 +287,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
 	err = g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
-
-	// TODO: if upload unsuccessful, delete record from indexd
 	if err != nil {
 		myLogger.Log("error uploading file to bucket: %s", err)
-		myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
-		myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
 		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
 	}
 
@@ -334,7 +377,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	// add auth token
 	// FIXME: token expires earlier than expected, error looks like
 	// [401] - request to arborist failed: error decoding token: expired at time: 1749844905
-	addGen3AuthHeader(req, cl.profile)
+	err = addGen3AuthHeader(req, cl.profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -363,4 +406,58 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	}
 	myLogger.Log("GET for DRS ID successful: %s", drsObj.Id)
 	return drsObj, nil
+}
+
+func (cl *IndexDClient) deleteIndexdRecord(did string) error {
+	// get the indexd record, can't use queryId cause the DRS object doesn't contain the rev
+	a := *cl.base
+	a.Path = filepath.Join(a.Path, "index", did)
+
+	getReq, err := http.NewRequest("GET", a.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{}
+	getResp, err := client.Do(getReq)
+	if err != nil {
+		return err
+	}
+	defer getResp.Body.Close()
+
+	body, err := io.ReadAll(getResp.Body)
+	if err != nil {
+		return err
+	}
+
+	record := OutputInfo{}
+	err = json.Unmarshal(body, &record)
+	if err != nil {
+		return fmt.Errorf("could not query index record for did %s: %v", did, err)
+	}
+
+	// delete indexd record using did and rev
+	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.base.String(), did, record.Rev)
+	delReq, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	err = addGen3AuthHeader(delReq, cl.profile)
+	if err != nil {
+		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
+	}
+	// set Content-Type header for JSON
+	delReq.Header.Set("accept", "application/json")
+
+	delResp, err := client.Do(delReq)
+	if err != nil {
+		return err
+	}
+	defer delResp.Body.Close()
+
+	if delResp.StatusCode >= 400 {
+		return fmt.Errorf("delete failed: %s", delResp.Status)
+	}
+	return nil
 }

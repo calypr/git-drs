@@ -108,7 +108,6 @@ func UpdateDrsMap() error {
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
 
 		// create authz string from profile
-		fmt.Println("cfg.Gen3Project:", cfg.Gen3Project)
 		// check if project ID is valid
 		if !strings.Contains(cfg.Gen3Project, "-") {
 			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", cfg.Gen3Project)
@@ -202,6 +201,7 @@ func loadDrsMap() (map[string]IndexdRecord, error) {
 }
 
 func DrsInfoFromOid(oid string) (IndexdRecord, error) {
+
 	drsMap, err := loadDrsMap()
 	if err != nil {
 		return IndexdRecord{}, fmt.Errorf("error loading %s: %v", DRS_MAP_FILE_NAME, err)

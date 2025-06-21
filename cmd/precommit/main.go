@@ -34,8 +34,8 @@ var Cmd = &cobra.Command{
 
 		err = client.UpdateDrsObjects()
 		if err != nil {
-			fmt.Println("updateDrsMap failed:", err)
-			log.Fatalf("updateDrsMap failed: %v", err)
+			fmt.Println("UpdateDrsObjects failed:", err)
+			log.Fatalf("UpdateDrsObjects failed: %v", err)
 			return err
 		}
 

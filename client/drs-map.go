@@ -30,6 +30,7 @@ type LfsLsOutput struct {
 const (
 	LFS_OBJS_PATH = ".git/lfs/objects"
 	DRS_DIR       = ".drs"
+	// FIXME: should this be /lfs/objects or just /objects?
 	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
 )
 
@@ -233,6 +234,7 @@ func GetObjectPath(basePath string, oid string) (string, error) {
 func getStagedFiles() ([]string, error) {
 	// chose exec here for performance over using go-git
 	// tradeoff is very rare concurrency problems which currently aren't relevant to the pre-commit
+	// FIXME: filter out files that have been deleted? Bug: if git rm, the DRS object still created
 	cmd := exec.Command("git", "diff", "--name-only", "--cached")
 	var out bytes.Buffer
 	cmd.Stdout = &out

@@ -23,18 +23,18 @@ type Config struct {
 }
 
 const (
-	DRS_CONFIG = ".drsconfig"
+	DRS_CONFIG = "config"
 )
 
 func LoadConfig() (*Config, error) {
-	//look in Git base dir and find .drsconfig file
+	//look in Git base dir and find .drs/config file
 
 	topLevel, err := utils.GitTopLevel()
 	if err != nil {
 		return nil, err
 	}
 
-	configPath := filepath.Join(topLevel, DRS_CONFIG)
+	configPath := filepath.Join(topLevel, DRS_DIR, DRS_CONFIG)
 
 	//check if config exists
 	reader, err := os.Open(configPath)

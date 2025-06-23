@@ -167,7 +167,7 @@ var Cmd = &cobra.Command{
 				// download file using the DRS object
 				myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", downloadMsg.Oid, indexdObj))
 
-				// FIXME: generalize access ID method,
+				// FIXME: generalize access ID method
 				// naively get access ID from splitting first path into :
 				accessId := strings.Split(indexdObj.URLs[0], ":")[0]
 				myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", downloadMsg.Oid, accessId, indexdObj.FileName))

@@ -100,24 +100,25 @@ type HashInfo struct {
 	ETag   string `json:"etag,omitempty"`
 }
 
-func NewIndexDClient(base string) (ObjectStoreClient, error) {
-	baseURL, err := url.Parse(base)
-	// print baseURL
-	if err != nil {
-		return nil, err
-	}
-
+func NewIndexDClient() (ObjectStoreClient, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	// get the gen3Profile, gen3Project, and gen3Bucket from the config
+	// get the gen3Profile and baseURL
 	profile := cfg.Gen3Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
 	}
 
+	profileConfig = conf.ParseConfig(profile)
+	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing base URL from profile %s: %v", profile, err)
+	}
+
+	// get the gen3Project and gen3Bucket from the config
 	projectId := cfg.Gen3Project
 	if projectId == "" {
 		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drsconfig")
@@ -131,7 +132,7 @@ func NewIndexDClient(base string) (ObjectStoreClient, error) {
 	// fmt.Printf("Base URL: %s\n", baseURL.String())
 	// fmt.Printf("Profile: %s\n", profile)
 
-	return &IndexDClient{baseURL, profile, projectId, bucketName}, err
+	return &IndexDClient{baseUrl, profile, projectId, bucketName}, err
 }
 
 // DownloadFile implements ObjectStoreClient

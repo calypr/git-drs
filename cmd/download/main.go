@@ -24,23 +24,14 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		drsId := args[0]
 		accessId := args[1]
-		cfg, err := client.LoadConfig()
-		if err != nil {
-			return err
-		}
 
-		baseURL := cfg.QueryServer.BaseURL
-
-		// print random string to stdout
-		fmt.Println("Using server:", cfg.QueryServer.BaseURL)
-
-		client, err := client.NewIndexDClient(baseURL)
+		client, err := client.NewIndexDClient()
 		if err != nil {
 			fmt.Printf("\nerror creating indexd client: %s", err)
 			return err
 		}
 
-		fmt.Println("created indexd client:", cfg.QueryServer.BaseURL)
+		fmt.Println("created indexd client")
 
 		if dstPath == "" {
 

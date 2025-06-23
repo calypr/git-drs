@@ -15,16 +15,7 @@ var Cmd = &cobra.Command{
 	Long:  "Query DRS server by DRS ID",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
-		cfg, err := client.LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		//fix this later
-		baseURL := cfg.QueryServer.BaseURL
-
-		client, err := client.NewIndexDClient(baseURL)
+		client, err := client.NewIndexDClient()
 		if err != nil {
 			return err
 		}

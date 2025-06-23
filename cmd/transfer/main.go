@@ -120,14 +120,7 @@ var Cmd = &cobra.Command{
 				// Log for debugging
 				myLogger.Log(fmt.Sprintf("Handling init: %s", msg))
 
-				// setup indexd client
-				cfg, err := client.LoadConfig()
-				if err != nil {
-					myLogger.Log(fmt.Sprintf("Error loading config: %s", err))
-				}
-
-				baseURL := cfg.QueryServer.BaseURL
-				drsClient, err = client.NewIndexDClient(baseURL)
+				drsClient, err = client.NewIndexDClient()
 				if err != nil {
 					myLogger.Log(fmt.Sprintf("Error creating indexd client: %s", err))
 					continue

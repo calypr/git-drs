@@ -15,8 +15,6 @@ type Server struct {
 }
 
 type Config struct {
-	QueryServer Server `json:"queryServer"`
-	WriteServer Server `json:"writeServer"`
 	Gen3Profile string `json:"gen3Profile"`
 	Gen3Project string `json:"gen3Project"`
 	Gen3Bucket  string `json:"gen3Bucket"`

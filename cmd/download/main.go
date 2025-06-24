@@ -17,13 +17,12 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download <drsId> <accessId>",
-	Short: "Download file using DRS ID and access ID",
-	Long:  "Download file using DRS ID and access ID. The access ID is the access method used to download the file.",
-	Args:  cobra.ExactArgs(2),
+	Use:   "download <oid>",
+	Short: "Download file using file object ID",
+	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		drsId := args[0]
-		accessId := args[1]
+		oid := args[0]
 
 		client, err := client.NewIndexDClient()
 		if err != nil {
@@ -33,21 +32,9 @@ var Cmd = &cobra.Command{
 
 		fmt.Println("created indexd client")
 
-		if dstPath == "" {
-
-			drsObj, err = client.QueryID(drsId)
-			if err != nil {
-				fmt.Printf("\nerror querying DRS ID %s: %s", drsId, err)
-				return err
-			}
-			dstPath = drsObj.Name
-		}
-
-		fmt.Println("downloading file:", drsObj.Name)
-
-		_, err = client.DownloadFile(drsId, accessId, dstPath)
+		_, err = client.DownloadFile(oid)
 		if err != nil {
-			fmt.Printf("\nerror downloading file %s: %s", drsId, err)
+			fmt.Printf("\nerror downloading file object ID %s: %s", oid, err)
 			return err
 		}
 
@@ -55,8 +42,4 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-func init() {
-	Cmd.Flags().StringVarP(&dstPath, "dstPath", "d", "", "Optional destination file path")
 }

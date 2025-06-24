@@ -27,78 +27,9 @@ type IndexDClient struct {
 	bucketName string
 }
 
-// subset of the OpenAPI spec for the InputInfo object in indexd
-// https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
-// TODO: make another object based on VersionInputInfo that has content_created_date and so can handle a POST of dates via indexd/<GUID>
-type IndexdRecord struct {
-	// Unique identifier for the record (UUID)
-	Did string `json:"did"`
-
-	// Human-readable file name
-	FileName string `json:"file_name,omitempty"`
-
-	// List of URLs where the file can be accessed
-	URLs []string `json:"urls"`
-
-	// Hashes of the file (e.g., md5, sha256)
-	Size int64 `json:"size"`
-
-	// List of access control lists (ACLs)
-	ACL []string `json:"acl,omitempty"`
-
-	// List of authorization policies
-	Authz []string `json:"authz,omitempty"`
-
-	Hashes HashInfo `json:"hashes,omitempty"`
-
-	// Additional metadata as key-value pairs
-	Metadata map[string]string `json:"metadata,omitempty"`
-
-	// Version of the record (optional)
-	Version string `json:"version,omitempty"`
-
-	// // Created timestamp (RFC3339 format)
-	// ContentCreatedDate string `json:"content_created_date,omitempty"`
-
-	// // Updated timestamp (RFC3339 format)
-	// ContentUpdatedDate string `json:"content_updated_date,omitempty"`
-}
-
-type OutputInfo struct {
-	Did          string                 `json:"did"`
-	BaseID       string                 `json:"baseid"`
-	Rev          string                 `json:"rev"`
-	Form         string                 `json:"form"`
-	Size         int64                  `json:"size"`
-	FileName     string                 `json:"file_name"`
-	Version      string                 `json:"version"`
-	Uploader     string                 `json:"uploader"`
-	URLs         []string               `json:"urls"`
-	ACL          []string               `json:"acl"`
-	Authz        []string               `json:"authz"`
-	Hashes       HashInfo               `json:"hashes"`
-	UpdatedDate  string                 `json:"updated_date"`
-	CreatedDate  string                 `json:"created_date"`
-	Metadata     map[string]interface{} `json:"metadata"`
-	URLsMetadata map[string]interface{} `json:"urls_metadata"`
-}
-
-// HashInfo represents file hash information as per OpenAPI spec
-// Patterns are documented for reference, but not enforced at struct level
-// md5:    ^[0-9a-f]{32}$
-// sha:    ^[0-9a-f]{40}$
-// sha256: ^[0-9a-f]{64}$
-// sha512: ^[0-9a-f]{128}$
-// crc:    ^[0-9a-f]{8}$
-// etag:   ^[0-9a-f]{32}(-\d+)?$
-type HashInfo struct {
-	MD5    string `json:"md5,omitempty"`
-	SHA    string `json:"sha,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
-	SHA512 string `json:"sha512,omitempty"`
-	CRC    string `json:"crc,omitempty"`
-	ETag   string `json:"etag,omitempty"`
-}
+////////////////////
+// CLIENT METHODS //
+////////////////////
 
 func NewIndexDClient() (ObjectStoreClient, error) {
 	cfg, err := LoadConfig()
@@ -129,28 +60,52 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drsconfig")
 	}
 
-	// fmt.Printf("Base URL: %s\n", baseURL.String())
-	// fmt.Printf("Profile: %s\n", profile)
-
 	return &IndexDClient{baseUrl, profile, projectId, bucketName}, err
 }
 
 // DownloadFile implements ObjectStoreClient
-func (cl *IndexDClient) DownloadFile(id string, access_id string, dstPath string) (*drs.AccessURL, error) {
+func (cl *IndexDClient) DownloadFile(oid string) (*drs.AccessURL, error) {
 	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
 		// Handle error (e.g., print to stderr and exit)
 		log.Fatalf("Failed to open log file: %v", err)
 	}
-	defer myLogger.Close() // Ensures cleanup
-	myLogger.Log("download file started for id: %s", id)
+	defer myLogger.Close()
+	myLogger.Log("requested download of file oid %s", oid)
+
+	// get the DRS object using the OID
+	// FIXME: how do we not hardcode sha256 here?
+	records, err := cl.queryIndexdByHash("sha256", oid)
+	if err != nil {
+		myLogger.Log(fmt.Sprintf("Error getting DRS info for OID %s: %v", oid, err))
+		// create failure message and send it back
+		return &drs.AccessURL{}, fmt.Errorf("Error retrieving DRS info: " + err.Error())
+	}
+
+	if len(records.Records) != 1 {
+		myLogger.Log(fmt.Sprintf("Error: expected 1 record for OID %s, got %d records", oid, len(records.Records)))
+		myLogger.Log(fmt.Sprintf("Records: %v", records.Records))
+		return nil, fmt.Errorf("expected 1 record for OID %s, got %d records", oid, len(records.Records))
+	}
+	indexdObj := records.Records[0]
+
+	// get LFS objects path to write to
+	dstPath, err := GetObjectPath(LFS_OBJS_PATH, oid)
+
+	// download file using the DRS object
+	myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", oid, indexdObj))
+
+	// FIXME: generalize access ID method
+	// naively get access ID from splitting first path into :
+	accessId := strings.Split(indexdObj.URLs[0], ":")[0]
+	myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, indexdObj.FileName))
 
 	// get file from indexd
 	a := *cl.base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id, "access", access_id)
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", indexdObj.Did, "access", accessId)
 
-	myLogger.Log("using API: %s\n", a.String())
+	myLogger.Log("using endpoint: %s\n", a.String())
 
 	// unmarshal response
 	req, err := http.NewRequest("GET", a.String(), nil)
@@ -254,7 +209,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// if upload unsuccessful (panic or error), delete record from indexd
 	defer func() {
-
+		// delete indexd record if panic
 		if r := recover(); r != nil {
 			// TODO: this panic isn't getting triggered
 			myLogger.Log("panic occurred, cleaning up indexd record for oid %s", oid)
@@ -270,6 +225,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			myLogger.Log("exiting: %v", r)
 			panic(r) // re-throw if you want the CLI to still terminate
 		}
+
+		// delete indexd record if error thrown
 		if err != nil {
 			myLogger.Log("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.deleteIndexdRecord(drsObj.Id)
@@ -329,6 +286,10 @@ func (cl *IndexDClient) QueryID(id string) (*drs.DRSObject, error) {
 	}
 	return &out, nil
 }
+
+/////////////
+// HELPERS //
+/////////////
 
 func addGen3AuthHeader(req *http.Request, profile string) error {
 	// extract accessToken from gen3 profile and insert into header of request
@@ -464,4 +425,29 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 		return fmt.Errorf("delete failed: %s", delResp.Status)
 	}
 	return nil
+}
+
+func (cl *IndexDClient) queryIndexdByHash(hashType string, hash string) (ListRecords, error) {
+	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
+
+	// get
+	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base, hashType, hash)
+	resp, err := http.Get(url)
+	if err != nil {
+		return ListRecords{}, fmt.Errorf("error querying index for hash (%s:%s): %v", hashType, hash, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ListRecords{}, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
+	}
+
+	records := ListRecords{}
+	err = json.Unmarshal(body, &records)
+	if err != nil {
+		return ListRecords{}, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
+	}
+
+	return records, nil
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/bmeg/git-drs/client"
 	"github.com/spf13/cobra"
@@ -140,34 +139,7 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				// get the DRS object using the OID
-				indexdObj, err := client.DrsInfoFromOid(downloadMsg.Oid)
-				if err != nil {
-					myLogger.Log(fmt.Sprintf("Error getting DRS info for OID %s: %v", downloadMsg.Oid, err))
-					// create failure message and send it back
-					errorResponse := ErrorMessage{
-						Event: "complete",
-						Oid:   downloadMsg.Oid,
-						Error: Error{
-							Code:    500,
-							Message: "Error retrieving DRS info: " + err.Error(),
-						},
-					}
-					encoder.Encode(errorResponse)
-					continue
-				}
-
-				// download file using the DRS object
-				myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", downloadMsg.Oid, indexdObj))
-
-				// FIXME: generalize access ID method
-				// naively get access ID from splitting first path into :
-				accessId := strings.Split(indexdObj.URLs[0], ":")[0]
-				myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", downloadMsg.Oid, accessId, indexdObj.FileName))
-
-				// download the file using the indexd client
-				dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, downloadMsg.Oid)
-				_, err = drsClient.DownloadFile(indexdObj.Did, accessId, dstPath)
+				accessUrl, err := drsClient.DownloadFile(downloadMsg.Oid)
 				if err != nil {
 					myLogger.Log(fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err))
 
@@ -189,7 +161,7 @@ var Cmd = &cobra.Command{
 				completeMsg := CompleteMessage{
 					Event: "complete",
 					Oid:   downloadMsg.Oid,
-					Path:  dstPath,
+					Path:  accessUrl.URL,
 				}
 				encoder.Encode(completeMsg)
 

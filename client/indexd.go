@@ -63,8 +63,8 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 	return &IndexDClient{baseUrl, profile, projectId, bucketName}, err
 }
 
-// DownloadFile implements ObjectStoreClient
-func (cl *IndexDClient) DownloadFile(oid string) (*drs.AccessURL, error) {
+// GetDownloadURL implements ObjectStoreClient
+func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
@@ -89,9 +89,6 @@ func (cl *IndexDClient) DownloadFile(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("expected 1 record for OID %s, got %d records", oid, len(records.Records))
 	}
 	indexdObj := records.Records[0]
-
-	// get LFS objects path to write to
-	dstPath, err := GetObjectPath(LFS_OBJS_PATH, oid)
 
 	// download file using the DRS object
 	myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", oid, indexdObj))
@@ -134,56 +131,50 @@ func (cl *IndexDClient) DownloadFile(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	out := drs.AccessURL{}
-	err = json.Unmarshal(body, &out)
+	accessUrl := drs.AccessURL{}
+	err = json.Unmarshal(body, &accessUrl)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
 	}
 
-	myLogger.Log("unmarshaled response into AccessURL struct")
+	myLogger.Log("unmarshaled response into DRS AccessURL")
 
-	// Extract the signed URL from the response
-	signedURL := out.URL
-	if signedURL == "" {
-		return nil, fmt.Errorf("signed URL not found in response.")
-	}
+	return &accessUrl, nil
+}
 
+func DownloadSignedUrl(signedURL string, dstPath string) error {
 	// Download the file using the signed URL
 	fileResponse, err := http.Get(signedURL)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer fileResponse.Body.Close()
 
-	myLogger.Log("file download response status: %s\n", fileResponse.Status)
-
 	// Check if the response status is OK
 	if fileResponse.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
+		return fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
 	}
 
 	// Create the destination directory if it doesn't exist
 	err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Create the destination file
 	dstFile, err := os.Create(dstPath)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer dstFile.Close()
 
 	// Write the file content to the destination file
 	_, err = io.Copy(dstFile, fileResponse.Body)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	myLogger.Log("File written to %s\n", dstFile.Name())
-
-	return &out, nil
+	return nil
 }
 
 // RegisterFile implements ObjectStoreClient.
@@ -257,7 +248,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	return drsObj, nil
 }
 
-func (cl *IndexDClient) QueryID(id string) (*drs.DRSObject, error) {
+func (cl *IndexDClient) GetDRSObject(id string) (*drs.DRSObject, error) {
 
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id)
@@ -365,7 +356,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	myLogger.Log("POST successful: %s", response.Status)
 
 	// query and return DRS object
-	drsObj, err := cl.QueryID(indexdObj.Did)
+	drsObj, err := cl.GetDRSObject(indexdObj.Did)
 	if err != nil {
 		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
 	}
@@ -374,7 +365,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 }
 
 func (cl *IndexDClient) deleteIndexdRecord(did string) error {
-	// get the indexd record, can't use queryId cause the DRS object doesn't contain the rev
+	// get the indexd record, can't use GetDRSObject cause the DRS object doesn't contain the rev
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "index", did)
 

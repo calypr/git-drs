@@ -135,33 +135,46 @@ var Cmd = &cobra.Command{
 				// get download message
 				var downloadMsg DownloadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
-					myLogger.Log(fmt.Sprintf("Error parsing downloadMessage: %v\n", err))
+					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
 
-				accessUrl, err := drsClient.DownloadFile(downloadMsg.Oid)
+				// get signed url
+				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
 				if err != nil {
-					myLogger.Log(fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err))
+					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+				}
+				if accessUrl.URL == "" {
+					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+				}
 
-					// create failure message and send it back
-					errorResponse := ErrorMessage{
-						Event: "complete",
-						Oid:   downloadMsg.Oid,
-						Error: Error{
-							Code:    500,
-							Message: "Error downloading file: " + err.Error(),
-						},
-					}
-					encoder.Encode(errorResponse)
+				// download signed url
+				dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, downloadMsg.Oid)
+				if err != nil {
+					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
-				myLogger.Log(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				err = client.DownloadSignedUrl(accessUrl.URL, dstPath)
+				if err != nil {
+					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+				}
 
 				// send success message back
+				myLogger.Log(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 				completeMsg := CompleteMessage{
 					Event: "complete",
 					Oid:   downloadMsg.Oid,
-					Path:  accessUrl.URL,
+					Path:  dstPath,
 				}
 				encoder.Encode(completeMsg)
 
@@ -172,27 +185,18 @@ var Cmd = &cobra.Command{
 				// create UploadMessage from the received message
 				var uploadMsg UploadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
-					myLogger.Log(fmt.Sprintf("Error parsing UploadMessage: %v\n", err))
-					continue
+					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
 				myLogger.Log(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
 
 				// handle the upload via drs client (indexd client)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
-					myLogger.Log(fmt.Sprintf("Error, DRS Object: %+v\n", drsObj))
-
-					// create failure message and send it to back
-					errorResponse := ErrorMessage{
-						Event: "complete",
-						Oid:   uploadMsg.Oid,
-						Error: Error{
-							Code:    500,
-							Message: "Error registering file: " + err.Error(),
-						},
-					}
-					encoder.Encode(errorResponse)
-					continue
+					errMsg := fmt.Sprintf("Error registering file: " + err.Error())
+					myLogger.Log(errMsg)
+					WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
 
 				myLogger.Log("creating response message with oid %s", uploadMsg.Oid)
@@ -221,4 +225,17 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
+	// create failure message and send it back
+	errorResponse := ErrorMessage{
+		Event: "complete",
+		Oid:   oid,
+		Error: Error{
+			Code:    500,
+			Message: errMsg,
+		},
+	}
+	encoder.Encode(errorResponse)
 }

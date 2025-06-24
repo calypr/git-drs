@@ -20,7 +20,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.QueryID(args[0])
+		obj, err := client.GetDRSObject(args[0])
 		if err != nil {
 			return err
 		}

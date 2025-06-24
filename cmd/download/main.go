@@ -32,7 +32,7 @@ var Cmd = &cobra.Command{
 
 		fmt.Println("created indexd client")
 
-		_, err = client.DownloadFile(oid)
+		_, err = client.GetDownloadURL(oid)
 		if err != nil {
 			fmt.Printf("\nerror downloading file object ID %s: %s", oid, err)
 			return err

@@ -39,13 +39,16 @@ var (
 )
 
 func UpdateDrsObjects() error {
-	// TODO: only change staged files with new oids instead of writing all objects each time
+	// init logger
 	logger, err := NewLogger("")
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
-	defer logger.Close() // Ensures cleanup
+	defer logger.Close()
 	logger.Log("Update to DRS objects started")
+
+	// init indexd client
+	indexdClient, err := NewIndexDClient()
 
 	// get all LFS files' info using json
 	// TODO: use git-lfs internally instead of exec? (eg git.GetTrackedFiles)
@@ -80,13 +83,25 @@ func UpdateDrsObjects() error {
 	logger.Log("Creating DRS objects for staged files: %v", stagedFiles)
 
 	// for each LFS file, calculate the DRS ID using repoName and the oid
+	// assumes that the DRS_OBJS_PATH only contains
+	// ie that DRS objects is not manually edited, only edited via CLI
 	for _, file := range lfsFiles.Files {
 		// check if the file is staged
 		if _, ok := stagedFilesSet[file.Name]; !ok {
 			continue
 		}
 
-		// check if oid already exists
+		// check hash to see if record already exists in indexd (source of truth)
+		obj, err := indexdClient.GetObjectByHash(file.OidType, file.Oid)
+		if err != nil {
+			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
+		}
+		if obj != nil {
+			logger.Log("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+			continue
+		}
+
+		// check if oid already committed to git
 		// TODO: need to determine how to manage indexd file name
 		// right now, chooses the path of the first committed copy or
 		// if there's multiple copies in one commit, the first occurrence from ls-files
@@ -104,9 +119,10 @@ func UpdateDrsObjects() error {
 			return fmt.Errorf("Staged file %s is not cached. Please unstage the file, then git add the file again", file.Name)
 		}
 
-		// FIXME: do we want to hash this with the project ID instead of the repoName?
-		// TODO: determine git to gen3 project hierarchy mapping
-		drsId := DrsUUID(repoName, file.Oid)
+		// if file is in cache, hasn't been committted to git or pushed to indexd,
+		// create a local DRS object for it
+		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
+		drsId := DrsUUID(repoName, file.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
 		logger.Log("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
@@ -156,18 +172,14 @@ func UpdateDrsObjects() error {
 		logger.Log("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
 
 		// write drs objects to DRS_OBJS_PATH
+		if err != nil {
+			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
+		}
 		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
 		logger.Log("Created %s for file %s", drsObjPath, file.Name)
-
-		// stage the object file
-		cmd = exec.Command("git", "add", drsObjPath)
-		_, err = cmd.Output()
-		if err != nil {
-			return fmt.Errorf("error adding %s to git: %v", drsObjPath, err)
-		}
 	}
 
 	return nil

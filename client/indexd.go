@@ -31,13 +31,14 @@ type IndexDClient struct {
 // CLIENT METHODS //
 ////////////////////
 
+// load repo-level config and return a new IndexDClient
 func NewIndexDClient() (ObjectStoreClient, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	// get the gen3Profile and baseURL
+	// get the gen3Profile and endpoint
 	profile := cfg.Gen3Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
@@ -76,31 +77,19 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	records, err := cl.queryIndexdByHash("sha256", oid)
-	if err != nil {
-		myLogger.Log(fmt.Sprintf("Error getting DRS info for OID %s: %v", oid, err))
-		// create failure message and send it back
-		return &drs.AccessURL{}, fmt.Errorf("Error retrieving DRS info: " + err.Error())
-	}
-
-	if len(records.Records) != 1 {
-		myLogger.Log(fmt.Sprintf("Error: expected 1 record for OID %s, got %d records", oid, len(records.Records)))
-		myLogger.Log(fmt.Sprintf("Records: %v", records.Records))
-		return nil, fmt.Errorf("expected 1 record for OID %s, got %d records", oid, len(records.Records))
-	}
-	indexdObj := records.Records[0]
+	drsObj, err := cl.GetObjectByHash("sha256", oid)
 
 	// download file using the DRS object
-	myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", oid, indexdObj))
+	myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", oid, drsObj))
 
 	// FIXME: generalize access ID method
 	// naively get access ID from splitting first path into :
-	accessId := strings.Split(indexdObj.URLs[0], ":")[0]
-	myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, indexdObj.FileName))
+	accessId := drsObj.AccessMethods[0].AccessID
+	myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, drsObj.Name))
 
 	// get file from indexd
 	a := *cl.base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", indexdObj.Did, "access", accessId)
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
 	myLogger.Log("using endpoint: %s\n", a.String())
 
@@ -140,41 +129,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	myLogger.Log("unmarshaled response into DRS AccessURL")
 
 	return &accessUrl, nil
-}
-
-func DownloadSignedUrl(signedURL string, dstPath string) error {
-	// Download the file using the signed URL
-	fileResponse, err := http.Get(signedURL)
-	if err != nil {
-		return err
-	}
-	defer fileResponse.Body.Close()
-
-	// Check if the response status is OK
-	if fileResponse.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
-	}
-
-	// Create the destination directory if it doesn't exist
-	err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
-	if err != nil {
-		return err
-	}
-
-	// Create the destination file
-	dstFile, err := os.Create(dstPath)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	// Write the file content to the destination file
-	_, err = io.Copy(dstFile, fileResponse.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // RegisterFile implements ObjectStoreClient.
@@ -244,11 +198,17 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
 	}
 
+	// if all successful, remove temp DRS object
+	drsPath, err := GetObjectPath(DRS_OBJS_PATH, oid)
+	if err == nil {
+		_ = os.Remove(drsPath)
+	}
+
 	// return
 	return drsObj, nil
 }
 
-func (cl *IndexDClient) GetDRSObject(id string) (*drs.DRSObject, error) {
+func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id)
@@ -296,6 +256,8 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	return nil
 }
 
+// given oid, uses saved indexd object
+// and implements /index/index POST
 func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.DRSObject, error) {
 	// (get indexd object using drs map)
 	indexdObj, err := DrsInfoFromOid(oid)
@@ -356,7 +318,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	myLogger.Log("POST successful: %s", response.Status)
 
 	// query and return DRS object
-	drsObj, err := cl.GetDRSObject(indexdObj.Did)
+	drsObj, err := cl.GetObject(indexdObj.Did)
 	if err != nil {
 		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
 	}
@@ -364,8 +326,9 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	return drsObj, nil
 }
 
+// implements /index{did}?rev={rev} DELETE
 func (cl *IndexDClient) deleteIndexdRecord(did string) error {
-	// get the indexd record, can't use GetDRSObject cause the DRS object doesn't contain the rev
+	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "index", did)
 
@@ -418,27 +381,79 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 	return nil
 }
 
-func (cl *IndexDClient) queryIndexdByHash(hashType string, hash string) (ListRecords, error) {
+// downloads a file to a specified path using a signed URL
+func DownloadSignedUrl(signedURL string, dstPath string) error {
+	// Download the file using the signed URL
+	fileResponse, err := http.Get(signedURL)
+	if err != nil {
+		return err
+	}
+	defer fileResponse.Body.Close()
+
+	// Check if the response status is OK
+	if fileResponse.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
+	}
+
+	// Create the destination directory if it doesn't exist
+	err = os.MkdirAll(filepath.Dir(dstPath), os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	// Create the destination file
+	dstFile, err := os.Create(dstPath)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	// Write the file content to the destination file
+	_, err = io.Copy(dstFile, fileResponse.Body)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// implements /index/index?hash={hashType}:{hash} GET
+func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSObject, error) {
 	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
 
 	// get
 	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base, hashType, hash)
 	resp, err := http.Get(url)
 	if err != nil {
-		return ListRecords{}, fmt.Errorf("error querying index for hash (%s:%s): %v", hashType, hash, err)
+		return nil, fmt.Errorf("error querying index for hash (%s:%s): %v", hashType, hash, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return ListRecords{}, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
+		return nil, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
 	}
 
 	records := ListRecords{}
 	err = json.Unmarshal(body, &records)
 	if err != nil {
-		return ListRecords{}, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
+		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
 
-	return records, nil
+	if err != nil {
+		return nil, fmt.Errorf("Error getting DRS info for OID  (%s:%s): %v", hashType, hash, err)
+	}
+
+	if len(records.Records) > 1 {
+		return nil, fmt.Errorf("expected at most 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+	}
+	// if no records found, return nil to handle in caller
+	if len(records.Records) == 0 {
+		return nil, nil
+	}
+	drsId := records.Records[0].Did
+
+	drsObj, err := cl.GetObject(drsId)
+
+	return drsObj, nil
 }

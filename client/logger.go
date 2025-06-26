@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 // Logger wraps a log.Logger and the file it writes to.
@@ -15,7 +16,7 @@ type Logger struct {
 // NewLogger opens the log file and returns a Logger.
 func NewLogger(filename string) (*Logger, error) {
 	if filename == "" {
-		filename = "transfer.log"
+		filename = filepath.Join(DRS_DIR, "transfer.log")
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

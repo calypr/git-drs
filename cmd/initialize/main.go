@@ -138,6 +138,8 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 		}
 		_, _ = w.WriteString(l)
 	}
+	// Always end with a trailing newline
+	_, _ = w.WriteString("\n")
 	if err := w.Flush(); err != nil {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}

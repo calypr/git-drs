@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/bmeg/git-drs/cmd/download"
 	"github.com/bmeg/git-drs/cmd/initialize"
+	"github.com/bmeg/git-drs/cmd/list"
 	"github.com/bmeg/git-drs/cmd/precommit"
 	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/bmeg/git-drs/cmd/transfer"
@@ -25,5 +26,6 @@ func init() {
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
+	RootCmd.AddCommand(list.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 }

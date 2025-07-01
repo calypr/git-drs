@@ -238,6 +238,51 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	return &out, nil
 }
 
+func (cl *IndexDClient) ListObjects() (chan *drs.DRSObject, error) {
+	myLogger, err := NewLogger("")
+	if err != nil {
+		return nil, err
+	}
+
+	a := *cl.base
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
+
+	req, err := http.NewRequest("GET", a.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan *drs.DRSObject, 10)
+
+	go func() {
+		defer close(out)
+		client := &http.Client{}
+		response, err := client.Do(req)
+		if err != nil {
+			myLogger.Log("error: %s", err)
+			return
+		}
+		defer response.Body.Close()
+
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			myLogger.Log("error: %s", err)
+			return
+		}
+
+		page := &drs.DRSPage{}
+		err = json.Unmarshal(body, &page)
+		if err != nil {
+			myLogger.Log("error: %s", err)
+			return
+		}
+		for _, elem := range page.DRSObjects {
+			out <- &elem
+		}
+	}()
+	return out, nil
+}
+
 /////////////
 // HELPERS //
 /////////////

@@ -247,37 +247,60 @@ func (cl *IndexDClient) ListObjects() (chan *drs.DRSObject, error) {
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
-	req, err := http.NewRequest("GET", a.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
 	out := make(chan *drs.DRSObject, 10)
+
+	LIMIT := 50
+	pageNum := 0
 
 	go func() {
 		defer close(out)
-		client := &http.Client{}
-		response, err := client.Do(req)
-		if err != nil {
-			myLogger.Log("error: %s", err)
-			return
-		}
-		defer response.Body.Close()
+		active := true
+		for active {
+			req, err := http.NewRequest("GET", a.String(), nil)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				return
+			}
+			q := req.URL.Query()
+			q.Add("limit", fmt.Sprintf("%d", LIMIT))
+			q.Add("page", fmt.Sprintf("%d", pageNum))
+			req.URL.RawQuery = q.Encode()
+			//fmt.Printf("query: %s\n", req.URL)
+			err = addGen3AuthHeader(req, cl.profile)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				return
+			}
 
-		body, err := io.ReadAll(response.Body)
-		if err != nil {
-			myLogger.Log("error: %s", err)
-			return
-		}
+			client := &http.Client{}
+			response, err := client.Do(req)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				return
+			}
+			defer response.Body.Close()
 
-		page := &drs.DRSPage{}
-		err = json.Unmarshal(body, &page)
-		if err != nil {
-			myLogger.Log("error: %s", err)
-			return
-		}
-		for _, elem := range page.DRSObjects {
-			out <- &elem
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				return
+			}
+
+			//fmt.Printf("%s\n", body)
+
+			page := &drs.DRSPage{}
+			err = json.Unmarshal(body, &page)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				return
+			}
+			for _, elem := range page.DRSObjects {
+				out <- &elem
+			}
+			if len(page.DRSObjects) == 0 {
+				active = false
+			}
+			pageNum++
 		}
 	}()
 	return out, nil

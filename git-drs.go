@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"os"
 
 	"github.com/bmeg/git-drs/cmd"
@@ -9,7 +9,7 @@ import (
 
 func main() {
 	if err := cmd.RootCmd.Execute(); err != nil {
-		fmt.Println("Error:", err.Error())
+		log.Println("Error:", err.Error())
 		os.Exit(1)
 	}
 }

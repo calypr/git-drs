@@ -51,9 +51,9 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := cfg.Gen3Project
+	projectId := cfg.Project
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drsconfig")
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
 	}
 
 	bucketName := cfg.Gen3Bucket

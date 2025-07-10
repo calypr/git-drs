@@ -155,10 +155,10 @@ func UpdateDrsObjects() error {
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
 
 		// create authz string from profile
-		if !strings.Contains(cfg.Gen3Project, "-") {
-			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", cfg.Gen3Project)
+		if !strings.Contains(cfg.Project, "-") {
+			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", cfg.Project)
 		}
-		projectIdArr := strings.SplitN(cfg.Gen3Project, "-", 2)
+		projectIdArr := strings.SplitN(cfg.Project, "-", 2)
 		authzStr := "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1]
 
 		// create IndexdRecord

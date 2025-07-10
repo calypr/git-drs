@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"github.com/bmeg/git-drs/cmd/addref"
+	"github.com/bmeg/git-drs/cmd/cache"
 	"github.com/bmeg/git-drs/cmd/download"
 	"github.com/bmeg/git-drs/cmd/initialize"
 	"github.com/bmeg/git-drs/cmd/list"
 	"github.com/bmeg/git-drs/cmd/precommit"
 	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/bmeg/git-drs/cmd/transfer"
+	"github.com/bmeg/git-drs/cmd/transferref"
 	"github.com/bmeg/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +25,8 @@ var RootCmd = &cobra.Command{
 }
 
 func init() {
+	RootCmd.AddCommand(addref.Cmd)
+	RootCmd.AddCommand(cache.Cmd)
 	RootCmd.AddCommand(download.Cmd)
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(precommit.Cmd)
@@ -29,6 +34,7 @@ func init() {
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(version.Cmd)
+	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

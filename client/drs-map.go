@@ -172,9 +172,6 @@ func UpdateDrsObjects() error {
 		logger.Log("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
 
 		// write drs objects to DRS_OBJS_PATH
-		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
-		}
 		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)

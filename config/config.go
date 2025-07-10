@@ -16,7 +16,7 @@ type Server struct {
 
 type Config struct {
 	Gen3Profile string `json:"gen3Profile"`
-	Gen3Project string `json:"gen3Project"`
+	Project     string `json:"project"`
 	Gen3Bucket  string `json:"gen3Bucket"`
 }
 

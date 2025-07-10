@@ -67,9 +67,9 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := cfg.Gen3Project
+	projectId := cfg.Project
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
 	}
 
 	bucketName := cfg.Gen3Bucket
@@ -582,11 +582,11 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 
 	// if more than one record found, write it to log
 	if len(records.Records) > 1 {
-		myLogger.Log("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+		cl.logger.Logf("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}
 
 	drsId := records.Records[0].Did
-	myLogger.Log("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
+	cl.logger.Logf("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
 
 	drsObj, err := cl.GetObject(drsId)
 

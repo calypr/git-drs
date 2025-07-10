@@ -62,8 +62,8 @@ When creating a repo from scratch, make sure to create a configuration file at  
 ```
 
 - `gen3Profile` stores the name of the profile you specified in `git drs init` (eg the  `<data-commons-name>` above)
-- `gen3Project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
-- `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
+- `project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
+- `bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
 
 
 ### Quick Start

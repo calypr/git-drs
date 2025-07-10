@@ -18,6 +18,7 @@ var (
 	profile     string
 	credFile    string
 	apiEndpoint string
+	anvilMode   bool
 )
 
 // Cmd line declaration
@@ -34,28 +35,31 @@ var Cmd = &cobra.Command{
 		}
 		defer logg.Close()
 
+		// if anvilMode is not set, ensure all other flags are provided
+		if !anvilMode {
+			if profile == "" || credFile == "" || apiEndpoint == "" {
+				return fmt.Errorf("Error: --profile, --cred, and --apiendpoint are required for gen3 setup. See 'git drs init --help' for details.\n")
+			}
+		}
+
 		// add .drs/objects to .gitignore if not already present
 		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
 			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
-		// Create .git/hooks/pre-commit file
-		hooksDir := filepath.Join(".git", "hooks")
-		preCommitPath := filepath.Join(hooksDir, "pre-commit")
-		if err := os.MkdirAll(hooksDir, 0755); err != nil {
-			return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
-		}
-		hookContent := "#!/bin/sh\ngit drs precommit\n"
-		if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
-			return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
+		// set git config so git lfs uses either anvil/gen3 custom transfer agent
+		var cmdName string
+		if anvilMode {
+			cmdName = "transfer-ref"
+		} else {
+			cmdName = "transfer"
 		}
 
-		// set git config so git lfs uses gen3 custom transfer agent
 		configs := [][]string{
 			{"lfs.standalonetransferagent", "gen3"},
 			{"lfs.customtransfer.gen3.path", "git-drs"},
-			{"lfs.customtransfer.gen3.args", "transfer"},
 			{"lfs.customtransfer.gen3.concurrent", "false"},
+			{"lfs.customtransfer.gen3.args", cmdName},
 		}
 		for _, cfg := range configs {
 			cmd := exec.Command("git", "config", cfg[0], cfg[1])
@@ -64,24 +68,36 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		// Call jwt.UpdateConfig with CLI parameters
-		err = jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
-		if err != nil {
-			return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
-		}
-		logg.Log("Git DRS initialized successfully!")
+		// do gen3-specific setup
+		if !anvilMode {
+			// Create .git/hooks/pre-commit file
+			hooksDir := filepath.Join(".git", "hooks")
+			preCommitPath := filepath.Join(hooksDir, "pre-commit")
+			if err := os.MkdirAll(hooksDir, 0755); err != nil {
+				return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
+			}
+			hookContent := "#!/bin/sh\ngit drs precommit\n"
+			if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
+				return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
+			}
 
+			// Call jwt.UpdateConfig with CLI parameters
+			err := jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
+			if err != nil {
+				return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
+			}
+		}
+
+		logg.Log("Git DRS initialized successfully!")
 		return nil
 	},
 }
 
 func init() {
+	Cmd.Flags().BoolVar(&anvilMode, "anvil", false, "Use anvil mode for initialization")
 	Cmd.Flags().StringVar(&profile, "profile", "", "Specify the profile to use")
-	Cmd.MarkFlagRequired("profile")
 	Cmd.Flags().StringVar(&credFile, "cred", "", "Specify the credential file that you want to use")
-	Cmd.MarkFlagRequired("cred")
 	Cmd.Flags().StringVar(&apiEndpoint, "apiendpoint", "", "Specify the API endpoint of the data commons")
-	Cmd.MarkFlagRequired("apiendpoint")
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.

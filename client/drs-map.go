@@ -144,7 +144,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
 
-		authzStr, err := utils.ProjectToResource(cfg.Gen3Project)
+		authzStr, err := utils.ProjectToResource(cfg.Project)
 		if err != nil {
 			return err
 		}

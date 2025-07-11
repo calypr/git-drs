@@ -197,7 +197,7 @@ func downloadFile(sha string) (string, error) {
 	// download file, make sure its name is the sha
 	dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, sha)
 	dstDir := filepath.Dir(dstPath)
-	cmd := exec.Command("drs_download", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
+	cmd := exec.Command("drs_downloader", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
 
 	// write command to log file
 	logFile.WriteString(fmt.Sprintf("Running command: %s\n", cmd.String()))

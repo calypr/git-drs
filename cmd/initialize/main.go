@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bmeg/git-drs/client"
+	"github.com/bmeg/git-drs/utils"
 	"github.com/spf13/cobra"
 	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )
@@ -27,6 +28,12 @@ var Cmd = &cobra.Command{
 	Long:  "initialize hooks, config required for git-drs",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// check if .git dir exists to ensure you're in a git repository
+		_, err := utils.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
+		}
+
 		// if anvilMode is not set, ensure all other flags are provided
 		if !anvilMode {
 			if profile == "" || credFile == "" || apiEndpoint == "" {
@@ -61,8 +68,16 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		// do gen3-specific setup
-		if !anvilMode {
+		// do platform-specific setup
+		if anvilMode { // anvil setup
+			// ensure that the custom transfer is skipped during git push
+			cmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
+			if err := cmd.Run(); err != nil {
+				fmt.Println("[ERROR] unable to set git config lfs.allowincompletepush true:", err)
+				return err
+			}
+		}
+		if !anvilMode { // gen3 setup
 			// Create .git/hooks/pre-commit file
 			hooksDir := filepath.Join(".git", "hooks")
 			preCommitPath := filepath.Join(hooksDir, "pre-commit")

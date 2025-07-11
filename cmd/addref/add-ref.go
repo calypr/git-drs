@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/bmeg/git-drs/client"
@@ -22,15 +23,14 @@ import (
 var endpoint string
 
 var Cmd = &cobra.Command{
-	Use:   "add-ref <drs_uri> <sha256>",
-	Short: "Add a reference to an existing DRS object via URI and sha256",
-	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Pass the sha256 checksum if not in drs object",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add-ref <drs_uri>",
+	Short: "Add a reference to an existing DRS object via URI",
+	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Requires that the sha256 of the file is already in the cache",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		drsUri := args[0]
-		shaVal := args[1]
 
-		fmt.Printf("Adding reference to DRS object %s with sha256 %s\n", drsUri, shaVal)
+		fmt.Printf("Adding reference to DRS object %s\n", drsUri)
 		// setup logging to file for debugging
 		logger, err := client.NewLogger(utils.DRS_LOG_FILE)
 		if err != nil {
@@ -47,7 +47,18 @@ var Cmd = &cobra.Command{
 		if drsObj == nil {
 			return errors.New("no DRS object found")
 		}
-		logger.Log(fmt.Sprintf("Fetched DRS object: %+v", drsObj))
+		logger.Log("Fetched DRS object: %+v", drsObj)
+
+		// get sha256 for the drs ID from the cache
+		shaPath, err := utils.CreateCustomPath(utils.DRS_REF_DIR, drsObj.Id)
+		shaFile, err := os.ReadFile(shaPath)
+		if err != nil {
+			return fmt.Errorf("failed to read sha file at %s: %w", shaPath, err)
+		}
+		shaVal := strings.TrimSpace(string(shaFile))
+		if shaVal == "" {
+			return fmt.Errorf("no sha256 found in file at %s", shaPath)
+		}
 
 		// add the sha from the cache to the drsObj checksums
 		sha := drs.Checksum{
@@ -62,7 +73,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logger.Log(fmt.Sprintf("Created LFS pointer file at %s", drsObj.Name))
+		logger.Log("Created LFS pointer file at %s", drsObj.Name)
 
 		// add filename for lfs tracking
 		err = exec.Command("git", "lfs", "track", drsObj.Name).Run()
@@ -74,14 +85,14 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error running git add .gitattributes: %v", err)
 		}
-		logger.Log(fmt.Sprintf("Tracked %s with git lfs", drsObj.Name))
+		logger.Log("Tracked %s with git lfs", drsObj.Name)
 
 		// git add the pointer file
 		err = exec.Command("git", "add", drsObj.Name).Run()
 		if err != nil {
 			return fmt.Errorf("error running git add: %v", err)
 		}
-		logger.Log(fmt.Sprintf("Added %s to git", drsObj.Name))
+		logger.Log("Added %s to git", drsObj.Name)
 
 		return nil
 	},

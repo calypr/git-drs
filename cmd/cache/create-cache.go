@@ -1,11 +1,11 @@
 package cache
 
 import (
-	"bufio"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/bmeg/git-drs/client"
 	"github.com/bmeg/git-drs/utils"
@@ -27,22 +27,43 @@ var Cmd = &cobra.Command{
 		}
 		defer f.Close()
 
-		// for each pair of <drs_uri> <sha256> in the file, create a file named by sha256
-		scanner := bufio.NewScanner(f)
-		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Printf("Processing line: %s\n", line)
-			// Expecting tab-separated: <sha256>\t<drs_uri>
-			parts := strings.Fields(line)
-			if len(parts) != 2 {
-				fmt.Printf("Skipping malformed line (only %d parts): %s\n", len(parts), line)
-				continue // skip malformed lines
+		// Use encoding/csv with tab delimiter for TSV
+		r := csv.NewReader(f)
+		r.Comma = '\t'
+
+		// Read header
+		header, err := r.Read()
+		if err != nil {
+			return fmt.Errorf("failed to read header: %w", err)
+		}
+
+		// Map column names to indices
+		colIdx := map[string]int{}
+		for i, col := range header {
+			colIdx[col] = i
+		}
+
+		// Check required columns
+		shaIdx, shaOk := colIdx["files.sha256"]
+		drsIdx, drsOk := colIdx["files.drs_uri"]
+		if !shaOk || !drsOk {
+			return fmt.Errorf("manifest must contain 'files.sha256' and 'files.drs_uri' columns")
+		}
+
+		// Read each row
+		for {
+			row, err := r.Read()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				return fmt.Errorf("error reading manifest file: %w", err)
 			}
-			drsURI := parts[0]
-			sha := parts[1]
+			sha := row[shaIdx]
+			drsURI := row[drsIdx]
 			fmt.Printf("Indexing DRS URI %s with sha256 %s\n", drsURI, sha)
 
-			// write a header "files.drs_uri" followed by drs ID to the file
+			// create sha to DRS URI mapping
 			objPath, err := client.GetObjectPath(utils.DRS_REF_DIR, sha)
 			if err != nil {
 				return fmt.Errorf("failed to get object path for %s: %w", sha, err)
@@ -56,9 +77,18 @@ var Cmd = &cobra.Command{
 			if err := os.WriteFile(objPath, []byte(contents), 0644); err != nil {
 				return fmt.Errorf("failed to write DRS URI for %s: %w", sha, err)
 			}
-		}
-		if err := scanner.Err(); err != nil {
-			return fmt.Errorf("error reading manifest file: %w", err)
+
+			// Split DRS URI into a custom path and write sha to custom path
+			customPath, err := utils.CreateCustomPath(utils.DRS_REF_DIR, drsURI)
+			if err != nil {
+				return fmt.Errorf("failed to create custom path for %s: %w", drsURI, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(customPath), 0755); err != nil {
+				return fmt.Errorf("failed to create dir for %s: %w", customPath, err)
+			}
+			if err := os.WriteFile(customPath, []byte(sha), 0644); err != nil {
+				return fmt.Errorf("failed to write sha for %s: %w", drsURI, err)
+			}
 		}
 
 		fmt.Printf("Cache created in %s\n", utils.DRS_REF_DIR)

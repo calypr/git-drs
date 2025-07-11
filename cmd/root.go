@@ -6,6 +6,7 @@ import (
 	"github.com/bmeg/git-drs/cmd/precommit"
 	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/bmeg/git-drs/cmd/transfer"
+	"github.com/bmeg/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
 
@@ -25,5 +26,6 @@ func init() {
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
+	RootCmd.AddCommand(version.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 }

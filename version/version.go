@@ -9,7 +9,7 @@ var (
 	GitBranch   = ""
 	GitUpstream = ""
 	BuildDate   = ""
-	Version     = "unknown"
+	Version     = ""
 )
 
 var tpl = `git commit: %s

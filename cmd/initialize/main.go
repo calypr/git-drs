@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/data-client/data-client/jwt"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -34,6 +35,12 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		defer logg.Close()
+
+		// check if .git dir exists to ensure you're in a git repository
+		_, err = utils.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
+		}
 
 		// if anvilMode is not set, ensure all other flags are provided
 		if !anvilMode {
@@ -68,8 +75,16 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		// do gen3-specific setup
-		if !anvilMode {
+		// do platform-specific setup
+		if anvilMode { // anvil setup
+			// ensure that the custom transfer is skipped during git push
+			cmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
+			if err := cmd.Run(); err != nil {
+				fmt.Println("[ERROR] unable to set git config lfs.allowincompletepush true:", err)
+				return err
+			}
+		}
+		if !anvilMode { // gen3 setup
 			// Create .git/hooks/pre-commit file
 			hooksDir := filepath.Join(".git", "hooks")
 			preCommitPath := filepath.Join(hooksDir, "pre-commit")

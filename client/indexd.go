@@ -453,6 +453,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	}
 	req.Header.Set("accept", "application/json")
 
+	// run request and do checks
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -460,9 +461,14 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	}
 	defer resp.Body.Close()
 
+	// unmarshal response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to query indexd for %s:%s. Error: %s, %s", hashType, hash, resp.Status, string(body))
 	}
 
 	records := ListRecords{}
@@ -470,13 +476,15 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
+	myLogger.Log("records: %+v", records)
 
+	// if one record found, return it
 	if len(records.Records) > 1 {
 		return nil, fmt.Errorf("expected at most 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}
 	// if no records found, return nil to handle in caller
 	if len(records.Records) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("no records found for OID %s:%s", hashType, hash)
 	}
 	drsId := records.Records[0].Did
 

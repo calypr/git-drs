@@ -66,7 +66,6 @@ var Cmd = &cobra.Command{
 			Type:     "sha256",
 		}
 		drsObj.Checksums = append(drsObj.Checksums, sha)
-		fmt.Printf("Added sha to DRS object")
 
 		// create an LFS pointer file at drsObj.Name
 		err = CreateLfsPointer(drsObj)
@@ -94,6 +93,7 @@ var Cmd = &cobra.Command{
 		}
 		logger.Log("Added %s to git", drsObj.Name)
 
+		fmt.Printf("Successfully added reference to DRS object %s as file %s\n", drsObj.Id, drsObj.Name)
 		return nil
 	},
 }

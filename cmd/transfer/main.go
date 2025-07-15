@@ -234,7 +234,7 @@ func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
 		Event: "complete",
 		Oid:   oid,
 		Error: Error{
-			Code:    500,
+			Code:    1,
 			Message: errMsg,
 		},
 	}

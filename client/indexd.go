@@ -484,7 +484,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	}
 	// if no records found, return nil to handle in caller
 	if len(records.Records) == 0 {
-		return nil, fmt.Errorf("no records found for OID %s:%s", hashType, hash)
+		return nil, nil
 	}
 	drsId := records.Records[0].Did
 

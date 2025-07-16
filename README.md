@@ -74,14 +74,14 @@ When creating a repo from scratch, make sure to create a configuration file at  
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 
-**Track a Specific File Type**
+#### Track a Specific File Type
 Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
 ```
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
-**Push a File***
+#### Push a File
 ```
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
@@ -98,7 +98,7 @@ git commit -m "new bam file"
 git push
 ```
 
-**Pull Files**
+#### Pull Files
 LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
 
 ```

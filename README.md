@@ -36,7 +36,7 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
     # make the executable accessible
     export PATH=$PATH:$(pwd)
     ```
-5. Clone an existing DRS repo. If you don't already have one set up see "Setting up your repo"
+5. Clone an existing DRS repo. If you don't already have one set up see "Project Setup"
     ```
     cd ..
 
@@ -56,7 +56,7 @@ When you do `git drs init`, there are a couple things already set up for you...
 - Git settings to sync up the git with gen3 services
 - a gen3 profile is created for you so that you can access gen3
 
-In your own repo, all you need to setup is a .drsconfig file. Once you have created a Git repo, create a `.drs/config` with the following structure
+When creating a repo from scratch, make sure to create a configuration file at  `.drs/config` with the following structure
 
 ```
 {
@@ -65,6 +65,7 @@ In your own repo, all you need to setup is a .drsconfig file. Once you have crea
   "gen3Bucket": "<bucket-name-here>"
 }
 ```
+
 - `gen3Profile` stores the name of the profile you specified in `git drs init` (eg the  `<data-commons-name>` above)
 - `gen3Project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
 - `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator

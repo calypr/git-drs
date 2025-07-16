@@ -51,7 +51,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		if !outJson {
-			fmt.Printf("%-55s\t%15s\t%-45s\t%s\n", "URL", "Size", "Checksum", "Name")
+			fmt.Printf("%-55s\t%-15s\t%-75s\t%s\n", "URL", "Size", "Checksum", "Name")
 		}
 		for obj := range objChan {
 			if outJson {
@@ -61,7 +61,7 @@ var Cmd = &cobra.Command{
 				}
 				fmt.Printf("%s\n", string(out))
 			} else {
-				fmt.Printf("%s\t%15d\t%-45s\t%s\n", obj.SelfURL, obj.Size, getCheckSumStr(*obj), obj.Name)
+				fmt.Printf("%s\t%-15d\t%-75s\t%s\n", obj.SelfURL, obj.Size, getCheckSumStr(*obj), obj.Name)
 			}
 
 		}

@@ -111,3 +111,8 @@ git lfs pull -I "*.bam"
 # Pull all non-localized files
 git lfs pull
 ```
+
+
+### Troubleshooting
+
+- To see the logs for a given file transfer, navigate to `.drs` and view the log files

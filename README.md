@@ -71,21 +71,43 @@ When creating a repo from scratch, make sure to create a configuration file at  
 - `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
 
 
-### Quick Start Commands
+### Quick Start
+When in doubt, use the `--help` flag to get more info about the commands
 
-**Track Specific File Types**
+**Track a Specific File Type**
 Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
 ```
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
+**Push a File***
+```
+# if the file type is not already being tracked, track the file
+git lfs track /path/to/bam
+git add .gitattributes
+
+# add the file to git
+git add /path/to/file.bam
+
+# check that file.bam is being tracked by LFS
+git lfs ls-files
+
+# commit + push!
+git commit -m "new bam file"
+git push
+```
+
 **Pull Files**
-Pull a single file
+LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
+
 ```
+# Pull a single file
 git lfs pull -I /path/to/file
-```
-Pull all non-localized files
-```
+
+# Pull all bams in the top-level directory
+git lfs pull -I "*.bam"
+
+# Pull all non-localized files
 git lfs pull
 ```

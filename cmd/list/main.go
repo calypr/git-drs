@@ -40,7 +40,7 @@ func getCheckSumStr(obj drs.DRSObject) string {
 var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List DRS entities from server",
-	Args:  cobra.MinimumNArgs(0),
+	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := client.NewIndexDClient()
 		if err != nil {
@@ -49,6 +49,9 @@ var Cmd = &cobra.Command{
 		objChan, err := client.ListObjects()
 		if err != nil {
 			return err
+		}
+		if !outJson {
+			fmt.Printf("%-55s\t%15s\t%-45s\t%s\n", "URL", "Size", "Checksum", "Name")
 		}
 		for obj := range objChan {
 			if outJson {
@@ -67,5 +70,5 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Specify the profile to use")
+	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

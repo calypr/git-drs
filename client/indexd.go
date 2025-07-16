@@ -288,6 +288,11 @@ func (cl *IndexDClient) ListObjects() (chan *drs.DRSObject, error) {
 				myLogger.Log("error: %s", err)
 				return
 			}
+			if response.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(response.Body)
+				myLogger.Log("network error: %s", body)
+				return
+			}
 			defer response.Body.Close()
 
 			body, err := io.ReadAll(response.Body)

@@ -14,8 +14,8 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:   "create-cache <manifest.tsv>",
-	Short: "create a cache mapping a sha256 back to a DRS URI by file",
-	Long:  "create a cache mapping a sha256 back to a DRS URI using a list of DRS URIs and their sha256s",
+	Short: "create a local version of a file manifest containing DRS URIs",
+	Long:  "create a local version of a file manifest containing DRS URIs. Enables LFS to map its file object id (sha256) back to a DRS URI by file",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		file := args[0]

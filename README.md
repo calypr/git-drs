@@ -52,9 +52,8 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
 ### Project Setup
 
 When you do `git drs init`, there are a couple things already set up for you...
-- `.drs` directory to automatically store any background files and logs needed during execution
-- Git settings to sync up the git with gen3 services
-- a gen3 profile is created for you so that you can access gen3
+- Git is configured to use with Git DRS
+- The gen3 credentials you provided are registered under the profile name specified
 
 When creating a repo from scratch, make sure to create a configuration file at  `.drs/config` with the following structure
 

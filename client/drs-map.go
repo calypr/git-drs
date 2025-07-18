@@ -49,6 +49,9 @@ func UpdateDrsObjects() error {
 
 	// init indexd client
 	indexdClient, err := NewIndexDClient()
+	if err != nil {
+		return fmt.Errorf("error initializing indexd with credentials: %v", err)
+	}
 
 	// get all LFS files' info using json
 	// TODO: use git-lfs internally instead of exec? (eg git.GetTrackedFiles)

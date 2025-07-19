@@ -30,4 +30,5 @@ func init() {
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
+	RootCmd.SilenceUsage = true
 }

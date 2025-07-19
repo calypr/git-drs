@@ -7,7 +7,7 @@ type ObjectStoreClient interface {
 	// corresponds to /ga4gh/drs/v1/objects
 	GetObject(id string) (*drs.DRSObject, error)
 
-	ListObjects() (chan *drs.DRSObject, error)
+	ListObjects() (chan drs.DRSObjectResult, error)
 
 	// given a hash, get the object describing it
 	// no corresponding DRS endpoint exists, so this is custom code

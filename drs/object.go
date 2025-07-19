@@ -31,10 +31,15 @@ type DRSPage struct {
 	DRSObjects []DRSObject `json:"drs_objects"`
 }
 
+type DRSObjectResult struct {
+	Object *DRSObject
+	Error  error
+}
+
 type DRSObject struct {
 	Id            string         `json:"id"`
 	Name          string         `json:"name"`
-	SelfURL       string         `json:"self_uri,omitempty"`
+	SelfURI       string         `json:"self_uri,omitempty"`
 	Size          int64          `json:"size"`
 	CreatedTime   string         `json:"created_time,omitempty"`
 	UpdatedTime   string         `json:"updated_time,omitempty"`

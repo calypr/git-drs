@@ -513,7 +513,7 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 // implements /index/index?hash={hashType}:{hash} GET
 func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSObject, error) {
 
-	// TODO: remove setup logging
+	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
@@ -559,7 +559,6 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
-	myLogger.Log("records: %+v", records)
 
 	// if one record found, return it
 	if len(records.Records) > 1 {

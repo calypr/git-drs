@@ -42,13 +42,16 @@ func UpdateDrsObjects() error {
 	// init logger
 	logger, err := NewLogger("")
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		return fmt.Errorf("Failed to open log file: %v", err)
 	}
 	defer logger.Close()
 	logger.Log("Update to DRS objects started")
 
 	// init indexd client
 	indexdClient, err := NewIndexDClient()
+	if err != nil {
+		return fmt.Errorf("Failed to open log file: %v", err)
+	}
 
 	// get all LFS files' info using json
 	// TODO: use git-lfs internally instead of exec? (eg git.GetTrackedFiles)
@@ -61,15 +64,16 @@ func UpdateDrsObjects() error {
 
 	err = json.Unmarshal(out, &lfsFiles)
 	if err != nil {
+		log.Printf("error unmarshaling git lfs ls-files output: %v", err)
 		return fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
 	}
 
 	// get the name of repository
 	repoName, err := GetRepoNameFromGit()
 	if err != nil {
-		return fmt.Errorf("error: %v", err)
+		return fmt.Errorf("GetRepoNameFromGit: error: %v", err)
 	}
-	logger.Log("Repo Name: %s", repoName)
+	logger.Logf("Repo Name: %s", repoName)
 
 	// get list of staged files as a set
 	stagedFiles, err := getStagedFiles()
@@ -80,7 +84,7 @@ func UpdateDrsObjects() error {
 	for _, file := range stagedFiles {
 		stagedFilesSet[file] = struct{}{}
 	}
-	logger.Log("Creating DRS objects for staged files: %v", stagedFiles)
+	logger.Logf("Creating DRS objects for staged files: %v", stagedFiles)
 
 	// for each LFS file, calculate the DRS ID using repoName and the oid
 	// assumes that the DRS_OBJS_PATH only contains
@@ -97,7 +101,7 @@ func UpdateDrsObjects() error {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 		if obj != nil {
-			logger.Log("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}
 
@@ -110,7 +114,7 @@ func UpdateDrsObjects() error {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Log("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 
@@ -123,7 +127,7 @@ func UpdateDrsObjects() error {
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 		drsId := DrsUUID(repoName, file.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
-		logger.Log("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
+		logger.Logf("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
 		path, err := GetObjectPath(LFS_OBJS_PATH, file.Oid)
@@ -169,14 +173,14 @@ func UpdateDrsObjects() error {
 			// ContentCreatedDate: modDate,
 			// ContentUpdatedDate: modDate,
 		}
-		logger.Log("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
+		logger.Logf("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
 
 		// write drs objects to DRS_OBJS_PATH
 		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
-		logger.Log("Created %s for file %s", drsObjPath, file.Name)
+		logger.Logf("Created %s for file %s", drsObjPath, file.Name)
 	}
 
 	return nil

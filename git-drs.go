@@ -9,7 +9,7 @@ import (
 
 func main() {
 	if err := cmd.RootCmd.Execute(); err != nil {
-		log.Println("Error:", err.Error())
+		log.Println("Root Error:", err.Error())
 		os.Exit(1)
 	}
 }

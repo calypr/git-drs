@@ -26,7 +26,8 @@ var Cmd = &cobra.Command{
 		// set up logger
 		myLogger, err := client.NewLogger("")
 		if err != nil {
-			log.Fatalf("Failed to open log file: %v", err)
+			log.Printf("Failed to open log file: %v", err)
+			return err
 		}
 		defer myLogger.Close()
 
@@ -34,8 +35,7 @@ var Cmd = &cobra.Command{
 
 		err = client.UpdateDrsObjects()
 		if err != nil {
-			fmt.Println("UpdateDrsObjects failed:", err)
-			log.Fatalf("UpdateDrsObjects failed: %v", err)
+			fmt.Println("UpdateDrsObjects failed: hello:", err)
 			return err
 		}
 

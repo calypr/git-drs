@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,8 +27,12 @@ func NewLogger(filename string) (*Logger, error) {
 }
 
 // Log writes a formatted message to the log file.
-func (l *Logger) Log(format string, args ...interface{}) {
-	l.logger.Println(fmt.Sprintf(format, args...))
+func (l *Logger) Log(args ...any) {
+	l.logger.Println(args...)
+}
+
+func (l *Logger) Logf(format string, args ...any) {
+	l.logger.Printf(format, args...)
 }
 
 // Close closes the log file, flushing all writes.

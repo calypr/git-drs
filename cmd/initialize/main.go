@@ -28,20 +28,18 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// add .drs/objects to .gitignore if not already present
 		if err := ensureDrsObjectsIgnore(client.DRS_OBJS_PATH); err != nil {
-			return fmt.Errorf("Error: %v\n", err)
+			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
 		// Create .git/hooks/pre-commit file
 		hooksDir := filepath.Join(".git", "hooks")
 		preCommitPath := filepath.Join(hooksDir, "pre-commit")
 		if err := os.MkdirAll(hooksDir, 0755); err != nil {
-			fmt.Println("[ERROR] unable to create pre-commit hook file:", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
 		}
 		hookContent := "#!/bin/sh\ngit drs precommit\n"
 		if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
-			fmt.Println("[ERROR] unable to write to pre-commit hook:", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 		}
 
 		// set git config so git lfs uses gen3 custom transfer agent
@@ -54,16 +52,14 @@ var Cmd = &cobra.Command{
 		for _, cfg := range configs {
 			cmd := exec.Command("git", "config", cfg[0], cfg[1])
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("Error: unable to set git config %s: %v\n", cfg[0], err)
-				return err
+				return fmt.Errorf("Unable to set git config %s: %v", cfg[0], err)
 			}
 		}
 
 		// Call jwt.UpdateConfig with CLI parameters
 		err := jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
 		if err != nil {
-			fmt.Printf("[ERROR] unable to configure your gen3 profile: %v\n", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
 		}
 		fmt.Println("Git DRS initialized successfully!")
 

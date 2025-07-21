@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -44,7 +43,11 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
 	}
 
-	profileConfig = conf.ParseConfig(profile)
+	profileConfig, err := conf.ParseConfig(profile)
+	if err != nil {
+		return nil, err
+	}
+
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing base URL from profile %s: %v", profile, err)
@@ -69,25 +72,26 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		myLogger.Logf("Failed to open log file: %v", err)
+		return nil, err
 	}
 	defer myLogger.Close()
-	myLogger.Log("requested download of file oid %s", oid)
+	myLogger.Logf("requested download of file oid %s", oid)
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
 	drsObj, err := cl.GetObjectByHash("sha256", oid)
 	if err != nil {
-		myLogger.Log("error getting DRS object for oid %s: %s", oid, err)
+		myLogger.Logf("error getting DRS object for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
 	}
 	if drsObj == nil {
-		myLogger.Log("no DRS object found for oid %s", oid)
+		myLogger.Logf("no DRS object found for oid %s", oid)
 		return nil, fmt.Errorf("no DRS object found for oid %s", oid)
 	}
 
 	// download file using the DRS object
-	myLogger.Log("Downloading file for OID %s from DRS object: %+v", oid, drsObj)
+	myLogger.Logf("Downloading file for OID %s from DRS object: %+v", oid, drsObj)
 
 	// FIXME: generalize access ID method
 	// naively get access ID from splitting first path into :
@@ -98,7 +102,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
-	myLogger.Log("using endpoint: %s\n", a.String())
+	myLogger.Logf("using endpoint: %s\n", a.String())
 	req, err := http.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
@@ -145,15 +149,16 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	myLogger, err := NewLogger("")
 	if err != nil {
 		// Handle error (e.g., print to stderr and exit)
-		log.Fatalf("Failed to open log file: %v", err)
+		myLogger.Logf("Failed to open log file: %v", err)
+		return nil, err
 	}
 	defer myLogger.Close() // Ensures cleanup
-	myLogger.Log("register file started for oid: %s", oid)
+	myLogger.Logf("register file started for oid: %s", oid)
 
 	// create indexd record
 	drsObj, err := cl.registerIndexdRecord(*myLogger, oid)
 	if err != nil {
-		myLogger.Log("error registering indexd record: %s", err)
+		myLogger.Logf("error registering indexd record: %s", err)
 		return nil, fmt.Errorf("error registering indexd record: %v", err)
 	}
 
@@ -162,31 +167,31 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		// delete indexd record if panic
 		if r := recover(); r != nil {
 			// TODO: this panic isn't getting triggered
-			myLogger.Log("panic occurred, cleaning up indexd record for oid %s", oid)
+			myLogger.Logf("panic occurred, cleaning up indexd record for oid %s", oid)
 			// Handle panic
 			cl.deleteIndexdRecord(drsObj.Id)
 			if err != nil {
-				myLogger.Log("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-				myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
-				myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+				myLogger.Logf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
+				myLogger.Logf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+				myLogger.Logf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
 				panic(r)
 			}
-			myLogger.Log("cleaned up indexd record for oid %s", oid)
-			myLogger.Log("exiting: %v", r)
+			myLogger.Logf("cleaned up indexd record for oid %s", oid)
+			myLogger.Logf("exiting: %v", r)
 			panic(r) // re-throw if you want the CLI to still terminate
 		}
 
 		// delete indexd record if error thrown
 		if err != nil {
-			myLogger.Log("registration incomplete, cleaning up indexd record for oid %s", oid)
+			myLogger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.deleteIndexdRecord(drsObj.Id)
 			if err != nil {
-				myLogger.Log("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-				myLogger.Log("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
-				myLogger.Log("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+				myLogger.Logf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
+				myLogger.Logf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+				myLogger.Logf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
 				return
 			}
-			myLogger.Log("cleaned up indexd record for oid %s", oid)
+			myLogger.Logf("cleaned up indexd record for oid %s", oid)
 		}
 	}()
 
@@ -194,12 +199,12 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	// modified from gen3-client/g3cmd/upload-single.go
 	filePath, err := GetObjectPath(LFS_OBJS_PATH, oid)
 	if err != nil {
-		myLogger.Log("error getting object path for oid %s: %s", oid, err)
+		myLogger.Logf("error getting object path for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
 	err = g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
 	if err != nil {
-		myLogger.Log("error uploading file to bucket: %s", err)
+		myLogger.Logf("error uploading file to bucket: %s", err)
 		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
 	}
 
@@ -254,7 +259,10 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
 func addGen3AuthHeader(req *http.Request, profile string) error {
 	// extract accessToken from gen3 profile and insert into header of request
-	profileConfig = conf.ParseConfig(profile)
+	profileConfig, err := conf.ParseConfig(profile)
+	if err != nil {
+		return fmt.Errorf("ParseConfig Err: %s", err)
+	}
 	if profileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")
 	}
@@ -276,7 +284,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	}
 
 	// create indexd object the long way
-	var data map[string]interface{}
+	var data map[string]any
 	var tempIndexdObj, _ = json.Marshal(indexdObj)
 	json.Unmarshal(tempIndexdObj, &data)
 	data["form"] = "object"
@@ -287,7 +295,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 	data["authz"] = []string{authz}
 
 	jsonBytes, _ := json.Marshal(data)
-	myLogger.Log("retrieved IndexdObj: %s", string(jsonBytes))
+	myLogger.Logf("retrieved IndexdObj: %s", string(jsonBytes))
 
 	// register DRS object via /index POST
 	// (setup post request to indexd)
@@ -310,7 +318,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	myLogger.Log("POST request created for indexd: %s", endpt.String())
+	myLogger.Logf("POST request created for indexd: %s", endpt.String())
 
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -325,14 +333,14 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 		body, _ := io.ReadAll(response.Body)
 		return nil, fmt.Errorf("failed to register DRS ID %s: %s", drsId, body)
 	}
-	myLogger.Log("POST successful: %s", response.Status)
+	myLogger.Logf("POST successful: %s", response.Status)
 
 	// query and return DRS object
 	drsObj, err := cl.GetObject(indexdObj.Did)
 	if err != nil {
 		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
 	}
-	myLogger.Log("GET for DRS ID successful: %s", drsObj.Id)
+	myLogger.Logf("GET for DRS ID successful: %s", drsObj.Id)
 	return drsObj, nil
 }
 
@@ -433,7 +441,8 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	// TODO: remove setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		myLogger.Logf("Failed to open log file: %v", err)
+		return nil, err
 	}
 	defer myLogger.Close()
 
@@ -443,9 +452,10 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base.String(), hashType, hash)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		myLogger.Logf("http.NewRequest Error: %s", err)
 		return nil, err
 	}
-	myLogger.Log("GET request created for indexd: %s", url)
+	myLogger.Logf("GET request created for indexd: %s", url)
 
 	err = addGen3AuthHeader(req, cl.profile)
 	if err != nil {
@@ -476,7 +486,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
-	myLogger.Log("records: %+v", records)
+	myLogger.Logf("records: %+v", records)
 
 	// if one record found, return it
 	if len(records.Records) > 1 {

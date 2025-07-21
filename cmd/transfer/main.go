@@ -96,7 +96,8 @@ var Cmd = &cobra.Command{
 		//setup logging to file for debugging
 		myLogger, err := client.NewLogger("")
 		if err != nil {
-			log.Fatalf("Failed to open log file: %v", err)
+			log.Printf("Failed to open log file: %v", err)
+			return err
 		}
 		defer myLogger.Close()
 
@@ -106,22 +107,22 @@ var Cmd = &cobra.Command{
 		encoder := json.NewEncoder(os.Stdout)
 
 		for scanner.Scan() {
-			var msg map[string]interface{}
+			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
-				myLogger.Log(fmt.Sprintf("error decoding JSON: %s", err))
+				myLogger.Logf("error decoding JSON: %s", err)
 				continue
 			}
-			myLogger.Log(fmt.Sprintf("Received message: %s", msg))
+			myLogger.Logf("Received message: %s", msg)
 
 			// Example: handle only "init" event
 			if evt, ok := msg["event"]; ok && evt == "init" {
 				// Log for debugging
-				myLogger.Log(fmt.Sprintf("Handling init: %s", msg))
+				myLogger.Logf("Handling init: %s", msg)
 
 				drsClient, err = client.NewIndexDClient()
 				if err != nil {
-					myLogger.Log(fmt.Sprintf("Error creating indexd client: %s", err))
+					myLogger.Logf("Error creating indexd client: %s", err)
 					continue
 				}
 
@@ -130,7 +131,7 @@ var Cmd = &cobra.Command{
 				myLogger.Log("Responding to init with empty object")
 			} else if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
-				myLogger.Log(fmt.Sprintf("Handling download event: %s", msg))
+				myLogger.Logf("Handling download event: %s", msg)
 
 				// get download message
 				var downloadMsg DownloadMessage
@@ -195,12 +196,12 @@ var Cmd = &cobra.Command{
 				// handle the upload via drs client (indexd client)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error registering file: " + err.Error())
+					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
 					myLogger.Log(errMsg)
 					WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
 
-				myLogger.Log("creating response message with oid %s", uploadMsg.Oid)
+				myLogger.Logf("creating response message with oid %s", uploadMsg.Oid)
 
 				// send success message back
 				completeMsg := CompleteMessage{
@@ -211,7 +212,7 @@ var Cmd = &cobra.Command{
 				myLogger.Log(fmt.Sprintf("Complete message: %+v", completeMsg))
 				encoder.Encode(completeMsg)
 
-				myLogger.Log("Upload for oid %s complete", uploadMsg.Oid)
+				myLogger.Logf("Upload for oid %s complete", uploadMsg.Oid)
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
 				myLogger.Log(fmt.Sprintf("terminate event received: %s", msg))

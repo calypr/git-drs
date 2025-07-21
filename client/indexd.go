@@ -156,6 +156,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	myLogger.Logf("register file started for oid: %s", oid)
 
 	// create indexd record
+
 	drsObj, err := cl.registerIndexdRecord(*myLogger, oid)
 	if err != nil {
 		myLogger.Logf("error registering indexd record: %s", err)
@@ -169,7 +170,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			// TODO: this panic isn't getting triggered
 			myLogger.Logf("panic occurred, cleaning up indexd record for oid %s", oid)
 			// Handle panic
-			cl.deleteIndexdRecord(drsObj.Id)
+			cl.DeleteIndexdRecord(drsObj.Id)
 			if err != nil {
 				myLogger.Logf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
 				myLogger.Logf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
@@ -184,7 +185,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		// delete indexd record if error thrown
 		if err != nil {
 			myLogger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
-			err = cl.deleteIndexdRecord(drsObj.Id)
+			err = cl.DeleteIndexdRecord(drsObj.Id)
 			if err != nil {
 				myLogger.Logf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
 				myLogger.Logf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
@@ -278,6 +279,7 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 // and implements /index/index POST
 func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.DRSObject, error) {
 	// (get indexd object using drs map)
+
 	indexdObj, err := DrsInfoFromOid(oid)
 	if err != nil {
 		return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
@@ -345,7 +347,7 @@ func (cl *IndexDClient) registerIndexdRecord(myLogger Logger, oid string) (*drs.
 }
 
 // implements /index{did}?rev={rev} DELETE
-func (cl *IndexDClient) deleteIndexdRecord(did string) error {
+func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "index", did)
@@ -394,7 +396,12 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 	defer delResp.Body.Close()
 
 	if delResp.StatusCode >= 400 {
-		return fmt.Errorf("delete failed: %s", delResp.Status)
+		bodyBytes, readErr := io.ReadAll(delResp.Body)
+		if readErr != nil {
+			return fmt.Errorf("delete failed with status %s: could not read response body: %v", delResp.Status, readErr)
+		}
+		bodyString := string(bodyBytes)
+		return fmt.Errorf("delete failed with status %s. Response body: %s", delResp.Status, bodyString)
 	}
 	return nil
 }

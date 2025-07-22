@@ -73,8 +73,10 @@ When creating a repo from scratch, make sure to create a configuration file at  
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 
+=======
 #### Track a Specific File Type
 Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
+
 ```
 git lfs track "*.bam"
 git add .gitattributes
@@ -111,7 +113,25 @@ git lfs pull -I "*.bam"
 git lfs pull
 ```
 
+### When to Use Git vs Git LFS vs Git DRS
+The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...
+- **Git DRS**: Only used for initialization of your local repo! The rest of Git DRS is triggered automatically.
+- **Git LFS**: Used to interact with files that are tracked by LFS. Examples include
+   - `git lfs track` to track files whose contents are stored outside of the Git repo
+   - `git lfs ls-files` to get a list of LFS files that LFS tracks
+   - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
+- **Git**: Everything else! (eg adding/committing files, pushing files, cloning repos, and checking out different commits)
 
 ### Troubleshooting
 
-- To see the logs for a given file transfer, navigate to `.drs` and view the log files
+To see more logs and errors, see the log files in the `.drs` directory.
+
+## Implementation Details
+
+### Adding new files
+When new files are added, a [precommit hook](https://git-scm.com/book/ms/v2/Customizing-Git-Git-Hooks#:~:text=The%20pre%2Dcommit,on%20new%20methods.) is run which triggers `git drs precommit`. This takes all of the LFS files that have been staged (ie `git add`ed) and creates DRS records for them. Those get used later during a push to register these new files in the DRS server. DRS objects are only created during this pre-commit if they have been staged
+and don't already exist on the DRS server.
+
+### File transfers
+
+In order to push file contents to a different system, Git DRS makes use of [custom transfers](https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md). These custom transfer are how Git LFS sends information to Git DRS to automatically update the server, passing in the files that have been changed for every each commit that needs to be pushed.. For instance,in the gen3 custom transfer client, we add a indexd record to the DRS server and upload the file to a gen3-registered bucket.  

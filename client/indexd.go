@@ -69,7 +69,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// setup logging
 	myLogger, err := NewLogger("")
 	if err != nil {
-		// Handle error (e.g., print to stderr and exit)
 		log.Fatalf("Failed to open log file: %v", err)
 	}
 	defer myLogger.Close()
@@ -78,22 +77,28 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
 	drsObj, err := cl.GetObjectByHash("sha256", oid)
+	if err != nil {
+		myLogger.Log("error getting DRS object for oid %s: %s", oid, err)
+		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
+	}
+	if drsObj == nil {
+		myLogger.Log("no DRS object found for oid %s", oid)
+		return nil, fmt.Errorf("no DRS object found for oid %s", oid)
+	}
 
 	// download file using the DRS object
-	myLogger.Log(fmt.Sprintf("Downloading file for OID %s from DRS object: %+v", oid, drsObj))
+	myLogger.Log("Downloading file for OID %s from DRS object: %+v", oid, drsObj)
 
 	// FIXME: generalize access ID method
 	// naively get access ID from splitting first path into :
 	accessId := drsObj.AccessMethods[0].AccessID
 	myLogger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, drsObj.Name))
 
-	// get file from indexd
+	// get signed url
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
 	myLogger.Log("using endpoint: %s\n", a.String())
-
-	// unmarshal response
 	req, err := http.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
@@ -218,6 +223,11 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
+	err = addGen3AuthHeader(req, cl.profile)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+
 	client := &http.Client{}
 	response, err := client.Do(req)
 	if err != nil {
@@ -236,6 +246,89 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 	return &out, nil
+}
+
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
+	myLogger, err := NewLogger("")
+	if err != nil {
+		return nil, err
+	}
+	myLogger.Log("Getting DRS objects from indexd")
+
+	a := *cl.base
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
+
+	out := make(chan drs.DRSObjectResult, 10)
+
+	LIMIT := 50
+	pageNum := 0
+
+	go func() {
+		defer close(out)
+		active := true
+		for active {
+			// setup request
+			req, err := http.NewRequest("GET", a.String(), nil)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			q := req.URL.Query()
+			q.Add("limit", fmt.Sprintf("%d", LIMIT))
+			q.Add("page", fmt.Sprintf("%d", pageNum))
+			req.URL.RawQuery = q.Encode()
+
+			err = addGen3AuthHeader(req, cl.profile)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			// execute request with error checking
+			client := &http.Client{}
+			response, err := client.Do(req)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+			if response.StatusCode != http.StatusOK {
+				myLogger.Log("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
+				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
+				return
+			}
+
+			// return page of DRS objects
+			page := &drs.DRSPage{}
+			err = json.Unmarshal(body, &page)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+			for _, elem := range page.DRSObjects {
+				out <- drs.DRSObjectResult{Object: &elem}
+			}
+			if len(page.DRSObjects) == 0 {
+				active = false
+			}
+			pageNum++
+		}
+
+		myLogger.Log("total pages retrieved: %d", pageNum)
+	}()
+	return out, nil
 }
 
 /////////////
@@ -419,19 +512,46 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 
 // implements /index/index?hash={hashType}:{hash} GET
 func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSObject, error) {
+
+	// setup logging
+	myLogger, err := NewLogger("")
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer myLogger.Close()
+
 	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
 
-	// get
-	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base, hashType, hash)
-	resp, err := http.Get(url)
+	// setup get request to indexd
+	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base.String(), hashType, hash)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error querying index for hash (%s:%s): %v", hashType, hash, err)
+		return nil, err
+	}
+	myLogger.Log("GET request created for indexd: %s", url)
+
+	err = addGen3AuthHeader(req, cl.profile)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+	req.Header.Set("accept", "application/json")
+
+	// run request and do checks
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error querying index for hash (%s:%s): %v, %s", hashType, hash, err, url)
 	}
 	defer resp.Body.Close()
 
+	// unmarshal response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to query indexd for %s:%s. Error: %s, %s", hashType, hash, resp.Status, string(body))
 	}
 
 	records := ListRecords{}
@@ -440,10 +560,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("Error getting DRS info for OID  (%s:%s): %v", hashType, hash, err)
-	}
-
+	// if one record found, return it
 	if len(records.Records) > 1 {
 		return nil, fmt.Errorf("expected at most 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}

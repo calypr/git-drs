@@ -144,10 +144,11 @@ var Cmd = &cobra.Command{
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
+					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
 					WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
+				myLogger.Log(fmt.Sprintf("Got signed URL for OID %s: %+v", downloadMsg.Oid, accessUrl))
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
 					myLogger.Log(errMsg)
@@ -233,7 +234,7 @@ func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
 		Event: "complete",
 		Oid:   oid,
 		Error: Error{
-			Code:    500,
+			Code:    1,
 			Message: errMsg,
 		},
 	}

@@ -36,7 +36,7 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
     # make the executable accessible
     export PATH=$PATH:$(pwd)
     ```
-5. Clone an existing DRS repo. If you don't already have one set up see "Setting up your repo"
+5. Clone an existing DRS repo. If you don't already have one set up see "Project Setup"
     ```
     cd ..
 
@@ -52,11 +52,10 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
 ### Project Setup
 
 When you do `git drs init`, there are a couple things already set up for you...
-- `.drs` directory to automatically store any background files and logs needed during execution
-- Git settings to sync up the git with gen3 services
-- a gen3 profile is created for you so that you can access gen3
+- Git is configured to use with Git DRS
+- The gen3 credentials you provided are registered under the profile name specified
 
-In your own repo, all you need to setup is a .drsconfig file. Once you have created a Git repo, create a `.drs/config` with the following structure
+When creating a repo from scratch, make sure to create a configuration file at  `.drs/config` with the following structure
 
 ```
 {
@@ -65,30 +64,54 @@ In your own repo, all you need to setup is a .drsconfig file. Once you have crea
   "gen3Bucket": "<bucket-name-here>"
 }
 ```
+
 - `gen3Profile` stores the name of the profile you specified in `git drs init` (eg the  `<data-commons-name>` above)
 - `gen3Project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
 - `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
 
 
-### Quick Start Commands
+### Quick Start
+When in doubt, use the `--help` flag to get more info about the commands
 
-**Track Specific File Types**
-Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`. 
+=======
+#### Track a Specific File Type
+Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
+
 ```
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
-**Pull Files**
-Pull a single file
+#### Push a File
 ```
-git lfs pull -I /path/to/file
-```
-Pull all non-localized files
-```
-git lfs pull
+# if the file type is not already being tracked, track the file
+git lfs track /path/to/bam
+git add .gitattributes
+
+# add the file to git
+git add /path/to/file.bam
+
+# check that file.bam is being tracked by LFS
+git lfs ls-files
+
+# commit + push!
+git commit -m "new bam file"
+git push
 ```
 
+#### Pull Files
+LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
+
+```
+# Pull a single file
+git lfs pull -I /path/to/file
+
+# Pull all bams in the top-level directory
+git lfs pull -I "*.bam"
+
+# Pull all non-localized files
+git lfs pull
+```
 
 ### When to Use Git vs Git LFS vs Git DRS
 The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...

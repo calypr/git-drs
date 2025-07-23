@@ -254,6 +254,89 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	return &out, nil
 }
 
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
+	myLogger, err := NewLogger("")
+	if err != nil {
+		return nil, err
+	}
+	myLogger.Log("Getting DRS objects from indexd")
+
+	a := *cl.base
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
+
+	out := make(chan drs.DRSObjectResult, 10)
+
+	LIMIT := 50
+	pageNum := 0
+
+	go func() {
+		defer close(out)
+		active := true
+		for active {
+			// setup request
+			req, err := http.NewRequest("GET", a.String(), nil)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			q := req.URL.Query()
+			q.Add("limit", fmt.Sprintf("%d", LIMIT))
+			q.Add("page", fmt.Sprintf("%d", pageNum))
+			req.URL.RawQuery = q.Encode()
+
+			err = addGen3AuthHeader(req, cl.profile)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			// execute request with error checking
+			client := &http.Client{}
+			response, err := client.Do(req)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+			if response.StatusCode != http.StatusOK {
+				myLogger.Log("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
+				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
+				return
+			}
+
+			// return page of DRS objects
+			page := &drs.DRSPage{}
+			err = json.Unmarshal(body, &page)
+			if err != nil {
+				myLogger.Log("error: %s", err)
+				out <- drs.DRSObjectResult{Error: err}
+				return
+			}
+			for _, elem := range page.DRSObjects {
+				out <- drs.DRSObjectResult{Object: &elem}
+			}
+			if len(page.DRSObjects) == 0 {
+				active = false
+			}
+			pageNum++
+		}
+
+		myLogger.Log("total pages retrieved: %d", pageNum)
+	}()
+	return out, nil
+}
+
 /////////////
 // HELPERS //
 /////////////
@@ -356,13 +439,13 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	err = addGen3AuthHeader(getReq, cl.profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 	getReq.Header.Set("accept", "application/json")
-	
+
 	client := &http.Client{}
 	getResp, err := client.Do(getReq)
 	if err != nil {

@@ -4,9 +4,11 @@ import (
 	"github.com/bmeg/git-drs/cmd/delete"
 	"github.com/bmeg/git-drs/cmd/download"
 	"github.com/bmeg/git-drs/cmd/initialize"
+	"github.com/bmeg/git-drs/cmd/list"
 	"github.com/bmeg/git-drs/cmd/precommit"
 	"github.com/bmeg/git-drs/cmd/query"
 	"github.com/bmeg/git-drs/cmd/transfer"
+	"github.com/bmeg/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
 
@@ -27,5 +29,8 @@ func init() {
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(delete.Cmd)
+	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(version.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
+	RootCmd.SilenceUsage = true
 }

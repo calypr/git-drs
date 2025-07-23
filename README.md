@@ -26,16 +26,12 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
    2. Click your email in the top right to go to your profile
    3. Click Create API Key -> Download JSON
    4. Make note of the path that it downloaded to
-4. Download Git DRS
-    ```
-    # build git-drs from source w/ custom gen3-client dependency
-    git clone --recurse-submodule https://github.com/bmeg/git-drs.git
-    cd git-drs
-    go build
-
-    # make the executable accessible
-    export PATH=$PATH:$(pwd)
-    ```
+4. Download Git DRS (Mac example)
+   1. Download the Git DRS tar file from the [Releases page](https://github.com/bmeg/git-drs/releases)
+   2. cd to the directory where you downloaded the file
+   3. Run `tar -xvf git-drs-linux-amd64-0.1.4.tar.gz`
+   4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
+   5. Make sure the binary is accessible: run `git-drs`
 5. Clone an existing DRS repo. If you don't already have one set up see "Project Setup"
     ```
     cd ..
@@ -135,3 +131,15 @@ and don't already exist on the DRS server.
 ### File transfers
 
 In order to push file contents to a different system, Git DRS makes use of [custom transfers](https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md). These custom transfer are how Git LFS sends information to Git DRS to automatically update the server, passing in the files that have been changed for every each commit that needs to be pushed.. For instance,in the gen3 custom transfer client, we add a indexd record to the DRS server and upload the file to a gen3-registered bucket.  
+
+### Download from source code
+if you want to build directly from source code,
+ ```
+# build git-drs from source w/ custom gen3-client dependency
+git clone --recurse-submodule https://github.com/bmeg/git-drs.git
+cd git-drs
+go build
+
+# make the executable accessible
+export PATH=$PATH:$(pwd)
+```

@@ -117,8 +117,6 @@ var Cmd = &cobra.Command{
 
 			// Example: handle only "init" event
 			if evt, ok := msg["event"]; ok && evt == "init" {
-				// Log for debugging
-				myLogger.Logf("Handling init: %s", msg)
 
 				drsClient, err = client.NewIndexDClient()
 				if err != nil {

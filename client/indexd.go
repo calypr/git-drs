@@ -356,7 +356,13 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	if err != nil {
 		return err
 	}
-
+	
+	err = addGen3AuthHeader(getReq, cl.profile)
+	if err != nil {
+		return fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+	getReq.Header.Set("accept", "application/json")
+	
 	client := &http.Client{}
 	getResp, err := client.Do(getReq)
 	if err != nil {

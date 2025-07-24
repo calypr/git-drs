@@ -560,15 +560,18 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
 
-	// if one record found, return it
-	if len(records.Records) > 1 {
-		return nil, fmt.Errorf("expected at most 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
-	}
 	// if no records found, return nil to handle in caller
 	if len(records.Records) == 0 {
 		return nil, nil
 	}
+
+	// if more than one record found, write it to log
+	if len(records.Records) > 1 {
+		myLogger.Log("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+	}
+
 	drsId := records.Records[0].Did
+	myLogger.Log("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
 
 	drsObj, err := cl.GetObject(drsId)
 

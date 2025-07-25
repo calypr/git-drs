@@ -143,22 +143,31 @@ func UpdateDrsObjects() error {
 		// }
 		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
-		// get url using bucket name, drsId, and file name
-		cfg, err := LoadConfig() // should this be handled only via indexd client?
+		// get gen3 config
+		cfg, err := LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		bucketName := cfg.Gen3Bucket
-		if bucketName == "" {
+
+		// get auth info from config
+		if cfg.CurrentServer != GEN3_TYPE {
+			return fmt.Errorf("error: current server is not gen3, current server is %s, please git drs init with gen3", cfg.CurrentServer)
+		}
+		if cfg.Servers.Gen3 == nil {
+			return fmt.Errorf("error: gen3 server is not configured, please git drs init with gen3")
+		}
+		gen3Auth := cfg.Servers.Gen3.Auth
+
+		if gen3Auth.Bucket == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}
-		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
+		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
 
 		// create authz string from profile
-		if !strings.Contains(cfg.Project, "-") {
-			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", cfg.Project)
+		if !strings.Contains(gen3Auth.ProjectID, "-") {
+			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", gen3Auth.ProjectID)
 		}
-		projectIdArr := strings.SplitN(cfg.Project, "-", 2)
+		projectIdArr := strings.SplitN(gen3Auth.ProjectID, "-", 2)
 		authzStr := "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1]
 
 		// create IndexdRecord

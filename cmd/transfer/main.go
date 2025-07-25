@@ -157,16 +157,3 @@ var Cmd = &cobra.Command{
 		return nil
 	},
 }
-
-func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
-	// create failure message and send it back
-	errorResponse := ErrorMessage{
-		Event: "complete",
-		Oid:   oid,
-		Error: Error{
-			Code:    1,
-			Message: errMsg,
-		},
-	}
-	encoder.Encode(errorResponse)
-}

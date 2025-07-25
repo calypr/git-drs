@@ -38,8 +38,13 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 		return nil, err
 	}
 
+	if cfg.CurrentServer != GEN3_TYPE {
+		return nil, fmt.Errorf("current server is not gen3, current server: %s", cfg.CurrentServer)
+	}
+	gen3Auth := cfg.Servers.Gen3.Auth
+
 	// get the gen3Profile and endpoint
-	profile := cfg.Gen3Profile
+	profile := gen3Auth.Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
 	}
@@ -51,12 +56,12 @@ func NewIndexDClient() (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := cfg.Project
+	projectId := gen3Auth.ProjectID
 	if projectId == "" {
 		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
 	}
 
-	bucketName := cfg.Gen3Bucket
+	bucketName := gen3Auth.Bucket
 	if bucketName == "" {
 		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drsconfig")
 	}

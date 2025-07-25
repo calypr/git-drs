@@ -140,7 +140,13 @@ func downloadFile(sha string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error loading config: %v", err)
 	}
-	terraProject := cfg.Project
+
+	// ensure we our current server is anvil
+	if cfg.CurrentServer != client.ANVIL_TYPE {
+		return "", fmt.Errorf("current server is not anvil, current server: %s. Please git drs init using --terra flag", cfg.CurrentServer)
+	}
+
+	terraProject := cfg.Servers.Anvil.Auth.TerraProject
 	if terraProject == "" {
 		return "", fmt.Errorf("error: project key is empty in config file")
 	}

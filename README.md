@@ -40,31 +40,17 @@ Git DRS functions within Git, so you will only need a few extra commands (`git-l
     git clone git@source.ohsu.edu:CBDS/git-drs-test-repo.git
     cd git-drs-test-repo
     ```
-6. Configure general acccess to your data commons
+6. Contact your data coordinator to receive the credentials for your project.
+7. Configure general acccess to your data commons
     ```
-    git drs init --profile <data-commons-name> --apiendpoint https://data-commons-name.com/ --cred /path/to/downloaded/credentials.json
+    git drs init --profile <data_commons_name> --server https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project>
     ```
 
 ### Project Setup
 
 When you do `git drs init`, there are a couple things already set up for you...
-- Git is configured to use with Git DRS
-- The gen3 credentials you provided are registered under the profile name specified
-
-When creating a repo from scratch, make sure to create a configuration file at  `.drs/config` with the following structure
-
-```
-{
-  "gen3Profile": "<gen3-profile-here>",
-  "gen3Project": "<project-id-here>",
-  "gen3Bucket": "<bucket-name-here>"
-}
-```
-
-- `gen3Profile` stores the name of the profile you specified in `git drs init` (eg the  `<data-commons-name>` above)
-- `project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
-- `bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
-
+- a configuration file is stored at `.drs/config.yaml` to store details about your DRS server and access to it
+- Git is configured to use Git DRS
 
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands

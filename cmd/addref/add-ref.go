@@ -20,8 +20,6 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-var endpoint string
-
 var Cmd = &cobra.Command{
 	Use:   "add-ref <drs_uri>",
 	Short: "Add a reference to an existing DRS object via URI",
@@ -98,11 +96,6 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func init() {
-	Cmd.Flags().StringVar(&endpoint, "endpoint", utils.ANVIL_ENDPOINT, "custom DRS endpoint to resolve DRS URIs, defaults to AnVIL")
-	Cmd.Flags().Lookup("endpoint").DefValue = ""
-}
-
 func GetObject(objectID string) (*drs.DRSObject, error) {
 	// get auth token
 	token, err := GetAuthToken()
@@ -116,7 +109,19 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
-	req, err := http.NewRequest("POST", utils.ANVIL_ENDPOINT, bytes.NewBuffer(bodyBytes))
+	// get endpoint from config
+	cfg, err := client.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	if cfg.Servers.Anvil == nil {
+		return nil, fmt.Errorf("Anvil server config not found in config file")
+	}
+	if cfg.Servers.Anvil.Endpoint == "" {
+		return nil, fmt.Errorf("Anvil server endpoint is empty in config file")
+	}
+
+	req, err := http.NewRequest("POST", cfg.Servers.Anvil.Endpoint, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}

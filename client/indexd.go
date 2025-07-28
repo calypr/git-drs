@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/data-client/data-client/g3cmd"
+	"github.com/calypr/data-client/data-client/jwt"
 	"github.com/calypr/git-drs/drs"
-	"github.com/uc-cdis/gen3-client/gen3-client/g3cmd"
-	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )
 
 var conf jwt.Configure
@@ -276,7 +276,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			// setup request
 			req, err := http.NewRequest("GET", a.String(), nil)
 			if err != nil {
-				myLogger.Log("error: %s", err)
+				myLogger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -288,7 +288,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 			err = addGen3AuthHeader(req, cl.profile)
 			if err != nil {
-				myLogger.Log("error: %s", err)
+				myLogger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -297,7 +297,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			client := &http.Client{}
 			response, err := client.Do(req)
 			if err != nil {
-				myLogger.Log("error: %s", err)
+				myLogger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -305,12 +305,12 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			defer response.Body.Close()
 			body, err := io.ReadAll(response.Body)
 			if err != nil {
-				myLogger.Log("error: %s", err)
+				myLogger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
 			if response.StatusCode != http.StatusOK {
-				myLogger.Log("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
+				myLogger.Logf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
 				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
 				return
 			}
@@ -319,7 +319,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			page := &drs.DRSPage{}
 			err = json.Unmarshal(body, &page)
 			if err != nil {
-				myLogger.Log("error: %s", err)
+				myLogger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -332,7 +332,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			pageNum++
 		}
 
-		myLogger.Log("total pages retrieved: %d", pageNum)
+		myLogger.Logf("total pages retrieved: %d", pageNum)
 	}()
 	return out, nil
 }

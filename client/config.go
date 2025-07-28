@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bmeg/git-drs/utils"
+	"github.com/calypr/git-drs/utils"
 	"sigs.k8s.io/yaml"
 )
 

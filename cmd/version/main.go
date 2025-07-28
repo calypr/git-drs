@@ -3,7 +3,7 @@ package version
 import (
 	"fmt"
 
-	"github.com/bmeg/git-drs/version"
+	"github.com/calypr/git-drs/version"
 	"github.com/spf13/cobra"
 )
 

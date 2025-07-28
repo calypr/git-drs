@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/drs"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
 )
 

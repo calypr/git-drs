@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/bmeg/git-drs/client"
+	"github.com/calypr/git-drs/client"
 	"github.com/spf13/cobra"
 )
 

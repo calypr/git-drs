@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bmeg/git-drs/client"
+	"github.com/calypr/git-drs/client"
 	"github.com/spf13/cobra"
 	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )

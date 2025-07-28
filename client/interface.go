@@ -1,6 +1,6 @@
 package client
 
-import "github.com/bmeg/git-drs/drs"
+import "github.com/calypr/git-drs/drs"
 
 type ObjectStoreClient interface {
 	// Given a DRS string ID, retrieve the object describing it

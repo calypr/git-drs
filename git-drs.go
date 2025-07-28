@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/bmeg/git-drs/cmd"
+	"github.com/calypr/git-drs/cmd"
 )
 
 func main() {

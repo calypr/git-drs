@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/cmd/addref"
-	"github.com/bmeg/git-drs/lfs"
-	"github.com/bmeg/git-drs/utils"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/cmd/addref"
+	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 

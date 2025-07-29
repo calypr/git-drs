@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/drs"
-	"github.com/bmeg/git-drs/utils"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 )

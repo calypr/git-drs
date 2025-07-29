@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/lfs"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 

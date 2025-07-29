@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bmeg/git-drs/drs"
+	"github.com/calypr/git-drs/drs"
 	"github.com/uc-cdis/gen3-client/gen3-client/g3cmd"
 	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )

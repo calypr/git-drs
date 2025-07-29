@@ -1,4 +1,4 @@
-module github.com/bmeg/git-drs
+module github.com/calypr/git-drs
 
 go 1.24.0
 

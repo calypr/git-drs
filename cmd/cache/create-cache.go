@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/utils"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 

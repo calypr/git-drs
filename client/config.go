@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bmeg/git-drs/utils"
+	"github.com/calypr/git-drs/utils"
 	"gopkg.in/yaml.v3"
 )
 

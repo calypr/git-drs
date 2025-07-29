@@ -32,6 +32,15 @@ var Cmd = &cobra.Command{
 
 		myLogger.Log("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
+		// get the current server from config and log it
+		cfg, err := client.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error getting config: %v", err)
+		}
+		fmt.Printf("Current server: %s\n", cfg.CurrentServer)
+		fmt.Printf("To use another server, unstage your current files and re-run `git drs init` before re-adding files\n")
+		myLogger.Log("Current server: %s", cfg.CurrentServer)
+
 		err = client.UpdateDrsObjects()
 		if err != nil {
 			fmt.Println("UpdateDrsObjects failed:", err)

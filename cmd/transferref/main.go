@@ -142,7 +142,7 @@ func downloadFile(sha string) (string, error) {
 
 	// ensure we our current server is anvil
 	if cfg.CurrentServer != client.ANVIL_TYPE {
-		return "", fmt.Errorf("current server is not anvil, current server: %s. Please git drs init using --terra flag", cfg.CurrentServer)
+		return "", fmt.Errorf("current server is not anvil, current server: %s. Please use git drs init with the --anvil flag", cfg.CurrentServer)
 	}
 
 	terraProject := cfg.Servers.Anvil.Auth.TerraProject

@@ -20,15 +20,15 @@ var (
 	bucket       string
 	credFile     string
 	profile      string
-	projectId    string
+	project      string
 	terraProject string
 )
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "init",
-	Short: "initialize required setup for git-drs",
-	Long:  "initialize hooks, config required for git-drs",
+	Short: "Initialize repo and server access for git-drs",
+	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless --anvil is specified. See below for what flags are required for each server",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// check if .git dir exists to ensure you're in a git repository
@@ -39,8 +39,8 @@ var Cmd = &cobra.Command{
 
 		// if anvilMode is not set, ensure all other flags are provided
 		if !anvilMode {
-			if profile == "" || credFile == "" || apiEndpoint == "" || projectId == "" || bucket == "" {
-				return fmt.Errorf("Error: --profile, --cred, --apiendpoint, --projectId, and --bucket are required for gen3 setup. See 'git drs init --help' for details.\n")
+			if profile == "" || credFile == "" || apiEndpoint == "" || project == "" || bucket == "" {
+				return fmt.Errorf("Error: --profile, --cred, --server, --project, and --bucket are required for gen3 setup. See 'git drs init --help' for details.\n")
 			}
 		}
 		if anvilMode && terraProject == "" {
@@ -74,15 +74,17 @@ var Cmd = &cobra.Command{
 					Auth: client.Gen3Auth{
 						Type:      client.GEN3_TYPE,
 						Profile:   profile,
-						ProjectID: projectId,
+						ProjectID: project,
 						Bucket:    bucket,
 					},
 				},
 			}
 		}
-		if err := client.UpdateServer(serversMap); err != nil {
+		config, err := client.UpdateServer(serversMap)
+		if err != nil {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
+		fmt.Printf("Current server set to %s\n", config.CurrentServer)
 
 		// add .drs/objects to .gitignore if not already present
 		if err := ensureDrsObjectsIgnore(client.DRS_OBJS_PATH); err != nil {
@@ -160,18 +162,19 @@ var Cmd = &cobra.Command{
 		}
 
 		fmt.Println("Git DRS initialized successfully!")
+		fmt.Println("To stage any configuration changes, use 'git add .drs/config.yaml'")
 		return nil
 	},
 }
 
 func init() {
-	Cmd.Flags().BoolVar(&anvilMode, "anvil", false, "Use anvil mode for initialization")
-	Cmd.Flags().StringVar(&apiEndpoint, "apiendpoint", "", "Specify the API endpoint of the data commons")
-	Cmd.Flags().StringVar(&bucket, "bucket", "", "Specify the bucket name")
-	Cmd.Flags().StringVar(&credFile, "cred", "", "Specify the gen3 credential file that you want to use")
-	Cmd.Flags().StringVar(&profile, "profile", "", "Specify the gen3 profile to use")
-	Cmd.Flags().StringVar(&projectId, "projectId", "", "Specify the gen3 project ID in the format <program>-<project>")
-	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "Specify the Terra project ID")
+	Cmd.Flags().BoolVar(&anvilMode, "anvil", false, "Use an AnVIL-hosted DRS server rather than a gen3 one. Defaults to false")
+	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
+	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
+	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
+	Cmd.Flags().StringVar(&profile, "profile", "", "[gen3] Specify the gen3 profile to use")
+	Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
+	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.

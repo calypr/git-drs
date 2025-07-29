@@ -46,7 +46,7 @@ var Cmd = &cobra.Command{
 		if drsObj == nil {
 			return errors.New("no DRS object found")
 		}
-		logger.Log("Fetched DRS object: %+v", drsObj)
+		logger.Logf("Fetched DRS object: %+v", drsObj)
 
 		// get sha256 for the drs ID from the cache
 		shaPath, err := utils.CreateCustomPath(utils.DRS_REF_DIR, drsObj.Id)
@@ -71,7 +71,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logger.Log("Created LFS pointer file at %s", drsObj.Name)
+		logger.Logf("Created LFS pointer file at %s", drsObj.Name)
 
 		// add filename for lfs tracking
 		err = exec.Command("git", "lfs", "track", drsObj.Name).Run()
@@ -83,14 +83,14 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error running git add .gitattributes: %v", err)
 		}
-		logger.Log("Tracked %s with git lfs", drsObj.Name)
+		logger.Logf("Tracked %s with git lfs", drsObj.Name)
 
 		// git add the pointer file
 		err = exec.Command("git", "add", drsObj.Name).Run()
 		if err != nil {
 			return fmt.Errorf("error running git add: %v", err)
 		}
-		logger.Log("Added %s to git", drsObj.Name)
+		logger.Logf("Added %s to git", drsObj.Name)
 
 		fmt.Printf("Successfully added reference to DRS object %s as file %s\n", drsObj.Id, drsObj.Name)
 		return nil

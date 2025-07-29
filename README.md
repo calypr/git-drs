@@ -41,7 +41,7 @@ Use the setup instructions that match the one you want to get started with.
    3. Click Create API Key -> Download JSON
    4. Make note of the path that it downloaded to
 4. Download Git DRS (Mac example)
-   1. Download the Git DRS tar file from the [Releases page](https://github.com/bmeg/git-drs/releases)
+   1. Download the Git DRS tar file from the [Releases page](https://github.com/calypr/git-drs/releases)
    2. cd to the directory where you downloaded the file
    3. Run `tar -xvf git-drs-linux-amd64-0.1.4.tar.gz`
    4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
@@ -108,7 +108,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
     git lfs install --skip-smudge
     ```
 3. Download Git DRS (Mac example)
-   1. Download the Git DRS tar file from the [Releases page](https://github.com/bmeg/git-drs/releases)
+   1. Download the Git DRS tar file from the [Releases page](https://github.com/calypr/git-drs/releases)
    2. cd to the directory where you downloaded the file
    3. Run `tar -xvf git-drs-linux-amd64-0.1.4.tar.gz`
    4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
@@ -195,7 +195,7 @@ In order to push file contents to a different system, Git DRS makes use of [cust
 if you want to build directly from source code,
  ```
 # build git-drs from source w/ custom gen3-client dependency
-git clone --recurse-submodule https://github.com/bmeg/git-drs.git
+git clone --recurse-submodule https://github.com/calypr/git-drs.git
 cd git-drs
 go build
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
@@ -110,7 +111,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	bodyBytes, _ := json.Marshal(reqBody)
 
 	// get endpoint from config
-	cfg, err := client.LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}

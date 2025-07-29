@@ -41,7 +41,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	if cfg.CurrentServer != config.GEN3_TYPE {
-		return nil, fmt.Errorf("current server is not gen3, current server: %s", cfg.CurrentServer)
+		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
 	}
 	gen3Auth := cfg.Servers.Gen3.Auth
 

@@ -73,23 +73,23 @@ func getConfigPath() (string, error) {
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
-func UpdateServer(serversMap *ServersMap) error {
+func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// check if file exists, if not create parent directory
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// if file doesn't exist, create file. Otherwise, open the file for writing
 	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
@@ -125,10 +125,10 @@ func UpdateServer(serversMap *ServersMap) error {
 	file.Seek(0, 0)
 	file.Truncate(0)
 	if err := yaml.NewEncoder(file).Encode(config); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	return nil
+	return &config, nil
 }
 
 // load an existing config

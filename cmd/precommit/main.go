@@ -1,7 +1,10 @@
 package precommit
 
 import (
+	"fmt"
+
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +32,15 @@ var Cmd = &cobra.Command{
 		defer myLogger.Close()
 
 		myLogger.Log("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
+
+		// get the current server from config and log it
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error getting config: %v", err)
+		}
+		fmt.Printf("Current server: %s\n", cfg.CurrentServer)
+		fmt.Println("To use another server, unstage your current files and re-run `git drs init` before re-adding files")
+		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
 		err = client.UpdateDrsObjects(myLogger)
 		if err != nil {

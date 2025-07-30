@@ -24,7 +24,13 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		oid := args[0]
 
-		indexdClient, err := client.NewIndexDClient()
+		logger, err := client.NewLogger("")
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		indexdClient, err := client.NewIndexDClient(logger)
 		if err != nil {
 			fmt.Printf("error creating indexd client: %s", err)
 			return err

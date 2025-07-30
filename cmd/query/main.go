@@ -15,7 +15,11 @@ var Cmd = &cobra.Command{
 	Long:  "Query DRS server by DRS ID",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := client.NewIndexDClient()
+		logger, err := client.NewLogger("")
+		if err != nil {
+			return err
+		}
+		client, err := client.NewIndexDClient(logger)
 		if err != nil {
 			return err
 		}

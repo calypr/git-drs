@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/calypr/data-client/data-client/jwt"
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// add .drs/objects to .gitignore if not already present
-		if err := ensureDrsObjectsIgnore(client.DRS_OBJS_PATH); err != nil {
+		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH); err != nil {
 			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
@@ -110,7 +110,7 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 	}
 
 	if found {
-		fmt.Println(client.DRS_OBJS_PATH, "already present in .gitignore")
+		fmt.Println(config.DRS_OBJS_PATH, "already present in .gitignore")
 		return nil
 	}
 
@@ -140,6 +140,6 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}
 
-	fmt.Println("Added", client.DRS_OBJS_PATH, "to .gitignore")
+	fmt.Println("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
 }

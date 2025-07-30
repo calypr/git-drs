@@ -4,10 +4,10 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
 )
 
@@ -94,17 +94,23 @@ var Cmd = &cobra.Command{
 	Long:  "custom transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
+
 		myLogger, err := client.NewLogger("")
 		if err != nil {
-			log.Printf("Failed to open log file: %v", err)
 			return err
 		}
-		defer myLogger.Close()
 
+		defer myLogger.Close()
 		myLogger.Log("~~~~~~~~~~~~~ START: custom transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
+
+		drsClient, err = client.NewIndexDClient(myLogger)
+		if err != nil {
+			myLogger.Logf("Error creating indexd client: %s", err)
+			return err
+		}
 
 		for scanner.Scan() {
 			var msg map[string]any
@@ -117,12 +123,6 @@ var Cmd = &cobra.Command{
 
 			// Example: handle only "init" event
 			if evt, ok := msg["event"]; ok && evt == "init" {
-
-				drsClient, err = client.NewIndexDClient()
-				if err != nil {
-					myLogger.Logf("Error creating indexd client: %s", err)
-					continue
-				}
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
@@ -155,7 +155,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// download signed url
-				dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, downloadMsg.Oid)
+				dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)

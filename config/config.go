@@ -1,4 +1,4 @@
-package client
+package config
 
 import (
 	"io"
@@ -21,7 +21,11 @@ type Config struct {
 }
 
 const (
-	DRS_CONFIG = "config"
+	DRS_CONFIG    = "config"
+	LFS_OBJS_PATH = ".git/lfs/objects"
+	DRS_DIR       = ".drs"
+	// FIXME: should this be /lfs/objects or just /objects?
+	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
 )
 
 func LoadConfig() (*Config, error) {

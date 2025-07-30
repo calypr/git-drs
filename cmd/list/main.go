@@ -43,8 +43,13 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		// setup
-		client, err := client.NewIndexDClient()
+		logger, err := client.NewLogger("")
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		client, err := client.NewIndexDClient(logger)
 		if err != nil {
 			return err
 		}

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
@@ -27,28 +29,16 @@ type LfsLsOutput struct {
 	} `json:"files"`
 }
 
-const (
-	LFS_OBJS_PATH = ".git/lfs/objects"
-	DRS_DIR       = ".drs"
-	// FIXME: should this be /lfs/objects or just /objects?
-	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
-)
-
 var (
 	lfsFiles LfsLsOutput
 )
 
-func UpdateDrsObjects() error {
-	// init logger
-	logger, err := NewLogger("")
-	if err != nil {
-		return fmt.Errorf("Failed to open log file: %v", err)
-	}
-	defer logger.Close()
+func UpdateDrsObjects(logger *Logger) error {
+
 	logger.Log("Update to DRS objects started")
 
 	// init indexd client
-	indexdClient, err := NewIndexDClient()
+	indexdClient, err := NewIndexDClient(logger)
 	if err != nil {
 		return fmt.Errorf("Failed to open log file: %v", err)
 	}
@@ -109,7 +99,7 @@ func UpdateDrsObjects() error {
 		// TODO: need to determine how to manage indexd file name
 		// right now, chooses the path of the first committed copy or
 		// if there's multiple copies in one commit, the first occurrence from ls-files
-		drsObjPath, err := GetObjectPath(DRS_OBJS_PATH, file.Oid)
+		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -130,7 +120,7 @@ func UpdateDrsObjects() error {
 		logger.Logf("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(LFS_OBJS_PATH, file.Oid)
+		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -145,7 +135,7 @@ func UpdateDrsObjects() error {
 		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
 		// get url using bucket name, drsId, and file name
-		cfg, err := LoadConfig() // should this be handled only via indexd client?
+		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
@@ -155,12 +145,10 @@ func UpdateDrsObjects() error {
 		}
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
 
-		// create authz string from profile
-		if !strings.Contains(cfg.Gen3Project, "-") {
-			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", cfg.Gen3Project)
+		authzStr, err := utils.ProjectToResource(cfg.Gen3Project)
+		if err != nil {
+			return err
 		}
-		projectIdArr := strings.SplitN(cfg.Gen3Project, "-", 2)
-		authzStr := "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1]
 
 		// create IndexdRecord
 		indexdObj := IndexdRecord{
@@ -212,7 +200,7 @@ func DrsUUID(repoName string, hash string) string {
 
 func DrsInfoFromOid(oid string) (IndexdRecord, error) {
 	// unmarshal the DRS object
-	path, err := GetObjectPath(DRS_OBJS_PATH, oid)
+	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
 	if err != nil {
 		return IndexdRecord{}, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}

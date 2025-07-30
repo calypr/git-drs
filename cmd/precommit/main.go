@@ -33,7 +33,7 @@ var Cmd = &cobra.Command{
 
 		myLogger.Log("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
-		err = client.UpdateDrsObjects()
+		err = client.UpdateDrsObjects(myLogger)
 		if err != nil {
 			fmt.Println("UpdateDrsObjects failed: hello:", err)
 			return err

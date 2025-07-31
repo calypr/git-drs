@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		logger, err := client.NewLogger("")
+		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
 		}

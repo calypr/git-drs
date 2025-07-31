@@ -17,14 +17,15 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "delete <oid>",
-	Short: "Delete a file using file object ID",
-	Long:  "Delete a file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Use:    "delete <oid>",
+	Short:  "Delete a file using file object ID",
+	Long:   "Delete a file using file object ID (sha256 hash). Use lfs ls-files to get oid",
+	Hidden: true,
+	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		oid := args[0]
 
-		logger, err := client.NewLogger("")
+		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
 		}

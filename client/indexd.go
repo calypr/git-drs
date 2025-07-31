@@ -50,13 +50,13 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	// get the gen3Profile and endpoint
 	profile := cfg.Gen3Profile
 	if profile == "" {
-		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drsconfig")
+		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drs/config")
 	}
 
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
 		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return nil, fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=calyr-dev --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' First")
+			return nil, fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=<profile-name> --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' first\n")
 		}
 		return nil, err
 	}
@@ -69,12 +69,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	// get the gen3Project and gen3Bucket from the config
 	projectId := cfg.Gen3Project
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drsconfig")
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drs/config")
 	}
 
 	bucketName := cfg.Gen3Bucket
 	if bucketName == "" {
-		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drsconfig")
+		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drs/config")
 	}
 	return &IndexDClient{baseUrl, profile, projectId, bucketName, clientLogger}, err
 }
@@ -342,7 +342,7 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
 		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=calyr-dev --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' First\n")
+			return fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=<profile-name> --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' first\n")
 		}
 		return fmt.Errorf("error parsing gen3 config: %s", err)
 	}

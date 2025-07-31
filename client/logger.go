@@ -1,6 +1,7 @@
 package client
 
 import (
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,16 +16,26 @@ type Logger struct {
 }
 
 // NewLogger opens the log file and returns a Logger.
-func NewLogger(filename string) (*Logger, error) {
+func NewLogger(filename string, logToStdout bool) (*Logger, error) {
+	var writers []io.Writer
+
 	if filename == "" {
-		filename = filepath.Join(config.DRS_DIR, "transfer.log")
+		filename = filepath.Join(config.DRS_DIR, "git-drs.log") // Assuming transfer.log is a variable
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return nil, err
 	}
-	logger := log.New(file, "", log.LstdFlags) // Standard log flags
+	writers = append(writers, file)
+
+	if logToStdout {
+		writers = append(writers, os.Stdout)
+	}
+
+	multiWriter := io.MultiWriter(writers...)
+	logger := log.New(multiWriter, "", log.LstdFlags) // Standard log flags
+
 	return &Logger{file: file, logger: logger}, nil
 }
 

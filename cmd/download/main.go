@@ -25,11 +25,10 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		oid := args[0]
-		logger, err := client.NewLogger("")
+		logger, err := client.NewLogger("", false)
 		if err != nil {
 			return err
 		}
-		logger.Log("HELLO WORLD")
 		defer logger.Close()
 
 		indexdClient, err := client.NewIndexDClient(logger)

@@ -65,7 +65,7 @@ When creating a repo from scratch, make sure to create a configuration file at  
 - `gen3Project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
 - `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
 
-
+ZONK
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 

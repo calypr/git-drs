@@ -39,7 +39,7 @@ type IndexdRecord struct {
 	// List of authorization policies
 	Authz []string `json:"authz,omitempty"`
 
-	Hashes HashInfo `json:"hashes,omitempty"`
+	Hashes HashInfo `json:"hashes,omitzero"`
 
 	// Additional metadata as key-value pairs
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -55,35 +55,35 @@ type IndexdRecord struct {
 }
 
 type ListRecords struct {
-	IDs      []string               `json:"ids"`
-	Records  []OutputInfo           `json:"records"`
-	Size     int64                  `json:"size"`
-	Start    int64                  `json:"start"`
-	Limit    int64                  `json:"limit"`
-	FileName string                 `json:"file_name"`
-	URLs     []string               `json:"urls"`
-	ACL      []string               `json:"acl"`
-	Authz    []string               `json:"authz"`
-	Hashes   HashInfo               `json:"hashes"`
-	Metadata map[string]interface{} `json:"metadata"`
-	Version  string                 `json:"version"`
+	IDs      []string       `json:"ids"`
+	Records  []OutputInfo   `json:"records"`
+	Size     int64          `json:"size"`
+	Start    int64          `json:"start"`
+	Limit    int64          `json:"limit"`
+	FileName string         `json:"file_name"`
+	URLs     []string       `json:"urls"`
+	ACL      []string       `json:"acl"`
+	Authz    []string       `json:"authz"`
+	Hashes   HashInfo       `json:"hashes"`
+	Metadata map[string]any `json:"metadata"`
+	Version  string         `json:"version"`
 }
 
 type OutputInfo struct {
-	Did          string                 `json:"did"`
-	BaseID       string                 `json:"baseid"`
-	Rev          string                 `json:"rev"`
-	Form         string                 `json:"form"`
-	Size         int64                  `json:"size"`
-	FileName     string                 `json:"file_name"`
-	Version      string                 `json:"version"`
-	Uploader     string                 `json:"uploader"`
-	URLs         []string               `json:"urls"`
-	ACL          []string               `json:"acl"`
-	Authz        []string               `json:"authz"`
-	Hashes       HashInfo               `json:"hashes"`
-	UpdatedDate  string                 `json:"updated_date"`
-	CreatedDate  string                 `json:"created_date"`
-	Metadata     map[string]interface{} `json:"metadata"`
-	URLsMetadata map[string]interface{} `json:"urls_metadata"`
+	Did          string         `json:"did"`
+	BaseID       string         `json:"baseid"`
+	Rev          string         `json:"rev"`
+	Form         string         `json:"form"`
+	Size         int64          `json:"size"`
+	FileName     string         `json:"file_name"`
+	Version      string         `json:"version"`
+	Uploader     string         `json:"uploader"`
+	URLs         []string       `json:"urls"`
+	ACL          []string       `json:"acl"`
+	Authz        []string       `json:"authz"`
+	Hashes       HashInfo       `json:"hashes"`
+	UpdatedDate  string         `json:"updated_date"`
+	CreatedDate  string         `json:"created_date"`
+	Metadata     map[string]any `json:"metadata"`
+	URLsMetadata map[string]any `json:"urls_metadata"`
 }

@@ -2,10 +2,9 @@ package list
 
 import (
 	"encoding/json"
-	"fmt"
 
-	"github.com/bmeg/git-drs/client"
-	"github.com/bmeg/git-drs/drs"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
 )
 
@@ -43,8 +42,13 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		// setup
-		client, err := client.NewIndexDClient()
+		logger, err := client.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		client, err := client.NewIndexDClient(logger)
 		if err != nil {
 			return err
 		}
@@ -53,7 +57,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		if !outJson {
-			fmt.Printf("%-55s\t%-15s\t%-75s\t%s\n", "URI", "Size", "Checksum", "Name")
+			logger.Logf("%-55s\t%-15s\t%-75s\t%s\n", "URI", "Size", "Checksum", "Name")
 		}
 
 		// for each result, check for error and print
@@ -67,9 +71,9 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
-				fmt.Printf("%s\n", string(out))
+				logger.Logf("%s\n", string(out))
 			} else {
-				fmt.Printf("%s\t%-15d\t%-75s\t%s\n", obj.SelfURI, obj.Size, getCheckSumStr(*obj), obj.Name)
+				logger.Logf("%s\t%-15d\t%-75s\t%s\n", obj.SelfURI, obj.Size, getCheckSumStr(*obj), obj.Name)
 			}
 		}
 		return nil

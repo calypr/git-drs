@@ -8,9 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bmeg/git-drs/client"
+	"github.com/calypr/data-client/data-client/jwt"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
-	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )
 
 var (
@@ -26,22 +27,27 @@ var Cmd = &cobra.Command{
 	Long:  "initialize hooks, config required for git-drs",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		logg, err := client.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logg.Close()
+
 		// add .drs/objects to .gitignore if not already present
-		if err := ensureDrsObjectsIgnore(client.DRS_OBJS_PATH); err != nil {
-			return fmt.Errorf("Error: %v\n", err)
+		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
+			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
 		// Create .git/hooks/pre-commit file
 		hooksDir := filepath.Join(".git", "hooks")
 		preCommitPath := filepath.Join(hooksDir, "pre-commit")
 		if err := os.MkdirAll(hooksDir, 0755); err != nil {
-			fmt.Println("[ERROR] unable to create pre-commit hook file:", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
 		}
 		hookContent := "#!/bin/sh\ngit drs precommit\n"
 		if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
-			fmt.Println("[ERROR] unable to write to pre-commit hook:", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 		}
 
 		// set git config so git lfs uses gen3 custom transfer agent
@@ -54,18 +60,16 @@ var Cmd = &cobra.Command{
 		for _, cfg := range configs {
 			cmd := exec.Command("git", "config", cfg[0], cfg[1])
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("Error: unable to set git config %s: %v\n", cfg[0], err)
-				return err
+				return fmt.Errorf("Unable to set git config %s: %v", cfg[0], err)
 			}
 		}
 
 		// Call jwt.UpdateConfig with CLI parameters
-		err := jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
+		err = jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
 		if err != nil {
-			fmt.Printf("[ERROR] unable to configure your gen3 profile: %v\n", err)
-			return err
+			return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
 		}
-		fmt.Println("Git DRS initialized successfully!")
+		logg.Log("Git DRS initialized successfully!")
 
 		return nil
 	},
@@ -82,7 +86,7 @@ func init() {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)
@@ -114,7 +118,7 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 	}
 
 	if found {
-		fmt.Println(client.DRS_OBJS_PATH, "already present in .gitignore")
+		logger.Log(config.DRS_OBJS_PATH, "already present in .gitignore")
 		return nil
 	}
 
@@ -144,6 +148,6 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}
 
-	fmt.Println("Added", client.DRS_OBJS_PATH, "to .gitignore")
+	logger.Log("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
 }

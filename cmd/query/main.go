@@ -2,7 +2,6 @@ package query
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/calypr/git-drs/client"
 	"github.com/spf13/cobra"
@@ -32,7 +31,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s\n", string(out))
+		logger.Logf("%s\n", string(out))
 		return nil
 	},
 }

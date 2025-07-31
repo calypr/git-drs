@@ -1,9 +1,6 @@
 package precommit
 
 import (
-	"fmt"
-	"log"
-
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
@@ -26,7 +23,7 @@ var Cmd = &cobra.Command{
 		// set up logger
 		myLogger, err := client.NewLogger("")
 		if err != nil {
-			log.Printf("Failed to open log file: %v", err)
+			myLogger.Logf("Failed to open log file: %v", err)
 			return err
 		}
 		defer myLogger.Close()
@@ -35,7 +32,7 @@ var Cmd = &cobra.Command{
 
 		err = client.UpdateDrsObjects(myLogger)
 		if err != nil {
-			fmt.Println("UpdateDrsObjects failed: hello:", err)
+			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err
 		}
 

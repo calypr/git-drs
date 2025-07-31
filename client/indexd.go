@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,6 +55,9 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
+		if errors.Is(err, jwt.ErrProfileNotFound) {
+			return nil, fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=calyr-dev --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' First")
+		}
 		return nil, err
 	}
 
@@ -337,7 +341,10 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	// extract accessToken from gen3 profile and insert into header of request
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
-		return fmt.Errorf("ParseConfig Err: %s", err)
+		if errors.Is(err, jwt.ErrProfileNotFound) {
+			return fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=calyr-dev --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' First\n")
+		}
+		return fmt.Errorf("error parsing gen3 config: %s", err)
 	}
 	if profileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")

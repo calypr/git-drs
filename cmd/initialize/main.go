@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/calypr/data-client/data-client/jwt"
+	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
 )
@@ -26,8 +27,15 @@ var Cmd = &cobra.Command{
 	Long:  "initialize hooks, config required for git-drs",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		logg, err := client.NewLogger("")
+		if err != nil {
+			return err
+		}
+		defer logg.Close()
+
 		// add .drs/objects to .gitignore if not already present
-		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH); err != nil {
+		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
 			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
@@ -57,11 +65,11 @@ var Cmd = &cobra.Command{
 		}
 
 		// Call jwt.UpdateConfig with CLI parameters
-		err := jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
+		err = jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
 		if err != nil {
 			return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
 		}
-		fmt.Println("Git DRS initialized successfully!")
+		logg.Log("Git DRS initialized successfully!")
 
 		return nil
 	},
@@ -78,7 +86,7 @@ func init() {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)
@@ -110,7 +118,7 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 	}
 
 	if found {
-		fmt.Println(config.DRS_OBJS_PATH, "already present in .gitignore")
+		logger.Log(config.DRS_OBJS_PATH, "already present in .gitignore")
 		return nil
 	}
 
@@ -140,6 +148,6 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}
 
-	fmt.Println("Added", config.DRS_OBJS_PATH, "to .gitignore")
+	logger.Log("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
 }

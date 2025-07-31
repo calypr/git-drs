@@ -32,7 +32,7 @@ var Cmd = &cobra.Command{
 
 		indexdClient, err := client.NewIndexDClient(logger)
 		if err != nil {
-			fmt.Printf("error creating indexd client: %s", err)
+			logger.Logf("error creating indexd client: %s", err)
 			return err
 		}
 		// get signed url
@@ -40,7 +40,6 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
 		}
-		fmt.Printf("OBJ: %#v\n", oidObject)
 
 		err = indexdClient.DeleteIndexdRecord(oidObject.Id)
 		if err != nil {

@@ -109,6 +109,16 @@ var Cmd = &cobra.Command{
 		drsClient, err = client.NewIndexDClient(myLogger)
 		if err != nil {
 			myLogger.Logf("Error creating indexd client: %s", err)
+			errorResponse := ErrorMessage{
+				Event: "complete", // Use "error" or a custom event if desired, but "complete" with an error is common
+				Oid:   "",         // No specific OID yet
+				Error: Error{
+					Code:    1,
+					Message: err.Error(),
+				},
+			}
+			encoder.Encode(errorResponse)
+
 			return err
 		}
 

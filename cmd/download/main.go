@@ -23,17 +23,18 @@ var Cmd = &cobra.Command{
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		oid := args[0]
 
+		oid := args[0]
 		logger, err := client.NewLogger("")
 		if err != nil {
 			return err
 		}
+		logger.Log("HELLO WORLD")
 		defer logger.Close()
 
 		indexdClient, err := client.NewIndexDClient(logger)
 		if err != nil {
-			fmt.Printf("\nerror creating indexd client: %s", err)
+			logger.Logf("\nerror creating indexd client: %s", err)
 			return err
 		}
 
@@ -62,7 +63,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("\nerror downloading file object ID %s: %s", oid, err)
 		}
 
-		fmt.Println("file downloaded")
+		logger.Log("file downloaded")
 
 		return nil
 	},

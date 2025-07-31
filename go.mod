@@ -3,7 +3,7 @@ module github.com/calypr/git-drs
 go 1.24.0
 
 require (
-	github.com/calypr/data-client v0.0.0-20250728160852-a1424fbbb788
+	github.com/calypr/data-client v0.0.0-20250731183638-085b5d0f22f0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.9.1
 	sigs.k8s.io/yaml v1.4.0

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +39,7 @@ func UpdateDrsObjects(logger *Logger) error {
 	// init indexd client
 	indexdClient, err := NewIndexDClient(logger)
 	if err != nil {
-		return fmt.Errorf("Failed to open log file: %v", err)
+		return fmt.Errorf("error initializing indexd with credentials: %v", err)
 	}
 
 	// get all LFS files' info using json
@@ -54,14 +53,14 @@ func UpdateDrsObjects(logger *Logger) error {
 
 	err = json.Unmarshal(out, &lfsFiles)
 	if err != nil {
-		log.Printf("error unmarshaling git lfs ls-files output: %v", err)
+		logger.Logf("error unmarshaling git lfs ls-files output: %v", err)
 		return fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
 	}
 
 	// get the name of repository
 	repoName, err := GetRepoNameFromGit()
 	if err != nil {
-		return fmt.Errorf("GetRepoNameFromGit: error: %v", err)
+		return fmt.Errorf("Unable to fetch repository website location: %v", err)
 	}
 	logger.Logf("Repo Name: %s", repoName)
 

@@ -22,11 +22,11 @@ else
 endif
 
 VERSION_LDFLAGS=\
- -X "github.com/bmeg/git-drs/version.BuildDate=$(shell date)" \
- -X "github.com/bmeg/git-drs/version.GitCommit=$(git_commit)" \
- -X "github.com/bmeg/git-drs/version.GitBranch=$(git_branch)" \
- -X "github.com/bmeg/git-drs/version.GitUpstream=$(git_upstream)" \
- -X "github.com/bmeg/git-drs/version.Version=$(version)"
+ -X "github.com/calypr/git-drs/version.BuildDate=$(shell date)" \
+ -X "github.com/calypr/git-drs/version.GitCommit=$(git_commit)" \
+ -X "github.com/calypr/git-drs/version.GitBranch=$(git_branch)" \
+ -X "github.com/calypr/git-drs/version.GitUpstream=$(git_upstream)" \
+ -X "github.com/calypr/git-drs/version.Version=$(version)"
 
 export CGO_ENABLED=0
 

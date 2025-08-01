@@ -31,10 +31,10 @@ We will assume that our initial users will have some level of Git familiarity an
 ### Categories of Functionality
 *(adapted from [main README](./README.md#-proposed-modular-architecture), *unlinked* are new ones)
 
-1. **[Project Management](https://github.com/bmeg/git-drs/blob/feature/documentation/docs/README.md#1-project-management-utility)** (both permissions management and project version control)
-2. **[File Transfer](https://github.com/bmeg/git-drs/blob/feature/documentation/docs/README.md#2-file-transfer-utility)** (upload/download files)
+1. **[Project Management](https://github.com/calypr/git-drs/blob/feature/documentation/docs/README.md#1-project-management-utility)** (both permissions management and project version control)
+2. **[File Transfer](https://github.com/calypr/git-drs/blob/feature/documentation/docs/README.md#2-file-transfer-utility)** (upload/download files)
 3. ***File Indexing*** (changing file paths, indexing files with pointers, etc)
-4. **[Metadata Management](https://github.com/bmeg/git-drs/blob/feature/documentation/docs/README.md#3-metadata-management-utility)** (associate files with entities; tag files with metadata)
+4. **[Metadata Management](https://github.com/calypr/git-drs/blob/feature/documentation/docs/README.md#3-metadata-management-utility)** (associate files with entities; tag files with metadata)
 5. ***Gen3 Integration*** (sync git project with gen3 data systems)
 
 ### Use Cases
@@ -64,7 +64,7 @@ We will assume that our initial users will have some level of Git familiarity an
 ## Comparing LFS-based vs DRS-based design
 
 ### Comparison of LFS-based vs DRS-based design
-expanded table from [original git-gen3 vs git LFS table](https://github.com/bmeg/git-drs/pull/3#issuecomment-2835614773)
+expanded table from [original git-gen3 vs git LFS table](https://github.com/calypr/git-drs/pull/3#issuecomment-2835614773)
 
 Feature | git-gen3 | Git LFS | git-drs
 -- | -- | -- | --

@@ -1,0 +1,18 @@
+# Server configuration
+
+current_server: "gen3"
+
+servers:
+  gen3:
+    endpoint: "<https://gen3.endpoint>"
+    auth:
+      type: "gen3"
+      profile: "<profile_name_from_init>"
+      project_id: "<program-project>"
+      bucket: "<bucket>"
+  
+  anvil:
+    endpoint: "<https://anvil.endpoint>"
+    auth:
+      type: "anvil"
+      terra_project: "<terra-project-id>"

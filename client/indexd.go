@@ -40,6 +40,11 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 		return nil, err
 	}
 
+	if cfg.CurrentServer != config.GEN3_TYPE {
+		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
+	}
+	gen3Auth := cfg.Servers.Gen3.Auth
+
 	var clientLogger LoggerInterface
 	if logger == nil {
 		clientLogger = &NoOpLogger{}
@@ -48,7 +53,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Profile and endpoint
-	profile := cfg.Gen3Profile
+	profile := gen3Auth.Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drs/config")
 	}
@@ -67,12 +72,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := cfg.Gen3Project
+	projectId := gen3Auth.ProjectID
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
 	}
 
-	bucketName := cfg.Gen3Bucket
+	bucketName := gen3Auth.Bucket
 	if bucketName == "" {
 		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drs/config")
 	}
@@ -582,11 +587,11 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 
 	// if more than one record found, write it to log
 	if len(records.Records) > 1 {
-		myLogger.Log("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+		cl.logger.Logf("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}
 
 	drsId := records.Records[0].Did
-	myLogger.Log("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
+	cl.logger.Logf("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
 
 	drsObj, err := cl.GetObject(drsId)
 

@@ -1,0 +1,2 @@
+{"concurrent":false,"concurrenttransfers":8,"event":"init","operation":"upload","remote":"origin"}
+{"action":null,"event":"upload","oid":"c19548543b131bd167de6dfa9c1981ecdab3fca5b22c79d1a7b73a0cb43c2dcb","path":"/Users/wongq/projects/git-drs/lfs-test-1/.git/lfs/objects/c1/95/c19548543b131bd167de6dfa9c1981ecdab3fca5b22c79d1a7b73a0cb43c2dcb","size":225443840}

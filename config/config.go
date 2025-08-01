@@ -134,29 +134,29 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 // load an existing config
 func LoadConfig() (*Config, error) {
 	configPath, err := getConfigPath()
+	if err != nil {
+		return nil, err
+	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, os.ErrNotExist
+		return nil, fmt.Errorf("config file does not exist at %s: please run 'git drs init'", configPath)
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	reader, err := os.Open(configPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to open config file at %s", configPath)
 	}
 	defer reader.Close()
 
 	b, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Unable to read config file at %s", configPath)
 	}
 
 	conf := Config{}
 	err = yaml.Unmarshal(b, &conf)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Config file at %s is invalid", configPath)
 	}
 
 	return &conf, nil

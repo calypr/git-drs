@@ -32,7 +32,7 @@ Use the setup instructions that match the one you want to get started with.
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
-    ```
+    ```bash
     git lfs install --skip-smudge
     ```
 3. Download credentials from your data commons
@@ -47,7 +47,7 @@ Use the setup instructions that match the one you want to get started with.
    4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
    5. Make sure the binary is accessible: run `git-drs`
 5. Clone an existing Git DRS repo. If you don't have one set up, set one up using GitHub
-    ```
+    ```bash
     cd ..
 
     # clone test repo
@@ -56,7 +56,7 @@ Use the setup instructions that match the one you want to get started with.
     ```
 6. Contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name.
 7. Configure general acccess to your data commons. Combined with the credentials path and a profile name of your choice,
-    ```
+    ```bash
     git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
     ```
 
@@ -104,7 +104,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
-    ```
+    ```bash
     git lfs install --skip-smudge
     ```
 3. Download Git DRS (Mac example)
@@ -118,7 +118,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 5. Using the Terra project ID, configure general acccess to AnVIL:
-    ```
+    ```bash
     git drs init --anvil --terraProject <terra-project-id>
     ```
 
@@ -130,22 +130,30 @@ When in doubt, use the `--help` flag to get more info about the commands
 #### Track a Specific File Type
 Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
 
-```
+```bash
+# see what files are already being tracked
+git lfs track
+
+# track all bams
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
+
 #### Example Workflow: Push a File
-```
+```bash
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
+
+# check list of tracked files before staging the list 
+git lfs track
 git add .gitattributes
 
 # add the file to git
 git add /path/to/file.bam
 
 # check that file.bam is being tracked by LFS
-git lfs ls-files
+git lfs ls-files -I file.bam
 
 # commit + push!
 git commit -m "new bam file"
@@ -155,7 +163,7 @@ git push
 #### Example Workflow: Pull Files
 LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
 
-```
+```bash
 # Pull a single file
 git lfs pull -I /path/to/file
 
@@ -193,7 +201,7 @@ In order to push file contents to a different system, Git DRS makes use of [cust
 
 ### Download from source code
 if you want to build directly from source code,
- ```
+ ```bash
 # build git-drs from source w/ custom gen3-client dependency
 git clone --recurse-submodule https://github.com/calypr/git-drs.git
 cd git-drs

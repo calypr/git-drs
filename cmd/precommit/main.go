@@ -39,7 +39,6 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 		fmt.Printf("Current server: %s\n", cfg.CurrentServer)
-		fmt.Println("To use another server, unstage your current files and re-run `git drs init` before re-adding files")
 		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
 		err = client.UpdateDrsObjects(myLogger)

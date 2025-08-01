@@ -63,7 +63,7 @@ var Cmd = &cobra.Command{
 				return fmt.Errorf("Unable to set git config %s: %v", cfg[0], err)
 			}
 		}
-
+		fmt.Print("bonk")
 		// Call jwt.UpdateConfig with CLI parameters
 		err = jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
 		if err != nil {

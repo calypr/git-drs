@@ -40,13 +40,12 @@ Use the setup instructions that match the one you want to get started with.
    2. Click your email in the top right to go to your profile
    3. Click Create API Key -> Download JSON
    4. Make note of the path that it downloaded to
-4. Download Git DRS (Mac example)
-   1. Download the Git DRS tar file from the [Releases page](https://github.com/calypr/git-drs/releases)
-   2. cd to the directory where you downloaded the file
-   3. Run `tar -xvf git-drs-linux-amd64-0.1.4.tar.gz`
-   4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
-   5. Make sure the binary is accessible: run `git-drs`
-5. Clone an existing Git DRS repo. If you don't have one set up, set one up using GitHub
+4. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
+5. Install Git DRS. For example, to install version 0.2.1
+    ```bash
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.1
+    ```
+6. Clone an existing Git DRS repo. If you don't have one set up, set one up using GitHub
     ```bash
     cd ..
 
@@ -54,12 +53,11 @@ Use the setup instructions that match the one you want to get started with.
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-6. Contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name.
-7. Configure general acccess to your data commons. Combined with the credentials path and a profile name of your choice,
+7. Contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name.
+8. Configure general acccess to your data commons. Combined with the credentials path and a profile name of your choice,
     ```bash
     git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
     ```
-
 
 #### AnVIL Setup: Jupyter Environment
 
@@ -68,12 +66,12 @@ To get set up in a Jupyter Environment on Terra,
 1. Launch your Jupyter Environment.
 2. Upload your Data Explorer manifest to the workspace. Note that all files need sha256 hashes to be uploaded to a git repo
 3. Open the terminal session
-4. Follow the command line steps below...
+4. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
+5. With Git DRS version in hand, follow the command line steps below...
 ```bash
 # setup git drs binary
-wget https://github.com/calypr/git-drs/releases/download/0.2.0-alpha/git-drs-linux-amd64-0.2.0-alpha.tar.gz
-tar -xvf git-drs-linux-amd64-0.2.0-alpha.tar.gz
-export PATH="$PATH:$(pwd)"
+export GIT_DRS_VERSION=<insert-version-here>
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
 
 # setup drs downloader
 wget https://github.com/anvilproject/drs_downloader/releases/download/0.1.6-rc.4/drs_downloader
@@ -107,17 +105,16 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
     ```bash
     git lfs install --skip-smudge
     ```
-3. Download Git DRS (Mac example)
-   1. Download the Git DRS tar file from the [Releases page](https://github.com/calypr/git-drs/releases)
-   2. cd to the directory where you downloaded the file
-   3. Run `tar -xvf git-drs-linux-amd64-0.1.4.tar.gz`
-   4. Move the file to a common directory: `mv git-drs /usr/local/bin/`
-   5. Make sure the binary is accessible: run `git-drs`
-4. Get a Terra project to use for billing
+3. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
+4. Install Git DRS. For example, to install version 0.2.1
+    ```bash
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.1
+    ```
+5. Get a Terra project to use for billing
    1. Log in to get to the [AnVIL Workspaces page](https://anvil.terra.bio/#workspaces)
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
-5. Using the Terra project ID, configure general acccess to AnVIL:
+6. Using the Terra project ID, configure general acccess to AnVIL:
     ```bash
     git drs init --anvil --terraProject <terra-project-id>
     ```

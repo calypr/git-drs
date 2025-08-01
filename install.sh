@@ -92,6 +92,5 @@ mv git-drs $DEST
 # Clean up
 rm $TAR_NAME $CHECKSUM_FILE
 
-echo "Installation successful: $DEST/git-drs"; echo
-$DEST/git-drs version
+echo "Installation successful: $DEST/git-drs"
 echo; echo "Run 'git-drs --help' for more info"

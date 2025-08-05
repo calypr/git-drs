@@ -16,7 +16,6 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 )
@@ -31,7 +30,7 @@ var Cmd = &cobra.Command{
 
 		fmt.Printf("Adding reference to DRS object %s\n", drsUri)
 		// setup logging to file for debugging
-		logger, err := client.NewLogger(utils.DRS_LOG_FILE, true)
+		logger, err := client.NewLogger(client.DRS_LOG_FILE, true)
 		if err != nil {
 			return fmt.Errorf("Failed to open log file: %v", err)
 		}
@@ -49,7 +48,7 @@ var Cmd = &cobra.Command{
 		logger.Logf("Fetched DRS object: %+v", drsObj)
 
 		// get sha256 for the drs ID from the cache
-		shaPath, err := utils.CreateCustomPath(utils.DRS_REF_DIR, drsObj.Id)
+		shaPath, err := client.CreateCustomPath(client.DRS_REF_DIR, drsObj.Id)
 		shaFile, err := os.ReadFile(shaPath)
 		if err != nil {
 			return fmt.Errorf("failed to read sha file at %s: %w", shaPath, err)
@@ -62,7 +61,7 @@ var Cmd = &cobra.Command{
 		// add the sha from the cache to the drsObj checksums
 		sha := drs.Checksum{
 			Checksum: shaVal,
-			Type:     "sha256",
+			Type:     drs.ChecksumTypeSHA256,
 		}
 		drsObj.Checksums = append(drsObj.Checksums, sha)
 
@@ -164,7 +163,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	checksums := []drs.Checksum{}
 	for k, v := range parsed.Hashes {
 		checksums = append(checksums, drs.Checksum{
-			Type:     k,
+			Type:     drs.ChecksumType(k),
 			Checksum: v,
 		})
 	}
@@ -208,7 +207,7 @@ func CreateLfsPointer(drsObj *drs.DRSObject) error {
 	// find sha256 checksum
 	var shaSum string
 	for _, cs := range drsObj.Checksums {
-		if cs.Type == "sha256" {
+		if cs.Type == drs.ChecksumTypeSHA256 {
 			shaSum = cs.Checksum
 			break
 		}

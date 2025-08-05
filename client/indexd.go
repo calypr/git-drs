@@ -96,7 +96,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	drsObj, err := cl.GetObjectByHash("sha256", oid)
+	drsObj, err := cl.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		cl.logger.Logf("error getting DRS object for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)

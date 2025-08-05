@@ -13,7 +13,6 @@ import (
 	"github.com/calypr/git-drs/cmd/addref"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +28,7 @@ var Cmd = &cobra.Command{
 	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to pull LFS files during git lfs pull. Does nothing on push.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
-		myLogger, err := client.NewLogger(utils.DRS_LOG_FILE, false)
+		myLogger, err := client.NewLogger(client.DRS_LOG_FILE, false)
 		if err != nil {
 			return fmt.Errorf("Failed to open log file: %v", err)
 		}
@@ -128,7 +127,7 @@ var Cmd = &cobra.Command{
 
 func downloadFile(sha string) (string, error) {
 	//setup logging to file for debugging
-	myLogger, err := client.NewLogger(utils.DRS_LOG_FILE, false)
+	myLogger, err := client.NewLogger(client.DRS_LOG_FILE, false)
 	if err != nil {
 		return "", fmt.Errorf("Failed to open log file: %v", err)
 	}
@@ -151,7 +150,7 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error: project key is empty in config file")
 	}
 
-	filePath, err := client.GetObjectPath(utils.DRS_REF_DIR, sha)
+	filePath, err := client.GetObjectPath(client.DRS_REF_DIR, sha)
 	if err != nil {
 		return "", fmt.Errorf("error getting object path for sha %s: %v", sha, err)
 	}
@@ -195,7 +194,7 @@ func downloadFile(sha string) (string, error) {
 	myLogger.Log(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
 
 	// call DRS downloader as a binary, redirect output to log file
-	logFile, err := os.OpenFile(utils.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(client.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return "", fmt.Errorf("error opening log file: %v", err)
 	}

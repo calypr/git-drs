@@ -37,7 +37,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		// get signed url
-		oidObject, err := indexdClient.GetObjectByHash("sha256", oid)
+		oidObject, err := indexdClient.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
 		}

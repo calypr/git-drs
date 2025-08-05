@@ -364,7 +364,10 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
 		r := jwt.Request{}
-		r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+	err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+	if err != nil {
+		return fmt.Errorf("error refreshing access token: %s", err)
+	}
 	}
 
 	// Add headers to the request

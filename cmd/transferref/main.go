@@ -41,7 +41,7 @@ var Cmd = &cobra.Command{
 		encoder := json.NewEncoder(os.Stdout)
 
 		for scanner.Scan() {
-			var msg map[string]interface{}
+			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
 				myLogger.Log(fmt.Sprintf("error decoding JSON: %s", err))

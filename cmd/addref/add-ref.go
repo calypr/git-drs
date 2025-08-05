@@ -104,7 +104,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("failed to get auth token: %w", err)
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"url":    objectID,
 		"fields": []string{"hashes", "size", "fileName"},
 	}
@@ -139,7 +139,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode > 399 {
 		// Try to extract error message
-		var errResp map[string]interface{}
+		var errResp map[string]any
 		json.Unmarshal(respBody, &errResp)
 		msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		if m, ok := errResp["message"].(string); ok {
@@ -149,6 +149,8 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	}
 
 	// Parse expected response
+	// subset of ResourceMetadata
+	// https://github.com/DataBiosphere/terra-drs-hub/blob/dev/common/openapi.yml#L123
 	var parsed struct {
 		Hashes   map[string]string `json:"hashes"`
 		Size     int64             `json:"size"`

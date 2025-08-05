@@ -56,13 +56,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
 		}
 
-		// populate config if empty or does not exist
-		// if !client.HasConfig() {
-		// 	// create config file
-		// 	if err := client.CreateConfig(); err != nil {
-		// 		return fmt.Errorf("Error: unable to create config file: %v\n", err)
-		// 	}
-		// }
+		// add server config to config.yaml
 		var serversMap *config.ServersMap
 		if anvilMode {
 			// populate anvil config

@@ -38,7 +38,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Map column names to indices
-		colIdx := map[string]int{}
+		colIdx := make(map[string]int, len(header))
 		for i, col := range header {
 			colIdx[col] = i
 		}

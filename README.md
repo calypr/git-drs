@@ -66,8 +66,12 @@ To get set up in a Jupyter Environment on Terra,
 1. Launch your Jupyter Environment.
 2. Upload your Data Explorer manifest to the workspace. Note that all files need sha256 hashes to be uploaded to a git repo
 3. Open the terminal session
-4. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
-5. With Git DRS version in hand, follow the command line steps below...
+4. Download DRS Downloader
+```bash 
+
+```
+5. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
+6. With Git DRS version in hand, follow the command line steps below...
 ```bash
 # setup git drs binary
 export GIT_DRS_VERSION=<insert-version-here>

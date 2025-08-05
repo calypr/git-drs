@@ -140,14 +140,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 
 		// get auth info from config
-		if cfg.CurrentServer != config.GEN3_TYPE {
-			return fmt.Errorf("error: current server is not gen3, current server is %s, please git drs init with gen3", cfg.CurrentServer)
-		}
-		if cfg.Servers.Gen3 == nil {
-			return fmt.Errorf("error: gen3 server is not configured, please git drs init with gen3")
-		}
 		gen3Auth := cfg.Servers.Gen3.Auth
-
 		if gen3Auth.Bucket == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}

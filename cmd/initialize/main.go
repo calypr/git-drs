@@ -49,7 +49,7 @@ var Cmd = &cobra.Command{
 		// if anvilMode is not set, ensure all other flags are provided
 		if !anvilMode {
 			if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
-				return fmt.Errorf("Error: --profile, --url, --project, --bucket and --cred or --token are required for gen3 setup. See 'git drs init --help' for details.\n")
+				return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
 			}
 		}
 		if anvilMode && terraProject == "" {

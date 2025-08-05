@@ -20,6 +20,7 @@ var (
 	apiEndpoint  string
 	bucket       string
 	credFile     string
+	fenceToken   string
 	profile      string
 	project      string
 	terraProject string
@@ -47,8 +48,8 @@ var Cmd = &cobra.Command{
 
 		// if anvilMode is not set, ensure all other flags are provided
 		if !anvilMode {
-			if profile == "" || credFile == "" || apiEndpoint == "" || project == "" || bucket == "" {
-				return fmt.Errorf("Error: --profile, --cred, --server, --project, and --bucket are required for gen3 setup. See 'git drs init --help' for details.\n")
+			if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
+				return fmt.Errorf("Error: --profile, --url, --project, --bucket and --cred or --token are required for gen3 setup. See 'git drs init --help' for details.\n")
 			}
 		}
 		if anvilMode && terraProject == "" {
@@ -160,7 +161,7 @@ var Cmd = &cobra.Command{
 			}
 
 			// Call jwt.UpdateConfig with CLI parameters
-			err := jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
+			err := jwt.UpdateConfig(profile, apiEndpoint, credFile, fenceToken, "false", "")
 			if err != nil {
 				return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
 			}
@@ -177,6 +178,7 @@ func init() {
 	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
 	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
 	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
+	Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Specify the token to be used as a replacement for a credential file for temporary access")
 	Cmd.Flags().StringVar(&profile, "profile", "", "[gen3] Specify the gen3 profile to use")
 	Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
 	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")

@@ -11,6 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	token "github.com/bmeg/grip-graphql/middleware"
+	"github.com/calypr/data-client/data-client/commonUtils"
 
 	"github.com/calypr/data-client/data-client/g3cmd"
 	"github.com/calypr/data-client/data-client/jwt"
@@ -261,7 +265,6 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
-
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
@@ -353,6 +356,15 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	}
 	if profileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")
+	}
+	expiration, err := token.GetExpiration(profileConfig.AccessToken)
+	if err != nil {
+		return err
+	}
+	// Update AccessToken if token is old
+	if expiration.Before(time.Now()) {
+		r := jwt.Request{}
+		r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
 	}
 
 	// Add headers to the request

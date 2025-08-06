@@ -26,19 +26,11 @@ var (
 	terraProject string
 )
 
-// ServerMode represents the type of server being initialized
-type ServerMode string
-
-const (
-	ModeGen3  ServerMode = "gen3"
-	ModeAnvil ServerMode = "anvil"
-)
-
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize repo and server access for git-drs",
-	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless --anvil is specified. See below for what flags are required for each server",
+	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless a --mode is specified. See below for the flag requirements for each server",
 	Args:  cobra.ExactArgs(0),
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		for _, validMode := range AllModes() {
@@ -69,7 +61,7 @@ var Cmd = &cobra.Command{
 
 		// if anvilMode is not set, ensure all other flags are provided
 		switch mode {
-		case string(ModeGen3):
+		case string(config.Gen3ServerType):
 			if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
 				return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
 			}
@@ -78,7 +70,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("Error configuring gen3 server: %v", err)
 			}
-		case string(ModeAnvil):
+		case string(config.AnvilServerType):
 			if terraProject == "" {
 				return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
 			}
@@ -118,7 +110,6 @@ func gen3Init(profile string, credFile string, apiEndpoint string, project strin
 		Gen3: &config.Gen3Server{
 			Endpoint: apiEndpoint,
 			Auth: config.Gen3Auth{
-				Type:      config.GEN3_TYPE,
 				Profile:   profile,
 				ProjectID: project,
 				Bucket:    bucket,
@@ -132,7 +123,7 @@ func gen3Init(profile string, credFile string, apiEndpoint string, project strin
 	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config
-	err = initGitConfig(ModeGen3)
+	err = initGitConfig(config.Gen3ServerType)
 	if err != nil {
 		return err
 	}
@@ -168,7 +159,6 @@ func anvilInit(terraProject string, log *client.Logger) error {
 		Anvil: &config.AnvilServer{
 			Endpoint: client.ANVIL_ENDPOINT,
 			Auth: config.AnvilAuth{
-				Type:         config.ANVIL_TYPE,
 				TerraProject: terraProject,
 			},
 		},
@@ -180,7 +170,7 @@ func anvilInit(terraProject string, log *client.Logger) error {
 	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config for anvil
-	err = initGitConfig(ModeAnvil)
+	err = initGitConfig(config.AnvilServerType)
 	if err != nil {
 		return err
 	}
@@ -198,16 +188,16 @@ func anvilInit(terraProject string, log *client.Logger) error {
 	return nil
 }
 
-func initGitConfig(mode ServerMode) error {
+func initGitConfig(mode config.ServerType) error {
 	var cmdName string
-	var readOnly string
+	var allowIncompletePush string
 	switch mode {
-	case ModeGen3:
+	case config.Gen3ServerType:
 		cmdName = "transfer"
-		readOnly = "false"
-	case ModeAnvil:
+		allowIncompletePush = "false"
+	case config.AnvilServerType:
 		cmdName = "transfer-ref"
-		readOnly = "true"
+		allowIncompletePush = "true"
 	}
 
 	configs := [][]string{
@@ -215,7 +205,7 @@ func initGitConfig(mode ServerMode) error {
 		{"lfs.customtransfer.gen3.path", "git-drs"},
 		{"lfs.customtransfer.gen3.concurrent", "false"},
 		{"lfs.customtransfer.gen3.args", cmdName},
-		{"lfs.allowincompletepush", readOnly},
+		{"lfs.allowincompletepush", allowIncompletePush},
 	}
 
 	for _, args := range configs {
@@ -296,6 +286,6 @@ func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 	return nil
 }
 
-func AllModes() []ServerMode {
-	return []ServerMode{ModeGen3, ModeAnvil}
+func AllModes() []config.ServerType {
+	return []config.ServerType{config.Gen3ServerType, config.AnvilServerType}
 }

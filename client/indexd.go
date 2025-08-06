@@ -44,7 +44,8 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 		return nil, err
 	}
 
-	if cfg.CurrentServer != config.GEN3_TYPE {
+	logger.Logf("Loaded config: current server is %s", cfg.CurrentServer)
+	if cfg.CurrentServer != config.Gen3ServerType {
 		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
 	}
 	gen3Auth := cfg.Servers.Gen3.Auth
@@ -144,6 +145,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// log response and body
+	cl.logger.Logf("response status: %s", response.Status)
+	cl.logger.Logf("response body: %s", body)
 
 	accessUrl := drs.AccessURL{}
 	err = json.Unmarshal(body, &accessUrl)
@@ -364,10 +369,10 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
 		r := jwt.Request{}
-	err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
-	if err != nil {
-		return fmt.Errorf("error refreshing access token: %s", err)
-	}
+		err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+		if err != nil {
+			return fmt.Errorf("error refreshing access token: %s", err)
+		}
 	}
 
 	// Add headers to the request

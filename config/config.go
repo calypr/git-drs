@@ -12,7 +12,6 @@ import (
 
 // Gen3Auth holds authentication info for Gen3
 type Gen3Auth struct {
-	Type      string `yaml:"type"`
 	Profile   string `yaml:"profile"`
 	ProjectID string `yaml:"project_id"`
 	Bucket    string `yaml:"bucket"`
@@ -20,20 +19,27 @@ type Gen3Auth struct {
 
 // AnvilAuth holds authentication info for Anvil
 type AnvilAuth struct {
-	Type         string `yaml:"type"`
 	TerraProject string `yaml:"terra_project"`
 }
+
+// ServerType represents the type of server being initialized
+type ServerType string
+
+const (
+	Gen3ServerType  ServerType = "gen3"
+	AnvilServerType ServerType = "anvil"
+)
 
 // Gen3Server holds Gen3 server config
 type Gen3Server struct {
 	Endpoint string   `yaml:"endpoint"`
-	Auth     Gen3Auth `yaml:"auth"`
+	Auth     Gen3Auth `yaml:",inline"`
 }
 
 // AnvilServer holds Anvil server config
 type AnvilServer struct {
 	Endpoint string    `yaml:"endpoint"`
-	Auth     AnvilAuth `yaml:"auth"`
+	Auth     AnvilAuth `yaml:",inline"`
 }
 
 // ServersMap holds all possible server configs
@@ -44,19 +50,16 @@ type ServersMap struct {
 
 // Config holds the overall config structure
 type Config struct {
-	CurrentServer string     `yaml:"current_server"`
+	CurrentServer ServerType `yaml:"current_server"`
 	Servers       ServersMap `yaml:"servers"`
 }
 
 const (
-	DRS_CONFIG    = "config"
 	LFS_OBJS_PATH = ".git/lfs/objects"
 	DRS_DIR       = ".drs"
 	// FIXME: should this be /lfs/objects or just /objects?
 	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
 	CONFIG_YAML   = "config.yaml"
-	GEN3_TYPE     = "gen3"
-	ANVIL_TYPE    = "anvil"
 )
 
 func getConfigPath() (string, error) {
@@ -98,26 +101,17 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	if err := yaml.NewDecoder(file).Decode(&config); err != nil {
 		// if the file is empty, we can just create a new config
 		config = Config{
-			CurrentServer: "",
-			Servers:       ServersMap{},
+			Servers: ServersMap{},
 		}
 	}
 
-	// // validate config that it has at least one server configured and a current server
-	// if config.Servers.Gen3 == nil && config.Servers.Anvil == nil {
-	// 	return fmt.Errorf("config file must have at least one server configured (gen3 or anvil)")
-	// }
-	// if config.CurrentServer == "" {
-	// 	return fmt.Errorf("config file must have a current server set")
-	// }
-
 	// update existing config, combining new serversMap with existing one
 	if serversMap.Gen3 != nil {
-		config.CurrentServer = GEN3_TYPE
+		config.CurrentServer = Gen3ServerType
 		config.Servers.Gen3 = serversMap.Gen3
 	}
 	if serversMap.Anvil != nil {
-		config.CurrentServer = ANVIL_TYPE
+		config.CurrentServer = AnvilServerType
 		config.Servers.Anvil = serversMap.Anvil
 	}
 

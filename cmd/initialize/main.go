@@ -91,9 +91,30 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 		}
 	}
 
-	// add .drs/objects to .gitignore if not already present
-	if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
-		return fmt.Errorf("Init Error: %v\n", err)
+	// add some patterns to the .gitignore if not already present
+	gitignorePatterns := []string{".drs/*", "!" + config.DRS_OBJS_PATH, "drs_downloader.log"}
+	for _, pattern := range gitignorePatterns {
+		if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
+			return fmt.Errorf("Init Error: %v\n", err)
+		}
+	}
+
+	// log message based on if .gitignore is untracked or modified (i.e. if we actually made changes something)
+	statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
+	output, err := statusCmd.Output()
+	if err != nil {
+		return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
+	}
+	if len(output) > 0 {
+		logg.Log(".gitignore has been updated and staged")
+	} else {
+		logg.Log(".gitignore already up to date")
+	}
+
+	// git add .gitignore
+	cmd := exec.Command("git", "add", ".gitignore")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Error adding .gitignore to git: %v", err)
 	}
 
 	// final logs
@@ -250,7 +271,6 @@ func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 	}
 
 	if found {
-		logger.Log(config.DRS_OBJS_PATH, "already present in .gitignore")
 		return nil
 	}
 
@@ -280,6 +300,5 @@ func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}
 
-	logger.Log("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
 }

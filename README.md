@@ -204,7 +204,7 @@ In order to push file contents to a different system, Git DRS makes use of [cust
 if you want to build directly from source code,
  ```bash
 # build git-drs from source w/ custom gen3-client dependency
-git clone --recurse-submodule https://github.com/calypr/git-drs.git
+git clone https://github.com/calypr/git-drs.git
 cd git-drs
 go build
 

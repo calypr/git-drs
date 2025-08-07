@@ -76,7 +76,7 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 			return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
 		}
 
-		err = gen3Init(profile, credFile, apiEndpoint, project, bucket, logg)
+		err = gen3Init(profile, credFile, fenceToken, apiEndpoint, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
@@ -102,7 +102,7 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 	return nil
 }
 
-func gen3Init(profile string, credFile string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
+func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
 	// update config.yaml with gen3 server info
 	serversMap := &config.ServersMap{
 		Gen3: &config.Gen3Server{

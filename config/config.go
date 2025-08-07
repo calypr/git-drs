@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/calypr/git-drs/utils"
 	"gopkg.in/yaml.v3"
@@ -29,6 +30,25 @@ const (
 	Gen3ServerType  ServerType = "gen3"
 	AnvilServerType ServerType = "anvil"
 )
+
+func AllServerTypes() []ServerType {
+	return []ServerType{Gen3ServerType, AnvilServerType}
+}
+
+func IsValidServerType(mode string) error {
+	modeOptions := make([]string, len(AllServerTypes()))
+	for i, m := range AllServerTypes() {
+		modeOptions[i] = string(m)
+	}
+
+	for _, validMode := range modeOptions {
+		if mode == string(validMode) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid mode '%s'. Valid options are: %s", mode, strings.Join(modeOptions, ", "))
+}
 
 // Gen3Server holds Gen3 server config
 type Gen3Server struct {

@@ -32,64 +32,8 @@ var Cmd = &cobra.Command{
 	Short: "Initialize repo and server access for git-drs",
 	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless a --mode is specified. See below for the flag requirements for each server",
 	Args:  cobra.ExactArgs(0),
-	PreRunE: func(cmd *cobra.Command, args []string) error {
-		for _, validMode := range AllModes() {
-			if mode == string(validMode) {
-				return nil
-			}
-		}
-
-		modeOptions := make([]string, len(AllModes()))
-		for i, m := range AllModes() {
-			modeOptions[i] = string(m)
-		}
-		return fmt.Errorf("invalid mode '%s'. Valid options are: %s", mode, strings.Join(modeOptions, ", "))
-	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-
-		logg, err := client.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logg.Close()
-
-		// check if .git dir exists to ensure you're in a git repository
-		_, err = utils.GitTopLevel()
-		if err != nil {
-			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
-		}
-
-		// if anvilMode is not set, ensure all other flags are provided
-		switch mode {
-		case string(config.Gen3ServerType):
-			if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
-				return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
-			}
-
-			err = gen3Init(profile, credFile, apiEndpoint, project, bucket, logg)
-			if err != nil {
-				return fmt.Errorf("Error configuring gen3 server: %v", err)
-			}
-		case string(config.AnvilServerType):
-			if terraProject == "" {
-				return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
-			}
-
-			err = anvilInit(terraProject, logg)
-			if err != nil {
-				return fmt.Errorf("Error configuring anvil server: %v", err)
-			}
-		}
-
-		// add .drs/objects to .gitignore if not already present
-		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
-			return fmt.Errorf("Init Error: %v\n", err)
-		}
-
-		// final logs
-		logg.Log("Git DRS initialized successfully!")
-		logg.Log("To stage any configuration changes, use 'git add .drs/config.yaml'")
-		return nil
+		return Init(mode, apiEndpoint, bucket, credFile, fenceToken, profile, project, terraProject)
 	},
 }
 
@@ -102,6 +46,60 @@ func init() {
 	Cmd.Flags().StringVar(&profile, "profile", "", "[gen3] Specify the gen3 profile to use")
 	Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
 	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")
+}
+
+func Init(mode string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
+	// validate mode
+
+	err := config.IsValidServerType(mode)
+	if err != nil {
+		return err
+	}
+
+	// setup logging
+	logg, err := client.NewLogger("", true)
+	if err != nil {
+		return err
+	}
+	defer logg.Close()
+
+	// check if .git dir exists to ensure you're in a git repository
+	_, err = utils.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
+	}
+
+	// if anvilMode is not set, ensure all other flags are provided
+	switch mode {
+	case string(config.Gen3ServerType):
+		if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
+			return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
+		}
+
+		err = gen3Init(profile, credFile, apiEndpoint, project, bucket, logg)
+		if err != nil {
+			return fmt.Errorf("Error configuring gen3 server: %v", err)
+		}
+	case string(config.AnvilServerType):
+		if terraProject == "" {
+			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
+		}
+
+		err = anvilInit(terraProject, logg)
+		if err != nil {
+			return fmt.Errorf("Error configuring anvil server: %v", err)
+		}
+	}
+
+	// add .drs/objects to .gitignore if not already present
+	if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
+		return fmt.Errorf("Init Error: %v\n", err)
+	}
+
+	// final logs
+	logg.Log("Git DRS initialized successfully!")
+	logg.Log("To stage any configuration changes, use 'git add .drs/config.yaml'")
+	return nil
 }
 
 func gen3Init(profile string, credFile string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
@@ -284,8 +282,4 @@ func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 
 	logger.Log("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
-}
-
-func AllModes() []config.ServerType {
-	return []config.ServerType{config.Gen3ServerType, config.AnvilServerType}
 }

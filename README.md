@@ -54,15 +54,16 @@ Use the setup instructions that match the one you want to get started with.
     cd <name-of-repo>
     ```
 7. Configure general acccess to your data commons.
-    - Check if there is an existing configuration file: ls .drs/
-    - If there is no config.yaml, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file from step 3, run
+    - Check that `cat .drs/config.yaml` shows a gen3 server with an `endpoint`, `profile`, `project_id` and `bucket`,
+     - If the gen3 server exists, then we only need to provide our user credentials. Using the credentials file from step 3, run
+      ```bash
+        git drs init --cred /path/to/ downloaded/credentials.json
+      ```
+    - If this gen3 server is incomplete or empty, contact your data coordinator to receive the details for your gen3 project, specifically the server endpoint, project ID, and bucket name. Then, using the credentials file from step 3, run
       ```bash
         git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
       ```
-    - If there is a config.yaml, we will use the existing configuration to authenticate you. Using the credentials file from step 3, run
-      ```bash
-        git drs init --cred /path/to/   downloaded/credentials.json
-      ```
+   
     
 
 #### AnVIL Setup: Jupyter Environment
@@ -122,8 +123,12 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 6. Using the Terra project ID, configure general acccess to AnVIL:
-    - Check if there is an existing configuration file: ls .drs/
-    - If there is no config.yaml, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file from step 3, run
+    - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
+     - If the gen3 server exists, then using the credentials file path from step 3, run
+      ```bash
+        git drs init --cred /path/to/ downloaded/credentials.json
+      ```
+    - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run
       ```bash
         git drs init --mode anvil --terraProject <terra-project-id>
       ```

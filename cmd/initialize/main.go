@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	mode         string
+	server       string
 	apiEndpoint  string
 	bucket       string
 	credFile     string
@@ -30,15 +30,21 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize repo and server access for git-drs",
-	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless a --mode is specified. See below for the flag requirements for each server",
-	Args:  cobra.ExactArgs(0),
+	Long: "Description:" +
+		"\n  Initialize repo and server access for git-drs with a gen3 or AnVIL server, gen3 as default" +
+		"\n   ~ gen3 first init: provide a url, bucket, profile, project ID, and either a credentials file or token" +
+		"\n   ~ general gen3 inits: just a credential file or token is needed" +
+		"\n   ~ AnVIL first init: set --server as anvil provide a Terra project ID" +
+		"\n   ~ general AnVIL inits: just set --server as anvil" +
+		"\n   ~ See below for the flag requirements for each server",
+	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Init(mode, apiEndpoint, bucket, credFile, fenceToken, profile, project, terraProject)
+		return Init(server, apiEndpoint, bucket, credFile, fenceToken, profile, project, terraProject)
 	},
 }
 
 func init() {
-	Cmd.Flags().StringVar(&mode, "mode", "gen3", "Options for DRS server: gen3 or anvil. Defaults to gen3")
+	Cmd.Flags().StringVar(&server, "server", "gen3", "Options for DRS server: gen3 or anvil. Defaults to gen3")
 	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
 	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
 	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
@@ -48,10 +54,10 @@ func init() {
 	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")
 }
 
-func Init(mode string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
-	// validate mode
+func Init(server string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
+	// validate server
 
-	err := config.IsValidServerType(mode)
+	err := config.IsValidServerType(server)
 	if err != nil {
 		return err
 	}
@@ -82,7 +88,7 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 	}
 
 	// if anvilMode is not set, ensure all other flags are provided
-	switch mode {
+	switch server {
 	case string(config.Gen3ServerType):
 		// make sure at least one of the credentials params is provided
 		if credFile == "" && fenceToken == "" {

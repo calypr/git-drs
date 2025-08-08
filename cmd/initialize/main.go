@@ -211,7 +211,7 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 	err = jwt.UpdateConfig(profile, apiEndpoint, credFile, fenceToken, "false", "")
 	if err != nil {
 		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
-		if strings.Contains(errStr, apiEndpoint) {
+		if strings.Contains(errStr, "apiendpoint") {
 			errStr += " If you are accessing an internal instance, make sure you are on the right network."
 		}
 		return fmt.Errorf(errStr)

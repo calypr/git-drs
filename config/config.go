@@ -117,32 +117,61 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	defer file.Close()
 
 	// if file is not empty, unmarshal into Config
-	var config Config
-	if err := yaml.NewDecoder(file).Decode(&config); err != nil {
+	var cfg Config
+	if err := yaml.NewDecoder(file).Decode(&cfg); err != nil {
 		// if the file is empty, we can just create a new config
-		config = Config{
+		cfg = Config{
 			Servers: ServersMap{},
 		}
 	}
 
 	// update existing config, combining new serversMap with existing one
 	if serversMap.Gen3 != nil {
-		config.CurrentServer = Gen3ServerType
-		config.Servers.Gen3 = serversMap.Gen3
+		cfg.Servers.Gen3 = serversMap.Gen3
 	}
 	if serversMap.Anvil != nil {
-		config.CurrentServer = AnvilServerType
-		config.Servers.Anvil = serversMap.Anvil
+		cfg.Servers.Anvil = serversMap.Anvil
 	}
 
 	// overwrite the file using config
 	file.Seek(0, 0)
 	file.Truncate(0)
-	if err := yaml.NewEncoder(file).Encode(config); err != nil {
+	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	return &config, nil
+	return &cfg, nil
+}
+
+func UpdateCurrentServer(serverType ServerType) error {
+	// load existing config
+	cfg, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	// set current server
+	cfg.CurrentServer = serverType
+
+	// overwrite the existing config file
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	file.Seek(0, 0)
+	file.Truncate(0)
+	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // load an existing config
@@ -153,7 +182,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file does not exist at %s: please run 'git drs init'", configPath)
+		return nil, fmt.Errorf("config file does not exist. Please run 'git drs init', see 'git drs init --help' for more details")
 	}
 
 	reader, err := os.Open(configPath)
@@ -170,8 +199,29 @@ func LoadConfig() (*Config, error) {
 	conf := Config{}
 	err = yaml.Unmarshal(b, &conf)
 	if err != nil {
-		return nil, fmt.Errorf("Config file at %s is invalid", configPath)
+		return nil, fmt.Errorf("Config file at %s is invalid: %w", configPath, err)
 	}
 
 	return &conf, nil
+}
+
+func CreateEmptyConfig() error {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+			return err
+		}
+	}
+
+	// create empty config file
+	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return nil
 }

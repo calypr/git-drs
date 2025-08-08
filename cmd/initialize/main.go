@@ -69,11 +69,31 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 		return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
 	}
 
+	// create config file if it doesn't exist
+	err = config.CreateEmptyConfig()
+	if err != nil {
+		return fmt.Errorf("Error: unable to create config file: %v\n", err)
+	}
+
+	// load the config
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("Error: unable to load config file: %v\n", err)
+	}
+
 	// if anvilMode is not set, ensure all other flags are provided
 	switch mode {
 	case string(config.Gen3ServerType):
-		if profile == "" || (credFile == "" && fenceToken == "") || apiEndpoint == "" || project == "" || bucket == "" {
-			return fmt.Errorf("Error: --profile, --url, --project, and --bucket are required, as well as --cred or --token, for gen3 setup. See 'git drs init --help' for details.\n")
+		// make sure at least one of the credentials params is provided
+		if credFile == "" && fenceToken == "" {
+			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+		}
+
+		// if the config file is missing anything, require all gen3 params
+		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Endpoint == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
+			if bucket == "" || apiEndpoint == "" || project == "" || profile == "" {
+				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --url, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
+			}
 		}
 
 		err = gen3Init(profile, credFile, fenceToken, apiEndpoint, project, bucket, logg)
@@ -81,7 +101,8 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
 	case string(config.AnvilServerType):
-		if terraProject == "" {
+		// ensure either terraProject is provided or already in config
+		if terraProject == "" && (cfg.Servers.Anvil == nil || cfg.Servers.Anvil.Auth.TerraProject == "") {
 			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
 		}
 
@@ -124,22 +145,37 @@ func Init(mode string, apiEndpoint string, bucket string, credFile string, fence
 }
 
 func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
-	// update config.yaml with gen3 server info
-	serversMap := &config.ServersMap{
-		Gen3: &config.Gen3Server{
-			Endpoint: apiEndpoint,
-			Auth: config.Gen3Auth{
-				Profile:   profile,
-				ProjectID: project,
-				Bucket:    bucket,
+	// double check that one of the credentials params is provided
+	if credFile == "" && fenceToken == "" {
+		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
+	}
+
+	// if all of the necessary params are filled, then configure the gen3 server
+	firstTimeSetup := apiEndpoint != "" && project != "" && bucket != "" && profile != ""
+	if firstTimeSetup {
+		// update config file with gen3 server info
+		serversMap := &config.ServersMap{
+			Gen3: &config.Gen3Server{
+				Endpoint: apiEndpoint,
+				Auth: config.Gen3Auth{
+					Profile:   profile,
+					ProjectID: project,
+					Bucket:    bucket,
+				},
 			},
-		},
+		}
+		cfg, err := config.UpdateServer(serversMap)
+		if err != nil {
+			return fmt.Errorf("Error: unable to update config file: %v\n", err)
+		}
+		log.Logf("Current server set to %s\n", cfg.CurrentServer)
 	}
-	cfg, err := config.UpdateServer(serversMap)
+
+	// update current server in config
+	err := config.UpdateCurrentServer(config.Gen3ServerType)
 	if err != nil {
-		return fmt.Errorf("Error: unable to update config file: %v\n", err)
+		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
 	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config
 	err = initGitConfig(config.Gen3ServerType)
@@ -158,7 +194,20 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 	}
 
-	// Call jwt.UpdateConfig with CLI parameters
+	// grabbing params from config if not provided
+	if !firstTimeSetup {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("Error: unable to load config file: %v\n", err)
+		}
+
+		profile = cfg.Servers.Gen3.Auth.Profile
+		apiEndpoint = cfg.Servers.Gen3.Endpoint
+		project = cfg.Servers.Gen3.Auth.ProjectID
+		bucket = cfg.Servers.Gen3.Auth.Bucket
+	}
+
+	// authenticate with gen3
 	err = jwt.UpdateConfig(profile, apiEndpoint, credFile, fenceToken, "false", "")
 	if err != nil {
 		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
@@ -173,20 +222,29 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 }
 
 func anvilInit(terraProject string, log *client.Logger) error {
-	// populate anvil config
-	serversMap := &config.ServersMap{
-		Anvil: &config.AnvilServer{
-			Endpoint: client.ANVIL_ENDPOINT,
-			Auth: config.AnvilAuth{
-				TerraProject: terraProject,
+	// make sure terra project is provided
+	if terraProject != "" {
+		// populate anvil config
+		serversMap := &config.ServersMap{
+			Anvil: &config.AnvilServer{
+				Endpoint: client.ANVIL_ENDPOINT,
+				Auth: config.AnvilAuth{
+					TerraProject: terraProject,
+				},
 			},
-		},
+		}
+		cfg, err := config.UpdateServer(serversMap)
+		if err != nil {
+			return fmt.Errorf("Error: unable to update config file: %v\n", err)
+		}
+		log.Logf("Current server set to %s\n", cfg.CurrentServer)
 	}
-	cfg, err := config.UpdateServer(serversMap)
+
+	// update current server in config
+	err := config.UpdateCurrentServer(config.AnvilServerType)
 	if err != nil {
-		return fmt.Errorf("Error: unable to update config file: %v\n", err)
+		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
 	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config for anvil
 	err = initGitConfig(config.AnvilServerType)

@@ -2,7 +2,8 @@ package list
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
+	"os"
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
@@ -10,6 +11,7 @@ import (
 )
 
 var outJson = false
+var outFile string
 
 var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
 
@@ -80,14 +82,11 @@ var Cmd = &cobra.Command{
 		return nil
 	},
 }
-
-// Cmd line declaration
 var ListProjectCmd = &cobra.Command{
 	Use:   "list-project",
 	Short: "List DRS entities from server",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
 		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
@@ -103,6 +102,18 @@ var ListProjectCmd = &cobra.Command{
 			return err
 		}
 
+		var f *os.File
+		var outWriter io.Writer
+		if outFile != "" {
+			f, err = os.Create(outFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			outWriter = f
+		} else {
+			outWriter = os.Stdout
+		}
 		for objResult := range objChan {
 			if objResult.Error != nil {
 				return objResult.Error
@@ -112,13 +123,20 @@ var ListProjectCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s\n", string(out))
-
+			_, err = outWriter.Write(out)
+			if err != nil {
+				return err
+			}
+			_, err = outWriter.Write([]byte("\n"))
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	},
 }
 
 func init() {
+	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
 	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

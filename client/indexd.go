@@ -625,7 +625,6 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 
 	cl.logger.Log("Getting DRS objects from indexd")
 	authz := strings.Split(projectId, "-")
-	fmt.Println("AUTHZ: ", authz)
 	resourcePath := fmt.Sprintf("/programs/%s/projects/%s", authz[0], authz[1])
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "index/index")

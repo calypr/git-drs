@@ -53,12 +53,15 @@ type IndexdRecord struct {
 	// // Updated timestamp (RFC3339 format)
 	// ContentUpdatedDate string `json:"content_updated_date,omitempty"`
 }
-
+type ListRecordsResult struct {
+	Record *OutputInfo
+	Error  error
+}
 type ListRecords struct {
 	IDs      []string       `json:"ids"`
 	Records  []OutputInfo   `json:"records"`
 	Size     int64          `json:"size"`
-	Start    int64          `json:"start"`
+	Start    string         `json:"start"`
 	Limit    int64          `json:"limit"`
 	FileName string         `json:"file_name"`
 	URLs     []string       `json:"urls"`

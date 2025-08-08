@@ -31,6 +31,7 @@ func init() {
 	RootCmd.AddCommand(download.Cmd)
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(list.ListProjectCmd)
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)

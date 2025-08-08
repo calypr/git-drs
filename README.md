@@ -45,7 +45,7 @@ Use the setup instructions that match the one you want to get started with.
     ```bash
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.1
     ```
-6. Clone an existing Git DRS repo. If you don't have one set up, set one up using GitHub
+6. Clone an existing Git DRSrepo. If you don't have one set up, create a git repo on GitHub before continuing.
     ```bash
     cd ..
 
@@ -53,11 +53,17 @@ Use the setup instructions that match the one you want to get started with.
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-7. Contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name.
-8. Configure general acccess to your data commons. Combined with the credentials path and a profile name of your choice,
-    ```bash
-    git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
-    ```
+7. Configure general acccess to your data commons.
+    - Check if there is an existing configuration file: ls .drs/
+    - If there is no config.yaml, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file from step 3, run
+      ```bash
+        git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
+      ```
+    - If there is a config.yaml, we will use the existing configuration to authenticate you. Using the credentials file from step 3, run
+      ```bash
+        git drs init --cred /path/to/   downloaded/credentials.json
+      ```
+    
 
 #### AnVIL Setup: Jupyter Environment
 
@@ -116,9 +122,15 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 6. Using the Terra project ID, configure general acccess to AnVIL:
-    ```bash
-    git drs init --anvil --terraProject <terra-project-id>
-    ```
+    - Check if there is an existing configuration file: ls .drs/
+    - If there is no config.yaml, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file from step 3, run
+      ```bash
+        git drs init --mode anvil --terraProject <terra-project-id>
+      ```
+    - If there is a config.yaml, we will use the existing configuration to authenticate you. Using the credentials file from step 3, run
+      ```bash
+        git drs init --mode anvil
+      ```
 
 With the setup complete, follow the Quick Start to learn how to do common Git DRS workflows.
 

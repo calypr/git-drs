@@ -267,7 +267,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	return &out, nil
 }
 
-func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
+func (cl *IndexDClient) ListDrsObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
 	a := *cl.base
@@ -616,4 +616,86 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	drsObj, err := cl.GetObject(drsId)
 
 	return drsObj, nil
+}
+
+// implements /index/index?authz={resource_path}&start={start}&limit={limit} GET
+func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecordsResult, error) {
+	const PAGESIZE = 50
+	pageNum := 0
+
+	cl.logger.Log("Getting DRS objects from indexd")
+	authz := strings.Split(projectId, "-")
+	fmt.Println("AUTHZ: ", authz)
+	resourcePath := fmt.Sprintf("/programs/%s/projects/%s", authz[0], authz[1])
+	a := *cl.base
+	a.Path = filepath.Join(a.Path, "index/index")
+
+	out := make(chan ListRecordsResult, 50)
+	go func() {
+		defer close(out)
+		active := true
+		for active {
+			// setup request
+			req, err := http.NewRequest("GET", a.String(), nil)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			q := req.URL.Query()
+			q.Add("authz", fmt.Sprintf("%s", resourcePath))
+			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
+			q.Add("page", fmt.Sprintf("%d", pageNum))
+			req.URL.RawQuery = q.Encode()
+
+			err = addGen3AuthHeader(req, cl.profile)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			// execute request with error checking
+			client := &http.Client{}
+			response, err := client.Do(req)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+			if response.StatusCode != http.StatusOK {
+				cl.logger.Logf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
+				out <- ListRecordsResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
+				return
+			}
+
+			// return page of DRS objects
+			page := &ListRecords{}
+			err = json.Unmarshal(body, &page)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+			for _, elem := range page.Records {
+				out <- ListRecordsResult{Record: &elem}
+			}
+			if len(page.Records) == 0 {
+				active = false
+			}
+			pageNum++
+		}
+
+		cl.logger.Logf("total pages retrieved: %d", pageNum)
+	}()
+	return out, nil
 }

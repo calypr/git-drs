@@ -2,6 +2,7 @@ package list
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
@@ -52,7 +53,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListObjects()
+		objChan, err := client.ListDrsObjects()
 		if err != nil {
 			return err
 		}
@@ -75,6 +76,44 @@ var Cmd = &cobra.Command{
 			} else {
 				logger.Logf("%s\t%-15d\t%-75s\t%s\n", obj.SelfURI, obj.Size, getCheckSumStr(*obj), obj.Name)
 			}
+		}
+		return nil
+	},
+}
+
+// Cmd line declaration
+var ListProjectCmd = &cobra.Command{
+	Use:   "list-project",
+	Short: "List DRS entities from server",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		logger, err := client.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		client, err := client.NewIndexDClient(logger)
+		if err != nil {
+			return err
+		}
+		objChan, err := client.ListObjectsByProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		for objResult := range objChan {
+			if objResult.Error != nil {
+				return objResult.Error
+			}
+			obj := objResult.Record
+			out, err := json.Marshal(*obj)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s\n", string(out))
+
 		}
 		return nil
 	},

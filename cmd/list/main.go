@@ -10,9 +10,9 @@ import (
 
 var outJson = false
 
-var checksumPref = []string{"sha256", "md5", "etag"}
+var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
 
-func getStringPos(q string, a []string) int {
+func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
 	for i, s := range a {
 		if q == s {
 			return i
@@ -26,10 +26,10 @@ func getCheckSumStr(obj drs.DRSObject) string {
 	curPos := len(checksumPref) + 1
 	curVal := ""
 	for _, e := range obj.Checksums {
-		c := getStringPos(e.Type, checksumPref)
+		c := getChecksumPos(e.Type, checksumPref)
 		if c != -1 && c < curPos {
 			curPos = c
-			curVal = e.Type + ":" + e.Checksum
+			curVal = e.Type.String() + ":" + e.Checksum
 		}
 	}
 	return curVal

@@ -20,6 +20,11 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	var writers []io.Writer
 
 	if filename == "" {
+		//create drs dir if it doesn't exist
+		if err := os.MkdirAll(config.DRS_DIR, 0755); err != nil {
+			return nil, err
+		}
+
 		filename = filepath.Join(config.DRS_DIR, "git-drs.log") // Assuming transfer.log is a variable
 	}
 

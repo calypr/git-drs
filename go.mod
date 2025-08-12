@@ -6,7 +6,7 @@ require (
 	github.com/calypr/data-client v0.0.0-20250731183638-085b5d0f22f0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.9.1
-	sigs.k8s.io/yaml v1.4.0
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -29,6 +29,7 @@ require (
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect

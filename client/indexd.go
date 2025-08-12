@@ -270,7 +270,8 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 func (cl *IndexDClient) ListDrsObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
-	a := *cl.Base
+
+	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
 	out := make(chan drs.DRSObjectResult, 10)

@@ -93,7 +93,7 @@ drs_downloader --help
 git clone https://github.com/quinnwai/super-cool-anvil-analysis.git
 cd super-cool-anvil-analysis/
 vi .drs/config  # edit the terraProject in the .drsconfig to your Google project ID
-git drs init --anvil --terraProject $GOOGLE_PROJECT
+git drs init --server anvil --terraProject $GOOGLE_PROJECT
 
 # localize the manifest, for example anvil-manifest.tsv
 gsutil cp $WORKSPACE_BUCKET/anvil-manifest.tsv .
@@ -130,11 +130,11 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
       ```
     - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run
       ```bash
-        git drs init --mode anvil --terraProject <terra-project-id>
+        git drs init --server anvil --terraProject <terra-project-id>
       ```
     - If there is a config.yaml, we will use the existing configuration to authenticate you. Using the credentials file from step 3, run
       ```bash
-        git drs init --mode anvil
+        git drs init --server anvil
       ```
 
 With the setup complete, follow the Quick Start to learn how to do common Git DRS workflows.

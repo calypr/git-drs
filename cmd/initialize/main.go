@@ -119,7 +119,10 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	}
 
 	// add some patterns to the .gitignore if not already present
-	gitignorePatterns := []string{".drs/*", "!" + config.DRS_OBJS_PATH, "drs_downloader.log"}
+	configStr := "!" + filepath.Join(config.DRS_DIR, config.CONFIG_YAML)
+	drsDirStr := fmt.Sprintf("%s/**", config.DRS_DIR)
+
+	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
 	for _, pattern := range gitignorePatterns {
 		if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
 			return fmt.Errorf("Init Error: %v\n", err)

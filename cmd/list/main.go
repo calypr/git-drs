@@ -83,7 +83,7 @@ var Cmd = &cobra.Command{
 	},
 }
 var ListProjectCmd = &cobra.Command{
-	Use:   "list-project",
+	Use:   "list-project <project-id>",
 	Short: "List DRS entities from server",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {

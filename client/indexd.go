@@ -630,7 +630,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "index/index")
 
-	out := make(chan ListRecordsResult, 50)
+	out := make(chan ListRecordsResult, PAGESIZE)
 	go func() {
 		defer close(out)
 		active := true

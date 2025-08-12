@@ -61,7 +61,7 @@ type ListRecords struct {
 	IDs      []string       `json:"ids"`
 	Records  []OutputInfo   `json:"records"`
 	Size     int64          `json:"size"`
-	Start    string         `json:"start"`
+	Start    int64          `json:"start"`
 	Limit    int64          `json:"limit"`
 	FileName string         `json:"file_name"`
 	URLs     []string       `json:"urls"`

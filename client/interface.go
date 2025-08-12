@@ -7,7 +7,7 @@ type ObjectStoreClient interface {
 	// corresponds to /ga4gh/drs/v1/objects
 	GetObject(id string) (*drs.DRSObject, error)
 
-	ListDrsObjects() (chan drs.DRSObjectResult, error)
+	ListObjects() (chan drs.DRSObjectResult, error)
 
 	// Given a projectId, list all of the records associated with it
 	ListObjectsByProject(project string) (chan ListRecordsResult, error)

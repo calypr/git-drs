@@ -55,7 +55,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListDrsObjects()
+		objChan, err := client.ListObjects()
 		if err != nil {
 			return err
 		}

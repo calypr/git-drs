@@ -20,6 +20,7 @@ import (
 	"github.com/calypr/data-client/data-client/jwt"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/utils"
 )
 
 var conf jwt.Configure
@@ -267,7 +268,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	return &out, nil
 }
 
-func (cl *IndexDClient) ListDrsObjects() (chan drs.DRSObjectResult, error) {
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
 
@@ -625,8 +626,11 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 	pageNum := 0
 
 	cl.logger.Log("Getting DRS objects from indexd")
-	authz := strings.Split(projectId, "-")
-	resourcePath := fmt.Sprintf("/programs/%s/projects/%s", authz[0], authz[1])
+	resourcePath, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, err
+	}
+
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "index/index")
 

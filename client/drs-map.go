@@ -133,18 +133,20 @@ func UpdateDrsObjects(logger *Logger) error {
 		// }
 		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
-		// get url using bucket name, drsId, and file name
+		// get gen3 config
 		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		bucketName := cfg.Gen3Bucket
-		if bucketName == "" {
+
+		// get auth info from config
+		gen3Auth := cfg.Servers.Gen3.Auth
+		if gen3Auth.Bucket == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}
-		fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucketName, drsId, file.Oid))
+		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
 
-		authzStr, err := utils.ProjectToResource(cfg.Gen3Project)
+		authzStr, err := utils.ProjectToResource(gen3Auth.ProjectID)
 		if err != nil {
 			return err
 		}

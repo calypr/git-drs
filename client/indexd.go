@@ -11,6 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	token "github.com/bmeg/grip-graphql/middleware"
+	"github.com/calypr/data-client/data-client/commonUtils"
 
 	"github.com/calypr/data-client/data-client/g3cmd"
 	"github.com/calypr/data-client/data-client/jwt"
@@ -40,6 +44,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 		return nil, err
 	}
 
+	logger.Logf("Loaded config: current server is %s", cfg.CurrentServer)
+	if cfg.CurrentServer != config.Gen3ServerType {
+		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
+	}
+	gen3Auth := cfg.Servers.Gen3.Auth
+
 	var clientLogger LoggerInterface
 	if logger == nil {
 		clientLogger = &NoOpLogger{}
@@ -48,7 +58,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Profile and endpoint
-	profile := cfg.Gen3Profile
+	profile := gen3Auth.Profile
 	if profile == "" {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drs/config")
 	}
@@ -67,12 +77,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := cfg.Gen3Project
+	projectId := gen3Auth.ProjectID
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
 	}
 
-	bucketName := cfg.Gen3Bucket
+	bucketName := gen3Auth.Bucket
 	if bucketName == "" {
 		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drs/config")
 	}
@@ -87,7 +97,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	drsObj, err := cl.GetObjectByHash("sha256", oid)
+	drsObj, err := cl.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		cl.logger.Logf("error getting DRS object for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
@@ -135,6 +145,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// log response and body
+	cl.logger.Logf("response status: %s", response.Status)
+	cl.logger.Logf("response body: %s", body)
 
 	accessUrl := drs.AccessURL{}
 	err = json.Unmarshal(body, &accessUrl)
@@ -256,7 +270,6 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
-
 	a := *cl.base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
@@ -348,6 +361,18 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	}
 	if profileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")
+	}
+	expiration, err := token.GetExpiration(profileConfig.AccessToken)
+	if err != nil {
+		return err
+	}
+	// Update AccessToken if token is old
+	if expiration.Before(time.Now()) {
+		r := jwt.Request{}
+		err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+		if err != nil {
+			return fmt.Errorf("error refreshing access token: %s", err)
+		}
 	}
 
 	// Add headers to the request
@@ -582,11 +607,11 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 
 	// if more than one record found, write it to log
 	if len(records.Records) > 1 {
-		myLogger.Log("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+		cl.logger.Logf("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}
 
 	drsId := records.Records[0].Did
-	myLogger.Log("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
+	cl.logger.Logf("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
 
 	drsObj, err := cl.GetObject(drsId)
 

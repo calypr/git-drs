@@ -67,7 +67,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
 		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return nil, fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=<profile-name> --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' first\n")
+			return nil, fmt.Errorf("Gen3 profile not configured. Run 'git drs init', use the '--help' flag for more info\n")
 		}
 		return nil, err
 	}
@@ -80,12 +80,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	// get the gen3Project and gen3Bucket from the config
 	projectId := gen3Auth.ProjectID
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a project key in your .drsconfig")
+		return nil, fmt.Errorf("No gen3 project specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 
 	bucketName := gen3Auth.Bucket
 	if bucketName == "" {
-		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 	return &IndexDClient{baseUrl, profile, projectId, bucketName, clientLogger}, err
 }

@@ -143,11 +143,11 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	return &cfg, nil
 }
 
-func UpdateCurrentServer(serverType ServerType) error {
+func UpdateCurrentServer(serverType ServerType) (*Config, error) {
 	// load existing config
 	cfg, err := LoadConfig()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// set current server
@@ -156,22 +156,22 @@ func UpdateCurrentServer(serverType ServerType) error {
 	// overwrite the existing config file
 	configPath, err := getConfigPath()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer file.Close()
 
 	file.Seek(0, 0)
 	file.Truncate(0)
 	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	return nil
+	return cfg, nil
 }
 
 // load an existing config

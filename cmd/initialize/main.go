@@ -32,10 +32,11 @@ var Cmd = &cobra.Command{
 	Short: "Initialize repo and server access for git-drs",
 	Long: "Description:" +
 		"\n  Initialize repo and server access for git-drs with a gen3 or AnVIL server, gen3 as default" +
-		"\n   ~ gen3 first init: provide a url, bucket, profile, project ID, and either a credentials file or token" +
-		"\n   ~ general gen3 inits: just a credential file or token is needed" +
-		"\n   ~ AnVIL first init: set --server as anvil provide a Terra project ID" +
-		"\n   ~ general AnVIL inits: just set --server as anvil" +
+		"\n  How to Use:" +
+		"\n   ~ gen3 first init: provide a --url, --bucket, --profile, --project, and either a --cred or --token flag" +
+		"\n   ~ general gen3 inits: just pass in a --cred or --token flag" +
+		"\n   ~ AnVIL first init: set --server as anvil and provide a --terraProject" +
+		"\n   ~ general AnVIL inits: set --server as anvil" +
 		"\n   ~ See below for the flag requirements for each server",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -44,7 +45,7 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVar(&server, "server", "gen3", "Options for DRS server: gen3 or anvil. Defaults to gen3")
+	Cmd.Flags().StringVar(&server, "server", "gen3", "Options for DRS server: gen3 or anvil")
 	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
 	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
 	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
@@ -173,18 +174,18 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 				},
 			},
 		}
-		cfg, err := config.UpdateServer(serversMap)
+		_, err := config.UpdateServer(serversMap)
 		if err != nil {
-			return fmt.Errorf("Error: unable to update config file: %v\n", err)
+			return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
 		}
-		log.Logf("Current server set to %s\n", cfg.CurrentServer)
 	}
 
 	// update current server in config
-	err := config.UpdateCurrentServer(config.Gen3ServerType)
+	cfg, err := config.UpdateCurrentServer(config.Gen3ServerType)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
 	}
+	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config
 	err = initGitConfig(config.Gen3ServerType)
@@ -242,18 +243,18 @@ func anvilInit(terraProject string, log *client.Logger) error {
 				},
 			},
 		}
-		cfg, err := config.UpdateServer(serversMap)
+		_, err := config.UpdateServer(serversMap)
 		if err != nil {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
-		log.Logf("Current server set to %s\n", cfg.CurrentServer)
 	}
 
 	// update current server in config
-	err := config.UpdateCurrentServer(config.AnvilServerType)
+	cfg, err := config.UpdateCurrentServer(config.AnvilServerType)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
 	}
+	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config for anvil
 	err = initGitConfig(config.AnvilServerType)

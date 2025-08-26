@@ -11,7 +11,7 @@ Git DRS functions within Git, so you will only need a few extra commands other t
 Here are some example commands used in pushing a file, detailing the ways in which Git DRS plugs into the Git workflow:
 
 - `git drs init`: Git DRS initializes your repo and server locally
-- `git lfs track <file-wildcard>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
+- `git lfs track <file-pattern>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
 - `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
 - `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file.
 - `git push`: before each push, Git DRS updates the DRS server and transfers each committed file to the configured object storage.
@@ -19,16 +19,17 @@ Here are some example commands used in pushing a file, detailing the ways in whi
 
 ## Getting Started
 
-Currently, we support a couple types of entrypoints to DRS servers:
-1. gen3 server on your local machine
-2. AnVIL server on a Jupyter environment within Terra
-3. AnVIL server on your local machine outside of Terra
+Currently, we support a couple different ways to set up Git DRS depending on where you are doing the setup and what type of DRS server you want to target. Specifically, we have setup for the following:
+1. local user targeting a gen3 DRS server like CALYPR
+2. HPC (high-performance computing) user targeting a gen3 DRS server like CALYPR
+3. Jupyter environment use within Terra targeting an AnVIL DRS server
+4. local user outside of terra targeting an AnVIL DRS server
 
-Use the setup instructions that match the one you want to get started with.
+Find the setup instructions below that match your use case.
 
 ### Setup
 
-#### Gen3 Setup (General)
+#### Local User, Gen3 Server Setup
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
@@ -41,30 +42,72 @@ Use the setup instructions that match the one you want to get started with.
    3. Click Create API Key -> Download JSON
    4. Make note of the path that it downloaded to
 4. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
-5. Install Git DRS. For example, to install version 0.2.1
+5. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
     ```bash
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.1
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.2
     ```
-6. Clone an existing Git DRSrepo. If you don't have one set up, create a git repo on GitHub before continuing.
-    ```bash
-    cd ..
+6. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/user`
+   ```bash
 
-    # clone test repo
-    git clone <repo-clone-url>.git
-    cd <name-of-repo>
+    # load up the bash file
+    vi ~/.bash_profile
+
+    # TODO: add the following line to the file without the #
+    # export PATH="$PATH:$HOME/.local/bin"
+
+    # refresh your shell
+    source ~/.bash_profile
     ```
-7. Configure general acccess to your data commons.
-    - Check that `cat .drs/config.yaml` shows a gen3 server with an `endpoint`, `profile`, `project_id` and `bucket`,
-     - If the gen3 server exists, then we only need to provide our user credentials. Using the credentials file from step 3, run
-      ```bash
-        git drs init --cred /path/to/ downloaded/credentials.json
-      ```
-    - If this gen3 server is incomplete or empty, contact your data coordinator to receive the details for your gen3 project, specifically the server endpoint, project ID, and bucket name. Then, using the credentials file from step 3, run
-      ```bash
-        git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <program-project> --bucket <bucket_name>
-      ```
+7. Confirm that Git DRS is available with `git-drs --help`
    
-    
+#### HPC User, Gen3 Server Setup
+1. On ARC, download Git LFS (brew install git-lfs for Mac users)
+  ```bash
+    # download git-lfs binary
+    wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz; tar -xzf git-lfs-linux-amd64-v3.7.0.tar.gz
+
+    # make git-lfs binary accessible to current session
+    export PREFIX=$HOME
+    ./git-lfs-linux-v3.7.0/install.sh
+
+    # ensure you have a bash_profile, should print the path
+    ls -a ~/.bash_profile
+
+    # make git-lfs accessible in all future bash sessions
+    echo ‘export PATH="$HOME/bin:$PATH"’ >> ~/.bash_profile
+    source ~/.bash_profile
+
+    # install git-lfs
+    git lfs version
+    git lfs install —-skip-smudge
+
+    # clean up files
+    rm git-lfs-linux-amd64-v3.7.0.tar.gz
+    rm -r git-lfs-3.7.0/
+  ```
+2. If using ARC - Check if Git has been configured already on ARC. If not:
+    1. On ARC - Create new SSH key by following the [sections on the Linux tab](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) - “Generating new SSH Key” and “Adding your SSH key to the ssh-agent”
+    2. Add this key to the source GitHub at https://source.ohsu.edu/settings/keys 
+3. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
+    ```bash
+    export GIT_DRS_VERSION=0.2.2
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
+    ```
+4. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/user`
+   ```bash
+
+    # load up the bash file
+    vi ~/.bash_profile
+
+    # TODO: add the following line to the file
+    # export PATH="$PATH:$HOME/.local/bin"
+
+    # refresh your shell
+    source ~/.bash_profile
+    ```
+5. Confirm that Git DRS is available with `git-drs --help`
+
+
 
 #### AnVIL Setup: Jupyter Environment
 
@@ -114,15 +157,17 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
     git lfs install --skip-smudge
     ```
 3. Identify the release of Git DRS that you want from the [Releases page](https://github.com/calypr/git-drs/releases)
-4. Install Git DRS. For example, to install version 0.2.1
+4. Install Git DRS. For example, to install version 0.2.2
     ```bash
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.1
+    export GIT_DRS_VERSION=0.2.2
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
     ```
-5. Get a Terra project to use for billing
+5. Confirm that Git DRS is available with `git-drs --help`    
+6. Get a Terra project to use for billing
    1. Log in to get to the [AnVIL Workspaces page](https://anvil.terra.bio/#workspaces)
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
-6. Using the Terra project ID, configure general acccess to AnVIL:
+7. Using the Terra project ID, configure general acccess to AnVIL:
     - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
      - If the gen3 server exists, then using the credentials file path from step 3, run
       ```bash
@@ -142,37 +187,87 @@ With the setup complete, follow the Quick Start to learn how to do common Git DR
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 
+
+#### Initialize a Git DRS Repo
+
+Every time you create or clone a new Git repo, you have to initialize it with Git DRS.
+
+**To setup an existing Git DRS repo with a gen3 server...**
+1. Clone the existing repo
+    ```bash
+    git clone <repo-clone-url>.git
+    cd <name-of-repo>
+    ```
+2. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+    1. Log in to your data commons
+    2. Click your email in the top right to go to your profile
+    3. Click "Create API Key" → "Download JSON"
+    4. Make note of the path that it downloaded to
+    5. Move the file over to arc, for example `scp /path/to/credentials.json arc:/home/users/<your-username>`
+    6. This credential is valid for 30 days and needs to be redownloaded after that
+3. Initialize your user credentials. 
+      ```bash
+        git drs init --cred /path/to/ downloaded/credentials.json
+      ```
+
+**To start from scratch...**
+1. Create a git repo on GitHub 
+2. Clone an existing Git DRS repo. If you don't have one set up, before continuing.
+    ```bash
+    cd ..
+
+    # clone test repo
+    git clone <repo-clone-url>.git
+    cd <name-of-repo>
+    ```
+3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+    1. Log in to your data commons
+    2. Click your email in the top right to go to your profile
+    3. Click "Create API Key" → "Download JSON"
+    4. Make note of the path that it downloaded to
+    5. Move the file over to arc, for example `scp /path/to/credentials.json arc:/home/users/<your-username>`
+    6. This credential is valid for 30 days and needs to be redownloaded after that
+4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
+5. Using the info from steps 3 and 4, configure general acccess to your data commons.
+      ```bash
+        git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <project_id> --bucket <bucket_name>
+      ```
+
 #### Track a Specific Set of Files
-If you want to track a specific file in the Git repo while still storing, you will need to register that file with Git LFS. This is done by doing a `git lfs track` and then adding  the  `.gitattributes` that stores this information.
+If you want to track a data file in the Git repo, you will need to register that file with Git LFS. This is done by doing a `git lfs track` and then git adding the  `.gitattributes` that stores this information.
 
 First see what files are already being tracked
 ```bash
 git lfs track
 ```
 
-Then, determine whether you want to track a single file, a certain set of files, or a whole folder of files. to track a single file located at `path/to/file.txt`
+Then, determine whether you want to track a single file, a certain set of files, or a whole folder of files.
+
+To track a single file located at `path/to/file.txt`:
 ```bash
 git lfs track path/to/file.txt
 git add .gitattributes
 ```
 
-To track all bam files
+To track all bam files:
 ```bash
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
-To track all files in a particular directory
+To track all files in a particular directory:
 ```bash
 # track all files in the data/ directory
 git lfs track "data/**"
 git add .gitattributes
 ```
 
-Just like Git, only files within the repository can be used here. Once you have tracked a file, you can go about doing the usual Git workflow to stage, commit, and push it to GitHub. An example workflow for this is shown below.
+Just like Git, only files stored in the repository directory can be added. Once you have tracked a file, you can go about doing the usual Git workflow to stage, commit, and push it to GitHub. An example workflow for this is shown below.
 
 
 #### Example Workflow: Push a File
+
+Below are the steps to push a file once you have localized and `init`ed a Git DRS repo.
 ```bash
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
@@ -183,6 +278,9 @@ git lfs track
 
 # add the file to git
 git add /path/to/file.bam
+
+# see all files being tracked by LFS in the repo
+git lfs ls-files
 
 # check that file.bam is being tracked by LFS
 git lfs ls-files -I file.bam
@@ -210,13 +308,20 @@ git lfs pull
 #### Untrack an LFS file
 
 If you realized you made a typo when doing LFS track, you can use
+
+```bash
+git lfs track
+```
+
+to see all of the file patterns that are being matched and then
+
 ```bash
 git lfs untrack <file-pattern>
 ```
 
 to remove a particular file pattern.
 
-You can confirm that the edits are removed before staging those changes with
+You can confirm that the edits are removed, then staging those changes with
 ```bash
 # confirm the pattern is removed
 git lfs track

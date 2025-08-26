@@ -2,7 +2,7 @@
 
 ## About
 
-Built off [Git LFS](https://git-lfs.com/) and [DRS](https://ga4gh.github.io/data-repository-service-schemas/), Git DRS allows you to easily manage data files in a standardized way. With Git DRS, data files that are traditionally too large to store in Git can be tracked along with your code in a single Git repo! We provide standardized access to DRS servers for data platforms like gen3 and AnVIL. And the best part: you can still use the same Git commands you know (and possibly love)! Using just a few extra command line tools, Git DRS helps consolidate your data and code into a single Git workflow.
+Built off [Git LFS](https://git-lfs.com/) and [DRS](https://ga4gh.github.io/data-repository-service-schemas/), Git DRS allows you to easily manage data files in a standardized way. With Git DRS, data files that are traditionally too large to store in Git can be tracked along with your code in a single Git repo! We provide standardized access to DRS servers for data platforms like gen3 and AnVIL. And the best part: you can still use the same Git commands you know (and possibly love). Using just a few extra command line tools, Git DRS helps consolidate your data and code into a single Git workflow.
 
 ## Basics
 
@@ -142,27 +142,44 @@ With the setup complete, follow the Quick Start to learn how to do common Git DR
 ### Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 
-#### Track a Specific File Type
-Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
+#### Track a Specific Set of Files
+If you want to track a specific file in the Git repo while still storing, you will need to register that file with Git LFS. This is done by doing a `git lfs track` and then adding  the  `.gitattributes` that stores this information.
 
+First see what files are already being tracked
 ```bash
-# see what files are already being tracked
 git lfs track
+```
 
-# track all bams
+Then, determine whether you want to track a single file, a certain set of files, or a whole folder of files. to track a single file located at `path/to/file.txt`
+```bash
+git lfs track path/to/file.txt
+git add .gitattributes
+```
+
+To track all bam files
+```bash
 git lfs track "*.bam"
 git add .gitattributes
 ```
+
+To track all files in a particular directory
+```bash
+# track all files in the data/ directory
+git lfs track "data/**"
+git add .gitattributes
+```
+
+Just like Git, only files within the repository can be used here. Once you have tracked a file, you can go about doing the usual Git workflow to stage, commit, and push it to GitHub. An example workflow for this is shown below.
 
 
 #### Example Workflow: Push a File
 ```bash
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
+git add .gitattributes
 
 # check list of tracked files before staging the list 
 git lfs track
-git add .gitattributes
 
 # add the file to git
 git add /path/to/file.bam
@@ -187,6 +204,25 @@ git lfs pull -I "*.bam"
 
 # Pull all non-localized files
 git lfs pull
+```
+
+
+#### Untrack an LFS file
+
+If you realized you made a typo when doing LFS track, you can use
+```bash
+git lfs untrack <file-pattern>
+```
+
+to remove a particular file pattern.
+
+You can confirm that the edits are removed before staging those changes with
+```bash
+# confirm the pattern is removed
+git lfs track
+
+# stage your changes to the list of LFS file patterns
+git add .gitattributes
 ```
 
 ## When to Use Git vs Git LFS vs Git DRS

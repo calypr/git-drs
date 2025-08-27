@@ -320,7 +320,7 @@ The goal of Git DRS is to maximize integration with the Git workflow using a min
 
 ### Logs and Error Messages
 - To see more logs, view the log files in the `.drs/` directory.
-- - As mentioned in [Basics](#basics), Git DRS plugs in automatically during the git `commit` and `push`, so logs are most useful when debugging those commands.
+- - As mentioned in [Basics](#basics), Git DRS plugs in automatically during the git `commit`, `push`, and `pull`, so logs are most useful when debugging those commands.
 - For errors related to connection like `net/http: TLS handshake timeout`, just try running the command again.
 
 ### Undoing Your Changes
@@ -370,24 +370,26 @@ git restore --staged <file1> <file2> ...
 
 to restore any files or directories that you might have already committed
 
-## Implementation Details
+## Developer Guide
+
+This section is useful for folks who want to learn more of the git DRS internals either as an implementer or as a curious user.
 
 ### Adding new files
-When new files are added, a [precommit hook](https://git-scm.com/book/ms/v2/Customizing-Git-Git-Hooks#:~:text=The%20pre%2Dcommit,on%20new%20methods.) is run which triggers `git drs precommit`. This takes all of the LFS files that have been staged (ie `git add`ed) and creates DRS records for them. Those get used later during a push to register these new files in the DRS server. DRS objects are only created during this pre-commit if they have been staged
-and don't already exist on the DRS server.
+When new files are added, a [precommit hook](https://git-scm.com/book/ms/v2/Customizing-Git-Git-Hooks#:~:text=The%20pre%2Dcommit,on%20new%20methods.) is run which triggers `git drs precommit`. This takes all of the LFS files that have been staged (ie `git add`ed) and creates DRS records for them. Those get used later during a push to register these new files in the DRS server. DRS objects are only created during this pre-commit if they have been staged and don't already exist on the DRS server.
 
 ### File transfers
 
-In order to push file contents to a different system, Git DRS makes use of [custom transfers](https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md). These custom transfer are how Git LFS sends information to Git DRS to automatically update the server, passing in the files that have been changed for every each commit that needs to be pushed.. For instance,in the gen3 custom transfer client, we add a indexd record to the DRS server and upload the file to a gen3-registered bucket.  
+In order to push file contents to a different system, Git DRS makes use of [custom transfers](https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md). These custom transfer are how Git LFS sends information to Git DRS to automatically update the server, passing in the files that have been changed for every each commit that needs to be pushed.. For instance,in the gen3 custom transfer client, we add a indexd record to the DRS server and upload the file to a gen3-registered bucket. The same idea applies to the pull and is why we write to a log file instead of directly to stdout during a `git lfs pull` or a `git push`
 
 ### Download from source code
-if you want to build directly from source code,
+if you want to build directly from source code, you will need Go installed...
+
  ```bash
 # build git-drs from source w/ custom gen3-client dependency
 git clone https://github.com/calypr/git-drs.git
 cd git-drs
 go build
 
-# make the executable accessible
+# make the current path of the executable accessible
 export PATH=$PATH:$(pwd)
 ```

@@ -6,19 +6,25 @@ Built off [Git LFS](https://git-lfs.com/) and [DRS](https://ga4gh.github.io/data
 
 ## Basics
 
-Git DRS functions within Git, so you will only need a few extra commands other than the usual Git commands to manage your files.
+There are two main concepts to understand Git DRS: how **Git LFS tracks** specific files as pointers and how **Git DRS stores** the data files referenced by these pointers.
 
-Here are some example commands used in pushing a file, detailing the ways in which Git DRS plugs into the Git workflow:
+Git LFS primarily ensures that you can track your files and convert them into pointers when you stage those files with Git. More info on Git LFS can be found [here](https://git-lfs.com/).
+
+Git DRS also functions within the Git workflow by building off Git LFS to manage your files. It plugs in 3 main ways:
+1. Git DRS is called *manually* when initializing a Git repo
+2. Git DRS is called *automatically* when committing new files to the repo
+3. Git DRS is called *automatically* when transferring files between your remote and your local copy of the repo.
+
+Here are some example commands used in pushing a file:
 
 - `git drs init`: Git DRS initializes your repo and server locally
 - `git lfs track <file-pattern>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
 - `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
-- `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file.
-- `git push`: before each push, Git DRS updates the DRS server and transfers each committed file to the configured object storage.
+- `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file and prepares it for a push.
+- `git push`: before each push, Git DRS updates the DRS server with your file details and uploads each committed file to the configured object storage.
 
 
-## Getting Started
-
+## Setup
 Currently, we support a couple different ways to set up Git DRS depending on where you are doing the setup and what type of DRS server you want to target. Specifically, we have setup for the following:
 1. local user targeting a gen3 DRS server like CALYPR
 2. HPC (high-performance computing) user targeting a gen3 DRS server like CALYPR
@@ -26,8 +32,6 @@ Currently, we support a couple different ways to set up Git DRS depending on whe
 4. local user outside of terra targeting an AnVIL DRS server
 
 Find the setup instructions below that match your use case.
-
-### Setup
 
 #### Local User, Gen3 Server Setup
 
@@ -108,7 +112,6 @@ Find the setup instructions below that match your use case.
 5. Confirm that Git DRS is available with `git-drs --help`
 
 
-
 #### AnVIL Setup: Jupyter Environment
 
 To get set up in a Jupyter Environment on Terra,
@@ -184,7 +187,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
 
 With the setup complete, follow the Quick Start to learn how to do common Git DRS workflows.
 
-### Quick Start
+## Quick Start
 When in doubt, use the `--help` flag to get more info about the commands
 
 
@@ -304,6 +307,23 @@ git lfs pull -I "*.bam"
 git lfs pull
 ```
 
+## When to Use Git vs Git LFS vs Git DRS
+The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...
+- **Git DRS**: Only used for initialization of your local repo! The rest of Git DRS is handled in the background automatically.
+- **Git LFS**: Used to interact with files that are tracked by LFS. Examples include
+   - `git lfs track` to track files whose contents are stored outside of the Git repo
+   - `git lfs ls-files` to get a list of LFS files that LFS tracks
+   - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
+- **Git**: Everything else! (adding/committing files, pushing files, cloning repos, checking out different commits, etc)
+
+## Troubleshooting
+
+### Logs and Error Messages
+- To see more logs, view the log files in the `.drs/` directory.
+- - As mentioned in [Basics](#basics), Git DRS plugs in automatically during the git `commit` and `push`, so logs are most useful when debugging those commands.
+- For errors related to connection like `net/http: TLS handshake timeout`, just try running the command again.
+
+### Undoing Your Changes
 
 #### Untrack an LFS file
 
@@ -330,20 +350,25 @@ git lfs track
 git add .gitattributes
 ```
 
-## When to Use Git vs Git LFS vs Git DRS
-The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...
-- **Git DRS**: Only used for initialization of your local repo! The rest of Git DRS is handled in the background automatically.
-- **Git LFS**: Used to interact with files that are tracked by LFS. Examples include
-   - `git lfs track` to track files whose contents are stored outside of the Git repo
-   - `git lfs ls-files` to get a list of LFS files that LFS tracks
-   - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
-- **Git**: Everything else! (adding/committing files, pushing files, cloning repos, checking out different commits, etc)
+### Undoing a Commit
 
-## Troubleshooting
+If you want to try committing again on a set of files, you can undo the last commit using `git reset --hard HEAD~1`. This moves all of the files back into the working directory, so you can retry using `git add` and `git commit`
 
-- To see more logs and errors, see the log files in the `.drs` directory.
-- For errors related to connection like `net/http: TLS handshake timeout`, just try running the command again.
-- If you want to try committing again on a set of files, you can undo the last commit using `git reset --hard HEAD~1`. This moves all of the files back into the working directory, so you can retry using `git add` and `git commit`
+### Undoing a git add
+
+In cases where you need to undo your staged changes from a git add
+
+```bash
+git status
+```
+
+to see all your changes and then 
+
+```bash
+git restore --staged <file1> <file2> ...
+```
+
+to restore any files or directories that you might have already committed
 
 ## Implementation Details
 

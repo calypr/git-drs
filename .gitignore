@@ -3,3 +3,5 @@
 /tmp
 /build
 git-drs
+# DRS log files should not be committed
+.drs/git-drs.log

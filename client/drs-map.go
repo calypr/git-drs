@@ -12,6 +12,7 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/workflow"
 	"github.com/google/uuid"
 )
 
@@ -172,6 +173,18 @@ func UpdateDrsObjects(logger *Logger) error {
 		logger.Logf("Created %s for file %s", drsObjPath, file.Name)
 	}
 
+	logger.Log("DRS objects creation completed")
+
+	// Trigger workflows for newly processed files
+	if len(stagedFiles) > 0 {
+		logger.Log("Checking for workflow triggers...")
+		err = triggerWorkflowsForStagedFiles(stagedFiles, logger)
+		if err != nil {
+			logger.Logf("Warning: workflow triggering failed: %v", err)
+			// Don't fail the entire operation if workflows fail
+		}
+	}
+
 	return nil
 }
 
@@ -218,6 +231,21 @@ func DrsInfoFromOid(oid string) (IndexdRecord, error) {
 	}
 
 	return indexdObj, nil
+}
+
+// triggerWorkflowsForStagedFiles triggers workflows for staged files
+func triggerWorkflowsForStagedFiles(stagedFiles []string, logger *Logger) error {
+	// Load configuration
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("error loading config for workflow triggering: %v", err)
+	}
+
+	// Create workflow manager
+	workflowManager := workflow.NewWorkflowManager(cfg, logger)
+
+	// Trigger workflows for the staged files
+	return workflowManager.TriggerWorkflowsForFiles(stagedFiles)
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {

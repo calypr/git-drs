@@ -13,7 +13,7 @@ Here are some example commands used in pushing a file, detailing the ways in whi
 - `git drs init`: Git DRS initializes your repo and server locally
 - `git lfs track <file-wildcard>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
 - `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
-- `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file.
+- `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file. **NEW**: Workflows can be automatically triggered based on file types.
 - `git push`: before each push, Git DRS updates the DRS server and transfers each committed file to the configured object storage.
 
 
@@ -197,6 +197,23 @@ The goal of Git DRS is to maximize integration with the Git workflow using a min
    - `git lfs ls-files` to get a list of LFS files that LFS tracks
    - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
 - **Git**: Everything else! (adding/committing files, pushing files, cloning repos, checking out different commits, etc)
+
+## Workflow Automation
+
+Git DRS supports automatic workflow triggering based on file types. This allows you to automatically run workflows (like TIFF offset calculation) when DRS objects are created:
+
+```bash
+# Enable workflow automation
+git drs workflow --enable
+
+# Add a policy to trigger TIFF offset calculation
+git drs workflow add-policy --file-types .tif,.tiff --workflow tiff_offsets --type github-action
+
+# Test workflow triggers
+git drs workflow test-trigger sample.tif
+```
+
+See [docs/workflow-automation.md](docs/workflow-automation.md) for complete documentation.
 
 ## Troubleshooting
 

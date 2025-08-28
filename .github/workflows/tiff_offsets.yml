@@ -1,0 +1,101 @@
+name: TIFF Offset Calculation
+
+on:
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'TIFF files to process (JSON array)'
+        required: true
+        type: string
+      commit_sha:
+        description: 'Commit SHA that triggered this workflow'
+        required: true
+        type: string
+
+jobs:
+  calculate-offsets:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.inputs.commit_sha }}
+        lfs: true
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install tifffile numpy
+    
+    - name: Parse input files
+      id: parse_files
+      run: |
+        echo "files=${{ github.event.inputs.files }}" >> $GITHUB_OUTPUT
+    
+    - name: Calculate TIFF offsets
+      run: |
+        python -c "
+        import json
+        import tifffile
+        import os
+        
+        files = json.loads('${{ steps.parse_files.outputs.files }}')
+        results = {}
+        
+        for file_path in files:
+            if os.path.exists(file_path) and file_path.lower().endswith(('.tif', '.tiff')):
+                try:
+                    with tifffile.TiffFile(file_path) as tif:
+                        offsets = []
+                        for page in tif.pages:
+                            offset_info = {
+                                'page': page.index,
+                                'offset': page.offset,
+                                'shape': page.shape,
+                                'dtype': str(page.dtype),
+                                'compression': page.compression.name if page.compression else 'none'
+                            }
+                            offsets.append(offset_info)
+                        
+                        results[file_path] = {
+                            'total_pages': len(tif.pages),
+                            'file_size': os.path.getsize(file_path),
+                            'offsets': offsets
+                        }
+                        
+                        print(f'Processed {file_path}: {len(offsets)} pages')
+                except Exception as e:
+                    print(f'Error processing {file_path}: {e}')
+                    results[file_path] = {'error': str(e)}
+        
+        # Save results
+        os.makedirs('.drs/offsets', exist_ok=True)
+        with open('.drs/offsets/tiff_offsets.json', 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        print(f'Results saved to .drs/offsets/tiff_offsets.json')
+        "
+    
+    - name: Upload offset results
+      uses: actions/upload-artifact@v4
+      with:
+        name: tiff-offsets-${{ github.event.inputs.commit_sha }}
+        path: .drs/offsets/tiff_offsets.json
+    
+    - name: Commit offset results (optional)
+      if: success()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add .drs/offsets/tiff_offsets.json
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Add TIFF offset calculations for commit ${{ github.event.inputs.commit_sha }}"
+          git push
+        fi

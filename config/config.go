@@ -68,10 +68,32 @@ type ServersMap struct {
 	Anvil *AnvilServer `yaml:"anvil,omitempty"`
 }
 
+// WorkflowDefinition defines a workflow that can be triggered
+type WorkflowDefinition struct {
+	Name        string            `yaml:"name"`
+	Description string            `yaml:"description,omitempty"`
+	Type        string            `yaml:"type"` // "github-action", "nextflow", "script", etc.
+	Config      map[string]string `yaml:"config,omitempty"`
+}
+
+// WorkflowPolicy defines when workflows should be triggered
+type WorkflowPolicy struct {
+	FileTypes []string              `yaml:"file_types"` // e.g., [".tif", ".tiff"]
+	Workflows []WorkflowDefinition  `yaml:"workflows"`
+	Strategy  string                `yaml:"strategy,omitempty"` // "serial", "parallel"
+}
+
+// WorkflowConfig holds workflow automation configuration
+type WorkflowConfig struct {
+	Enabled  bool             `yaml:"enabled"`
+	Policies []WorkflowPolicy `yaml:"policies"`
+}
+
 // Config holds the overall config structure
 type Config struct {
-	CurrentServer ServerType `yaml:"current_server"`
-	Servers       ServersMap `yaml:"servers"`
+	CurrentServer ServerType     `yaml:"current_server"`
+	Servers       ServersMap     `yaml:"servers"`
+	Workflows     WorkflowConfig `yaml:"workflows,omitempty"`
 }
 
 const (

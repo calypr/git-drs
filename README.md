@@ -26,10 +26,10 @@ Here are some example commands used in pushing a file:
 
 ## Setup
 Currently, we support a couple different ways to set up Git DRS depending on where you are doing the setup and what type of DRS server you want to target. Specifically, we have setup for the following:
-1. local user targeting a gen3 DRS server like CALYPR
+1. Local user targeting a gen3 DRS server like CALYPR
 2. HPC (high-performance computing) user targeting a gen3 DRS server like CALYPR
 3. Jupyter environment use within Terra targeting an AnVIL DRS server
-4. local user outside of terra targeting an AnVIL DRS server
+4. Local user outside of terra targeting an AnVIL DRS server
 
 Find the setup instructions below that match your use case.
 
@@ -50,22 +50,15 @@ Find the setup instructions below that match your use case.
     ```bash
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- 0.2.2
     ```
-6. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/user`
-   ```bash
-
-    # load up the bash file
-    vi ~/.bash_profile
-
-    # TODO: add the following line to the file without the #
-    # export PATH="$PATH:$HOME/.local/bin"
-
-    # refresh your shell
-    source ~/.bash_profile
-    ```
+6. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
+    1. Load up the bash file: `vi ~/.bash_profile`
+    2. Add the following line to your Bash profile: `export PATH="$PATH:$HOME/.local/bin"`
+    3. Refresh your shell: `source ~/.bash_profile`
 7. Confirm that Git DRS is available with `git-drs --help`
    
-#### HPC User, Gen3 Server Setup
-1. On ARC, download Git LFS (brew install git-lfs for Mac users)
+#### HPC User (eg user on ARC), Gen3 Server Setup
+
+1. On your HPC, download Git LFS (brew install git-lfs for Mac users)
   ```bash
     # download git-lfs binary
     wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz; tar -xzf git-lfs-linux-amd64-v3.7.0.tar.gz
@@ -89,27 +82,19 @@ Find the setup instructions below that match your use case.
     rm git-lfs-linux-amd64-v3.7.0.tar.gz
     rm -r git-lfs-3.7.0/
   ```
-2. If using ARC - Check if Git has been configured already on ARC. If not:
-    1. On ARC - Create new SSH key by following the [sections on the Linux tab](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) - “Generating new SSH Key” and “Adding your SSH key to the ssh-agent”
+1. Check if Git has been configured already. If not:
+    1. On the HPC - Create new SSH key by following the [sections on the Linux tab](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) - “Generating new SSH Key” and “Adding your SSH key to the ssh-agent”
     2. Add this key to the source GitHub at https://source.ohsu.edu/settings/keys 
-3. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
+2. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
     ```bash
     export GIT_DRS_VERSION=0.2.2
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
     ```
-4. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/user`
-   ```bash
-
-    # load up the bash file
-    vi ~/.bash_profile
-
-    # TODO: add the following line to the file
-    # export PATH="$PATH:$HOME/.local/bin"
-
-    # refresh your shell
-    source ~/.bash_profile
-    ```
-5. Confirm that Git DRS is available with `git-drs --help`
+3. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
+    1. Load up the bash file: `vi ~/.bash_profile`
+    2. Add the following line to your Bash profile: `export PATH="$PATH:$HOME/.local/bin"`
+    3. Refresh your shell: `source ~/.bash_profile`
+4. Confirm that Git DRS is available with `git-drs --help`
 
 
 #### AnVIL Setup: Jupyter Environment
@@ -206,8 +191,8 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
-    5. Move the file over to arc, for example `scp /path/to/credentials.json arc:/home/users/<your-username>`
-    6. This credential is valid for 30 days and needs to be redownloaded after that
+    5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
+    6. This credential is valid for 30 days and needs to be redownloaded after that.
 3. Initialize your user credentials. 
       ```bash
         git drs init --cred /path/to/ downloaded/credentials.json
@@ -228,7 +213,7 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
-    5. Move the file over to arc, for example `scp /path/to/credentials.json arc:/home/users/<your-username>`
+    5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that
 4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
 5. Using the info from steps 3 and 4, configure general acccess to your data commons.

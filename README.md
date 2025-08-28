@@ -18,8 +18,11 @@ Git DRS also functions within the Git workflow by building off Git LFS to manage
 Here are some example commands used in pushing a file:
 
 - `git drs init`: Git DRS initializes your repo and server locally
+- `git lfs track`: Git LFS lists the patterns of files that LFS should track
 - `git lfs track <file-pattern>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
+- `git lfs untrack`: Git LFS lets you untrack particular patterns if you made a typo.
 - `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
+- `git lfs ls-files`: Git LFS lists the files staged (added) into Git and tracked by LFS
 - `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file and prepares it for a push.
 - `git push`: before each push, Git DRS updates the DRS server with your file details and uploads each committed file to the configured object storage.
 

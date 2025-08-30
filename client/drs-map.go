@@ -85,11 +85,23 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 
 		// check hash to see if record already exists in indexd (source of truth)
-		obj, err := indexdClient.GetObjectByHash(file.OidType, file.Oid)
+		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
-		if obj != nil {
+
+		// Find a record that matches the project ID
+		projectId, err := config.GetProjectId()
+		if err != nil {
+			return fmt.Errorf("Error getting project ID: %v", err)
+		}
+		matchingRecord, err := FindMatchingRecord(records, projectId)
+		if err != nil {
+			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+		}
+
+		// if project ID matches, skip because we have a copy of the file in this project
+		if matchingRecord != nil {
 			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}

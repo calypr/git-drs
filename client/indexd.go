@@ -98,14 +98,28 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	drsObj, err := cl.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
+	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		cl.logger.Logf("error getting DRS object for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
 	}
-	if drsObj == nil {
+	if len(records) == 0 {
 		cl.logger.Logf("no DRS object found for oid %s", oid)
 		return nil, fmt.Errorf("no DRS object found for oid %s", oid)
+	}
+
+	// Find a record that matches the client's project ID
+	matchingRecord, err := FindMatchingRecord(records, cl.ProjectId)
+	if err != nil {
+		cl.logger.Logf("error finding matching record for project %s: %s", cl.ProjectId, err)
+		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
+	}
+
+	// Get the DRS object for the matching record
+	drsObj, err := cl.GetObject(matchingRecord.Did)
+	if err != nil {
+		cl.logger.Logf("error getting DRS object for matching record %s: %s", matchingRecord.Did, err)
+		return nil, fmt.Errorf("error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
 	}
 
 	// download file using the DRS object
@@ -169,34 +183,41 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.logger.Logf("register file started for oid: %s", oid)
 
-	// create indexd record
-
-	drsObj, err := cl.RegisterIndexdRecord(oid)
+	// check if hash already exists
+	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), oid)
 	if err != nil {
-		cl.logger.Logf("error registering indexd record: %s", err)
-		return nil, fmt.Errorf("error registering indexd record: %v", err)
+		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
 	}
 
-	// if upload unsuccessful (panic or error), delete record from indexd
-	defer func() {
-		// delete indexd record if panic
-		if r := recover(); r != nil {
-			// TODO: this panic isn't getting triggered
-			cl.logger.Logf("panic occurred, cleaning up indexd record for oid %s", oid)
-			// Handle panic
-			cl.DeleteIndexdRecord(drsObj.Id)
-			if err != nil {
-				cl.logger.Logf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-				cl.logger.Logf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
-				cl.logger.Logf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
-				panic(r)
-			}
-			cl.logger.Logf("cleaned up indexd record for oid %s", oid)
-			cl.logger.Logf("exiting: %v", r)
-			panic(r) // re-throw if you want the CLI to still terminate
-		}
+	// Get project ID from config to find matching record
+	projectId, err := config.GetProjectId()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting project ID: %v", err)
+	}
 
-		// delete indexd record if error thrown
+	// If we already have an indexd record in this project, use the existing drs object
+	matchingRecord, err := FindMatchingRecord(records, projectId)
+	if err != nil {
+		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+	}
+
+	drsObj := &drs.DRSObject{}
+	if matchingRecord != nil {
+		drsObj, err = cl.GetObject(matchingRecord.Did)
+		if err != nil {
+			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
+		}
+	} else {
+		// create indexd record
+		drsObj, err = cl.RegisterIndexdRecord(oid)
+		if err != nil {
+			cl.logger.Logf("error registering indexd record: %s", err)
+			return nil, fmt.Errorf("error registering indexd record: %v", err)
+		}
+	}
+
+	// delete indexd record if subsequent code throws an error
+	defer func() {
 		if err != nil {
 			cl.logger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.DeleteIndexdRecord(drsObj.Id)
@@ -558,7 +579,7 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 }
 
 // implements /index/index?hash={hashType}:{hash} GET
-func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSObject, error) {
+func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]OutputInfo, error) {
 
 	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
 
@@ -602,22 +623,40 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	}
 	cl.logger.Logf("records: %+v", records)
 
-	// if no records found, return nil to handle in caller
+	// if no records found, return empty slice
 	if len(records.Records) == 0 {
+		return []OutputInfo{}, nil
+	}
+
+	// log how many records were found
+	cl.logger.Logf("INFO: found %d indexd record(s) for OID %s:%s", len(records.Records), hashType, hash)
+
+	return records.Records, nil
+}
+
+// FindMatchingRecord finds a record from the list that matches the given project ID authz
+// If no matching record is found return nil
+func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, error) {
+	if len(records) == 0 {
 		return nil, nil
 	}
 
-	// if more than one record found, write it to log
-	if len(records.Records) > 1 {
-		cl.logger.Logf("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+	// Convert project ID to resource path format for comparison
+	expectedAuthz, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}
 
-	drsId := records.Records[0].Did
-	cl.logger.Logf("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
+	// Get the first record with matching authz if exists
+	for _, record := range records {
+		for _, authz := range record.Authz {
+			if authz == expectedAuthz {
+				return &record, nil
+			}
+		}
+	}
 
-	drsObj, err := cl.GetObject(drsId)
-
-	return drsObj, nil
+	return nil, nil
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET

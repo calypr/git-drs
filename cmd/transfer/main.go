@@ -129,36 +129,6 @@ var Cmd = &cobra.Command{
 				}
 				myLogger.Log(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
 
-				// TODO: remove
-				// // check if hash already exists
-				// records, err := drsClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), uploadMsg.Oid)
-				// if err != nil {
-				// 	errMsg := fmt.Sprintf("Error querying indexd server for matches to hash %s: %v", uploadMsg.Oid, err)
-				// 	myLogger.Log(errMsg)
-				// 	lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
-				// 	continue
-				// }
-
-				// // See if we have a matching record in this project
-				// matchingRecord, err := client.FindMatchingRecord(records, projectId)
-				// if err != nil {
-				// 	return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-				// }
-
-				// // see if the file has been uploaded
-				// _, err = drsClient.GetDownloadURL(uploadMsg.Oid)
-				// fileExists := err == nil
-
-				// // if matching record and file has been uploaded, skip
-				// if matchingRecord != nil && fileExists {
-				// 	myLogger.Logf("Found existing matching record for project %s: %+v", projectId, matchingRecord)
-
-				// 	// Mark the upload as complete
-				// 	lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, matchingRecord.FileName)
-				// 	myLogger.Logf("Upload for oid not needed for project %s with record %+v", projectId, matchingRecord)
-				// 	continue
-				// }
-
 				// otherwise, register the file (create indexd record and upload file)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {

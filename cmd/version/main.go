@@ -12,7 +12,7 @@ var Cmd = &cobra.Command{
 	Short: "Get version",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		var version = "0.2.2-dev"
+		var version = "0.3.0-rc0"
 		fmt.Println("git-drs", version)
 	},
 }

@@ -94,7 +94,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// setup logging
 
-	cl.logger.Logf("requested download of file oid %s", oid)
+	cl.logger.Logf("requested downloaded url for file oid %s", oid)
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
@@ -122,13 +122,9 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
 	}
 
-	// download file using the DRS object
-	cl.logger.Logf("Downloading file for OID %s from DRS object: %+v", oid, drsObj)
-
 	// FIXME: generalize access ID method
 	// naively get access ID from splitting first path into :
 	accessId := drsObj.AccessMethods[0].AccessID
-	cl.logger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, drsObj.Name))
 
 	// get signed url
 	a := *cl.Base
@@ -144,8 +140,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
-
-	cl.logger.Log("added auth header")
 
 	client := &http.Client{}
 	response, err := client.Do(req)
@@ -163,7 +157,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// log response and body
 	cl.logger.Logf("response status: %s", response.Status)
-	cl.logger.Logf("response body: %s", body)
 
 	accessUrl := drs.AccessURL{}
 	err = json.Unmarshal(body, &accessUrl)
@@ -171,7 +164,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
 	}
 
-	cl.logger.Log("unmarshaled response into DRS AccessURL")
+	cl.logger.Log("signed url retrieved")
 
 	return &accessUrl, nil
 }
@@ -231,17 +224,39 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 	}()
 
-	// upload file to bucket using gen3-client code
-	// modified from gen3-client/g3cmd/upload-single.go
-	filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid)
-	if err != nil {
-		cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
-		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+	// determine if file is downloadable
+	isDownloadable := true
+	cl.logger.Log("checking if file is downloadable")
+	signedUrl, err := cl.GetDownloadURL(oid)
+	if err != nil || signedUrl == nil {
+		isDownloadable = false
+	} else { // signedUrl exists
+		err = utils.CanDownloadFile(signedUrl.URL)
+		if err != nil {
+			isDownloadable = false
+		} else {
+			cl.logger.Logf("file with oid %s is downloadable", oid)
+		}
 	}
-	err = g3cmd.UploadSingle(cl.Profile, drsObj.Id, filePath, cl.BucketName)
-	if err != nil {
-		cl.logger.Logf("error uploading file to bucket: %s", err)
-		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+
+	// if file is not downloadable, then upload it to bucket
+	if !isDownloadable {
+		cl.logger.Logf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
+
+		// modified from gen3-client/g3cmd/upload-single.go
+		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid)
+		if err != nil {
+			cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
+			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+		}
+
+		err = g3cmd.UploadSingle(cl.Profile, drsObj.Id, filePath, cl.BucketName)
+		if err != nil {
+			cl.logger.Logf("error uploading file to bucket: %s", err)
+			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+		}
+	} else {
+		cl.logger.Log("file exists in bucket, skipping upload")
 	}
 
 	// if all successful, remove temp DRS object
@@ -250,7 +265,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		_ = os.Remove(drsPath)
 	}
 
-	// return
+	// return drsObject
 	return drsObj, nil
 }
 

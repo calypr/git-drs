@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
+	"github.com/calypr/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
 
@@ -36,6 +37,7 @@ func init() {
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(transferref.Cmd)
+	RootCmd.AddCommand(version.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

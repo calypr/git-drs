@@ -58,7 +58,7 @@ func UpdateDrsObjects(logger *Logger) error {
 	// for each staged file, prepare if it is an LFS file
 	for _, stagedFileName := range stagedFiles {
 		// check if the staged file is an LFS file
-		isLfsFile, lfsFileInfo, err := checkIfLfsFile(stagedFileName)
+		isLfsFile, lfsFileInfo, err := CheckIfLfsFile(stagedFileName)
 		if err != nil {
 			return fmt.Errorf("error checking if file %s is LFS tracked: %v", stagedFileName, err)
 		}
@@ -230,7 +230,7 @@ func GetObjectPath(basePath string, oid string) (string, error) {
 
 // checkIfLfsFile checks if a given file is tracked by Git LFS
 // Returns true and file info if it's an LFS file, false otherwise
-func checkIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
+func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
 	// Use git lfs ls-files -I to check if specific file is LFS tracked
 	cmd := exec.Command("git", "lfs", "ls-files", "-I", fileName, "--json")
 	out, err := cmd.Output()

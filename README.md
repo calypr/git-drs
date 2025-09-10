@@ -189,10 +189,15 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that.
-3. Initialize your user credentials. This must be done before every session.
-      ```bash
+3. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
+    ```bash
+        git drs list-config
+    ```
+4. Initialize your user credentials. This must be done before every session.
+    ```bash
         git drs init --cred /path/to/downloaded/credentials.json
-      ```
+    ```
+
 
 #### Setup from scratch (gen3 server)
 1. Create a git repo on GitHub 
@@ -216,6 +221,10 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
       ```bash
         git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <project_id> --bucket <bucket_name>
       ```
+6. Confirm that your configuration file has been populated with the data provided above
+    ```bash
+        git drs list-config
+    ```
 
 ### Track a Specific Set of Files
 If you want to track a data file in the Git repo, you will need to register that file with Git LFS. This is done by doing a `git lfs track` and then git adding the  `.gitattributes` that stores this information.
@@ -256,6 +265,9 @@ Below are the steps to push a file once you have localized and `init`ed a Git DR
 # refresh your access token (done at the start of every session!)
 git drs init --cred /path/to/downloaded/credentials.json
 
+# confirm that your curent server and config file is filled out
+git drs list-config
+
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
 git add .gitattributes
@@ -283,6 +295,9 @@ LFS supports pulling via wildcards, directories, and exact paths. Below are some
 ```bash
 # refresh your access token (done at the start of every session!)
 git drs init --cred /path/to/downloaded/credentials.json
+
+# confirm that your curent server and config file is filled out
+git drs list-config
 
 # Pull a single file
 git lfs pull -I /path/to/file

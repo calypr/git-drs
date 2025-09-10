@@ -18,13 +18,18 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "delete <oid>",
-	Short:  "Delete a file using file object ID",
-	Long:   "Delete a file using file object ID (sha256 hash). Use lfs ls-files to get oid",
+	Use:    "delete <hash-type> <oid>",
+	Short:  "Delete a file using hash and file object ID",
+	Long:   "Delete a file using file object ID. Use lfs ls-files to get oid",
 	Hidden: true,
-	Args:   cobra.ExactArgs(1),
+	Args:   cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		oid := args[0]
+		hashType, oid := args[0], args[1]
+
+		// check hash type is valid Checksum type
+		if !drs.ChecksumType(hashType).IsValid() {
+			return fmt.Errorf("invalid hash type: %s", hashType)
+		}
 
 		logger, err := client.NewLogger("", true)
 		if err != nil {
@@ -38,7 +43,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		// get records by hash
-		records, err := indexdClient.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+		records, err := indexdClient.GetObjectsByHash(hashType, oid)
 		if err != nil {
 			return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
 		}

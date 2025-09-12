@@ -46,34 +46,39 @@ func UpdateDrsObjects(logger *Logger) error {
 	if err != nil {
 		return fmt.Errorf("Unable to fetch repository website location: %v", err)
 	}
-	logger.Logf("Repo Name: %s", repoName)
+
+	// get all lfs files
+	lfsFiles, err := getAllLfsFiles()
+	if err != nil {
+		return fmt.Errorf("error getting all LFS files: %v", err)
+	}
 
 	// get all staged files
 	stagedFiles, err := getStagedFiles()
 	if err != nil {
 		return fmt.Errorf("error getting staged files: %v", err)
 	}
-	logger.Logf("Creating DRS objects for staged files: %v", stagedFiles)
 
-	// for each staged file, prepare if it is an LFS file
+	// create list of lfsStagedFiles from the lfsFiles
+	lfsStagedFiles := make([]LfsFileInfo, 0)
 	for _, stagedFileName := range stagedFiles {
-		// check if the staged file is an LFS file
-		isLfsFile, lfsFileInfo, err := CheckIfLfsFile(stagedFileName)
-		if err != nil {
-			return fmt.Errorf("error checking if file %s is LFS tracked: %v", stagedFileName, err)
+		if lfsFileInfo, ok := lfsFiles[stagedFileName]; ok {
+			lfsStagedFiles = append(lfsStagedFiles, lfsFileInfo)
 		}
-		if !isLfsFile {
-			logger.Logf("Skipping non-LFS staged file: %s", stagedFileName)
-			continue
-		}
+	}
+	logger.Logf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
+
+	// Create a DRS object for each staged LFS file
+	// which will be used at push-time
+	for _, file := range lfsStagedFiles {
 
 		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(lfsFileInfo.OidType, lfsFileInfo.Oid)
+		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
 		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", lfsFileInfo.Oid, err)
+			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 
-		// Find a record that matches the project ID
+		// check if record with matching project ID already exists in indexd
 		projectId, err := config.GetProjectId()
 		if err != nil {
 			return fmt.Errorf("Error getting project ID: %v", err)
@@ -83,50 +88,41 @@ func UpdateDrsObjects(logger *Logger) error {
 			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 		}
 
-		// if project ID matches, skip because we have a copy of the file in this project
+		// skip if matching record exists
 		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", lfsFileInfo.Name, lfsFileInfo.Oid)
+			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}
 
-		// check if oid already committed to git
-		// TODO: need to determine how to manage indexd file name
-		// right now, chooses the path of the first committed copy or
-		// if there's multiple copies in one commit, the first occurrence from ls-files
-		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, lfsFileInfo.Oid)
+		// check if indexd object already prepared, skip if so
+		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", lfsFileInfo.Oid, err)
+			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", lfsFileInfo.Name, lfsFileInfo.Oid, drsObjPath)
+			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 
-		// check file exists in the local cache
-		if !lfsFileInfo.Downloaded {
-			return fmt.Errorf("Staged file %s is not cached. Please unstage the file, then git add the file again", lfsFileInfo.Name)
+		// confirm file contents are localized
+		if !file.Downloaded {
+			return fmt.Errorf("Staged file %s is not cached. Please unstage the file, then git add the file again", file.Name)
 		}
 
-		// if file is in cache, hasn't been committted to git or pushed to indexd,
+		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, lfsFileInfo.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
-		logger.Logf("Processing staged file: %s, OID: %s, DRS ID: %s\n", lfsFileInfo.Name, lfsFileInfo.Oid, drsId)
+		drsId := DrsUUID(repoName, file.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
+		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(config.LFS_OBJS_PATH, lfsFileInfo.Oid)
+		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid)
 		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", lfsFileInfo.Oid, err)
+			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", lfsFileInfo.Name, path)
+			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
-
-		// fileInfo, err := os.Stat(path)
-		// if err != nil {
-		// 	return fmt.Errorf("error getting file info: %v", err)
-		// }
-		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
 		// get gen3 config
 		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
@@ -139,7 +135,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		if gen3Auth.Bucket == "" {
 			return fmt.Errorf("error: bucket name is empty in config file")
 		}
-		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, lfsFileInfo.Oid))
+		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
 
 		authzStr, err := utils.ProjectToResource(gen3Auth.ProjectID)
 		if err != nil {
@@ -149,22 +145,19 @@ func UpdateDrsObjects(logger *Logger) error {
 		// create IndexdRecord
 		indexdObj := IndexdRecord{
 			Did:      drsId,
-			FileName: lfsFileInfo.Name,
+			FileName: file.Name,
 			URLs:     []string{fileURL},
-			Hashes:   HashInfo{SHA256: lfsFileInfo.Oid},
-			Size:     lfsFileInfo.Size,
+			Hashes:   HashInfo{SHA256: file.Oid},
+			Size:     file.Size,
 			Authz:    []string{authzStr},
-			// ContentCreatedDate: modDate,
-			// ContentUpdatedDate: modDate,
 		}
-		logger.Logf("Adding to DRS Objects: %s -> %s", lfsFileInfo.Name, indexdObj.Did)
 
 		// write drs objects to DRS_OBJS_PATH
-		err = writeDrsObj(indexdObj, lfsFileInfo.Oid, drsObjPath)
+		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
 		if err != nil {
-			return fmt.Errorf("error writing DRS object for oid %s: %v", lfsFileInfo.Oid, err)
+			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
-		logger.Logf("Created %s for file %s", drsObjPath, lfsFileInfo.Name)
+		logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Did)
 	}
 
 	return nil
@@ -299,4 +292,27 @@ func GetRepoNameFromGit() (string, error) {
 	remoteURL := strings.TrimSpace(string(out))
 	repoName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
 	return repoName, nil
+}
+
+func getAllLfsFiles() (map[string]LfsFileInfo, error) {
+	// get all LFS files' info using json
+	cmd := exec.Command("git", "lfs", "ls-files", "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("error running git lfs ls-files: %v", err)
+	}
+
+	var lfsFiles LfsLsOutput
+	err = json.Unmarshal(out, &lfsFiles)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
+	}
+
+	// create a map of LFS file info
+	lfsFileMap := make(map[string]LfsFileInfo)
+	for _, file := range lfsFiles.Files {
+		lfsFileMap[file.Name] = file
+	}
+
+	return lfsFileMap, nil
 }

@@ -92,20 +92,19 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 
 // GetDownloadURL implements ObjectStoreClient
 func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
-	// setup logging
 
-	cl.logger.Logf("requested downloaded url for file oid %s", oid)
+	cl.logger.Logf("Try to get download url for file OID %s", oid)
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
 	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
-		cl.logger.Logf("error getting DRS object for oid %s: %s", oid, err)
-		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
+		cl.logger.Logf("error getting DRS object for OID %s: %s", oid, err)
+		return nil, fmt.Errorf("error getting DRS object for OID %s: %v", oid, err)
 	}
 	if len(records) == 0 {
-		cl.logger.Logf("no DRS object found for oid %s", oid)
-		return nil, fmt.Errorf("no DRS object found for oid %s", oid)
+		cl.logger.Logf("no DRS object found for OID %s", oid)
+		return nil, fmt.Errorf("no DRS object found for OID %s", oid)
 	}
 
 	// Find a record that matches the client's project ID
@@ -130,7 +129,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
-	cl.logger.Logf("using endpoint: %s\n", a.String())
 	req, err := http.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
@@ -144,15 +142,13 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	client := &http.Client{}
 	response, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error getting signed URL: %v", err)
 	}
 	defer response.Body.Close()
 
-	cl.logger.Log("got a response")
-
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading response to signed url: %v", err)
 	}
 
 	// log response and body
@@ -605,11 +601,11 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 		cl.logger.Logf("http.NewRequest Error: %s", err)
 		return nil, err
 	}
-	cl.logger.Logf("GET request created for indexd: %s", url)
+	cl.logger.Logf("Looking for files with hash %s:%s", hashType, hash)
 
 	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
-		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", hashType, hash, err)
 	}
 	req.Header.Set("accept", "application/json")
 
@@ -617,7 +613,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error querying index for hash (%s:%s): %v, %s", hashType, hash, err, url)
+		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v, %s", hashType, hash, err)
 	}
 	defer resp.Body.Close()
 
@@ -636,15 +632,13 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
-	cl.logger.Logf("records: %+v", records)
+	// log how many records were found
+	cl.logger.Logf("INFO: found %d indexd record(s) matching the hash", len(records.Records))
 
 	// if no records found, return empty slice
 	if len(records.Records) == 0 {
 		return []OutputInfo{}, nil
 	}
-
-	// log how many records were found
-	cl.logger.Logf("INFO: found %d indexd record(s) for OID %s:%s", len(records.Records), hashType, hash)
 
 	return records.Records, nil
 }

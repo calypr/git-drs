@@ -101,7 +101,6 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
 
 	// check if file exists, if not create parent directory
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

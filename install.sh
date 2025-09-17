@@ -66,8 +66,7 @@ echo "Verifying checksum..."
 
 CHECKSUM_EXPECTED=$(grep $TAR_NAME $CHECKSUM_FILE | awk '{print $1}')
 
-CHECKSUM_ACTUAL=$(shasum -a 256 $TAR_NAME | awk '{print $1}')
-
+CHECKSUM_ACTUAL=$(sha256sum $TAR_NAME | awk '{print $1}')
 
 if [ "$CHECKSUM_EXPECTED" != "$CHECKSUM_ACTUAL" ]; then
     echo "Checksum verification failed for $TAR_NAME. Exiting..."
@@ -88,6 +87,20 @@ fi
 echo "Installing git-drs to $DEST..."
 mkdir -p $DEST
 mv git-drs $DEST
+
+# Verify that git-drs in in the user's PATH
+if ! command -v git-drs >/dev/null 2>&1; then
+    echo "Adding $DEST to PATH..."
+    if [ -n "$ZSH_VERSION" ]; then
+        SHELL="$HOME/.zshrc"
+    else
+        # Default to .bashrc if shell is unknown
+        SHELL="$HOME/.bashrc"
+    fi
+
+    echo 'export PATH=$PATH:'"$DEST" >> "$SHELL"
+    source $SHELL
+fi
 
 # Clean up
 rm $TAR_NAME $CHECKSUM_FILE

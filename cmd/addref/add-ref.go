@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 )
@@ -30,7 +30,7 @@ var Cmd = &cobra.Command{
 
 		fmt.Printf("Adding reference to DRS object %s\n", drsUri)
 		// setup logging to file for debugging
-		logger, err := client.NewLogger(utils.DRS_LOG_FILE)
+		logger, err := client.NewLogger(client.DRS_LOG_FILE, true)
 		if err != nil {
 			return fmt.Errorf("Failed to open log file: %v", err)
 		}
@@ -45,10 +45,10 @@ var Cmd = &cobra.Command{
 		if drsObj == nil {
 			return errors.New("no DRS object found")
 		}
-		logger.Log("Fetched DRS object: %+v", drsObj)
+		logger.Logf("Fetched DRS object: %+v", drsObj)
 
 		// get sha256 for the drs ID from the cache
-		shaPath, err := utils.CreateCustomPath(utils.DRS_REF_DIR, drsObj.Id)
+		shaPath, err := client.CreateCustomPath(client.DRS_REF_DIR, drsObj.Id)
 		shaFile, err := os.ReadFile(shaPath)
 		if err != nil {
 			return fmt.Errorf("failed to read sha file at %s: %w", shaPath, err)
@@ -61,7 +61,7 @@ var Cmd = &cobra.Command{
 		// add the sha from the cache to the drsObj checksums
 		sha := drs.Checksum{
 			Checksum: shaVal,
-			Type:     "sha256",
+			Type:     drs.ChecksumTypeSHA256,
 		}
 		drsObj.Checksums = append(drsObj.Checksums, sha)
 
@@ -70,7 +70,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logger.Log("Created LFS pointer file at %s", drsObj.Name)
+		logger.Logf("Created LFS pointer file at %s", drsObj.Name)
 
 		// add filename for lfs tracking
 		err = exec.Command("git", "lfs", "track", drsObj.Name).Run()
@@ -82,14 +82,14 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error running git add .gitattributes: %v", err)
 		}
-		logger.Log("Tracked %s with git lfs", drsObj.Name)
+		logger.Logf("Tracked %s with git lfs", drsObj.Name)
 
 		// git add the pointer file
 		err = exec.Command("git", "add", drsObj.Name).Run()
 		if err != nil {
 			return fmt.Errorf("error running git add: %v", err)
 		}
-		logger.Log("Added %s to git", drsObj.Name)
+		logger.Logf("Added %s to git", drsObj.Name)
 
 		fmt.Printf("Successfully added reference to DRS object %s as file %s\n", drsObj.Id, drsObj.Name)
 		return nil
@@ -103,14 +103,14 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("failed to get auth token: %w", err)
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"url":    objectID,
 		"fields": []string{"hashes", "size", "fileName"},
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
 
 	// get endpoint from config
-	cfg, err := client.LoadConfig()
+	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -138,7 +138,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode > 399 {
 		// Try to extract error message
-		var errResp map[string]interface{}
+		var errResp map[string]any
 		json.Unmarshal(respBody, &errResp)
 		msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		if m, ok := errResp["message"].(string); ok {
@@ -148,6 +148,8 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	}
 
 	// Parse expected response
+	// subset of ResourceMetadata
+	// https://github.com/DataBiosphere/terra-drs-hub/blob/dev/common/openapi.yml#L123
 	var parsed struct {
 		Hashes   map[string]string `json:"hashes"`
 		Size     int64             `json:"size"`
@@ -161,7 +163,7 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	checksums := []drs.Checksum{}
 	for k, v := range parsed.Hashes {
 		checksums = append(checksums, drs.Checksum{
-			Type:     k,
+			Type:     drs.ChecksumType(k),
 			Checksum: v,
 		})
 	}
@@ -205,7 +207,7 @@ func CreateLfsPointer(drsObj *drs.DRSObject) error {
 	// find sha256 checksum
 	var shaSum string
 	for _, cs := range drsObj.Checksums {
-		if cs.Type == "sha256" {
+		if cs.Type == drs.ChecksumTypeSHA256 {
 			shaSum = cs.Checksum
 			break
 		}

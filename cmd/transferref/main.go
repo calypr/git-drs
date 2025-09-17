@@ -11,8 +11,8 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cmd/addref"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -28,7 +28,7 @@ var Cmd = &cobra.Command{
 	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to pull LFS files during git lfs pull. Does nothing on push.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
-		myLogger, err := client.NewLogger(utils.DRS_LOG_FILE)
+		myLogger, err := client.NewLogger(client.DRS_LOG_FILE, false)
 		if err != nil {
 			return fmt.Errorf("Failed to open log file: %v", err)
 		}
@@ -40,7 +40,7 @@ var Cmd = &cobra.Command{
 		encoder := json.NewEncoder(os.Stdout)
 
 		for scanner.Scan() {
-			var msg map[string]interface{}
+			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
 				myLogger.Log(fmt.Sprintf("error decoding JSON: %s", err))
@@ -127,7 +127,7 @@ var Cmd = &cobra.Command{
 
 func downloadFile(sha string) (string, error) {
 	//setup logging to file for debugging
-	myLogger, err := client.NewLogger(utils.DRS_LOG_FILE)
+	myLogger, err := client.NewLogger(client.DRS_LOG_FILE, false)
 	if err != nil {
 		return "", fmt.Errorf("Failed to open log file: %v", err)
 	}
@@ -135,14 +135,14 @@ func downloadFile(sha string) (string, error) {
 	myLogger.Log(fmt.Sprintf("Downloading file for sha %s", sha))
 
 	// get terra project
-	cfg, err := client.LoadConfig() // should this be handled only via indexd client?
+	cfg, err := config.LoadConfig() // should this be handled only via indexd client?
 	if err != nil {
 		return "", fmt.Errorf("error loading config: %v", err)
 	}
 
 	// ensure we our current server is anvil
-	if cfg.CurrentServer != client.ANVIL_TYPE {
-		return "", fmt.Errorf("current server is not anvil, current server: %s. Please use git drs init with the --anvil flag", cfg.CurrentServer)
+	if cfg.CurrentServer != config.AnvilServerType {
+		return "", fmt.Errorf("current server is not anvil, current server: %s. See git drs init on how to init an anvil server", cfg.CurrentServer)
 	}
 
 	terraProject := cfg.Servers.Anvil.Auth.TerraProject
@@ -150,7 +150,7 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error: project key is empty in config file")
 	}
 
-	filePath, err := client.GetObjectPath(utils.DRS_REF_DIR, sha)
+	filePath, err := client.GetObjectPath(client.DRS_REF_DIR, sha)
 	if err != nil {
 		return "", fmt.Errorf("error getting object path for sha %s: %v", sha, err)
 	}
@@ -194,14 +194,14 @@ func downloadFile(sha string) (string, error) {
 	myLogger.Log(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
 
 	// call DRS downloader as a binary, redirect output to log file
-	logFile, err := os.OpenFile(utils.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(client.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return "", fmt.Errorf("error opening log file: %v", err)
 	}
 	defer logFile.Close()
 
 	// download file, make sure its name is the sha
-	dstPath, err := client.GetObjectPath(client.LFS_OBJS_PATH, sha)
+	dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, sha)
 	dstDir := filepath.Dir(dstPath)
 	cmd := exec.Command("drs_downloader", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
 

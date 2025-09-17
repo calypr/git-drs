@@ -11,21 +11,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	token "github.com/bmeg/grip-graphql/middleware"
+	"github.com/calypr/data-client/data-client/commonUtils"
 
 	"github.com/calypr/data-client/data-client/g3cmd"
 	"github.com/calypr/data-client/data-client/jwt"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/utils"
 )
 
 var conf jwt.Configure
 var profileConfig jwt.Credential
 
 type IndexDClient struct {
-	base       *url.URL
-	profile    string
-	projectId  string
-	bucketName string
+	Base       *url.URL
+	Profile    string
+	ProjectId  string
+	BucketName string
 	logger     LoggerInterface
 }
 
@@ -39,6 +44,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	logger.Logf("Loaded config: current server is %s", cfg.CurrentServer)
+	if cfg.CurrentServer != config.Gen3ServerType {
+		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
+	}
+	gen3Auth := cfg.Servers.Gen3.Auth
 
 	var clientLogger LoggerInterface
 	if logger == nil {
@@ -56,7 +67,7 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
 		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return nil, fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=<profile-name> --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' first\n")
+			return nil, fmt.Errorf("Gen3 profile not configured. Run 'git drs init', use the '--help' flag for more info\n")
 		}
 		return nil, err
 	}
@@ -69,12 +80,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	// get the gen3Project and gen3Bucket from the config
 	projectId := gen3Auth.ProjectID
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Please provide a gen3Project key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 project specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 
 	bucketName := gen3Auth.Bucket
 	if bucketName == "" {
-		return nil, fmt.Errorf("No gen3 bucket specified. Please provide a gen3Bucket key in your .drs/config")
+		return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 	return &IndexDClient{baseUrl, profile, projectId, bucketName, clientLogger}, err
 }
@@ -87,7 +98,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	drsObj, err := cl.GetObjectByHash("sha256", oid)
+	drsObj, err := cl.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		cl.logger.Logf("error getting DRS object for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for oid %s: %v", oid, err)
@@ -106,7 +117,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	cl.logger.Log(fmt.Sprintf("Downloading file with oid %s, access ID: %s, file name: %s", oid, accessId, drsObj.Name))
 
 	// get signed url
-	a := *cl.base
+	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
 	cl.logger.Logf("using endpoint: %s\n", a.String())
@@ -115,7 +126,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	err = addGen3AuthHeader(req, cl.profile)
+	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -135,6 +146,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// log response and body
+	cl.logger.Logf("response status: %s", response.Status)
+	cl.logger.Logf("response body: %s", body)
 
 	accessUrl := drs.AccessURL{}
 	err = json.Unmarshal(body, &accessUrl)
@@ -202,7 +217,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
-	err = g3cmd.UploadSingle(cl.profile, drsObj.Id, filePath, cl.bucketName)
+	err = g3cmd.UploadSingle(cl.Profile, drsObj.Id, filePath, cl.BucketName)
 	if err != nil {
 		cl.logger.Logf("error uploading file to bucket: %s", err)
 		return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -220,7 +235,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
-	a := *cl.base
+	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id)
 
 	req, err := http.NewRequest("GET", a.String(), nil)
@@ -228,7 +243,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	err = addGen3AuthHeader(req, cl.profile)
+	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -257,7 +272,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.logger.Log("Getting DRS objects from indexd")
 
-	a := *cl.base
+	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
 	out := make(chan drs.DRSObjectResult, 10)
@@ -282,7 +297,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = addGen3AuthHeader(req, cl.profile)
+			err = addGen3AuthHeader(req, cl.Profile)
 			if err != nil {
 				cl.logger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -349,6 +364,18 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	if profileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")
 	}
+	expiration, err := token.GetExpiration(profileConfig.AccessToken)
+	if err != nil {
+		return err
+	}
+	// Update AccessToken if token is old
+	if expiration.Before(time.Now()) {
+		r := jwt.Request{}
+		err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+		if err != nil {
+			return fmt.Errorf("error refreshing access token: %s", err)
+		}
+	}
 
 	// Add headers to the request
 	authStr := "Bearer " + profileConfig.AccessToken
@@ -374,7 +401,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 	data["form"] = "object"
 
 	// parse project ID to form authz string
-	projectId := strings.Split(cl.projectId, "-")
+	projectId := strings.Split(cl.ProjectId, "-")
 	authz := fmt.Sprintf("/programs/%s/projects/%s", projectId[0], projectId[1])
 	data["authz"] = []string{authz}
 
@@ -383,7 +410,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 
 	// register DRS object via /index POST
 	// (setup post request to indexd)
-	endpt := *cl.base
+	endpt := *cl.Base
 	endpt.Path = filepath.Join(endpt.Path, "index", "index")
 
 	req, err := http.NewRequest("POST", endpt.String(), bytes.NewBuffer(jsonBytes))
@@ -397,7 +424,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 	// add auth token
 	// FIXME: token expires earlier than expected, error looks like
 	// [401] - request to arborist failed: error decoding token: expired at time: 1749844905
-	err = addGen3AuthHeader(req, cl.profile)
+	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -431,7 +458,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 // implements /index{did}?rev={rev} DELETE
 func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
-	a := *cl.base
+	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "index", did)
 
 	getReq, err := http.NewRequest("GET", a.String(), nil)
@@ -439,7 +466,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 		return err
 	}
 
-	err = addGen3AuthHeader(getReq, cl.profile)
+	err = addGen3AuthHeader(getReq, cl.Profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -464,13 +491,13 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	}
 
 	// delete indexd record using did and rev
-	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.base.String(), did, record.Rev)
+	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
 	delReq, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
 
-	err = addGen3AuthHeader(delReq, cl.profile)
+	err = addGen3AuthHeader(delReq, cl.Profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -536,7 +563,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
 
 	// setup get request to indexd
-	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.base.String(), hashType, hash)
+	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), hashType, hash)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		cl.logger.Logf("http.NewRequest Error: %s", err)
@@ -544,7 +571,7 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 	}
 	cl.logger.Logf("GET request created for indexd: %s", url)
 
-	err = addGen3AuthHeader(req, cl.profile)
+	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -582,13 +609,97 @@ func (cl *IndexDClient) GetObjectByHash(hashType string, hash string) (*drs.DRSO
 
 	// if more than one record found, write it to log
 	if len(records.Records) > 1 {
-		myLogger.Log("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
+		cl.logger.Logf("INFO: found more than 1 record for OID %s:%s, got %d records", hashType, hash, len(records.Records))
 	}
 
 	drsId := records.Records[0].Did
-	myLogger.Log("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
+	cl.logger.Logf("Using the first matching record (%s): %s", drsId, records.Records[0].FileName)
 
 	drsObj, err := cl.GetObject(drsId)
 
 	return drsObj, nil
+}
+
+// implements /index/index?authz={resource_path}&start={start}&limit={limit} GET
+func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecordsResult, error) {
+	const PAGESIZE = 50
+	pageNum := 0
+
+	cl.logger.Log("Getting DRS objects from indexd")
+	resourcePath, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, err
+	}
+
+	a := *cl.Base
+	a.Path = filepath.Join(a.Path, "index/index")
+
+	out := make(chan ListRecordsResult, PAGESIZE)
+	go func() {
+		defer close(out)
+		active := true
+		for active {
+			// setup request
+			req, err := http.NewRequest("GET", a.String(), nil)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			q := req.URL.Query()
+			q.Add("authz", fmt.Sprintf("%s", resourcePath))
+			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
+			q.Add("page", fmt.Sprintf("%d", pageNum))
+			req.URL.RawQuery = q.Encode()
+
+			err = addGen3AuthHeader(req, cl.Profile)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			// execute request with error checking
+			client := &http.Client{}
+			response, err := client.Do(req)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+			if response.StatusCode != http.StatusOK {
+				cl.logger.Logf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
+				out <- ListRecordsResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
+				return
+			}
+
+			// return page of DRS objects
+			page := &ListRecords{}
+			err = json.Unmarshal(body, &page)
+			if err != nil {
+				cl.logger.Logf("error: %s", err)
+				out <- ListRecordsResult{Error: err}
+				return
+			}
+			for _, elem := range page.Records {
+				out <- ListRecordsResult{Record: &elem}
+			}
+			if len(page.Records) == 0 {
+				active = false
+			}
+			pageNum++
+		}
+
+		cl.logger.Logf("total pages retrieved: %d", pageNum)
+	}()
+	return out, nil
 }

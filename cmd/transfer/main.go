@@ -8,6 +8,7 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -155,4 +156,17 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
+	// create failure message and send it back
+	errorResponse := lfs.ErrorMessage{
+		Event: "complete",
+		Oid:   oid,
+		Error: lfs.Error{
+			Code:    1,
+			Message: errMsg,
+		},
+	}
+	encoder.Encode(errorResponse)
 }

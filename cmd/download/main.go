@@ -25,7 +25,7 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		oid := args[0]
-		logger, err := client.NewLogger("", false)
+		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
 		}

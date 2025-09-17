@@ -88,7 +88,7 @@ echo "Installing git-drs to $DEST..."
 mkdir -p $DEST
 mv git-drs $DEST
 
-# Verify that git-drs in in the user's PATH
+# Verify that git-drs is in the user's PATH
 if ! command -v git-drs >/dev/null 2>&1; then
     echo "Adding $DEST to PATH..."
     if [ -n "$ZSH_VERSION" ]; then

@@ -99,7 +99,7 @@ if ! command -v git-drs >/dev/null 2>&1; then
     fi
 
     echo 'export PATH=$PATH:'"$DEST" >> "$SHELL"
-    source $SHELL
+    echo "Please restart your terminal or run 'source $SHELL' to update your PATH."
 fi
 
 # Clean up

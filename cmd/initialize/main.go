@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/data-client/data-client/jwt"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
-	"github.com/uc-cdis/gen3-client/gen3-client/jwt"
 )
 
 var (
@@ -31,72 +31,27 @@ var Cmd = &cobra.Command{
 	Long:  "Initialize repo and server access required for git-drs. Defaults to gen3 server unless --anvil is specified. See below for what flags are required for each server",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// check if .git dir exists to ensure you're in a git repository
-		_, err := utils.GitTopLevel()
-		if err != nil {
-			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
-		}
 
-		// if anvilMode is not set, ensure all other flags are provided
-		if !anvilMode {
-			if profile == "" || credFile == "" || apiEndpoint == "" || project == "" || bucket == "" {
-				return fmt.Errorf("Error: --profile, --cred, --server, --project, and --bucket are required for gen3 setup. See 'git drs init --help' for details.\n")
-			}
-		}
-		if anvilMode && terraProject == "" {
-			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
-		}
-
-		// populate config if empty or does not exist
-		// if !client.HasConfig() {
-		// 	// create config file
-		// 	if err := client.CreateConfig(); err != nil {
-		// 		return fmt.Errorf("Error: unable to create config file: %v\n", err)
-		// 	}
-		// }
-		var serversMap *client.ServersMap
-		if anvilMode {
-			// populate anvil config
-			serversMap = &client.ServersMap{
-				Anvil: &client.AnvilServer{
-					Endpoint: utils.ANVIL_ENDPOINT,
-					Auth: client.AnvilAuth{
-						Type:         client.ANVIL_TYPE,
-						TerraProject: terraProject,
-					},
-				},
-			}
-		} else {
-			// populate gen3 config
-			serversMap = &client.ServersMap{
-				Gen3: &client.Gen3Server{
-					Endpoint: apiEndpoint,
-					Auth: client.Gen3Auth{
-						Type:      client.GEN3_TYPE,
-						Profile:   profile,
-						ProjectID: project,
-						Bucket:    bucket,
-					},
-				},
-			}
-		}
-		config, err := client.UpdateServer(serversMap)
+		logg, err := client.NewLogger("", true)
 		if err != nil {
-			return fmt.Errorf("Error: unable to update config file: %v\n", err)
+			return err
 		}
-		fmt.Printf("Current server set to %s\n", config.CurrentServer)
+		defer logg.Close()
 
 		// add .drs/objects to .gitignore if not already present
-		if err := ensureDrsObjectsIgnore(client.DRS_OBJS_PATH); err != nil {
-			return fmt.Errorf("Error: %v\n", err)
+		if err := ensureDrsObjectsIgnore(config.DRS_OBJS_PATH, logg); err != nil {
+			return fmt.Errorf("Init Error: %v\n", err)
 		}
 
-		// set git config so git lfs uses either anvil/gen3 custom transfer agent
-		var cmdName string
-		if anvilMode {
-			cmdName = "transfer-ref"
-		} else {
-			cmdName = "transfer"
+		// Create .git/hooks/pre-commit file
+		hooksDir := filepath.Join(".git", "hooks")
+		preCommitPath := filepath.Join(hooksDir, "pre-commit")
+		if err := os.MkdirAll(hooksDir, 0755); err != nil {
+			return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
+		}
+		hookContent := "#!/bin/sh\ngit drs precommit\n"
+		if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
+			return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 		}
 
 		configs := [][]string{
@@ -108,19 +63,16 @@ var Cmd = &cobra.Command{
 		for _, cfg := range configs {
 			cmd := exec.Command("git", "config", cfg[0], cfg[1])
 			if err := cmd.Run(); err != nil {
-				fmt.Printf("Error: unable to set git config %s: %v\n", cfg[0], err)
-				return err
+				return fmt.Errorf("Unable to set git config %s: %v", cfg[0], err)
 			}
 		}
 
-		// do platform-specific setup
-		if anvilMode { // anvil setup
-			// ensure that the custom transfer is skipped during git push
-			cmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
-			if err := cmd.Run(); err != nil {
-				fmt.Println("[ERROR] unable to set git config lfs.allowincompletepush true:", err)
-				return err
-			}
+		// Call jwt.UpdateConfig with CLI parameters
+		err = jwt.UpdateConfig(profile, apiEndpoint, credFile, "false", "")
+		if err != nil {
+			return fmt.Errorf("[ERROR] unable to configure your gen3 profile: %v\n", err)
+		}
+		logg.Log("Git DRS initialized successfully!")
 
 			// remove the pre-commit hook if it exists
 			hooksDir := filepath.Join(".git", "hooks")
@@ -179,7 +131,7 @@ func init() {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)
@@ -211,6 +163,7 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 	}
 
 	if found {
+		logger.Log(config.DRS_OBJS_PATH, "already present in .gitignore")
 		return nil
 	}
 
@@ -240,5 +193,6 @@ func ensureDrsObjectsIgnore(ignorePattern string) error {
 		return fmt.Errorf("error writing %s: %w", gitignorePath, err)
 	}
 
+	logger.Log("Added", config.DRS_OBJS_PATH, "to .gitignore")
 	return nil
 }

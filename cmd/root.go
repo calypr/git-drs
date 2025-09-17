@@ -1,15 +1,13 @@
 package cmd
 
 import (
-	"github.com/calypr/git-drs/cmd/addref"
-	"github.com/calypr/git-drs/cmd/cache"
+	"github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/download"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/transfer"
-	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
@@ -32,6 +30,7 @@ func init() {
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
+	RootCmd.AddCommand(delete.Cmd)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(transferref.Cmd)

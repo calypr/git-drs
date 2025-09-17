@@ -20,4 +20,7 @@ type ObjectStoreClient interface {
 	// Get a signed url given a DRS ID
 	// corresponds to /ga4gh/drs/v1/objects/{object_id}/access/{access_id}
 	GetDownloadURL(oid string) (*drs.AccessURL, error)
+
+	// Delete an indexd record given an oid string
+	DeleteIndexdRecord(oid string) error
 }

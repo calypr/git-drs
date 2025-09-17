@@ -1,4 +1,4 @@
-package client
+package config
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/git-drs/utils"
-	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/yaml"
 )
 
 // Gen3Auth holds authentication info for Gen3
@@ -49,9 +49,11 @@ type Config struct {
 }
 
 const (
-	CONFIG_YAML = "config.yaml"
-	GEN3_TYPE   = "gen3"
-	ANVIL_TYPE  = "anvil"
+	DRS_CONFIG    = "config"
+	LFS_OBJS_PATH = ".git/lfs/objects"
+	DRS_DIR       = ".drs"
+	// FIXME: should this be /lfs/objects or just /objects?
+	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
 )
 
 func getConfigPath() (string, error) {

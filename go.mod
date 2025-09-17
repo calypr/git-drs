@@ -3,9 +3,9 @@ module github.com/calypr/git-drs
 go 1.24.0
 
 require (
+	github.com/calypr/data-client v0.0.0-20250731183638-085b5d0f22f0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.9.1
-	github.com/uc-cdis/gen3-client v0.0.23
 	sigs.k8s.io/yaml v1.4.0
 )
 
@@ -37,5 +37,3 @@ require (
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
 	gopkg.in/ini.v1 v1.66.3 // indirect
 )
-
-replace github.com/uc-cdis/gen3-client => ./cdis-data-client

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
@@ -27,28 +28,16 @@ type LfsLsOutput struct {
 	} `json:"files"`
 }
 
-const (
-	LFS_OBJS_PATH = ".git/lfs/objects"
-	DRS_DIR       = ".drs"
-	// FIXME: should this be /lfs/objects or just /objects?
-	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
-)
-
 var (
 	lfsFiles LfsLsOutput
 )
 
-func UpdateDrsObjects() error {
-	// init logger
-	logger, err := NewLogger("")
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
-	}
-	defer logger.Close()
+func UpdateDrsObjects(logger *Logger) error {
+
 	logger.Log("Update to DRS objects started")
 
 	// init indexd client
-	indexdClient, err := NewIndexDClient()
+	indexdClient, err := NewIndexDClient(logger)
 	if err != nil {
 		return fmt.Errorf("error initializing indexd with credentials: %v", err)
 	}
@@ -64,15 +53,16 @@ func UpdateDrsObjects() error {
 
 	err = json.Unmarshal(out, &lfsFiles)
 	if err != nil {
+		logger.Logf("error unmarshaling git lfs ls-files output: %v", err)
 		return fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
 	}
 
 	// get the name of repository
 	repoName, err := GetRepoNameFromGit()
 	if err != nil {
-		return fmt.Errorf("error: %v", err)
+		return fmt.Errorf("Unable to fetch repository website location: %v", err)
 	}
-	logger.Log("Repo Name: %s", repoName)
+	logger.Logf("Repo Name: %s", repoName)
 
 	// get list of staged files as a set
 	stagedFiles, err := getStagedFiles()
@@ -83,7 +73,7 @@ func UpdateDrsObjects() error {
 	for _, file := range stagedFiles {
 		stagedFilesSet[file] = struct{}{}
 	}
-	logger.Log("Creating DRS objects for staged files: %v", stagedFiles)
+	logger.Logf("Creating DRS objects for staged files: %v", stagedFiles)
 
 	// for each LFS file, calculate the DRS ID using repoName and the oid
 	// assumes that the DRS_OBJS_PATH only contains
@@ -100,7 +90,7 @@ func UpdateDrsObjects() error {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 		if obj != nil {
-			logger.Log("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}
 
@@ -108,12 +98,12 @@ func UpdateDrsObjects() error {
 		// TODO: need to determine how to manage indexd file name
 		// right now, chooses the path of the first committed copy or
 		// if there's multiple copies in one commit, the first occurrence from ls-files
-		drsObjPath, err := GetObjectPath(DRS_OBJS_PATH, file.Oid)
+		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Log("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 
@@ -126,10 +116,10 @@ func UpdateDrsObjects() error {
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 		drsId := DrsUUID(repoName, file.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
-		logger.Log("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
+		logger.Logf("Processing staged file: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(LFS_OBJS_PATH, file.Oid)
+		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -143,8 +133,8 @@ func UpdateDrsObjects() error {
 		// }
 		// modDate := fileInfo.ModTime().Format("2025-05-07T21:29:09.585275") // created date per RFC3339
 
-		// get gen3 config
-		cfg, err := LoadConfig()
+		// get url using bucket name, drsId, and file name
+		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
@@ -163,12 +153,10 @@ func UpdateDrsObjects() error {
 		}
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
 
-		// create authz string from profile
-		if !strings.Contains(gen3Auth.ProjectID, "-") {
-			return fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", gen3Auth.ProjectID)
+		authzStr, err := utils.ProjectToResource(cfg.Gen3Project)
+		if err != nil {
+			return err
 		}
-		projectIdArr := strings.SplitN(gen3Auth.ProjectID, "-", 2)
-		authzStr := "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1]
 
 		// create IndexdRecord
 		indexdObj := IndexdRecord{
@@ -181,14 +169,14 @@ func UpdateDrsObjects() error {
 			// ContentCreatedDate: modDate,
 			// ContentUpdatedDate: modDate,
 		}
-		logger.Log("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
+		logger.Logf("Adding to DRS Objects: %s -> %s", file.Name, indexdObj.Did)
 
 		// write drs objects to DRS_OBJS_PATH
 		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
-		logger.Log("Created %s for file %s", drsObjPath, file.Name)
+		logger.Logf("Created %s for file %s", drsObjPath, file.Name)
 	}
 
 	return nil
@@ -220,7 +208,7 @@ func DrsUUID(repoName string, hash string) string {
 
 func DrsInfoFromOid(oid string) (IndexdRecord, error) {
 	// unmarshal the DRS object
-	path, err := GetObjectPath(DRS_OBJS_PATH, oid)
+	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
 	if err != nil {
 		return IndexdRecord{}, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}

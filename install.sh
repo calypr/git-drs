@@ -66,9 +66,10 @@ echo "Verifying checksum..."
 
 CHECKSUM_EXPECTED=$(grep $TAR_NAME $CHECKSUM_FILE | awk '{print $1}')
 
-# Determine the appropriate checksum command for the platform  
+# Linux
 if command -v sha256sum >/dev/null 2>&1; then  
     CHECKSUM_ACTUAL=$(sha256sum $TAR_NAME | awk '{print $1}')  
+# macOS
 elif command -v shasum >/dev/null 2>&1; then  
     CHECKSUM_ACTUAL=$(shasum -a 256 $TAR_NAME | awk '{print $1}')  
 else

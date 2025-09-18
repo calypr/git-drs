@@ -4,7 +4,7 @@
 
 REPO="calypr/git-drs"
 
-echo "Installing git-drs..."
+echo "Installing git-drs"
 
 # Function to get the latest release URL if no version is provided
 get_latest_release_url() {
@@ -22,11 +22,12 @@ VERSION_TAG=$1
 # Determine the release URL based on whether a version tag was provided
 RELEASE_URL=""
 if [ -z "$VERSION_TAG" ]; then
-    echo "No version specified. Fetching the latest release..."
     RELEASE_URL=$(get_latest_release_url)
+    VERSION_TAG=$(curl -s $RELEASE_URL | grep '"tag_name":' | cut -d '"' -f4)
+    echo "No version specified. Fetching the latest release → $VERSION_TAG"
 else
-    echo "Fetching release for version $VERSION_TAG..."
     RELEASE_URL=$(get_tag_release_url $VERSION_TAG)
+    echo "Fetching release for version $VERSION_TAG"
 fi
 
 # Determine OS and Architecture
@@ -50,7 +51,7 @@ CHECKSUM_FILE="git-drs_${VERSION_TAG}_checksums.txt"
 ASSETS=$(curl -s $RELEASE_URL | grep "browser_download_url" | cut -d '"' -f 4)
 
 # Download the tar.gz file and checksums.txt for the detected OS and Arch
-echo "Downloading git-drs for $OS $ARCH..."
+echo "Downloading git-drs for $OS $ARCH"
 for asset in $ASSETS; do
     if [[ $asset == *"${OS}-${ARCH}"* && $asset == *".tar.gz"* ]]; then
         TAR_URL=$asset
@@ -62,7 +63,7 @@ for asset in $ASSETS; do
 done
 
 # Verify checksum
-echo "Verifying checksum..."
+echo "Verifying checksum"
 
 CHECKSUM_EXPECTED=$(grep $TAR_NAME $CHECKSUM_FILE | awk '{print $1}')
 
@@ -78,12 +79,12 @@ else
 fi
 
 if [ "$CHECKSUM_EXPECTED" != "$CHECKSUM_ACTUAL" ]; then
-    echo "Checksum verification failed for $TAR_NAME. Exiting..."
+    echo "Checksum verification failed for $TAR_NAME. Exiting"
     exit 1
 fi
 
 # Extract and install the package
-echo "Extracting the package..."
+echo "Extracting the package"
 tar -xzf $TAR_NAME
 
 # Parse installation destination
@@ -93,13 +94,13 @@ DEST=$2
 if [ -z "$DEST" ]; then
     DEST=$HOME/.local/bin
 fi
-echo "Installing git-drs to $DEST..."
+echo "Installing git-drs to $DEST"
 mkdir -p $DEST
 mv git-drs $DEST
 
 # Verify that git-drs is in the user's PATH
 if ! command -v git-drs >/dev/null 2>&1; then
-    echo "Adding $DEST to PATH..."
+    echo "Adding $DEST to PATH"
     if [ -n "$ZSH_VERSION" ]; then
         SHELL="$HOME/.zshrc"
     else

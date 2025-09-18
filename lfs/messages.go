@@ -79,9 +79,19 @@ func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
 		Event: "complete",
 		Oid:   oid,
 		Error: Error{
-			Code:    500,
+			Code:    1,
 			Message: errMsg,
 		},
 	}
 	encoder.Encode(errorResponse)
+}
+
+func WriteCompleteMessage(encoder *json.Encoder, oid string, path string) {
+	// create success message and send it back
+	completeResponse := CompleteMessage{
+		Event: "complete",
+		Oid:   oid,
+		Path:  path,
+	}
+	encoder.Encode(completeResponse)
 }

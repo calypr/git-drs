@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
 )
@@ -17,13 +18,18 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "delete <oid>",
-	Short:  "Delete a file using file object ID",
-	Long:   "Delete a file using file object ID (sha256 hash). Use lfs ls-files to get oid",
+	Use:    "delete <hash-type> <oid>",
+	Short:  "Delete a file using hash and file object ID",
+	Long:   "Delete a file using file object ID. Use lfs ls-files to get oid",
 	Hidden: true,
-	Args:   cobra.ExactArgs(1),
+	Args:   cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		oid := args[0]
+		hashType, oid := args[0], args[1]
+
+		// check hash type is valid Checksum type
+		if !drs.ChecksumType(hashType).IsValid() {
+			return fmt.Errorf("invalid hash type: %s", hashType)
+		}
 
 		logger, err := client.NewLogger("", true)
 		if err != nil {
@@ -36,13 +42,35 @@ var Cmd = &cobra.Command{
 			logger.Logf("error creating indexd client: %s", err)
 			return err
 		}
-		// get signed url
-		oidObject, err := indexdClient.GetObjectByHash(drs.ChecksumTypeSHA256.String(), oid)
+		// get records by hash
+		records, err := indexdClient.GetObjectsByHash(hashType, oid)
 		if err != nil {
-			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
+			return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
+		}
+		if len(records) == 0 {
+			return fmt.Errorf("No records found for OID %s", oid)
 		}
 
-		err = indexdClient.DeleteIndexdRecord(oidObject.Id)
+		// Get project ID from config to find matching record
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("Error loading config: %v", err)
+		}
+		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
+			return fmt.Errorf("No project ID found in config")
+		}
+
+		// Find a record that matches the project ID
+		matchingRecord, err := client.FindMatchingRecord(records, cfg.Servers.Gen3.Auth.ProjectID)
+		if err != nil {
+			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.Servers.Gen3.Auth.ProjectID, err)
+		}
+		if matchingRecord == nil {
+			return fmt.Errorf("No matching record found for project %s", cfg.Servers.Gen3.Auth.ProjectID)
+		}
+
+		// Delete the matching record
+		err = indexdClient.DeleteIndexdRecord(matchingRecord.Did)
 		if err != nil {
 			return fmt.Errorf("Error deleting file for OID %s: %v", oid, err)
 		}

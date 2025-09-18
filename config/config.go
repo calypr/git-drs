@@ -225,3 +225,14 @@ func CreateEmptyConfig() error {
 
 	return nil
 }
+
+func GetProjectId() (string, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return "", fmt.Errorf("Error loading config: %v", err)
+	}
+	if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
+		return "", fmt.Errorf("No project ID found in config")
+	}
+	return cfg.Servers.Gen3.Auth.ProjectID, nil
+}

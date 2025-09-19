@@ -302,7 +302,7 @@ LFS supports pulling via wildcards, directories, and exact paths. Below are some
 # refresh your access token (done at the start of every session!)
 git drs init --cred credentials.json
 
-# confirm that your curent server and config file is filled out
+# confirm that your current server and config file is filled out
 git drs list-config
 
 # Pull a single file

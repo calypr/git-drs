@@ -1,6 +1,7 @@
 package update
 
 import (
+	"github.com/calypr/git-drs/cmd/update/drs"
 	"github.com/calypr/git-drs/cmd/update/lfs"
 	"github.com/calypr/git-drs/cmd/update/self"
 	"github.com/spf13/cobra"
@@ -15,6 +16,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	// Add subcommands here
+	Cmd.AddCommand(drs.Cmd)
 	Cmd.AddCommand(lfs.Cmd)
 	Cmd.AddCommand(self.Cmd)
 }

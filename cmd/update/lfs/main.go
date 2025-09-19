@@ -12,7 +12,7 @@ var dir string
 var Cmd = &cobra.Command{
 	Use:   "lfs",
 	Short: "Update git-lfs (dependency)",
-	Long:  `Downloads, verifies, and installs the latest git-lfs binary for your OS/architecture.`,
+	Long:  `Downloads, verifies, and installs the latest git-lfs binary`,
 	Run: func(cmd *cobra.Command, args []string) {
 
 		if err := os.MkdirAll(dir, 0755); err != nil {

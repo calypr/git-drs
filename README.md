@@ -59,32 +59,6 @@ Find the setup instructions below that match your use case.
 
 ## 2. HPC User (eg user on ARC), Gen3 Server Setup
 
-1. On your HPC, download Git LFS (brew install git-lfs for Mac users)
-
-```sh
-# download git-lfs binary
-wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz && tar -xzf git-lfs-linux-amd64-v3.7.0.tar.gz
-
-# make git-lfs binary accessible to current session
-export PREFIX=$HOME
-./git-lfs-linux-v3.7.0/install.sh
-
-# ensure you have a bash_profile, should print the path
-ls -a ~/.bash_profile
-
-# make git-lfs accessible in all future bash sessions
-echo ‘export PATH="$HOME/bin:$PATH"’ >> ~/.bash_profile
-source ~/.bash_profile
-
-# install git-lfs
-git lfs version
-git lfs install —-skip-smudge
-
-# clean up files
-rm git-lfs-linux-amd64-v3.7.0.tar.gz
-rm -r git-lfs-3.7.0/
-```
-
 1. Check if Git has been configured already. If not:
 
    1. On the HPC - Create new SSH key by following the [sections on the Linux tab](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) - “Generating new SSH Key” and “Adding your SSH key to the ssh-agent”
@@ -95,6 +69,8 @@ rm -r git-lfs-3.7.0/
 
    ```sh
    bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
+
+   git-drs update
    ```
 
 ## 3. AnVIL Setup: Jupyter Environment
@@ -113,12 +89,10 @@ To get set up in a Jupyter Environment on Terra,
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
 
 # setup drs downloader
-wget https://github.com/anvilproject/drs_downloader/releases/latest/download/drs_downloader
-chmod 755 drs_downloader
+git-drs update
 
 # confirm binaries are accessible
 git-drs --help
-./drs_downloader --help
 
 # clone and pull files using example repo
 git clone https://github.com/quinnwai/super-cool-anvil-analysis.git

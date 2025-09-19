@@ -1,4 +1,4 @@
-package self
+package drs
 
 import (
 	"fmt"
@@ -11,11 +11,11 @@ import (
 var dir string
 
 var Cmd = &cobra.Command{
-	Use:   "self",
-	Short: "Update git-drs",
-	Long:  `Downloads, verifies, and installs the latest git-drs binary`,
+	Use:   "drs",
+	Short: "Update DRS Downloader (dependency)",
+	Long:  `Downloads, verifies, and installs the latest DRS Downloader binary`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Self-update here...")
+		fmt.Println("DRS Downloader update here...")
 	},
 }
 

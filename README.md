@@ -421,4 +421,4 @@ This project was led by @quinnwai as part of the [Ellrott Lab](https://ellrottla
   <img src="https://contrib.rocks/image?repo=calypr/git-drs" />
 </a>
 
-*Made* with [contrib.rocks](https://contrib.rocks).*
+> *Made with [contrib.rocks](https://contrib.rocks).*

@@ -51,7 +51,7 @@ Find the setup instructions below that match your use case.
    bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    ```
 
-6. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
+6. Using the path from the installer output, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
    1. Load up the bash file: `vi ~/.bash_profile`
    2. Add the following line to your Bash profile: `export PATH="$PATH:$HOME/.local/bin"`
    3. Refresh your shell: `source ~/.bash_profile`

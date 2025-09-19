@@ -7,7 +7,7 @@ Built off [Git LFS](https://git-lfs.com/) and [DRS](https://ga4gh.github.io/data
 | Command                   | Description                                                                                                                               |
 |---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
 | `git drs init`            | Initialize the local repo and server                                                                                                      |
-| `git lfs track`           | List the patterns of files that should be track                                                                                           |
+| `git lfs track`           | List the patterns of files that should be tracked                                                                                         |
 | `git lfs track <example>` | Track files                                                                                                                               |
 | `git lfs untrack`         | Untrack files                                                                                                                             |
 | `git add <file>`          | during each add, Git LFS processes your data file and checks in a pointer to git.                                                         |

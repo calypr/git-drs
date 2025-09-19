@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
+	"github.com/calypr/git-drs/cmd/update"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +31,7 @@ func init() {
 	RootCmd.AddCommand(delete.Cmd)
 	RootCmd.AddCommand(download.Cmd)
 	RootCmd.AddCommand(initialize.Cmd)
+	RootCmd.AddCommand(update.Cmd)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(list.ListProjectCmd)
 	RootCmd.AddCommand(precommit.Cmd)

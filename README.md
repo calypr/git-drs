@@ -137,7 +137,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 
-7. Using the Terra project ID, configure general acccess to AnVIL:
+7. Using the Terra project ID, configure general access to AnVIL:
    - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
    - If the AnVIL server exists, you're good to go
    - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run

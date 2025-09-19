@@ -48,7 +48,7 @@ Find the setup instructions below that match your use case.
 5. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases)
 
    ```sh
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    ```
 
 6. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
@@ -110,16 +110,15 @@ To get set up in a Jupyter Environment on Terra,
 
 ```sh
 # setup git drs binary
-export GIT_DRS_VERSION=<insert-version-here>
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $GIT_DRS_VERSION
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
 
 # setup drs downloader
-wget https://github.com/anvilproject/drs_downloader/releases/download/0.1.6-rc.4/drs_downloader
+wget https://github.com/anvilproject/drs_downloader/releases/latest/download/drs_downloader
 chmod 755 drs_downloader
 
 # confirm binaries are accessible
 git-drs --help
-drs_downloader --help
+./drs_downloader --help
 
 # clone and pull files using example repo
 git clone https://github.com/quinnwai/super-cool-anvil-analysis.git
@@ -153,8 +152,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
 4. Install Git DRS. For example, to install version 0.2.2
 
    ```sh
-   export GIT_DRS_VERSION=0.2.2
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $GIT_DRS_VERSION
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" 
    ```
 
 5. Confirm that Git DRS is available with `git-drs --help`
@@ -169,6 +167,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
    - If the AnVIL server exists, you're good to go
    - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run
+
    ```sh
    git drs init --server anvil --terraProject <terra-project-id>
    ```
@@ -186,8 +185,9 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
 1. Clone the existing repo
 
    ```sh
-   git clone <repo-clone-url>.git
-   cd <name-of-repo>
+   git clone https://github.com/example/example
+
+   cd example
    ```
 
 2. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
@@ -207,7 +207,7 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
 
 4. Initialize your user credentials. This must be done before every session.
    ```sh
-   git drs init --cred /path/to/downloaded/credentials.json
+   git drs init --cred credentials.json
    ```
 
 ## Setup from scratch (gen3 server)
@@ -220,8 +220,9 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
    cd ..
 
    # clone test repo
-   git clone <repo-clone-url>.git
-   cd <name-of-repo>
+   git https://github.com/example/example
+
+   cd example
    ```
 
 3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
@@ -230,7 +231,7 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
    2. Click your email in the top right to go to your profile
    3. Click "Create API Key" → "Download JSON"
    4. Make note of the path that it downloaded to
-   5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
+   5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp credentials.json arc:/home/users/<your-username>`
    6. This credential is valid for 30 days and needs to be redownloaded after that
 
 4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
@@ -238,10 +239,11 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
 5. Using the info from steps 3 and 4, configure general acccess to your data commons.
 
    ```sh
-   git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <project_id> --bucket <bucket_name>
+   git drs init --profile <profile> --url https://calypr-public.ohsu.edu/ --cred credentials.json --project <project_id> --bucket <bucket_name>
    ```
 
 6. Confirm that your configuration file has been populated with the data provided above
+
    ```sh
    git drs list-config
    ```
@@ -262,6 +264,7 @@ To track a single file:
 
 ```sh
 git lfs track example.txt
+
 git add .gitattributes
 ```
 
@@ -276,8 +279,6 @@ git add .gitattributes
 To track all files in a particular directory:
 
 ```sh
-# track all files in the example/ directory
-
 git lfs track "example/**"
 
 git add .gitattributes
@@ -291,20 +292,21 @@ Below are the steps to push a file once you have localized and `init`ed a Git DR
 
 ```sh
 # refresh your access token (done at the start of every session!)
-git drs init --cred /path/to/downloaded/credentials.json
+git drs init --cred credentials.json
 
 # confirm that your curent server and config file is filled out
 git drs list-config
 
 # if the file type is not already being tracked, track the file
-git lfs track /path/to/bam
+git lfs track example/
+
 git add .gitattributes
 
 # check list of tracked files before staging the list
 git lfs track
 
 # add the file to git
-git add /path/to/file.bam
+git add example.bam
 
 # see all files being tracked by LFS in the repo
 git lfs ls-files
@@ -314,6 +316,7 @@ git lfs ls-files -I file.bam
 
 # commit + push!
 git commit -m "new bam file"
+
 git push
 ```
 
@@ -323,13 +326,13 @@ LFS supports pulling via wildcards, directories, and exact paths. Below are some
 
 ```sh
 # refresh your access token (done at the start of every session!)
-git drs init --cred /path/to/downloaded/credentials.json
+git drs init --cred credentials.json
 
 # confirm that your curent server and config file is filled out
 git drs list-config
 
 # Pull a single file
-git lfs pull -I /path/to/file
+git lfs pull -I example/
 
 # Pull all bams in the top-level directory
 git lfs pull -I "*.bam"
@@ -345,10 +348,12 @@ git lfs pull
 The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...
 
 - **Git DRS**: Only used for initialization of your local repo! The rest of Git DRS is handled in the background automatically.
+
 - **Git LFS**: Used to interact with files that are tracked by LFS. Examples include
   - `git lfs track` to track files whose contents are stored outside of the Git repo
   - `git lfs ls-files` to get a list of LFS files that LFS tracks
   - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
+
 - **Git**: Everything else! (adding/committing files, pushing files, cloning repos, checking out different commits, etc)
 
 ## Viewing Logs

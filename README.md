@@ -210,7 +210,7 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
 
 4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
 
-5. Using the info from steps 3 and 4, configure general acccess to your data commons.
+5. Using the info from steps 3 and 4, configure general access to your data commons.
 
    ```sh
    git drs init --profile <profile> --url https://calypr-public.ohsu.edu/ --cred credentials.json --project <project_id> --bucket <bucket_name>

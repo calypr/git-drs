@@ -148,7 +148,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
 
 With the setup complete, follow the Quick Start to learn how to do common Git DRS workflows.
 
-# 4. Quick Start
+# Quick Start
 
 ## Initialize Repo
 

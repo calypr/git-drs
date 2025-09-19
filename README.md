@@ -268,7 +268,7 @@ Below are the steps to push a file once you have localized and `init`ed a Git DR
 # refresh your access token (done at the start of every session!)
 git drs init --cred credentials.json
 
-# confirm that your curent server and config file is filled out
+# confirm that your current server and config file is filled out
 git drs list-config
 
 # if the file type is not already being tracked, track the file

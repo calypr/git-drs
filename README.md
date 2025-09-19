@@ -394,7 +394,7 @@ to restore any files or directories that you might have already committed.
 
 # Contributors
 
-This project was led by @quinnwai as part of the [Ellrott Lab](https://ellrottlab.org/) at [Knight Cancer Institue](https://www.ohsu.edu/knight-cancer-institute).  
+This project was led by @quinnwai as part of the [Ellrott Lab](https://ellrottlab.org/) at [Knight Cancer Institute](https://www.ohsu.edu/knight-cancer-institute).  
 
 <a href="https://github.com/calypr/git-drs/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=calypr/git-drs" />

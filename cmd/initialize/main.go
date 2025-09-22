@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/calypr/data-client/data-client/jwt"
+	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/utils"

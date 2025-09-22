@@ -14,10 +14,10 @@ import (
 	"time"
 
 	token "github.com/bmeg/grip-graphql/middleware"
-	"github.com/calypr/data-client/data-client/commonUtils"
+	"github.com/calypr/data-client/client/commonUtils"
 
-	"github.com/calypr/data-client/data-client/g3cmd"
-	"github.com/calypr/data-client/data-client/jwt"
+	"github.com/calypr/data-client/client/g3cmd"
+	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/utils"
@@ -246,7 +246,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		err = g3cmd.UploadSingle(cl.Profile, drsObj.Id, filePath, cl.BucketName)
+		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)

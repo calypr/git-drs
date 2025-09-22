@@ -344,7 +344,7 @@ Rerun the command again (these are often network-related errors).
 
 This is likely because your token used to access the gen3 DRS server has expired. To refresh it, run `git drs init --cred /path/to/credentials.json`.
 
-If the error still persists, then try to download a new credentials file using instructions from [step 4](#clone-an-existing-git-drs-repo-gen3-server) of the Git repo setup.
+If the error still persists, then try to download a new credentials file using instructions from [step 2](#clone-an-existing-repo) of the Git repo setup.
 
 ## Untrack an LFS file
 

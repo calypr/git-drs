@@ -79,7 +79,6 @@ var Cmd = &cobra.Command{
 					myLogger.Log(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
-				myLogger.Logf("Access URL for OID %s: %+v", downloadMsg.Oid, accessUrl)
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
 					myLogger.Log(errMsg)
@@ -137,7 +136,7 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
-				myLogger.Log(fmt.Sprintf("LFS push finished"))
+				myLogger.Log(fmt.Sprintf("LFS transfer complete"))
 			}
 		}
 

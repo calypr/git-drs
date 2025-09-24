@@ -389,7 +389,7 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	profileConfig, err := conf.ParseConfig(profile)
 	if err != nil {
 		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return fmt.Errorf("Profile not in config file. Need to run 'git drs init --profile=<profile-name> --cred=<path-to-credential/cred.json> --apiendpoint=<api_endpoint_url>' first\n")
+			return fmt.Errorf("Profile not in config file. Need to run 'git drs init' for gen3 first, see git drs init --help\n")
 		}
 		return fmt.Errorf("error parsing gen3 config: %s", err)
 	}
@@ -405,7 +405,13 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 		r := jwt.Request{}
 		err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
 		if err != nil {
-			return fmt.Errorf("error refreshing access token: %s", err)
+			// load config and see if the endpoint is printed
+			errStr := fmt.Sprintf("error refreshing access token: %v", err)
+			if strings.Contains(errStr, "no such host") {
+				errStr += ". If you are accessing an internal website, make sure you are connected to the internal network."
+			}
+
+			return fmt.Errorf(errStr)
 		}
 	}
 
@@ -613,7 +619,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v, %s", hashType, hash, err)
+		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", hashType, hash, err)
 	}
 	defer resp.Body.Close()
 

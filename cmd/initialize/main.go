@@ -222,7 +222,7 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 	if err != nil {
 		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
 		if strings.Contains(errStr, "apiendpoint") {
-			errStr += " If you are accessing an internal instance, make sure you are on the right network."
+			errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
 		}
 		return fmt.Errorf(errStr)
 	}

@@ -159,7 +159,7 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 7. Using the Terra project ID, configure general acccess to AnVIL:
-    - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
+    - Check that `git drs list-config` shows an AnVIL server with an `endpoint` and `terra_project`,
     - If the AnVIL server exists, you're good to go
     - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run
       ```bash
@@ -182,18 +182,24 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-2. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+2. If you're cloning a repo with an SSH URL (eg git@github.com:myname/myproject.git), add the following to your SSH configuration (on Mac located at `~/.ssh/config`): For example, if you are pushing to github.com, this prevents Git from timing out during a long Git push:
+    ```
+    Host github.com
+        TCPKeepAlive yes
+        ServerAliveInterval 30
+    ```
+3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
     1. Log in to your data commons
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that.
-3. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
+4. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
     ```bash
         git drs list-config
     ```
-4. Initialize your user credentials. This must be done before every session.
+5. Initialize your user credentials. This must be done before every session.
     ```bash
         git drs init --cred /path/to/downloaded/credentials.json
     ```

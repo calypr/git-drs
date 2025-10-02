@@ -198,6 +198,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 	} else {
 		// create indexd record
+		cl.logger.Log("creating record: no existing indexd record for this project")
 		drsObj, err = cl.RegisterIndexdRecord(oid)
 		if err != nil {
 			cl.logger.Logf("error registering indexd record: %s", err)

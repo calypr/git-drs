@@ -38,14 +38,17 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error getting config: %v", err)
 		}
-		fmt.Printf("Current server: %s\n", cfg.CurrentServer)
 		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
+		fmt.Println("Preparing DRS objects for commit...")
+		myLogger.Logf("Preparing DRS objects for commit...\n")
 		err = client.UpdateDrsObjects(myLogger)
 		if err != nil {
 			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err
 		}
+		fmt.Println("DRS objects prepared for commit!")
+		myLogger.Logf("DRS objects prepared for commit!\n")
 
 		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")
 		return nil

@@ -10,21 +10,25 @@ There are two main concepts to understand Git DRS: how **Git LFS tracks** specif
 
 Git LFS primarily ensures that you can track your files and convert them into pointers when you stage those files with Git. More info on Git LFS can be found [here](https://git-lfs.com/).
 
-Git DRS also functions within the Git workflow by building off Git LFS to manage your files. It plugs in 3 main ways:
-1. Git DRS is called *manually* when initializing a Git repo
+Git DRS also functions within the Git workflow by building off Git LFS to manage your files. It plugs in 4 main ways:
+1. Git DRS is called *explicitly* when initializing a Git repo
 2. Git DRS is called *automatically* when committing new files to the repo
-3. Git DRS is called *automatically* when transferring files between your remote and your local copy of the repo.
+3. Git DRS is called *automatically* when pushing files to the remote repo
+4. Git DRS is called *explicitly* when you want to download files onto your local machine
 
 Here are some example commands used in pushing a file:
 
-- `git drs init`: Git DRS initializes your repo and server locally
-- `git lfs track`: Git LFS lists the patterns of files that LFS should track
+- `git drs init`: Git DRS prepares your Git repo, project configuration and access to the DRS server.
+- `git lfs track`: Git LFS lists the patterns of files that LFS is tracking.
 - `git lfs track <file-pattern>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
 - `git lfs untrack`: Git LFS lets you untrack particular patterns if you made a typo.
-- `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
-- `git lfs ls-files`: Git LFS lists the files staged (added) into Git and tracked by LFS
+- `git add <file>`:  Git LFS processes each data file and checks in a pointer to git.
+- `git lfs ls-files`: Git LFS lists the special  staged files that are tracked by LFS
 - `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file and prepares it for a push.
-- `git push`: before each push, Git DRS updates the DRS server with your file details and uploads each committed file to the configured object storage.
+- `git push`: before each push, Git DRS register your each of your committed files with the DRS server and uploads them to the configured bucket.
+- `git lfs pull`: Git LFS downloads the files to your local Git repo.
+
+Use the `--help` flag when calling the lfs and drs commands for more info.
 
 
 ## Setup
@@ -36,7 +40,7 @@ Currently, we support a couple different ways to set up Git DRS depending on whe
 
 Find the setup instructions below that match your use case.
 
-#### Local User, Gen3 Server Setup
+#### Setup: Local user targeting Gen3 server 
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
@@ -59,7 +63,7 @@ Find the setup instructions below that match your use case.
     3. Refresh your shell: `source ~/.bash_profile`
 7. Confirm that Git DRS is available with `git-drs --help`
    
-#### HPC User (eg user on ARC), Gen3 Server Setup
+#### Setup: HPC User (eg user on ARC) targeting Gen3 server
 
 1. On your HPC, download Git LFS (brew install git-lfs for Mac users)
   ```bash
@@ -100,7 +104,7 @@ Find the setup instructions below that match your use case.
 4. Confirm that Git DRS is available with `git-drs --help`
 
 
-#### AnVIL Setup: Jupyter Environment
+#### Setup: Working in Terra Jupyter Environment
 
 To get set up in a Jupyter Environment on Terra,
 
@@ -140,7 +144,7 @@ git lfs ls-files
 git lfs pull -I data_tables_sequencing_dataset.tsv
 ```
 
-#### AnVIL Setup (General)
+#### Setup: Local setup targeting AnVIL server 
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
@@ -159,18 +163,11 @@ git lfs pull -I data_tables_sequencing_dataset.tsv
    2. Choose the My Workspace you want to use for billing
    3. Copy the Google Project ID under "CLOUD INFORMATION"
 7. Using the Terra project ID, configure general acccess to AnVIL:
-    - Check that `cat .drs/config.yaml` shows an AnVIL server with an `endpoint` and `terra_project`,
-     - If the gen3 server exists, then using the credentials file path from step 3, run
-      ```bash
-        git drs init --cred /path/to/ downloaded/credentials.json
-      ```
+    - Check that `git drs list-config` shows an AnVIL server with an `endpoint` and `terra_project`,
+    - If the AnVIL server exists, you're good to go
     - If there is no or an incomplete AnVIL server, contact your data coordinator to receive the details for your gen3 project, specifically the server url, project ID, and bucket name. Then, using the credentials file path (step 3) and Terra project ID (step 5), run
       ```bash
         git drs init --server anvil --terraProject <terra-project-id>
-      ```
-    - If there is a config.yaml, we will use the existing configuration to authenticate you. Using the credentials file from step 3, run
-      ```bash
-        git drs init --server anvil
       ```
 
 With the setup complete, follow the Quick Start to learn how to do common Git DRS workflows.
@@ -179,29 +176,40 @@ With the setup complete, follow the Quick Start to learn how to do common Git DR
 When in doubt, use the `--help` flag to get more info about the commands
 
 
-#### Initialize a Git DRS Repo
+### Initialize a Git DRS Repo
 
 Every time you create or clone a new Git repo, you have to initialize it with Git DRS.
 
-**To setup an existing Git DRS repo with a gen3 server...**
+#### Clone an existing Git DRS repo (gen3 server)
 1. Clone the existing repo
     ```bash
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-2. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+2. If you're cloning a repo with an SSH URL (eg git@github.com:myname/myproject.git), add the following to your SSH configuration (on Mac located at `~/.ssh/config`): For example, if you are pushing to github.com, this prevents Git from timing out during a long Git push:
+    ```
+    Host github.com
+        TCPKeepAlive yes
+        ServerAliveInterval 30
+    ```
+3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
     1. Log in to your data commons
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that.
-3. Initialize your user credentials. 
-      ```bash
-        git drs init --cred /path/to/ downloaded/credentials.json
-      ```
+ 4. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
+    ```bash
+        git drs list-config
+    ```
+5. Initialize your user credentials. This must be done before every session.
+    ```bash
+        git drs init --cred /path/to/downloaded/credentials.json
+    ```
 
-**To start from scratch...**
+
+#### Setup from scratch (gen3 server)
 1. Create a git repo on GitHub 
 2. Clone an existing Git DRS repo. If you don't have one set up, before continuing.
     ```bash
@@ -211,20 +219,30 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+3. If you're cloning a repo with an SSH URL (eg git@github.com:myname/myproject.git), add the following to your SSH configuration (on Mac located at `~/.ssh/config`): For example, if you are pushing to github.com, this prevents Git from timing out during a long Git push:
+    ```
+    Host github.com
+        TCPKeepAlive yes
+        ServerAliveInterval 30
+    ```
+4. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
     1. Log in to your data commons
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that
-4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
-5. Using the info from steps 3 and 4, configure general acccess to your data commons.
+5. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
+6. Using the info from steps 4 and 5, configure general acccess to your data commons.
       ```bash
         git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <project_id> --bucket <bucket_name>
       ```
+7. Confirm that your configuration file has been populated with the data provided above
+    ```bash
+        git drs list-config
+    ```
 
-#### Track a Specific Set of Files
+### Track a Specific Set of Files
 If you want to track a data file in the Git repo, you will need to register that file with Git LFS. This is done by doing a `git lfs track` and then git adding the  `.gitattributes` that stores this information.
 
 First see what files are already being tracked
@@ -256,16 +274,20 @@ git add .gitattributes
 Just like Git, only files stored in the repository directory can be added. Once you have tracked a file, you can go about doing the usual Git workflow to stage, commit, and push it to GitHub. An example workflow for this is shown below.
 
 
-#### Example Workflow: Push a File
+### Example Workflow: Push a File
 
-Below are the steps to push a file once you have localized and `init`ed a Git DRS repo.
+Below are the steps to push a file once you have [set up a Git DRS repo](#setup). 
 ```bash
+
+# confirm that your current server and config file is filled out
+git drs list-config
+
+# check list of tracked files
+git lfs track
+
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
 git add .gitattributes
-
-# check list of tracked files before staging the list 
-git lfs track
 
 # add the file to git
 git add /path/to/file.bam
@@ -281,10 +303,15 @@ git commit -m "new bam file"
 git push
 ```
 
-#### Example Workflow: Pull Files
-LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
+### Example Workflow: Pull Files
+
+LFS supports pulling via wildcards, directories, and exact paths. Below are some examples to pull a file once you have [set up a Git DRS repo](#setup).
 
 ```bash
+
+# confirm that your current server and config file is filled out
+git drs list-config
+
 # Pull a single file
 git lfs pull -I /path/to/file
 
@@ -295,7 +322,9 @@ git lfs pull -I "*.bam"
 git lfs pull
 ```
 
-## When to Use Git vs Git LFS vs Git DRS
+## Troubleshooting
+
+### When to Use Git vs Git LFS vs Git DRS
 The goal of Git DRS is to maximize integration with the Git workflow using a minimal amount of extra tooling. That being said, sometimes `git lfs` commands or `git drs` commands will have to be run outside of the Git workflow. Here's some advice on when to use each of the three...
 - **Git DRS**: Only used for initialization of your local repo! The rest of Git DRS is handled in the background automatically.
 - **Git LFS**: Used to interact with files that are tracked by LFS. Examples include
@@ -304,17 +333,18 @@ The goal of Git DRS is to maximize integration with the Git workflow using a min
    - `git lfs pull` to pull a file whose contents exist on a server outside of the Git repo.
 - **Git**: Everything else! (adding/committing files, pushing files, cloning repos, checking out different commits, etc)
 
-## Troubleshooting
+### Viewing Logs
+- As mentioned in [Basics](#basics), Git DRS plugs in automatically during the git `commit`, `push`, and `pull`, so logs are most useful when debugging those commands.
+- To see more logs during file upload and download, view the log files in the `.drs/` directory.
 
-### Logs and Error Messages
-- To see more logs, view the log files in the `.drs/` directory.
-- - As mentioned in [Basics](#basics), Git DRS plugs in automatically during the git `commit`, `push`, and `pull`, so logs are most useful when debugging those commands.
-- For errors related to connection like `net/http: TLS handshake timeout`, just try running the command again.
+
+### Common Error Messages
+- For errors related to connection like `net/http: TLS handshake timeout`, just try running the command again. These are often network-related errors.
+- For errors like `Upload error: 503 Service Unavailable error has occurred! Please check backend services for more details`: this is likely because your token used to access the gen3 DRS server has expired. To refresh it, run `git drs init --cred /path/to/credentials.json`. If the error still persists, then try to download a new credentials file using instructions from [step 4](#clone-an-existing-git-drs-repo-gen3-server) of the Git repo setup.
 
 ### Undoing Your Changes
 
 #### Untrack an LFS file
-
 If you realized you made a typo when doing LFS track, you can use
 
 ```bash
@@ -338,11 +368,11 @@ git lfs track
 git add .gitattributes
 ```
 
-### Undoing a Commit
+#### Undoing a Commit
 
 If you want to try committing again on a set of files, you can undo the last commit using `git reset --hard HEAD~1`. This moves all of the files back into the working directory, so you can retry using `git add` and `git commit`
 
-### Undoing a git add
+#### Undoing a git add
 
 In cases where you need to undo your staged changes from a git add
 

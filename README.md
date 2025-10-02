@@ -10,21 +10,25 @@ There are two main concepts to understand Git DRS: how **Git LFS tracks** specif
 
 Git LFS primarily ensures that you can track your files and convert them into pointers when you stage those files with Git. More info on Git LFS can be found [here](https://git-lfs.com/).
 
-Git DRS also functions within the Git workflow by building off Git LFS to manage your files. It plugs in 3 main ways:
-1. Git DRS is called *manually* when initializing a Git repo
+Git DRS also functions within the Git workflow by building off Git LFS to manage your files. It plugs in 4 main ways:
+1. Git DRS is called *explicitly* when initializing a Git repo
 2. Git DRS is called *automatically* when committing new files to the repo
-3. Git DRS is called *automatically* when transferring files between your remote and your local copy of the repo.
+3. Git DRS is called *automatically* when pushing files to the remote repo
+4. Git DRS is called *explicitly* when you want to download files onto your local machine
 
 Here are some example commands used in pushing a file:
 
-- `git drs init`: Git DRS initializes your repo and server locally
-- `git lfs track`: Git LFS lists the patterns of files that LFS should track
+- `git drs init`: Git DRS prepares your Git repo, project configuration and access to the DRS server.
+- `git lfs track`: Git LFS lists the patterns of files that LFS is tracking.
 - `git lfs track <file-pattern>`: Git LFS lets you decide which files should be tracked and stored external to the Git repo.
 - `git lfs untrack`: Git LFS lets you untrack particular patterns if you made a typo.
-- `git add <file>`: during each add, Git LFS processes your data file and checks in a pointer to git.
-- `git lfs ls-files`: Git LFS lists the files staged (added) into Git and tracked by LFS
+- `git add <file>`:  Git LFS processes each data file and checks in a pointer to git.
+- `git lfs ls-files`: Git LFS lists the special  staged files that are tracked by LFS
 - `git commit`: before each commit, Git DRS creates a DRS object that stores details about your file and prepares it for a push.
-- `git push`: before each push, Git DRS updates the DRS server with your file details and uploads each committed file to the configured object storage.
+- `git push`: before each push, Git DRS register your each of your committed files with the DRS server and uploads them to the configured bucket.
+- `git lfs pull`: Git LFS downloads the files to your local Git repo.
+
+Use the `--help` flag when calling the lfs and drs commands for more info.
 
 
 ## Setup
@@ -36,7 +40,7 @@ Currently, we support a couple different ways to set up Git DRS depending on whe
 
 Find the setup instructions below that match your use case.
 
-#### Local User, Gen3 Server Setup
+#### Setup: Local user targeting Gen3 server 
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
@@ -59,7 +63,7 @@ Find the setup instructions below that match your use case.
     3. Refresh your shell: `source ~/.bash_profile`
 7. Confirm that Git DRS is available with `git-drs --help`
    
-#### HPC User (eg user on ARC), Gen3 Server Setup
+#### Setup: HPC User (eg user on ARC) targeting Gen3 server
 
 1. On your HPC, download Git LFS (brew install git-lfs for Mac users)
   ```bash
@@ -100,7 +104,7 @@ Find the setup instructions below that match your use case.
 4. Confirm that Git DRS is available with `git-drs --help`
 
 
-#### AnVIL Setup: Jupyter Environment
+#### Setup: Working in Terra Jupyter Environment
 
 To get set up in a Jupyter Environment on Terra,
 
@@ -140,7 +144,7 @@ git lfs ls-files
 git lfs pull -I data_tables_sequencing_dataset.tsv
 ```
 
-#### AnVIL Setup (General)
+#### Setup: Local setup targeting AnVIL server 
 
 1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
 2. Configure LFS on your machine
@@ -195,7 +199,7 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that.
-4. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
+ 4. Confirm that your configuration file has been populated, where the `current_server` is `gen3` and `servers.gen3` contains an endpoint, profile .project ID, and bucket filled out
     ```bash
         git drs list-config
     ```
@@ -215,19 +219,25 @@ Every time you create or clone a new Git repo, you have to initialize it with Gi
     git clone <repo-clone-url>.git
     cd <name-of-repo>
     ```
-3. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
+3. If you're cloning a repo with an SSH URL (eg git@github.com:myname/myproject.git), add the following to your SSH configuration (on Mac located at `~/.ssh/config`): For example, if you are pushing to github.com, this prevents Git from timing out during a long Git push:
+    ```
+    Host github.com
+        TCPKeepAlive yes
+        ServerAliveInterval 30
+    ```
+4. On your local, download credentials from your data commons (ex: https://calypr-public.ohsu.edu/)
     1. Log in to your data commons
     2. Click your email in the top right to go to your profile
     3. Click "Create API Key" → "Download JSON"
     4. Make note of the path that it downloaded to
     5. If doing Git DRS setup on a separate machine, transfer the credentials file over. For example, to move the file over to ARC: `scp /path/to/credentials.json arc:/home/users/<your-username>`
     6. This credential is valid for 30 days and needs to be redownloaded after that
-4. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
-5. Using the info from steps 3 and 4, configure general acccess to your data commons.
+5. Contact your data coordinator to receive the details for your gen3 project, specifically the website url, project ID, and bucket name.
+6. Using the info from steps 4 and 5, configure general acccess to your data commons.
       ```bash
         git drs init --profile <data_commons_name> --url https://datacommons.com/ --cred /path/to/downloaded/credentials.json --project <project_id> --bucket <bucket_name>
       ```
-6. Confirm that your configuration file has been populated with the data provided above
+7. Confirm that your configuration file has been populated with the data provided above
     ```bash
         git drs list-config
     ```
@@ -266,20 +276,18 @@ Just like Git, only files stored in the repository directory can be added. Once 
 
 ### Example Workflow: Push a File
 
-Below are the steps to push a file once you have localized and `init`ed a Git DRS repo.
+Below are the steps to push a file once you have [set up a Git DRS repo](#setup). 
 ```bash
-# refresh your access token (done at the start of every session!)
-git drs init --cred /path/to/downloaded/credentials.json
 
-# confirm that your curent server and config file is filled out
+# confirm that your current server and config file is filled out
 git drs list-config
+
+# check list of tracked files
+git lfs track
 
 # if the file type is not already being tracked, track the file
 git lfs track /path/to/bam
 git add .gitattributes
-
-# check list of tracked files before staging the list 
-git lfs track
 
 # add the file to git
 git add /path/to/file.bam
@@ -296,13 +304,12 @@ git push
 ```
 
 ### Example Workflow: Pull Files
-LFS supports pulling via wildcards, directories, and exact paths. Below are some examples...
+
+LFS supports pulling via wildcards, directories, and exact paths. Below are some examples to pull a file once you have [set up a Git DRS repo](#setup).
 
 ```bash
-# refresh your access token (done at the start of every session!)
-git drs init --cred /path/to/downloaded/credentials.json
 
-# confirm that your curent server and config file is filled out
+# confirm that your current server and config file is filled out
 git drs list-config
 
 # Pull a single file

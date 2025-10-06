@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -151,16 +152,13 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error reading response to signed url: %v", err)
 	}
 
-	// log response and body
-	cl.logger.Logf("response status: %s", response.Status)
-
 	accessUrl := drs.AccessURL{}
 	err = json.Unmarshal(body, &accessUrl)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
 	}
 
-	cl.logger.Log("signed url retrieved")
+	cl.logger.Log("signed url retrieved: %s", response.Status)
 
 	return &accessUrl, nil
 }
@@ -168,23 +166,22 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 // RegisterFile implements ObjectStoreClient.
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
-// This is done atomically, so a failed upload will not leave a record in indexd.
+// DRS will use any matching indexd record / file that already exists
 func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.logger.Logf("register file started for oid: %s", oid)
 
-	// check if hash already exists
+	// get all existing hashes
 	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), oid)
 	if err != nil {
 		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
 	}
 
-	// Get project ID from config to find matching record
+	// use any indexd record from the same project if it exists
 	projectId, err := config.GetProjectId()
 	if err != nil {
 		return nil, fmt.Errorf("Error getting project ID: %v", err)
 	}
 
-	// If we already have an indexd record in this project, use the existing drs object
 	matchingRecord, err := FindMatchingRecord(records, projectId)
 	if err != nil {
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
@@ -197,7 +194,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
 		}
 	} else {
-		// create indexd record
+		// otherwise, create indexd record
 		cl.logger.Log("creating record: no existing indexd record for this project")
 		drsObj, err = cl.RegisterIndexdRecord(oid)
 		if err != nil {
@@ -206,7 +203,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 	}
 
-	// delete indexd record if subsequent code throws an error
+	// delete indexd record if subsequent file upload code errors out
 	defer func() {
 		if err != nil {
 			cl.logger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
@@ -571,7 +568,11 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 
 	// Check if the response status is OK
 	if fileResponse.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
+		body, err := io.ReadAll(fileResponse.Body)
+		if err != nil {
+			return fmt.Errorf("failed to download file using signed URL: %s", fileResponse.Status)
+		}
+		return fmt.Errorf("failed to download file using signed URL: %s. Full error: %s", fileResponse.Status, string(body))
 	}
 
 	// Create the destination directory if it doesn't exist
@@ -598,11 +599,9 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 
 // implements /index/index?hash={hashType}:{hash} GET
 func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]OutputInfo, error) {
-
-	// search via hash https://calypr-dev.ohsu.edu/index/index?hash=sha256:52d9baed146de4895a5c9c829e7765ad349c4124ba43ae93855dbfe20a7dd3f0
-
 	// setup get request to indexd
 	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), hashType, hash)
+	cl.logger.Logf("Querying indexd at %s", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		cl.logger.Logf("http.NewRequest Error: %s", err)
@@ -640,7 +639,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
 	// log how many records were found
-	cl.logger.Logf("INFO: found %d indexd record(s) matching the hash", len(records.Records))
+	cl.logger.Logf("Found %d indexd record(s) matching the hash", len(records.Records))
 
 	// if no records found, return empty slice
 	if len(records.Records) == 0 {
@@ -665,10 +664,8 @@ func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, er
 
 	// Get the first record with matching authz if exists
 	for _, record := range records {
-		for _, authz := range record.Authz {
-			if authz == expectedAuthz {
-				return &record, nil
-			}
+		if slices.Contains(record.Authz, expectedAuthz) {
+			return &record, nil
 		}
 	}
 

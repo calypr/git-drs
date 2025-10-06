@@ -65,20 +65,20 @@ Find the setup instructions below that match your use case.
    
 #### Setup: HPC User (eg user on ARC) targeting Gen3 server
 
-1. On your HPC, download Git LFS (brew install git-lfs for Mac users)
+1. On your HPC, download Git LFS with the following script (brew install git-lfs for Mac users)
   ```bash
     # download git-lfs binary
-    wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz; tar -xzf git-lfs-linux-amd64-v3.7.0.tar.gz
+    wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz; tar -xvf git-lfs-linux-amd64-v3.7.0.tar.gz
 
     # make git-lfs binary accessible to current session
     export PREFIX=$HOME
-    ./git-lfs-linux-v3.7.0/install.sh
+    ./git-lfs-v3.7.0/install.sh
 
     # ensure you have a bash_profile, should print the path
     ls -a ~/.bash_profile
 
     # make git-lfs accessible in all future bash sessions
-    echo ‘export PATH="$HOME/bin:$PATH"’ >> ~/.bash_profile
+    echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile
     source ~/.bash_profile
 
     # install git-lfs
@@ -89,19 +89,18 @@ Find the setup instructions below that match your use case.
     rm git-lfs-linux-amd64-v3.7.0.tar.gz
     rm -r git-lfs-3.7.0/
   ```
-1. Check if Git has been configured already. If not:
+2. Check if Git has been configured already. If not:
     1. On the HPC - Create new SSH key by following the [sections on the Linux tab](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account) - “Generating new SSH Key” and “Adding your SSH key to the ssh-agent”
     2. Add this key to the source GitHub at https://source.ohsu.edu/settings/keys 
-2. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
+4. Install Git DRS using a version from [GitHub Releases](https://github.com/calypr/git-drs/releases). For example, to install version 0.2.2
     ```bash
     export GIT_DRS_VERSION=0.2.2
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
-    ```
-3. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
+    ```1. Using the path from the outputted, update your `PATH` variable. For instance, if using bash with Git DRS stored at `$HOME/.local/bin`:
     1. Load up the bash file: `vi ~/.bash_profile`
     2. Add the following line to your Bash profile: `export PATH="$PATH:$HOME/.local/bin"`
     3. Refresh your shell: `source ~/.bash_profile`
-4. Confirm that Git DRS is available with `git-drs --help`
+5. Confirm that Git DRS is available using `git-drs version`
 
 
 #### Setup: Working in Terra Jupyter Environment

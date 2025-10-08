@@ -40,7 +40,7 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	golang.org/x/net v0.41.0 // indirect
-	golang.org/x/oauth2 v0.31.0
+	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
 	gopkg.in/ini.v1 v1.66.3 // indirect

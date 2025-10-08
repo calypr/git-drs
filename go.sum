@@ -4,8 +4,8 @@ github.com/bmeg/grip v0.0.0-20250418210132-1e2056adcec6 h1:Wn7ChfPjw2aurCh1TOr2I
 github.com/bmeg/grip v0.0.0-20250418210132-1e2056adcec6/go.mod h1:HZ9XI515z+VZe2YbBocZZHIswWLAJKj5mPDW7r38vyM=
 github.com/bmeg/grip-graphql v0.0.0-20250515213638-45743b2c4e22 h1:vH5LmoEDC7Sl/ri72JKtSqhOitoeEvKfN4BDw8b5Rso=
 github.com/bmeg/grip-graphql v0.0.0-20250515213638-45743b2c4e22/go.mod h1:r6Q2OSUZiBFH3mBL7CoKa4iKBaG5vCRjqppClWNILGI=
-github.com/calypr/data-client v0.0.0-20250809003103-24c1479848a9 h1:pNTu8fzVN/xckXoXVHpQ1ptCd6JZZ8RWKKaLGwVTQGw=
-github.com/calypr/data-client v0.0.0-20250809003103-24c1479848a9/go.mod h1:4ajLwHkWZyAE295bGQpQuLYUcdBFYb98HGT5mt5qYaY=
+github.com/calypr/data-client v0.0.0-20250922214141-773847e4a7fb h1:kdD/j32RJFPQxyXzfiMpt90vqfGMkLQv9m7jT1Jl6NM=
+github.com/calypr/data-client v0.0.0-20250922214141-773847e4a7fb/go.mod h1:4ajLwHkWZyAE295bGQpQuLYUcdBFYb98HGT5mt5qYaY=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

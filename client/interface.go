@@ -7,14 +7,15 @@ type ObjectStoreClient interface {
 	// corresponds to /ga4gh/drs/v1/objects
 	GetObject(id string) (*drs.DRSObject, error)
 
+	// list all objects available to you
 	ListObjects() (chan drs.DRSObjectResult, error)
 
 	// Given a projectId, list all of the records associated with it
 	ListObjectsByProject(project string) (chan ListRecordsResult, error)
 
-	// given a hash, get the object describing it
+	// given a hash, get the objects describing it
 	// no corresponding DRS endpoint exists, so this is custom code
-	GetObjectByHash(hashType string, hash string) (*drs.DRSObject, error)
+	GetObjectsByHash(hashType string, hash string) ([]OutputInfo, error)
 
 	// Put file into object storage and obtain a DRS record pointing to it
 	// no DRS write endpoint exists, so this is custom code

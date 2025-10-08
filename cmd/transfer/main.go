@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
 		drsClient, err = client.NewIndexDClient(myLogger)
 		if err != nil {
 			myLogger.Logf("Error creating indexd client: %s", err)
-			WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", err.Error())
 			return err
 		}
 
@@ -50,17 +50,17 @@ var Cmd = &cobra.Command{
 				myLogger.Logf("error decoding JSON: %s", err)
 				continue
 			}
-			myLogger.Logf("Received message: %s", msg)
 
 			// Example: handle only "init" event
 			if evt, ok := msg["event"]; ok && evt == "init" {
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
-				myLogger.Log("Responding to init with empty object")
+				myLogger.Log("Initializing connection")
+
 			} else if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
-				myLogger.Logf("Handling download event: %s", msg)
+				myLogger.Logf("Download requested")
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
@@ -70,6 +70,7 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
+				myLogger.Logf("Downloading file OID %s", downloadMsg.Oid)
 
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
@@ -78,7 +79,6 @@ var Cmd = &cobra.Command{
 					myLogger.Log(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
-				myLogger.Log(fmt.Sprintf("Got signed URL for OID %s: %+v", downloadMsg.Oid, accessUrl))
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
 					myLogger.Log(errMsg)
@@ -111,7 +111,7 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				myLogger.Log(fmt.Sprintf("Handling upload event: %s", msg))
+				myLogger.Log(fmt.Sprintf("Upload requested"))
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
@@ -120,9 +120,9 @@ var Cmd = &cobra.Command{
 					myLogger.Log(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
-				myLogger.Log(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
+				myLogger.Log(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 
-				// handle the upload via drs client (indexd client)
+				// otherwise, register the file (create indexd record and upload file)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
@@ -130,21 +130,13 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
 
-				myLogger.Logf("creating response message with oid %s", uploadMsg.Oid)
-
 				// send success message back
-				completeMsg := lfs.CompleteMessage{
-					Event: "complete",
-					Oid:   uploadMsg.Oid,
-					Path:  drsObj.Name,
-				}
-				myLogger.Log(fmt.Sprintf("Complete message: %+v", completeMsg))
-				encoder.Encode(completeMsg)
+				lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
+				myLogger.Logf("Upload for OID %s complete", uploadMsg.Oid)
 
-				myLogger.Logf("Upload for oid %s complete", uploadMsg.Oid)
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
-				myLogger.Log(fmt.Sprintf("terminate event received: %s", msg))
+				myLogger.Log(fmt.Sprintf("LFS transfer complete"))
 			}
 		}
 
@@ -156,17 +148,4 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
-	// create failure message and send it back
-	errorResponse := lfs.ErrorMessage{
-		Event: "complete",
-		Oid:   oid,
-		Error: lfs.Error{
-			Code:    1,
-			Message: errMsg,
-		},
-	}
-	encoder.Encode(errorResponse)
 }

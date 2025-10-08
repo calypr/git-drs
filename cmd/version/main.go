@@ -3,7 +3,6 @@ package version
 import (
 	"fmt"
 
-	"github.com/calypr/git-drs/version"
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +12,7 @@ var Cmd = &cobra.Command{
 	Short: "Get version",
 	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(version.String())
+		var version = "0.3.0"
+		fmt.Println("git-drs", version)
 	},
 }

@@ -2,7 +2,6 @@ package initialize
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"

@@ -58,6 +58,7 @@ func UpdateDrsObjects(logger *Logger) error {
 	if err != nil {
 		return fmt.Errorf("error getting staged files: %v", err)
 	}
+	logger.Log("staged files: ", stagedFiles)
 
 	// create list of lfsStagedFiles from the lfsFiles
 	lfsStagedFiles := make([]LfsFileInfo, 0)

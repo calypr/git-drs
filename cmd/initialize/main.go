@@ -63,6 +63,10 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		return err
 	}
 
+	if server == "gen3" && bucket == "" || project == "" || profile == "" {
+		return fmt.Errorf("Error: bucket, project and profile must be configured for initialize to work.")
+	}
+
 	// setup logging
 	logg, err := client.NewLogger("", true)
 	if err != nil {
@@ -91,14 +95,9 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	// if anvilMode is not set, ensure all other flags are provided
 	switch server {
 	case string(config.Gen3ServerType):
-		// make sure at least one of the credentials params is provided
-		if credFile == "" && fenceToken == "" {
-			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
-		}
-
 		// if the config file is missing anything, require all gen3 params
-		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Endpoint == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
-			if bucket == "" || apiEndpoint == "" || project == "" || profile == "" {
+		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
+			if bucket == "" || project == "" || profile == "" {
 				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --url, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
 			}
 		}
@@ -156,6 +155,22 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 
 func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
 	// double check that one of the credentials params is provided
+	//
+
+	jwtConfigure := jwt.Configure{}
+	cred, err := jwtConfigure.ParseConfig(profile)
+	emptyCred := jwt.Credential{}
+	// read the credential. Try to use those fields so that if the user already have a valid credential they don't
+	// have to enter in the full git-drs init config every single time.
+	if cred != emptyCred {
+		if apiEndpoint == "" {
+			apiEndpoint = cred.APIEndpoint
+		}
+		if fenceToken == "" && credFile == "" {
+			fenceToken = cred.AccessToken
+		}
+	}
+
 	if credFile == "" && fenceToken == "" {
 		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
 	}
@@ -218,13 +233,24 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 	}
 
 	// authenticate with gen3
-	err = jwt.UpdateConfig(profile, apiEndpoint, credFile, fenceToken, "false", "")
-	if err != nil {
-		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
-		if strings.Contains(errStr, "apiendpoint") {
-			errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
+	// if no credFile is specfied, don't go for the update
+	if credFile != "" {
+		err = jwt.UpdateConfig(
+			&jwt.Credential{
+				Profile:            profile,
+				APIEndpoint:        apiEndpoint,
+				AccessToken:        fenceToken,
+				UseShepherd:        "false",
+				MinShepherdVersion: "",
+			},
+		)
+		if err != nil {
+			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
+			if strings.Contains(errStr, "apiendpoint") {
+				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
+			}
+			return fmt.Errorf(errStr)
 		}
-		return fmt.Errorf(errStr)
 	}
 
 	return nil

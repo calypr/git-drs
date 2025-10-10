@@ -58,6 +58,7 @@ func UpdateDrsObjects(logger *Logger) error {
 	if err != nil {
 		return fmt.Errorf("error getting staged files: %v", err)
 	}
+	logger.Log("staged files: ", stagedFiles)
 
 	// create list of lfsStagedFiles from the lfsFiles
 	lfsStagedFiles := make([]LfsFileInfo, 0)
@@ -271,9 +272,9 @@ func getStagedFiles() ([]string, error) {
 	cmd := exec.Command("git", "diff", "--name-only", "--cached")
 	var out bytes.Buffer
 	cmd.Stdout = &out
-	err := cmd.Run()
+	cmdOut, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("Error running git command: %s", err)
+		return nil, fmt.Errorf("Error running git command: %s", cmdOut)
 	}
 
 	stagedFiles := strings.Split(strings.TrimSpace(out.String()), "\n")

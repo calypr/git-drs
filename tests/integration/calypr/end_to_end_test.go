@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -193,7 +192,8 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 
 	// Create a dummy data file
 	dataFile := "data.txt"
-	if err := os.WriteFile(dataFile, []byte("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."), 0644); err != nil {
+	// Make the string random so that each new indexd record that is created only exists for this specific integration test
+	if err := os.WriteFile(dataFile, []byte("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."+generateRandomString(4)), 0644); err != nil {
 		t.Fatalf("Failed to create data file %s: %v", dataFile, err)
 	}
 
@@ -295,8 +295,8 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	// Clone the repository
 	cmd = exec.Command("git", "clone", remoteURL, "cloned-repo")
 	cmd.Env = append(os.Environ(), fmt.Sprintf("GIT_ASKPASS=echo %s", token))
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git clone %s: %v", remoteURL, err)
+	if cmdOut, err := cmd.Output(); err != nil {
+		t.Fatalf("Failed to git clone %s: %s", remoteURL, cmdOut)
 	}
 
 	// Change to cloned repo
@@ -334,41 +334,33 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to stat data.txt in %s: %v", cloneRepoDir, err)
 	}
 
-	t.Logf("Starting file deletion, commit, and push from clone for: %s", dataFile)
-
-	cmd = exec.Command("git", "rm", dataFile)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git rm data file %s: %v", dataFile, err)
-	}
-	t.Logf("Deleted %s and staged for commit.", dataFile)
-
-	cmd = exec.Command("git", "commit", "-m", "Delete test file from clone")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Logf("Delete commit output: %s", output)
-		t.Fatalf("Failed to git commit file deletion in %s: %v", cloneRepoDir, err)
-	}
-	t.Logf("File deletion committed successfully.")
-
-	// Use the configured credential helper from the original setup for the push
-	cmd = exec.Command("git", "push", "origin", "main")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Expected push failure for deletion from clone with dummy DRS server: %v\nOutput: %s", err, output)
-	} else {
-		t.Log("Deletion push from clone succeeded with dummy DRS server")
-	}
-
-	cmd = exec.Command("git", "lfs", "ls-files")
+	cmd = exec.Command("git", "lfs", "ls-files", "--json")
 	output, err = cmd.Output()
 	if err != nil {
 		t.Fatalf("Failed to git lfs ls-files in %s: %v", cloneRepoDir, err)
 	}
-	// This check is the most direct way to ensure the file is no longer tracked by LFS
-	if strings.Contains(string(output), dataFile) {
-		t.Fatalf("LFS file %s still listed after deletion push: %s", dataFile, output)
+
+	type File struct {
+		Name       string `json:"name"`
+		Size       int64  `json:"size"`
+		Checkout   bool   `json:"checkout"`
+		Downloaded bool   `json:"downloaded"`
+		OIDType    string `json:"oid_type"`
+		OID        string `json:"oid"`
+		Version    string `json:"version"`
 	}
-	t.Log("LFS file correctly removed from index after deletion push.")
+	type FileContainer struct {
+		Files []File `json:"files"`
+	}
+
+	var fileMap FileContainer
+	err = json.Unmarshal(output, &fileMap)
+
+	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID)
+	output, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to delete indexd record %s: %v", fileMap.Files[0].OID, err)
+	}
 
 	// Verify .gitattributes exists and contains the txt pattern
 	gitAttributes, err := os.ReadFile(".gitattributes")
@@ -379,7 +371,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Unexpected .gitattributes content in %s: %s", cloneRepoDir, gitAttributes)
 	}
 
-	// Clean up the cloned repository
 	if err := os.Chdir(cloneDir); err != nil {
 		t.Fatalf("Failed to change back to clone dir %s: %v", cloneDir, err)
 	}

@@ -143,8 +143,8 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 
 	// git add .gitignore
 	cmd := exec.Command("git", "add", ".gitignore")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Error adding .gitignore to git: %v", err)
+	if cmdOut, err := cmd.Output(); err != nil {
+		return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
 	}
 
 	// final logs
@@ -323,8 +323,8 @@ func initGitConfig(mode config.ServerType) error {
 
 	for _, args := range configs {
 		cmd := exec.Command("git", "config", args[0], args[1])
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("Unable to set git config %s: %v", args[0], err)
+		if cmdOut, err := cmd.Output(); err != nil {
+			return fmt.Errorf("Unable to set git config %s: %s", args[0], cmdOut)
 		}
 	}
 

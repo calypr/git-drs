@@ -23,8 +23,8 @@ func SimpleRun(cmds []string) (string, error) {
 	buf := &bytes.Buffer{}
 	cmd := exec.Command(exePath, cmds[1:]...)
 	cmd.Stdout = buf
-	err = cmd.Run()
-	return buf.String(), err
+	cmdOut, err := cmd.Output()
+	return buf.String(), fmt.Errorf("%s", cmdOut)
 }
 
 func DrsTopLevel() (string, error) {

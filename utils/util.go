@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -11,20 +10,20 @@ import (
 
 func GitTopLevel() (string, error) {
 	path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
-	path = strings.TrimSuffix(path, "\n")
-	return path, err
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(path, "\n"), nil
 }
 
 func SimpleRun(cmds []string) (string, error) {
 	exePath, err := exec.LookPath(cmds[0])
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("command not found: %s: %w", cmds[0], err)
 	}
-	buf := &bytes.Buffer{}
 	cmd := exec.Command(exePath, cmds[1:]...)
-	cmd.Stdout = buf
 	cmdOut, err := cmd.Output()
-	return buf.String(), fmt.Errorf("%s", cmdOut)
+	return string(cmdOut), err
 }
 
 func DrsTopLevel() (string, error) {

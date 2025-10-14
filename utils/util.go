@@ -3,9 +3,12 @@ package utils
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func GitTopLevel() (string, error) {
@@ -48,4 +51,42 @@ func CanDownloadFile(signedURL string) error {
 	}
 
 	return fmt.Errorf("failed to download file, HTTP Status: %d", resp.StatusCode)
+}
+
+func ParseEmailFromToken(tokenString string) (string, error) {
+	claims := jwt.MapClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(tokenString, &claims)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode token: %w", err)
+	}
+	context, ok := claims["context"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("missing or invalid 'context' claim structure")
+	}
+	user, ok := context["user"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("missing or invalid 'context.user' claim structure")
+	}
+	name, ok := user["name"].(string)
+	if !ok {
+		return "", fmt.Errorf("missing or invalid 'context.user.name' claim")
+	}
+	return name, nil
+}
+
+func ParseAPIEndpointFromToken(tokenString string) (string, error) {
+	claims := jwt.MapClaims{}
+	_, _, err := jwt.NewParser().ParseUnverified(tokenString, &claims)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode token: %w", err)
+	}
+	issUrl, ok := claims["iss"].(string)
+	if !ok {
+		return "", fmt.Errorf("missing or invalid 'context' claim structure")
+	}
+	parsedURL, err := url.Parse(issUrl)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host), nil
 }

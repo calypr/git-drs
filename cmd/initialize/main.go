@@ -98,11 +98,11 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		// if the config file is missing anything, require all gen3 params
 		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
 			if bucket == "" || project == "" || profile == "" {
-				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --url, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
+				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
 			}
 		}
 
-		err = gen3Init(profile, credFile, fenceToken, apiEndpoint, project, bucket, logg)
+		err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
@@ -153,27 +153,22 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	return nil
 }
 
-func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
+func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
 	// double check that one of the credentials params is provided
-	//
-
-	jwtConfigure := jwt.Configure{}
-	var err error
-	client.ProfileConfig, err = jwtConfigure.ParseConfig(profile)
-	emptyCred := jwt.Credential{}
-	// read the credential. Try to use those fields so that if the user already have a valid credential they don't
-	// have to enter in the full git-drs init config every single time.
-	if client.ProfileConfig != emptyCred {
-		if apiEndpoint == "" {
-			apiEndpoint = client.ProfileConfig.APIEndpoint
-		}
-		if fenceToken == "" && credFile == "" {
-			fenceToken = client.ProfileConfig.AccessToken
-		}
-	}
-
 	if credFile == "" && fenceToken == "" {
 		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
+	}
+	var err error
+	if fenceToken == "" {
+		cred := jwt.Configure{}
+		credential, err := cred.ReadCredentials(credFile, "")
+		if err != nil {
+			return err
+		}
+		fenceToken = credential.AccessToken
+	}
+	if apiEndpoint == "" {
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
 	}
 
 	// if all of the necessary params are filled, then configure the gen3 server
@@ -220,38 +215,22 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 	}
 
-	// grabbing params from config if not provided
-	if !firstTimeSetup {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("Error: unable to load config file: %v\n", err)
-		}
-
-		profile = cfg.Servers.Gen3.Auth.Profile
-		apiEndpoint = cfg.Servers.Gen3.Endpoint
-		project = cfg.Servers.Gen3.Auth.ProjectID
-		bucket = cfg.Servers.Gen3.Auth.Bucket
-	}
-
 	// authenticate with gen3
 	// if no credFile is specfied, don't go for the update
-	if credFile != "" {
-		err = jwt.UpdateConfig(
-			&jwt.Credential{
-				Profile:            profile,
-				APIEndpoint:        apiEndpoint,
-				AccessToken:        fenceToken,
-				UseShepherd:        "false",
-				MinShepherdVersion: "",
-			},
-		)
-		if err != nil {
-			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
-			if strings.Contains(errStr, "apiendpoint") {
-				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
-			}
-			return fmt.Errorf(errStr)
+	cred := &jwt.Credential{
+		Profile:            profile,
+		APIEndpoint:        apiEndpoint,
+		AccessToken:        fenceToken,
+		UseShepherd:        "false",
+		MinShepherdVersion: "",
+	}
+	err = jwt.UpdateConfig(cred)
+	if err != nil {
+		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
+		if strings.Contains(errStr, "apiendpoint") {
+			errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
 		}
+		return fmt.Errorf(errStr)
 	}
 
 	return nil

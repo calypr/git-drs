@@ -65,11 +65,10 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drs/config")
 	}
 
+	// Attempt to parse config defined in .gen3/ directory.
+	// In instances where a token and not a file is provided, This function can be ignored.
 	profileConfig, err := conf.ParseConfig(profile)
-	if err != nil {
-		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return nil, fmt.Errorf("Gen3 profile not configured. Run 'git drs init', use the '--help' flag for more info\n")
-		}
+	if err != nil && !errors.Is(err, jwt.ErrProfileNotFound) {
 		return nil, err
 	}
 

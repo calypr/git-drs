@@ -50,3 +50,16 @@ func CanDownloadFile(signedURL string) error {
 
 	return fmt.Errorf("failed to download file, HTTP Status: %d", resp.StatusCode)
 }
+
+func GetRelativeS3Path(s3url string) string {
+	s3Prefix := "s3://"
+	if !strings.HasPrefix(s3url, s3Prefix) {
+		return ""
+	}
+	trimmed := strings.TrimPrefix(s3url, s3Prefix)
+	slashIndex := strings.Index(trimmed, "/")
+	if slashIndex == -1 || slashIndex == len(trimmed)-1 {
+		return ""
+	}
+	return trimmed[slashIndex+1:]
+}

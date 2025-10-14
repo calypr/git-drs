@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/calypr/git-drs/cmd/addref"
+	"github.com/calypr/git-drs/cmd/addurl"
 	"github.com/calypr/git-drs/cmd/cache"
 	"github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/download"
@@ -40,6 +41,7 @@ func init() {
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.AddCommand(version.Cmd)
+	RootCmd.AddCommand(addurl.AddURLCmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

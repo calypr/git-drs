@@ -112,7 +112,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid) // FIXME: do we want to hash this with the project ID instead of the repoName?
+		drsId := DrsUUID(repoName, file.Oid)
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
@@ -187,25 +187,25 @@ func DrsUUID(repoName string, hash string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
 }
 
-func DrsInfoFromOid(oid string) (IndexdRecord, error) {
+func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
 	// unmarshal the DRS object
 	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
 	if err != nil {
-		return IndexdRecord{}, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
 
 	indexdObjBytes, err := os.ReadFile(path)
 	if err != nil {
-		return IndexdRecord{}, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
 	}
 
 	var indexdObj IndexdRecord
 	err = json.Unmarshal(indexdObjBytes, &indexdObj)
 	if err != nil {
-		return IndexdRecord{}, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
 	}
 
-	return indexdObj, nil
+	return &indexdObj, nil
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {

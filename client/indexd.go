@@ -196,7 +196,15 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	} else {
 		// otherwise, create indexd record
 		cl.logger.Log("creating record: no existing indexd record for this project")
-		drsObj, err = cl.RegisterIndexdRecord(oid)
+
+		// get indexd object using drs map
+		indexdObj, err := DrsInfoFromOid(oid)
+		if err != nil {
+			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
+		}
+
+		// register the record
+		drsObj, err = cl.RegisterIndexdRecord(indexdObj)
 		if err != nil {
 			cl.logger.Logf("error registering indexd record: %s", err)
 			return nil, fmt.Errorf("error registering indexd record: %v", err)
@@ -420,28 +428,15 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	return nil
 }
 
-// given oid, uses saved indexd object
-// and implements /index/index POST
-func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error) {
-	// (get indexd object using drs map)
-
-	indexdObj, err := DrsInfoFromOid(oid)
-	if err != nil {
-		return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
+// given indexd record, constructs a new indexd record
+// implements /index/index POST
+func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSObject, error) {
+	indexdObjForm := IndexdRecordForm{
+		IndexdRecord: *indexdObj,
+		Form:         "object",
 	}
 
-	// create indexd object the long way
-	var data map[string]any
-	var tempIndexdObj, _ = json.Marshal(indexdObj)
-	json.Unmarshal(tempIndexdObj, &data)
-	data["form"] = "object"
-
-	// parse project ID to form authz string
-	projectId := strings.Split(cl.ProjectId, "-")
-	authz := fmt.Sprintf("/programs/%s/projects/%s", projectId[0], projectId[1])
-	data["authz"] = []string{authz}
-
-	jsonBytes, _ := json.Marshal(data)
+	jsonBytes, _ := json.Marshal(indexdObjForm)
 	cl.logger.Logf("retrieved IndexdObj: %s", string(jsonBytes))
 
 	// register DRS object via /index POST
@@ -458,8 +453,6 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	// FIXME: token expires earlier than expected, error looks like
-	// [401] - request to arborist failed: error decoding token: expired at time: 1749844905
 	err = addGen3AuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
@@ -475,7 +468,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 	defer response.Body.Close()
 
 	// check and see if the response status is OK
-	drsId := indexdObj.Did
+	drsId := indexdObjForm.Did
 	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(response.Body)
 		return nil, fmt.Errorf("failed to register DRS ID %s: %s", drsId, body)
@@ -483,7 +476,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 	cl.logger.Logf("POST successful: %s", response.Status)
 
 	// query and return DRS object
-	drsObj, err := cl.GetObject(indexdObj.Did)
+	drsObj, err := cl.GetObject(indexdObjForm.Did)
 	if err != nil {
 		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
 	}
@@ -494,34 +487,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(oid string) (*drs.DRSObject, error)
 // implements /index{did}?rev={rev} DELETE
 func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
-	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "index", did)
-
-	getReq, err := http.NewRequest("GET", a.String(), nil)
-	if err != nil {
-		return err
-	}
-
-	err = addGen3AuthHeader(getReq, cl.Profile)
-	if err != nil {
-		return fmt.Errorf("error adding Gen3 auth header: %v", err)
-	}
-	getReq.Header.Set("accept", "application/json")
-
-	client := &http.Client{}
-	getResp, err := client.Do(getReq)
-	if err != nil {
-		return err
-	}
-	defer getResp.Body.Close()
-
-	body, err := io.ReadAll(getResp.Body)
-	if err != nil {
-		return err
-	}
-
-	record := OutputInfo{}
-	err = json.Unmarshal(body, &record)
+	record, err := cl.getIndexdRecordByDID(did)
 	if err != nil {
 		return fmt.Errorf("could not query index record for did %s: %v", did, err)
 	}
@@ -540,6 +506,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
 
+	client := &http.Client{}
 	delResp, err := client.Do(delReq)
 	if err != nil {
 		return err
@@ -754,4 +721,120 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 		cl.logger.Logf("total pages retrieved: %d", pageNum)
 	}()
 	return out, nil
+}
+
+// UpdateIndexdRecord updates an existing indexd record by GUID using the PUT /index/index/{guid} endpoint
+// WARN: only supports putting new URLs atm
+func (cl *IndexDClient) UpdateIndexdRecord(updateInfo *UpdateInputInfo, did string) (*drs.DRSObject, error) {
+	// Get current revision from existing record
+	record, err := cl.getIndexdRecordByDID(did)
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve existing record for DID %s: %v", did, err)
+	}
+
+	// create updated update info based on existing record
+	updateInfo.URLs = append(record.URLs, updateInfo.URLs...)
+
+	// marshal update info
+	jsonBytes, err := json.Marshal(updateInfo)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
+	}
+
+	cl.logger.Logf("Prepared updated indexd object for DID %s: %s", did, string(jsonBytes))
+
+	// prepare URL
+	updateURL := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
+
+	req, err := http.NewRequest("PUT", updateURL, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return nil, fmt.Errorf("error creating PUT request: %v", err)
+	}
+
+	// Set required headers
+	req.Header.Set("accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	err = addGen3AuthHeader(req, cl.Profile)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+
+	cl.logger.Logf("PUT request created for indexd update: %s", updateURL)
+
+	// Execute the request
+	client := &http.Client{}
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error executing PUT request: %v", err)
+	}
+	defer response.Body.Close()
+
+	// Check response status
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		return nil, fmt.Errorf("failed to update indexd record %s: status %d, body: %s", did, response.StatusCode, string(body))
+	}
+
+	cl.logger.Logf("PUT request successful: %s", response.Status)
+
+	// Query and return the updated DRS object
+	updatedDrsObj, err := cl.GetObject(did)
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving updated DRS object: %v", err)
+	}
+
+	cl.logger.Logf("Successfully updated and retrieved DRS object: %s", did)
+	return updatedDrsObj, nil
+}
+
+// Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)
+func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
+	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = addGen3AuthHeader(req, cl.Profile)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+	req.Header.Set("accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get record: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	record := &OutputInfo{}
+	err = json.Unmarshal(body, record)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling record: %v", err)
+	}
+
+	return record, nil
+}
+
+// Helper function to prepare the update payload (abstracted for reusability)
+func prepareIndexObjPost(indexdObj *IndexdRecord, projectId string, revision string) IndexdRecordForm {
+	// Create the base data structure
+	return IndexdRecordForm{
+		IndexdRecord: *indexdObj,
+		Form:         "object",
+		Rev:          revision,
+	}
 }

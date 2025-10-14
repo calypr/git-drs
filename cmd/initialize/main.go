@@ -158,16 +158,17 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 	//
 
 	jwtConfigure := jwt.Configure{}
-	cred, err := jwtConfigure.ParseConfig(profile)
+	var err error
+	client.ProfileConfig, err = jwtConfigure.ParseConfig(profile)
 	emptyCred := jwt.Credential{}
 	// read the credential. Try to use those fields so that if the user already have a valid credential they don't
 	// have to enter in the full git-drs init config every single time.
-	if cred != emptyCred {
+	if client.ProfileConfig != emptyCred {
 		if apiEndpoint == "" {
-			apiEndpoint = cred.APIEndpoint
+			apiEndpoint = client.ProfileConfig.APIEndpoint
 		}
 		if fenceToken == "" && credFile == "" {
-			fenceToken = cred.AccessToken
+			fenceToken = client.ProfileConfig.AccessToken
 		}
 	}
 

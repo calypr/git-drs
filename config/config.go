@@ -85,7 +85,6 @@ const (
 func getConfigPath() (string, error) {
 	topLevel, err := utils.GitTopLevel()
 	if err != nil {
-		fmt.Println("WE HERE5 : ", topLevel, err)
 		return "", err
 	}
 
@@ -179,7 +178,6 @@ func UpdateCurrentServer(serverType ServerType) (*Config, error) {
 func LoadConfig() (*Config, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
-		fmt.Println("WE HERE 3")
 		return nil, err
 	}
 

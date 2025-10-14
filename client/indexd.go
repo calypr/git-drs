@@ -25,7 +25,7 @@ import (
 )
 
 var conf jwt.Configure
-var profileConfig jwt.Credential
+var ProfileConfig jwt.Credential
 
 type IndexDClient struct {
 	Base       *url.URL
@@ -67,12 +67,14 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 
 	// Attempt to parse config defined in .gen3/ directory.
 	// In instances where a token and not a file is provided, This function can be ignored.
-	profileConfig, err := conf.ParseConfig(profile)
-	if err != nil && !errors.Is(err, jwt.ErrProfileNotFound) {
-		return nil, err
+	if ProfileConfig.AccessToken == "" {
+		ProfileConfig, err = conf.ParseConfig(profile)
+		if err != nil && !errors.Is(err, jwt.ErrProfileNotFound) {
+			return nil, err
+		}
 	}
 
-	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
+	baseUrl, err := url.Parse(ProfileConfig.APIEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing base URL from profile %s: %v", profile, err)
 	}
@@ -383,24 +385,27 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 func addGen3AuthHeader(req *http.Request, profile string) error {
 	// extract accessToken from gen3 profile and insert into header of request
-	profileConfig, err := conf.ParseConfig(profile)
-	if err != nil {
-		if errors.Is(err, jwt.ErrProfileNotFound) {
-			return fmt.Errorf("Profile not in config file. Need to run 'git drs init' for gen3 first, see git drs init --help\n")
+	var err error
+	if ProfileConfig.AccessToken == "" {
+		ProfileConfig, err = conf.ParseConfig(profile)
+		if err != nil {
+			if errors.Is(err, jwt.ErrProfileNotFound) {
+				return fmt.Errorf("Profile not in config file. Need to run 'git drs init' for gen3 first, see git drs init --help\n")
+			}
+			return fmt.Errorf("error parsing gen3 config: %s", err)
 		}
-		return fmt.Errorf("error parsing gen3 config: %s", err)
 	}
-	if profileConfig.AccessToken == "" {
+	if ProfileConfig.AccessToken == "" {
 		return fmt.Errorf("access token not found in profile config")
 	}
-	expiration, err := token.GetExpiration(profileConfig.AccessToken)
+	expiration, err := token.GetExpiration(ProfileConfig.AccessToken)
 	if err != nil {
 		return err
 	}
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
 		r := jwt.Request{}
-		err = r.RequestNewAccessToken(profileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &profileConfig)
+		err = r.RequestNewAccessToken(ProfileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &ProfileConfig)
 		if err != nil {
 			// load config and see if the endpoint is printed
 			errStr := fmt.Sprintf("error refreshing access token: %v", err)
@@ -413,7 +418,7 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 	}
 
 	// Add headers to the request
-	authStr := "Bearer " + profileConfig.AccessToken
+	authStr := "Bearer " + ProfileConfig.AccessToken
 	req.Header.Set("Authorization", authStr)
 
 	return nil

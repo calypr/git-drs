@@ -51,15 +51,15 @@ func CanDownloadFile(signedURL string) error {
 	return fmt.Errorf("failed to download file, HTTP Status: %d", resp.StatusCode)
 }
 
-func GetRelativeS3Path(s3url string) string {
+func ParseS3URL(s3url string) (string, string, error) {
 	s3Prefix := "s3://"
 	if !strings.HasPrefix(s3url, s3Prefix) {
-		return ""
+		return "", "", fmt.Errorf("S3 URL requires prefix 's3://': %s", s3url)
 	}
 	trimmed := strings.TrimPrefix(s3url, s3Prefix)
 	slashIndex := strings.Index(trimmed, "/")
 	if slashIndex == -1 || slashIndex == len(trimmed)-1 {
-		return ""
+		return "", "", fmt.Errorf("invalid S3 file URL: %s", s3url)
 	}
-	return trimmed[slashIndex+1:]
+	return trimmed[:slashIndex], trimmed[slashIndex+1:], nil
 }

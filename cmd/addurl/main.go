@@ -52,7 +52,10 @@ var AddURLCmd = &cobra.Command{
 		}
 
 		// Generate and add pointer file
-		relFilePath := utils.GetRelativeS3Path(s3URL)
+		_, relFilePath, err := utils.ParseS3URL(s3URL)
+		if err != nil {
+			return fmt.Errorf("failed to parse S3 URL: %w", err)
+		}
 		if err := generatePointerFile(relFilePath, sha256, fileSize); err != nil {
 			return fmt.Errorf("failed to generate pointer file: %w", err)
 		}

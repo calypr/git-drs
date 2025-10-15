@@ -97,14 +97,13 @@ func getBucketDetails(bucket string) (S3Bucket, error) {
 	return S3Bucket{}, errors.New("bucket not found")
 }
 
-func parseS3URL(s3URL string) (string, string) {
-	parts := strings.SplitN(strings.TrimPrefix(s3URL, "s3://"), "/", 2)
-	return parts[0], parts[1]
-}
-
 func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey string) (int64, string, error) {
 	// Fetch bucket endpoint from /data/buckets
-	bucket, key := parseS3URL(s3URL)
+	bucket, key, err := utils.ParseS3URL(s3URL)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
+	}
+
 	bucketDetails, err := getBucketDetails(bucket)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to get bucket endpoint: %w", err)
@@ -214,14 +213,14 @@ func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 	if err != nil {
 		return err
 	}
-	fileName := utils.GetRelativeS3Path(url)
-	if fileName == "" {
+	_, relPath, err := utils.ParseS3URL(url)
+	if err != nil {
 		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
 	indexdObject := &IndexdRecord{
 		Did:      uuid,
-		FileName: fileName,
+		FileName: relPath,
 		Hashes:   HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url},
@@ -247,7 +246,10 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey string) (int64, string, er
 	}
 
 	// check that lfs is tracking the file
-	relPath := utils.GetRelativeS3Path(s3URL)
+	_, relPath, err := utils.ParseS3URL(s3URL)
+	if err != nil {
+		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
+	}
 
 	// open .gitattributes
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
@@ -257,8 +259,6 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey string) (int64, string, er
 	if !isLFS {
 		return 0, "", fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
 	}
-
-	// TODO: Check if a matching record exists in indexd?
 
 	// Fetch S3 metadata (size, modified date)
 	fileSize, modifiedDate, err := fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey)

@@ -828,13 +828,3 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 
 	return record, nil
 }
-
-// Helper function to prepare the update payload (abstracted for reusability)
-func prepareIndexObjPost(indexdObj *IndexdRecord, projectId string, revision string) IndexdRecordForm {
-	// Create the base data structure
-	return IndexdRecordForm{
-		IndexdRecord: *indexdObj,
-		Form:         "object",
-		Rev:          revision,
-	}
-}

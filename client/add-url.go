@@ -172,8 +172,7 @@ func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 
 	uuid := DrsUUID(projectId, sha256)
 
-	// check if record already exists
-	// get all existing hashes
+	// handle if record already exists
 	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
@@ -185,14 +184,13 @@ func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 	}
 
 	if matchingRecord != nil && matchingRecord.Did == uuid {
-		// and contains requested url, nothing to do
+		// if record exists and contains requested url, nothing to do
 		if slices.Contains(matchingRecord.URLs, url) {
 			fmt.Println("record already exists for", url)
 			return nil
 		}
 
 		// if record exists with different url, update via index/{guid}
-		// TODO: implement update indexd record
 		if matchingRecord.Did == uuid && !slices.Contains(matchingRecord.URLs, url) {
 			fmt.Println("updating existing record with new url")
 

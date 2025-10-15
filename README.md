@@ -321,6 +321,9 @@ git lfs pull -I "*.bam"
 git lfs pull
 ```
 
+### Example Workflow: Pushing References to a File via S3 URL
+Sometimes you may want to push a reference to a file that lives on S3 into your Git repo. The `git drs add-url` command allows you to do this association, see the [usage docs](docs/adding-s3-files.md) for more details.
+
 ## Troubleshooting
 
 ### When to Use Git vs Git LFS vs Git DRS

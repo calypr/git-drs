@@ -2,6 +2,10 @@
 
 The `git drs add-url` command allows you to associate an S3 URL with a Git DRS repository without moving the actual data.
 
+## Prerequisites
+- Bucket registered in CALYPR
+- Access to bucket credentials
+
 ## Command Syntax
 
 ```bash

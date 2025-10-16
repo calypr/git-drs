@@ -159,16 +159,25 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
 	}
 	var err error
+	var optCredential = &jwt.Credential{}
 	if fenceToken == "" {
 		cred := jwt.Configure{}
-		credential, err := cred.ReadCredentials(credFile, "")
+		optCredential, err = cred.ReadCredentials(credFile, "")
 		if err != nil {
 			return err
 		}
-		fenceToken = credential.AccessToken
+		fenceToken = optCredential.AccessToken
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(optCredential.APIKey)
+		if err != nil {
+			return err
+		}
+
 	}
 	if apiEndpoint == "" {
 		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
+		if err != nil {
+			return err
+		}
 	}
 
 	// if all of the necessary params are filled, then configure the gen3 server
@@ -223,6 +232,8 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 		AccessToken:        fenceToken,
 		UseShepherd:        "false",
 		MinShepherdVersion: "",
+		KeyId:              optCredential.KeyId,
+		APIKey:             optCredential.APIKey,
 	}
 	err = jwt.UpdateConfig(cred)
 	if err != nil {

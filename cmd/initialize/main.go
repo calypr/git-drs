@@ -63,6 +63,10 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		return err
 	}
 
+	if server == "gen3" && bucket == "" || project == "" || profile == "" {
+		return fmt.Errorf("Error: bucket, project and profile must be configured for initialize to work.")
+	}
+
 	// setup logging
 	logg, err := client.NewLogger("", true)
 	if err != nil {
@@ -91,19 +95,14 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	// if anvilMode is not set, ensure all other flags are provided
 	switch server {
 	case string(config.Gen3ServerType):
-		// make sure at least one of the credentials params is provided
-		if credFile == "" && fenceToken == "" {
-			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
-		}
-
 		// if the config file is missing anything, require all gen3 params
-		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Endpoint == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
-			if bucket == "" || apiEndpoint == "" || project == "" || profile == "" {
-				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --url, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
+		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
+			if bucket == "" || project == "" || profile == "" {
+				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
 			}
 		}
 
-		err = gen3Init(profile, credFile, fenceToken, apiEndpoint, project, bucket, logg)
+		err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
@@ -144,8 +143,8 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 
 	// git add .gitignore
 	cmd := exec.Command("git", "add", ".gitignore")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Error adding .gitignore to git: %v", err)
+	if cmdOut, err := cmd.Output(); err != nil {
+		return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
 	}
 
 	// final logs
@@ -154,10 +153,31 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	return nil
 }
 
-func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint string, project string, bucket string, log *client.Logger) error {
+func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
 	// double check that one of the credentials params is provided
 	if credFile == "" && fenceToken == "" {
 		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
+	}
+	var err error
+	var optCredential = &jwt.Credential{}
+	if fenceToken == "" {
+		cred := jwt.Configure{}
+		optCredential, err = cred.ReadCredentials(credFile, "")
+		if err != nil {
+			return err
+		}
+		fenceToken = optCredential.AccessToken
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(optCredential.APIKey)
+		if err != nil {
+			return err
+		}
+
+	}
+	if apiEndpoint == "" {
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
+		if err != nil {
+			return err
+		}
 	}
 
 	// if all of the necessary params are filled, then configure the gen3 server
@@ -204,21 +224,18 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
 	}
 
-	// grabbing params from config if not provided
-	if !firstTimeSetup {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("Error: unable to load config file: %v\n", err)
-		}
-
-		profile = cfg.Servers.Gen3.Auth.Profile
-		apiEndpoint = cfg.Servers.Gen3.Endpoint
-		project = cfg.Servers.Gen3.Auth.ProjectID
-		bucket = cfg.Servers.Gen3.Auth.Bucket
-	}
-
 	// authenticate with gen3
-	err = jwt.UpdateConfig(profile, apiEndpoint, credFile, fenceToken, "false", "")
+	// if no credFile is specfied, don't go for the update
+	cred := &jwt.Credential{
+		Profile:            profile,
+		APIEndpoint:        apiEndpoint,
+		AccessToken:        fenceToken,
+		UseShepherd:        "false",
+		MinShepherdVersion: "",
+		KeyId:              optCredential.KeyId,
+		APIKey:             optCredential.APIKey,
+	}
+	err = jwt.UpdateConfig(cred)
 	if err != nil {
 		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
 		if strings.Contains(errStr, "apiendpoint") {
@@ -297,8 +314,8 @@ func initGitConfig(mode config.ServerType) error {
 
 	for _, args := range configs {
 		cmd := exec.Command("git", "config", args[0], args[1])
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("Unable to set git config %s: %v", args[0], err)
+		if cmdOut, err := cmd.Output(); err != nil {
+			return fmt.Errorf("Unable to set git config %s: %s", args[0], cmdOut)
 		}
 	}
 

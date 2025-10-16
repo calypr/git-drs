@@ -145,7 +145,6 @@ var Cmd = &cobra.Command{
 		}
 
 		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
-
 		return nil
 	},
 }

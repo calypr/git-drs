@@ -44,9 +44,15 @@ func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.En
 }
 
 func getBucketDetails(bucket string) (S3Bucket, error) {
+	// load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return S3Bucket{}, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// confirm current server exists and is gen3
+	if cfg.CurrentServer != "gen3" && (cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Endpoint == "") {
+		return S3Bucket{}, errors.New("Gen3 server endpoint is not configured in the config. Use `git drs list-config` to see and `git drs init` to .")
 	}
 
 	// get all buckets
@@ -110,16 +116,21 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey string) (int64, string, e
 	}
 
 	// Load AWS configuration
-	cfg, err := awsConfig.LoadDefaultConfig(context.TODO(),
-		awsConfig.WithRegion(bucketDetails.Region),
-		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			awsAccessKey,
-			awsSecretKey,
-			"", // session token (empty for basic credentials)
-		)),
-	)
-	if err != nil {
-		return 0, "", fmt.Errorf("unable to load SDK config, %v", err)
+	var cfg aws.Config
+	if awsAccessKey != "" && awsSecretKey != "" {
+		cfg, err = awsConfig.LoadDefaultConfig(context.TODO(),
+			awsConfig.WithRegion(bucketDetails.Region),
+			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				awsAccessKey,
+				awsSecretKey,
+				"", // session token (empty for basic credentials)
+			)),
+			awsConfig.WithSharedConfigFiles([]string{}),      // Disable shared config file
+			awsConfig.WithSharedCredentialsFiles([]string{}), // Disable shared credentials file
+		)
+		if err != nil {
+			return 0, "", fmt.Errorf("unable to load SDK config with static credentials: %v", err)
+		}
 	}
 
 	// Create S3 client with custom endpoint and path-style addressing
@@ -153,7 +164,7 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey string) (int64, string, e
 
 func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
 	// setup indexd client
-	logger, err := NewLogger("", true)
+	logger, err := NewLogger("", false)
 	if err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
@@ -186,7 +197,7 @@ func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 	if matchingRecord != nil && matchingRecord.Did == uuid {
 		// if record exists and contains requested url, nothing to do
 		if slices.Contains(matchingRecord.URLs, url) {
-			fmt.Println("record already exists for", url)
+			fmt.Println("Nothing to do: file already registered")
 			return nil
 		}
 

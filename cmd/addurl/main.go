@@ -26,6 +26,12 @@ var AddURLCmd = &cobra.Command{
 		}
 		defer myLogger.Close()
 
+		// set git config lfs.allowincompletepush = true
+		configCmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
+		if err := configCmd.Run(); err != nil {
+			return fmt.Errorf("Unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
+		}
+
 		// Parse arguments
 		s3URL := args[0]
 		sha256, _ := cmd.Flags().GetString("sha256")

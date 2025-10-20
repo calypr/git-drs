@@ -3,8 +3,8 @@
 The `git drs add-url` command allows you to associate an S3 URL with a Git DRS repository without moving the actual data.
 
 ## Prerequisites
-- Bucket registered in CALYPR
-- Access to bucket credentials
+- Registered bucket in CALYPR
+- Bucket credentials access 
 
 ## Command Syntax
 
@@ -18,13 +18,13 @@ git drs add-url s3://bucket/path/to/file --sha256 <sha256_hash> [--aws-access-ke
 
 ### Other Parameters
 - `--aws-access-key <key>`: AWS access key for authentication
-  - Either pass it in as a flag or as a environment variable: 
+  - The flag takes precedence over the `AWS_ACCESS_KEY_ID` environment variable.
 - `--aws-secret-key <key>`: AWS secret key for authentication.
-  - Either pass it in as a flag or as a environment variable: 
+  - The flag takes precedence over the `AWS_SECRET_ACCESS_KEY` environment variable.
 
 ## Examples
 
-### Single File
+### Register a Single S3 File
 ```bash
 git lfs track "my-file"
 git add .gitattributes
@@ -35,7 +35,7 @@ git commit -m "add single file"
 git push
 ```
 
-### Multiple Files
+### Register Multiple S3 Files
 ```bash
 
 git lfs track "directory/**"
@@ -43,8 +43,8 @@ git add .gitattributes
 
 `export AWS_ACCESS_KEY_ID=<your-key>`
 `export AWS_SECRET_ACCESS_KEY=<your-secret>`
-git drs add-url s3://my-bucket/directory/my-file-1 --sha256 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef --aws-access-key myAccessKey 
-git drs add-url s3://my-bucket/directory/subdir/my-file-2 --sha256 abcdef1234567890abcdef12345678901234567890abcdef1234567890abcdef --aws-access-key myAccessKey --aws-secret-key mySecretKey
+git drs add-url s3://my-bucket/directory/my-file-1 --sha256 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+git drs add-url s3://my-bucket/directory/subdir/my-file-2 --sha256 abcdef1234567890abcdef12345678901234567890abcdef1234567890abcdef
 
 git commit -m "add directory/ files"
 git push

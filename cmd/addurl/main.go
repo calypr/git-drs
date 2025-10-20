@@ -16,7 +16,12 @@ import (
 var AddURLCmd = &cobra.Command{
 	Use:   "add-url <url> --sha256 <sha256>",
 	Short: "Add a file to the Git DRS repo using an S3 URL",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			return fmt.Errorf("add-url requires 1 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
 		myLogger, err := client.NewLogger("", false)
@@ -37,6 +42,8 @@ var AddURLCmd = &cobra.Command{
 		sha256, _ := cmd.Flags().GetString("sha256")
 		awsAccessKey, _ := cmd.Flags().GetString("aws-access-key")
 		awsSecretKey, _ := cmd.Flags().GetString("aws-secret-key")
+		regionFlag, _ := cmd.Flags().GetString("region")
+		endpointFlag, _ := cmd.Flags().GetString("endpoint")
 
 		// Determine AWS credentials source, same env var names as AWS SDK
 		if awsAccessKey == "" || awsSecretKey == "" {
@@ -52,7 +59,7 @@ var AddURLCmd = &cobra.Command{
 		}
 
 		// Call client.AddURL to handle Gen3 interactions
-		fileSize, _, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey)
+		fileSize, _, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
 		if err != nil {
 			return err
 		}
@@ -71,9 +78,11 @@ var AddURLCmd = &cobra.Command{
 }
 
 func init() {
-	AddURLCmd.Flags().String("sha256", "", "SHA256 hash of the file")
+	AddURLCmd.Flags().String("sha256", "", "[required] SHA256 hash of the file")
 	AddURLCmd.Flags().String("aws-access-key", "", "AWS access key")
 	AddURLCmd.Flags().String("aws-secret-key", "", "AWS secret key")
+	AddURLCmd.Flags().String("region", "", "AWS S3 region")
+	AddURLCmd.Flags().String("endpoint", "", "AWS S3 endpoint")
 	AddURLCmd.MarkFlagRequired("sha256")
 }
 

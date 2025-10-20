@@ -103,7 +103,7 @@ func getBucketDetails(bucket string) (S3Bucket, error) {
 	return S3Bucket{}, errors.New("bucket not found")
 }
 
-func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey string) (int64, string, error) {
+func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, region, endpoint string) (int64, string, error) {
 	// Fetch bucket endpoint from /data/buckets
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
@@ -112,7 +112,11 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey string) (int64, string, e
 
 	bucketDetails, err := getBucketDetails(bucket)
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to get bucket endpoint: %w", err)
+		fmt.Println("Bucket details not found in Gen3 configuration. Using provided endpoint and region flags.")
+		bucketDetails = S3Bucket{
+			Region:      region,
+			EndpointURL: endpoint,
+		}
 	}
 
 	// Load AWS configuration
@@ -248,7 +252,7 @@ func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey string) (int64, string, error) {
+func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string) (int64, string, error) {
 	// Validate inputs
 	if err := validateInputs(s3URL, sha256); err != nil {
 		return 0, "", err
@@ -270,7 +274,7 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey string) (int64, string, er
 	}
 
 	// Fetch S3 metadata (size, modified date)
-	fileSize, modifiedDate, err := fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey)
+	fileSize, modifiedDate, err := fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}

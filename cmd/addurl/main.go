@@ -88,7 +88,7 @@ func init() {
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {
 	// Define the pointer file content
-	pointerContent := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d", sha256, fileSize)
+	pointerContent := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n", sha256, fileSize)
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {

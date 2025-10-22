@@ -43,7 +43,35 @@ func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.En
 	}, nil
 }
 
-func getBucketDetails(ctx context.Context, bucket string) (S3Bucket, error) {
+// AddURLConfig holds optional clients for dependency injection
+type AddURLConfig struct {
+	s3Client   *s3.Client
+	httpClient *http.Client
+}
+
+// AddURLOption is a functional option for configuring AddURL
+type AddURLOption func(*AddURLConfig)
+
+// WithS3Client provides a custom S3 client to AddURL
+func WithS3Client(client *s3.Client) AddURLOption {
+	return func(cfg *AddURLConfig) {
+		cfg.s3Client = client
+	}
+}
+
+// WithHTTPClient provides a custom HTTP client to AddURL
+func WithHTTPClient(client *http.Client) AddURLOption {
+	return func(cfg *AddURLConfig) {
+		cfg.httpClient = client
+	}
+}
+
+func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (S3Bucket, error) {
+	// Use provided client or create default
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	}
+
 	// load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -70,8 +98,7 @@ func getBucketDetails(ctx context.Context, bucket string) (S3Bucket, error) {
 		return S3Bucket{}, fmt.Errorf("failed to add Gen3 authentication: %w", err)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return S3Bucket{}, fmt.Errorf("failed to fetch bucket information: %w", err)
 	}
@@ -97,14 +124,14 @@ func getBucketDetails(ctx context.Context, bucket string) (S3Bucket, error) {
 	return S3Bucket{}, errors.New("bucket not found")
 }
 
-func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string) (int64, string, error) {
+func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client) (int64, string, error) {
 	// Fetch bucket endpoint from /data/buckets
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	bucketDetails, err := getBucketDetails(ctx, bucket)
+	bucketDetails, err := getBucketDetails(ctx, bucket, httpClient)
 	if err != nil {
 		fmt.Println("Bucket details not found in Gen3 configuration. Using provided endpoint and region flags.")
 		bucketDetails = S3Bucket{
@@ -113,29 +140,32 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 		}
 	}
 
-	// Load AWS configuration
-	var cfg aws.Config
-	if awsAccessKey != "" && awsSecretKey != "" {
-		cfg, err = awsConfig.LoadDefaultConfig(ctx,
-			awsConfig.WithRegion(bucketDetails.Region),
-			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-				awsAccessKey,
-				awsSecretKey,
-				"", // session token (empty for basic credentials)
-			)),
-			awsConfig.WithSharedConfigFiles([]string{}),      // Disable shared config file
-			awsConfig.WithSharedCredentialsFiles([]string{}), // Disable shared credentials file
-		)
-		if err != nil {
-			return 0, "", fmt.Errorf("unable to load SDK config with static credentials: %v", err)
+	// Use provided S3 client or create default
+	if s3Client == nil {
+		// Load AWS configuration
+		var cfg aws.Config
+		if awsAccessKey != "" && awsSecretKey != "" {
+			cfg, err = awsConfig.LoadDefaultConfig(ctx,
+				awsConfig.WithRegion(bucketDetails.Region),
+				awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+					awsAccessKey,
+					awsSecretKey,
+					"", // session token (empty for basic credentials)
+				)),
+				awsConfig.WithSharedConfigFiles([]string{}),      // Disable shared config file
+				awsConfig.WithSharedCredentialsFiles([]string{}), // Disable shared credentials file
+			)
+			if err != nil {
+				return 0, "", fmt.Errorf("unable to load SDK config with static credentials: %v", err)
+			}
 		}
-	}
 
-	// Create S3 client with custom endpoint and path-style addressing
-	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(bucketDetails.EndpointURL)
-		o.UsePathStyle = true // This forces path-style URLs
-	})
+		// Create S3 client with custom endpoint and path-style addressing
+		s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(bucketDetails.EndpointURL)
+			o.UsePathStyle = true // This forces path-style URLs
+		})
+	}
 
 	// print bucket details
 	// fmt.Printf("Bucket Details: %+v\n", bucketDetails)
@@ -249,10 +279,16 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string) (int64, string, error) {
+func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...AddURLOption) (int64, string, error) {
 	// Create context with 10-second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Apply options
+	cfg := &AddURLConfig{}
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	// Validate inputs
 	if err := validateInputs(s3URL, sha256); err != nil {
@@ -275,7 +311,7 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	}
 
 	// Fetch S3 metadata (size, modified date)
-	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
+	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.s3Client, cfg.httpClient)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
@@ -293,7 +329,7 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 
 func validateInputs(s3URL string, sha256 string) error {
 	if !strings.HasPrefix(s3URL, "s3://") {
-		return errors.New("invalid S3 URL format. Please ensure the URL starts with 's3://'")
+		return errors.New("invalid S3 URL format. URL should be of the format 's3://bucket/path/to/file'")
 	}
 
 	// Normalize case and validate SHA256

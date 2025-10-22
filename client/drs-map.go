@@ -187,6 +187,7 @@ func DrsUUID(repoName string, hash string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
 }
 
+// creates index record from file
 func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
 	// unmarshal the DRS object
 	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)

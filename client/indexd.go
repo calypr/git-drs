@@ -405,7 +405,7 @@ func addGen3AuthHeader(req *http.Request, profile string) error {
 				errStr += ". If you are accessing an internal website, make sure you are connected to the internal network."
 			}
 
-			return fmt.Errorf(errStr)
+			return errors.New(errStr)
 		}
 	}
 

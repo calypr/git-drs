@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,7 +43,7 @@ func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.En
 	}, nil
 }
 
-func getBucketDetails(bucket string) (S3Bucket, error) {
+func getBucketDetails(ctx context.Context, bucket string) (S3Bucket, error) {
 	// load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -60,7 +61,7 @@ func getBucketDetails(bucket string) (S3Bucket, error) {
 		return S3Bucket{}, fmt.Errorf("failed to parse base URL: %w", err)
 	}
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
-	req, err := http.NewRequest("GET", baseURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL.String(), nil)
 	if err != nil {
 		return S3Bucket{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -96,14 +97,14 @@ func getBucketDetails(bucket string) (S3Bucket, error) {
 	return S3Bucket{}, errors.New("bucket not found")
 }
 
-func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, region, endpoint string) (int64, string, error) {
+func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string) (int64, string, error) {
 	// Fetch bucket endpoint from /data/buckets
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	bucketDetails, err := getBucketDetails(bucket)
+	bucketDetails, err := getBucketDetails(ctx, bucket)
 	if err != nil {
 		fmt.Println("Bucket details not found in Gen3 configuration. Using provided endpoint and region flags.")
 		bucketDetails = S3Bucket{
@@ -115,7 +116,7 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, region, endpoint string)
 	// Load AWS configuration
 	var cfg aws.Config
 	if awsAccessKey != "" && awsSecretKey != "" {
-		cfg, err = awsConfig.LoadDefaultConfig(context.TODO(),
+		cfg, err = awsConfig.LoadDefaultConfig(ctx,
 			awsConfig.WithRegion(bucketDetails.Region),
 			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				awsAccessKey,
@@ -144,7 +145,7 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, region, endpoint string)
 		Key:    aws.String(key),
 	}
 
-	resp, err := s3Client.HeadObject(context.TODO(), input)
+	resp, err := s3Client.HeadObject(ctx, input)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to head object, %v", err)
 	}
@@ -249,6 +250,10 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
 func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string) (int64, string, error) {
+	// Create context with 10-second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Validate inputs
 	if err := validateInputs(s3URL, sha256); err != nil {
 		return 0, "", err
@@ -270,7 +275,7 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	}
 
 	// Fetch S3 metadata (size, modified date)
-	fileSize, modifiedDate, err := fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
+	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
@@ -290,8 +295,16 @@ func validateInputs(s3URL string, sha256 string) error {
 	if !strings.HasPrefix(s3URL, "s3://") {
 		return errors.New("invalid S3 URL format. Please ensure the URL starts with 's3://'")
 	}
+
+	// Normalize case and validate SHA256
+	sha256 = strings.ToLower(sha256)
 	if len(sha256) != 64 {
-		return errors.New("invalid SHA256 hash length.")
+		return errors.New("invalid SHA256 hash. Ensure it is a valid 64-character hexadecimal string.")
 	}
+
+	if _, err := hex.DecodeString(sha256); err != nil {
+		return errors.New("invalid SHA256 hash. Ensure it is a valid 64-character hexadecimal string.")
+	}
+
 	return nil
 }

@@ -147,15 +147,9 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response to signed url: %v", err)
-	}
-
 	accessUrl := drs.AccessURL{}
-	err = json.Unmarshal(body, &accessUrl)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response into drs.AccessURL, response looks like: %s", body)
+	if err := json.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
+		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
 	}
 
 	cl.logger.Log("signed url retrieved: %s", response.Status)
@@ -293,14 +287,8 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	out := drs.DRSObject{}
-	err = json.Unmarshal(body, &out)
-	if err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -590,18 +578,14 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 	}
 	defer resp.Body.Close()
 
-	// unmarshal response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading response body for (%s:%s): %v", hashType, hash, err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed to query indexd for %s:%s. Error: %s, %s", hashType, hash, resp.Status, string(body))
 	}
 
+	// unmarshal response body
 	records := ListRecords{}
-	err = json.Unmarshal(body, &records)
+	err = json.NewDecoder(resp.Body).Decode(&records)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
 	}
@@ -696,6 +680,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 				return
 			}
 			if response.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(response.Body)
 				cl.logger.Logf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
 				out <- ListRecordsResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
 				return
@@ -815,15 +800,9 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, fmt.Errorf("failed to get record: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	record := &OutputInfo{}
-	err = json.Unmarshal(body, record)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling record: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(record); err != nil {
+		return nil, fmt.Errorf("error decoding response body: %v", err)
 	}
 
 	return record, nil

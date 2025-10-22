@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -77,19 +76,13 @@ func getBucketDetails(bucket string) (S3Bucket, error) {
 	}
 	defer resp.Body.Close()
 
-	// print body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to read response body: %w", err)
-	}
-
 	if resp.StatusCode != http.StatusOK {
 		return S3Bucket{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// extract bucket endpoint
 	var bucketInfo S3BucketsResponse
-	if err := json.Unmarshal(body, &bucketInfo); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&bucketInfo); err != nil {
 		return S3Bucket{}, fmt.Errorf("failed to decode bucket information: %w", err)
 	}
 

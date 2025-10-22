@@ -159,7 +159,10 @@ func fetchS3Metadata(s3URL, awsAccessKey, awsSecretKey, region, endpoint string)
 	return contentLength, resp.LastModified.Format(time.RFC3339), nil
 }
 
-func createIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
+// upserts index record, so that if...
+// 1. the record exists for the project, it updates the URL
+// 2. the record for the project does not exist, it creates a new one
+func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
 	// setup indexd client
 	logger, err := NewLogger("", false)
 	if err != nil {
@@ -276,7 +279,7 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	fmt.Printf(" - Last Modified: %s\n", modifiedDate)
 
 	// Create indexd record
-	if err := createIndexdRecord(s3URL, sha256, fileSize, modifiedDate); err != nil {
+	if err := upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate); err != nil {
 		return 0, "", fmt.Errorf("failed to create indexd record: %w", err)
 	}
 

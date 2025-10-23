@@ -27,12 +27,26 @@ import (
 var conf jwt.Configure
 var profileConfig jwt.Credential
 
+// AuthHandler is an interface for adding authentication headers
+// This allows us to inject different auth implementations for testing vs production
+type AuthHandler interface {
+	AddAuthHeader(req *http.Request, profile string) error
+}
+
+// RealAuthHandler uses actual Gen3 authentication
+type RealAuthHandler struct{}
+
+func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+	return addGen3AuthHeader(req, profile)
+}
+
 type IndexDClient struct {
-	Base       *url.URL
-	Profile    string
-	ProjectId  string
-	BucketName string
-	logger     LoggerInterface
+	Base        *url.URL
+	Profile     string
+	ProjectId   string
+	BucketName  string
+	logger      LoggerInterface
+	authHandler AuthHandler // Injected for testing/flexibility
 }
 
 ////////////////////
@@ -88,7 +102,14 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	if bucketName == "" {
 		return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
 	}
-	return &IndexDClient{baseUrl, profile, projectId, bucketName, clientLogger}, err
+	return &IndexDClient{
+		Base:        baseUrl,
+		Profile:     profile,
+		ProjectId:   projectId,
+		BucketName:  bucketName,
+		logger:      clientLogger,
+		authHandler: &RealAuthHandler{}, // Use real auth in production
+	}, err
 }
 
 // GetDownloadURL implements ObjectStoreClient
@@ -135,7 +156,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -275,7 +296,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -323,7 +344,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = addGen3AuthHeader(req, cl.Profile)
+			err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 			if err != nil {
 				cl.logger.Logf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -441,7 +462,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -487,7 +508,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 		return err
 	}
 
-	err = addGen3AuthHeader(delReq, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(delReq, cl.Profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -564,7 +585,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 	}
 	cl.logger.Logf("Looking for files with hash %s:%s", hashType, hash)
 
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", hashType, hash, err)
 	}
@@ -656,7 +677,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan ListRecords
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = addGen3AuthHeader(req, cl.Profile)
+			err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 			if err != nil {
 				cl.logger.Logf("error: %s", err)
 				out <- ListRecordsResult{Error: err}
@@ -740,7 +761,7 @@ func (cl *IndexDClient) UpdateIndexdRecord(updateInfo *UpdateInputInfo, did stri
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -782,7 +803,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	err = addGen3AuthHeader(req, cl.Profile)
+	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}

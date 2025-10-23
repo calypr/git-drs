@@ -2,6 +2,7 @@ package initialize
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -224,7 +225,7 @@ func gen3Init(profile string, credFile string, fenceToken string, apiEndpoint st
 		if strings.Contains(errStr, "apiendpoint") {
 			errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
 		}
-		return fmt.Errorf(errStr)
+		return errors.New(errStr)
 	}
 
 	return nil

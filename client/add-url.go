@@ -37,6 +37,18 @@ type customEndpointResolver struct {
 	endpoint string
 }
 
+const (
+	ADDURL_HELP_MSG            = "See git-drs add-url --help for more details."
+	AWS_KEY_FLAG_NAME          = "aws-access-key-id"
+	AWS_SECRET_FLAG_NAME       = "aws-secret-access-key"
+	AWS_KEY_ENV_VAR            = "AWS_ACCESS_KEY_ID"
+	AWS_SECRET_ENV_VAR         = "AWS_SECRET_ACCESS_KEY"
+	AWS_REGION_FLAG_NAME       = "region"
+	AWS_REGION_ENV_VAR         = "AWS_REGION"
+	AWS_ENDPOINT_URL_FLAG_NAME = "endpoint-url"
+	AWS_ENDPOINT_URL_ENV_VAR   = "AWS_ENDPOINT_URL"
+)
+
 func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.Endpoint, error) {
 	return aws.Endpoint{
 		URL: r.endpoint,
@@ -121,11 +133,11 @@ func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Clien
 		return S3Bucket{}, errors.New("endpoint_url or region not found for bucket")
 	}
 
-	return S3Bucket{}, errors.New("bucket not found")
+	return S3Bucket{}, nil
 }
 
 func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client) (int64, string, error) {
-	// Fetch bucket endpoint from /data/buckets
+	// Fetch AWS bucket region and endpoint from /data/buckets (fence in gen3)
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
@@ -133,42 +145,130 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 
 	bucketDetails, err := getBucketDetails(ctx, bucket, httpClient)
 	if err != nil {
-		fmt.Println("Bucket details not found in Gen3 configuration. Using provided endpoint and region flags.")
-		bucketDetails = S3Bucket{
-			Region:      region,
-			EndpointURL: endpoint,
-		}
+		return 0, "", fmt.Errorf("Unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, ADDURL_HELP_MSG)
+	}
+	// region + endpoint must be supplied if bucket not registered in gen3
+	if bucketDetails.EndpointURL == "" || bucketDetails.Region == "" {
+		fmt.Println("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
+		// bucketDetails = S3Bucket{
+		// 	Region:      region,
+		// 	EndpointURL: endpoint,
+		// }
 	}
 
-	// Use provided S3 client or create default
+	// Create s3 client if not passed as param
+	var finalRegion, finalEndpoint string
+	var finalCfg aws.Config
+
 	if s3Client == nil {
-		// Load AWS configuration
-		var cfg aws.Config
+		// Always load base AWS configuration first
+		cfg, err := awsConfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return 0, "", fmt.Errorf("unable to load base AWS SDK config: %v. %s", err, ADDURL_HELP_MSG)
+		}
+
+		// Build config options to override defaults
+		var configOptions []func(*awsConfig.LoadOptions) error
+
+		// Override credentials if provided
 		if awsAccessKey != "" && awsSecretKey != "" {
-			cfg, err = awsConfig.LoadDefaultConfig(ctx,
-				awsConfig.WithRegion(bucketDetails.Region),
+			configOptions = append(configOptions,
 				awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 					awsAccessKey,
 					awsSecretKey,
 					"", // session token (empty for basic credentials)
 				)),
-				awsConfig.WithSharedConfigFiles([]string{}),      // Disable shared config file
-				awsConfig.WithSharedCredentialsFiles([]string{}), // Disable shared credentials file
 			)
+		}
+
+		// Override region with priority: parameter > bucketDetails > default
+		regionToUse := ""
+		if region != "" {
+			regionToUse = region
+		} else if bucketDetails.Region != "" {
+			regionToUse = bucketDetails.Region
+		}
+		if regionToUse != "" {
+			configOptions = append(configOptions, awsConfig.WithRegion(regionToUse))
+		}
+
+		// Reload config with overrides if any options were set
+		if len(configOptions) > 0 {
+			cfg, err = awsConfig.LoadDefaultConfig(ctx, configOptions...)
 			if err != nil {
-				return 0, "", fmt.Errorf("unable to load SDK config with static credentials: %v", err)
+				return 0, "", fmt.Errorf("unable to load AWS SDK config with overrides: %v. %s", err, ADDURL_HELP_MSG)
 			}
 		}
 
-		// Create S3 client with custom endpoint and path-style addressing
+		// Determine endpoint with priority: parameter > bucketDetails > default config
+		endpointToUse := ""
+		if endpoint != "" {
+			endpointToUse = endpoint
+		} else if bucketDetails.EndpointURL != "" {
+			endpointToUse = bucketDetails.EndpointURL
+		}
+		// Note: endpoint may also come from AWS config file, which will be loaded automatically
+
+		// Store final values for validation
+		finalRegion = cfg.Region
+		finalCfg = cfg
+
+		// Create S3 client with optional endpoint override and path-style addressing
 		s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(bucketDetails.EndpointURL)
+			if endpointToUse != "" {
+				o.BaseEndpoint = aws.String(endpointToUse)
+			}
 			o.UsePathStyle = true // This forces path-style URLs
 		})
 	}
 
-	// print bucket details
-	// fmt.Printf("Bucket Details: %+v\n", bucketDetails)
+	// Validate that all required configuration is present before making the HeadObject call
+	var missingFields []string
+
+	// Check credentials
+	if s3Client == nil {
+		// This shouldn't happen, but check for safety
+		return 0, "", fmt.Errorf("S3 client was not initialized. %s", ADDURL_HELP_MSG)
+	}
+
+	// Only validate if we created the client (we have access to the config)
+	if finalCfg.Credentials != nil {
+		creds, err := finalCfg.Credentials.Retrieve(ctx)
+		if err != nil || creds.AccessKeyID == "" {
+			missingFields = append(missingFields, "AWS credentials (access key and secret key)")
+		}
+	}
+
+	// Check region
+	if finalRegion == "" {
+		missingFields = append(missingFields, "AWS region")
+	}
+
+	// Check endpoint, ok if missing
+	if finalEndpoint == "" {
+		fmt.Println("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
+	}
+
+	// Note: We don't validate endpoint here because:
+	// 1. It may be configured in AWS config file (which we can't easily inspect)
+	// 2. For standard AWS S3, the endpoint is optional and determined by region
+
+	// If any required fields are missing, return a clear error
+	if len(missingFields) > 0 {
+		var errorMsg strings.Builder
+		errorMsg.WriteString("Missing required AWS configuration:\n")
+		for i, field := range missingFields {
+			errorMsg.WriteString(fmt.Sprintf("  %d. %s\n", i+1, field))
+		}
+		errorMsg.WriteString("\nPlease provide these values via:\n")
+		errorMsg.WriteString("  - Command-line flags (--" + AWS_KEY_FLAG_NAME + ", --" + AWS_SECRET_FLAG_NAME + ", --" + AWS_REGION_FLAG_NAME + ", --" + AWS_ENDPOINT_URL_FLAG_NAME + ")\n")
+		errorMsg.WriteString("  - Environment variables (" + AWS_KEY_ENV_VAR + ", " + AWS_SECRET_ENV_VAR + ", " + AWS_REGION_ENV_VAR + ", " + AWS_ENDPOINT_URL_ENV_VAR + ")\n")
+		errorMsg.WriteString("  - AWS credentials file (~/.aws/credentials)\n")
+		errorMsg.WriteString("  - Gen3 bucket registration (if bucket can be registered in Gen3)\n")
+		errorMsg.WriteString("\n")
+		errorMsg.WriteString(ADDURL_HELP_MSG)
+		return 0, "", errors.New(errorMsg.String())
+	}
 
 	input := &s3.HeadObjectInput{
 		Bucket: &bucket,

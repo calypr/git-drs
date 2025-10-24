@@ -40,26 +40,23 @@ var AddURLCmd = &cobra.Command{
 		// Parse arguments
 		s3URL := args[0]
 		sha256, _ := cmd.Flags().GetString("sha256")
-		awsAccessKey, _ := cmd.Flags().GetString("aws-access-key")
-		awsSecretKey, _ := cmd.Flags().GetString("aws-secret-key")
-		regionFlag, _ := cmd.Flags().GetString("region")
-		endpointFlag, _ := cmd.Flags().GetString("endpoint")
+		awsAccessKey, _ := cmd.Flags().GetString(client.AWS_KEY_FLAG_NAME)
+		awsSecretKey, _ := cmd.Flags().GetString(client.AWS_SECRET_FLAG_NAME)
+		awsRegion, _ := cmd.Flags().GetString(client.AWS_REGION_FLAG_NAME)
+		awsEndpoint, _ := cmd.Flags().GetString(client.AWS_ENDPOINT_URL_FLAG_NAME)
 
-		// Determine AWS credentials source, same env var names as AWS SDK
-		if awsAccessKey == "" || awsSecretKey == "" {
-			awsAccessKey = os.Getenv("AWS_ACCESS_KEY_ID")
-			awsSecretKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
-			if awsAccessKey == "" || awsSecretKey == "" {
-				return errors.New("AWS credentials are required. Provide them via flags or environment variables. See git drs add-url --help for more info.")
-			} else {
-				fmt.Println("Using AWS credentials from environment variables.")
-			}
-		} else {
-			fmt.Println("Using AWS credentials from command-line flags.")
+		// if providing credentials, access key and secret must both be provided
+		if (awsAccessKey == "" && awsSecretKey != "") || (awsAccessKey != "" && awsSecretKey == "") {
+			return errors.New("Incomplete credentials provided as environment variables. Please run `export " + client.AWS_KEY_ENV_VAR + "=<key>` and `export " + client.AWS_SECRET_ENV_VAR + "=<secret>` to configure both.")
+		}
+
+		// if none provided, use default AWS configuration on file
+		if awsAccessKey == "" && awsSecretKey == "" {
+			fmt.Println("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
 		// Call client.AddURL to handle Gen3 interactions
-		fileSize, _, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag)
+		fileSize, _, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint)
 		if err != nil {
 			return err
 		}
@@ -79,10 +76,10 @@ var AddURLCmd = &cobra.Command{
 
 func init() {
 	AddURLCmd.Flags().String("sha256", "", "[required] SHA256 hash of the file")
-	AddURLCmd.Flags().String("aws-access-key", "", "AWS access key")
-	AddURLCmd.Flags().String("aws-secret-key", "", "AWS secret key")
-	AddURLCmd.Flags().String("region", "", "AWS S3 region")
-	AddURLCmd.Flags().String("endpoint", "", "AWS S3 endpoint")
+	AddURLCmd.Flags().String(client.AWS_KEY_FLAG_NAME, os.Getenv(client.AWS_KEY_ENV_VAR), "AWS access key")
+	AddURLCmd.Flags().String(client.AWS_SECRET_FLAG_NAME, os.Getenv(client.AWS_SECRET_ENV_VAR), "AWS secret key")
+	AddURLCmd.Flags().String(client.AWS_REGION_FLAG_NAME, os.Getenv(client.AWS_REGION_ENV_VAR), "AWS S3 region")
+	AddURLCmd.Flags().String(client.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(client.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
 	AddURLCmd.MarkFlagRequired("sha256")
 }
 

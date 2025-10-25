@@ -39,18 +39,29 @@ build:
 	@go build -ldflags '$(VERSION_LDFLAGS)' -buildvcs=false .
 
 lint-depends:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
-	go install golang.org/x/tools/cmd/goimports
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/client9/misspell/cmd/misspell@latest
 
 # Run code style and other checks
+# Note: Using native Go tools instead of golangci-lint for Go 1.24 compatibility
 lint:
-	@golangci-lint run --timeout 3m --disable-all \
-	    --enable=vet \
-	    --enable=golint \
-	    --enable=gofmt \
-	    --enable=goimports \
-	    --enable=misspell \
-	    ./...
+	@echo "Running go vet..."
+	@go vet ./...
+	@echo "Running gofmt..."
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || (echo "Please run: gofmt -s -w ." && exit 1)
+	@echo "Running goimports..."
+	@test -z "$$(goimports -l . | tee /dev/stderr)" || (echo "Please run: goimports -w ." && exit 1)
+	@echo "Running misspell..."
+	@misspell -error .
+	@echo "✅ All lint checks passed!"
+
+# Auto-fix formatting issues
+fmt:
+	@echo "Formatting with gofmt..."
+	@gofmt -s -w .
+	@echo "Formatting with goimports..."
+	@goimports -w .
+	@echo "✅ Formatting complete!"
 
 # Run all tests
 test:

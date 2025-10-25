@@ -1,5 +1,7 @@
 # Git DRS
 
+[![Tests](https://github.com/calypr/git-drs/actions/workflows/test.yaml/badge.svg)](https://github.com/calypr/git-drs/actions/workflows/test.yaml)
+
 **Git-LFS file management for DRS servers**
 
 Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with data platforms like Gen3 and AnVIL while maintaining your familiar Git workflow.

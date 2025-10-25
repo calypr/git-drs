@@ -59,6 +59,21 @@ test:
 test-verbose:
 	@go test -v $(TESTS)
 
+# Run tests with coverage
+test-coverage:
+	@go test -v -race -coverprofile=coverage.out -covermode=atomic $(TESTS)
+	@go tool cover -func=coverage.out | tail -1
+
+# Generate HTML coverage report
+coverage-html: test-coverage
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+	@echo "Open it with: open coverage.html (macOS) or xdg-open coverage.html (Linux)"
+
+# View coverage in browser
+coverage-view: coverage-html
+	@open coverage.html || xdg-open coverage.html || echo "Please open coverage.html manually"
+
 # Make everything usually needed to prepare for a pull request
 full: proto install tidy lint test website webdash
 

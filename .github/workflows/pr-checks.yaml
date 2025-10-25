@@ -1,0 +1,109 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: v1.50.1
+        args: --timeout 3m --disable-all --enable=vet --enable=gofmt --enable=goimports --enable=misspell
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run tests
+      run: go test -v -race ./...
+
+  coverage:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Run tests with coverage
+      run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Generate coverage HTML
+      run: go tool cover -html=coverage.out -o coverage.html
+
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-coverage-report
+        path: |
+          coverage.out
+          coverage.html
+        retention-days: 15
+
+    - name: Post coverage comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const coverage = fs.readFileSync('coverage.out', 'utf8');
+          const lines = coverage.split('\n');
+          const totalLine = lines[lines.length - 1];
+          
+          // Parse coverage percentage
+          const exec = require('child_process').execSync;
+          const result = exec('go tool cover -func=coverage.out | grep total').toString();
+          const match = result.match(/(\d+\.\d+)%/);
+          const percentage = match ? match[1] : 'unknown';
+          
+          const comment = `## 📊 Coverage Report
+          
+          **Total Coverage:** ${percentage}%
+          
+          📥 Download the full HTML coverage report from the [Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          
+          To view it:
+          1. Download the \`pr-coverage-report\` artifact
+          2. Unzip it
+          3. Open \`coverage.html\` in your browser
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

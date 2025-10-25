@@ -39,7 +39,7 @@ build:
 	@go build -ldflags '$(VERSION_LDFLAGS)' -buildvcs=false .
 
 lint-depends:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
 	go install golang.org/x/tools/cmd/goimports
 
 # Run code style and other checks

@@ -23,7 +23,7 @@ jobs:
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v4
       with:
-        version: v1.50.1
+        version: v1.62.2
         args: --timeout 3m --disable-all --enable=vet --enable=gofmt --enable=goimports --enable=misspell
 
   test:
@@ -79,13 +79,10 @@ jobs:
       with:
         script: |
           const fs = require('fs');
-          const coverage = fs.readFileSync('coverage.out', 'utf8');
-          const lines = coverage.split('\n');
-          const totalLine = lines[lines.length - 1];
+          const { execSync } = require('child_process');
           
           // Parse coverage percentage
-          const exec = require('child_process').execSync;
-          const result = exec('go tool cover -func=coverage.out | grep total').toString();
+          const result = execSync('go tool cover -func=coverage.out | grep total').toString();
           const match = result.match(/(\d+\.\d+)%/);
           const percentage = match ? match[1] : 'unknown';
           

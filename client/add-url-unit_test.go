@@ -9,6 +9,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Unit Tests for validateInputs
@@ -397,14 +402,372 @@ func TestS3Bucket_MissingOptionalFields(t *testing.T) {
 	}
 }
 
-// Unit Tests for fetchS3Metadata (now tested through AddURL public API)
+// Unit Tests for fetchS3Metadata
 
-// NOTE: Direct calls to private fetchS3Metadata() are removed.
-// Input validation is now tested through the public AddURL() API above.
-// This follows Go best practices: test the public API, not private helpers.
+func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
+	// Test the happy path: S3 client is provided, bucket details provided, successful HeadObject
+	ctx := context.Background()
 
-// For testing S3 metadata fetching with mock clients, use:
-//   AddURL(s3URL, sha256, key, secret, region, endpoint, WithS3Client(mockS3), WithHTTPClient(mockHTTP))
+	// Setup mock S3 server
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	// Add object to S3 mock
+	s3Mock.AddObject("test-bucket", "path/to/file.bam", 2048)
+
+	// Create S3 client pointing to mock
+	cfg, err := awsConfig.LoadDefaultConfig(ctx,
+		awsConfig.WithRegion("us-west-2"),
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test-key", "test-secret", "")),
+	)
+	if err != nil {
+		t.Fatalf("Failed to load AWS config: %v", err)
+	}
+
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(s3Mock.URL())
+		o.UsePathStyle = true
+	})
+
+	// Provide bucket details directly (bypass getBucketDetails)
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: s3Mock.URL(),
+		Programs:    []string{"test-program"},
+	}
+
+	// Call fetchS3MetadataWithBucketDetails with provided client and bucket details
+	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/path/to/file.bam",
+		"", "", "", "", // No AWS credentials/region/endpoint in params (using client)
+		bucketDetails,
+		s3Client,
+	)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	if size != 2048 {
+		t.Errorf("Expected size 2048, got %d", size)
+	}
+
+	if modifiedDate == "" {
+		t.Error("Expected non-empty modified date")
+	}
+}
+
+func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
+	// Test creating S3 client from provided credentials in function params
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	s3Mock.AddObject("test-bucket", "file.bam", 1024)
+
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: s3Mock.URL(),
+	}
+
+	// Call without providing s3Client, but with credentials in params
+	// Note: This will create its own client and validate credentials
+	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/file.bam",
+		"test-access-key",
+		"test-secret-key",
+		"us-west-2",
+		s3Mock.URL(),
+		bucketDetails,
+		nil, // No s3Client provided - will create one
+	)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	if size != 1024 {
+		t.Errorf("Expected size 1024, got %d", size)
+	}
+
+	if modifiedDate == "" {
+		t.Error("Expected non-empty modified date")
+	}
+}
+
+func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
+	// Test that bucket details (region/endpoint) from Gen3 are used when params are empty
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	s3Mock.AddObject("test-bucket", "data.bam", 512)
+
+	// Bucket details from Gen3 (simulated)
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: s3Mock.URL(),
+	}
+
+	// Don't provide region/endpoint in params - should use bucketDetails
+	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/data.bam",
+		"test-key",
+		"test-secret",
+		"", // No region param - should use bucketDetails
+		"", // No endpoint param - should use bucketDetails
+		bucketDetails,
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	if size != 512 {
+		t.Errorf("Expected size 512, got %d", size)
+	}
+
+	if modifiedDate == "" {
+		t.Error("Expected non-empty modified date")
+	}
+}
+
+func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
+	// Test that invalid S3 URL is rejected early
+	ctx := context.Background()
+
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: "http://endpoint",
+	}
+
+	_, _, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"not-an-s3-url",
+		"key", "secret", "us-west-2", "http://endpoint",
+		bucketDetails,
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("Expected error for invalid S3 URL, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to parse S3 URL") {
+		t.Errorf("Expected parse error, got: %v", err)
+	}
+}
+
+func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
+	// Test validation failure when credentials are missing
+	// Note: This test checks that when no client is provided AND no credentials in params,
+	// the function should fail with missing credentials error if AWS env doesn't have them.
+	// However, in CI/local environments with AWS credentials, this test may pass.
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	bucketDetails := S3Bucket{
+		Region:      "", // No region - this will definitely trigger validation error
+		EndpointURL: s3Mock.URL(),
+	}
+
+	// Try to create client without credentials and without region
+	_, _, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/file.bam",
+		"", "", // No credentials in params
+		"", // No region (key point - this will fail)
+		"", // No endpoint
+		bucketDetails,
+		nil, // No s3Client - will try to create one
+	)
+
+	// Should fail on missing region at minimum
+	if err == nil {
+		t.Fatal("Expected error for missing configuration, got nil")
+	}
+
+	// Error should mention missing configuration (either credentials or region)
+	if !strings.Contains(err.Error(), "Missing required AWS configuration") {
+		t.Errorf("Expected missing configuration error, got: %v", err)
+	}
+}
+
+func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
+	// Test validation failure when region is missing
+	ctx := context.Background()
+
+	// Bucket details WITHOUT region
+	bucketDetails := S3Bucket{
+		EndpointURL: "http://s3-endpoint",
+		// No region field
+	}
+
+	_, _, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/file.bam",
+		"test-key",
+		"test-secret",
+		"", // No region in params
+		"",
+		bucketDetails,
+		nil,
+	)
+
+	if err == nil {
+		t.Fatal("Expected error for missing region, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "Missing required AWS configuration") ||
+		!strings.Contains(err.Error(), "AWS region") {
+		t.Errorf("Expected missing region error, got: %v", err)
+	}
+}
+
+func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
+	// Test when S3 HeadObject fails because object doesn't exist
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	// Don't add the object to S3 mock - it won't exist
+
+	cfg, err := awsConfig.LoadDefaultConfig(ctx,
+		awsConfig.WithRegion("us-west-2"),
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test-key", "test-secret", "")),
+	)
+	if err != nil {
+		t.Fatalf("Failed to load AWS config: %v", err)
+	}
+
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(s3Mock.URL())
+		o.UsePathStyle = true
+	})
+
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: s3Mock.URL(),
+	}
+
+	_, _, err = fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/nonexistent.bam",
+		"", "", "", "",
+		bucketDetails,
+		s3Client,
+	)
+
+	if err == nil {
+		t.Fatal("Expected error for nonexistent S3 object, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to head object") {
+		t.Errorf("Expected head object error, got: %v", err)
+	}
+}
+
+func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
+	// Test handling of nil ContentLength in S3 response (edge case)
+	// This is implicitly tested by MockS3Server which always returns ContentLength,
+	// but the code handles nil by returning 0
+	// This test documents that behavior
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	// Add object with size 0
+	s3Mock.AddObject("test-bucket", "empty.bam", 0)
+
+	cfg, err := awsConfig.LoadDefaultConfig(ctx,
+		awsConfig.WithRegion("us-west-2"),
+		awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test-key", "test-secret", "")),
+	)
+	if err != nil {
+		t.Fatalf("Failed to load AWS config: %v", err)
+	}
+
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(s3Mock.URL())
+		o.UsePathStyle = true
+	})
+
+	bucketDetails := S3Bucket{
+		Region:      "us-west-2",
+		EndpointURL: s3Mock.URL(),
+	}
+
+	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/empty.bam",
+		"", "", "", "",
+		bucketDetails,
+		s3Client,
+	)
+
+	if err != nil {
+		t.Fatalf("Expected success for zero-size file, got error: %v", err)
+	}
+
+	if size != 0 {
+		t.Errorf("Expected size 0, got %d", size)
+	}
+
+	if modifiedDate == "" {
+		t.Error("Expected non-empty modified date")
+	}
+}
+
+func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T) {
+	// Test that function parameters take priority over bucket details
+	ctx := context.Background()
+
+	s3Mock := NewMockS3Server(t)
+	defer s3Mock.Close()
+
+	// Bucket details with DIFFERENT endpoint
+	bucketDetails := S3Bucket{
+		Region:      "us-east-1", // Different region
+		EndpointURL: "http://different-endpoint",
+		Programs:    []string{"test-program"},
+	}
+
+	s3Mock.AddObject("test-bucket", "file.bam", 1024)
+
+	// Provide explicit region/endpoint in params - these should override bucket details
+	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+		ctx,
+		"s3://test-bucket/file.bam",
+		"test-key",
+		"test-secret",
+		"us-west-2",  // Override bucketDetails' "us-east-1"
+		s3Mock.URL(), // Override bucketDetails' "http://different-endpoint"
+		bucketDetails,
+		nil,
+	)
+
+	if err != nil {
+		t.Fatalf("Expected success, got error: %v", err)
+	}
+
+	if size != 1024 {
+		t.Errorf("Expected size 1024, got %d", size)
+	}
+
+	if modifiedDate == "" {
+		t.Error("Expected non-empty modified date")
+	}
+}
 
 // Unit Tests for upsertIndexdRecord with mocking
 

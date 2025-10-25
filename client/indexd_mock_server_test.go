@@ -388,6 +388,11 @@ func (mgs *MockGen3Server) URL() string {
 	return mgs.httpServer.URL
 }
 
+// Client returns the mock server HTTP client
+func (mgs *MockGen3Server) Client() *http.Client {
+	return mgs.httpServer.Client()
+}
+
 // Close closes the mock server
 func (mgs *MockGen3Server) Close() {
 	mgs.httpServer.Close()

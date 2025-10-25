@@ -1,35 +1,11 @@
 package client
 
 import (
-	"encoding/json"
-	"net/http"
 	"testing"
 
-	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/utils"
 	"github.com/stretchr/testify/require"
 )
-
-//////////////////
-// TEST HELPERS //
-//////////////////
-
-// buildTestConfig creates an in-memory config for testing
-func buildTestConfig(gen3URL, indexdURL, s3URL string) *config.Config {
-	return &config.Config{
-		CurrentServer: config.Gen3ServerType,
-		Servers: config.ServersMap{
-			Gen3: &config.Gen3Server{
-				Endpoint: gen3URL,
-				Auth: config.Gen3Auth{
-					Profile:   "test-profile",
-					ProjectID: "test-project",
-					Bucket:    "test-bucket",
-				},
-			},
-		},
-	}
-}
 
 ////////////////////
 // E2E TESTS      //
@@ -88,40 +64,4 @@ func TestAddURL_E2E_LFSNotTracked(t *testing.T) {
 		}
 	}
 	require.True(t, found, "*.bam pattern with lfs filter should exist")
-}
-
-// TestMockServers_AllEndpoints tests all mock server endpoints
-func TestMockServers_AllEndpoints(t *testing.T) {
-	// Test Indexd endpoints
-	indexdMock := NewMockIndexdServer(t)
-	defer indexdMock.Close()
-
-	client := testIndexdClient(indexdMock.URL())
-	require.NotNil(t, client)
-
-	// Test Gen3 endpoint
-	gen3Mock := NewMockGen3Server(t, "http://localhost:9000")
-	defer gen3Mock.Close()
-
-	resp, err := http.Get(gen3Mock.URL() + "/user/data/buckets")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var bucketResponse map[string]interface{}
-	err = json.NewDecoder(resp.Body).Decode(&bucketResponse)
-	require.NoError(t, err)
-	require.NotNil(t, bucketResponse["S3_BUCKETS"])
-
-	// Test S3 endpoint
-	s3Mock := NewMockS3Server(t)
-	defer s3Mock.Close()
-
-	s3Mock.AddObject("test-bucket", "test.bam", 1024)
-
-	resp, err = http.Head(s3Mock.URL() + "/test-bucket/test.bam")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, "1024", resp.Header.Get("Content-Length"))
 }

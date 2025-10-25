@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -12,6 +13,18 @@ import (
 
 // Unit Tests for validateInputs
 // (Already covered in add-url_test.go, but adding edge cases)
+
+// tokenAuthHandler is a simple test helper that sets a Bearer token
+type tokenAuthHandler struct {
+	token string
+}
+
+func (t *tokenAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+	if t.token != "" {
+		req.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	return nil
+}
 
 func TestValidateInputs_ConcurrentCalls(t *testing.T) {
 	validS3URL := "s3://bucket/file.bam"
@@ -32,17 +45,21 @@ func TestValidateInputs_ConcurrentCalls(t *testing.T) {
 	}
 }
 
-// Unit Tests for getBucketDetails
+// Unit Tests for getBucketDetailsWithAuth
 
-func TestGetBucketDetailsFromURL_Success(t *testing.T) {
-	// Create a mock server that returns a successful response with bucket details
+func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
+	// Test that getBucketDetailsWithAuth properly uses the AuthHandler
+	authHeaderValue := ""
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify the request
 		if r.Method != "GET" {
 			t.Errorf("Expected GET request, got %s", r.Method)
 		}
 
-		// Return a valid response
+		// Capture the auth header set by the handler
+		authHeaderValue = r.Header.Get("Authorization")
+
 		response := S3BucketsResponse{
 			S3Buckets: map[string]S3Bucket{
 				"test-bucket": {
@@ -58,10 +75,17 @@ func TestGetBucketDetailsFromURL_Success(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	result, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "fake-token", server.Client())
+	mockAuth := &MockAuthHandler{}
+	result, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", mockAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Verify the MockAuthHandler added the expected header
+	expectedAuthHeader := "Bearer mock-test-token-test-profile"
+	if authHeaderValue != expectedAuthHeader {
+		t.Errorf("Expected auth header '%s', got '%s'", expectedAuthHeader, authHeaderValue)
 	}
 
 	if result.Region != "us-west-2" {
@@ -73,8 +97,8 @@ func TestGetBucketDetailsFromURL_Success(t *testing.T) {
 	}
 }
 
-func TestGetBucketDetailsFromURL_BucketMissing(t *testing.T) {
-	// Create a mock server that returns a response without the requested bucket
+func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
+	// Test that missing bucket returns proper error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := S3BucketsResponse{
 			S3Buckets: map[string]S3Bucket{
@@ -90,7 +114,7 @@ func TestGetBucketDetailsFromURL_BucketMissing(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsFromURL(ctx, "missing-bucket", server.URL, "", server.Client())
+	_, err := getBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected 'bucket not found' error, got nil")
@@ -101,7 +125,7 @@ func TestGetBucketDetailsFromURL_BucketMissing(t *testing.T) {
 	}
 }
 
-func TestGetBucketDetailsFromURL_MissingFields(t *testing.T) {
+func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 	tests := []struct {
 		name       string
 		bucket     S3Bucket
@@ -147,7 +171,7 @@ func TestGetBucketDetailsFromURL_MissingFields(t *testing.T) {
 			defer server.Close()
 
 			ctx := context.Background()
-			_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+			_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 			if err == nil {
 				t.Fatal("Expected error for missing fields, got nil")
@@ -160,7 +184,7 @@ func TestGetBucketDetailsFromURL_MissingFields(t *testing.T) {
 	}
 }
 
-func TestGetBucketDetailsFromURL_Non200Status(t *testing.T) {
+func TestGetBucketDetailsWithAuth_Non200Status(t *testing.T) {
 	// Test that any non-200 status code returns an error
 	// All non-200 codes follow the same error path, so one representative case is sufficient
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +193,7 @@ func TestGetBucketDetailsFromURL_Non200Status(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected error for non-200 status, got nil")
@@ -180,8 +204,8 @@ func TestGetBucketDetailsFromURL_Non200Status(t *testing.T) {
 	}
 }
 
-func TestGetBucketDetailsFromURL_AuthToken(t *testing.T) {
-	// Test that the auth token is properly set in the request
+func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
+	// Test that a token-based auth handler properly sets the token
 	expectedToken := "test-auth-token-12345"
 	tokenReceived := ""
 
@@ -206,7 +230,8 @@ func TestGetBucketDetailsFromURL_AuthToken(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, expectedToken, server.Client())
+	tokenAuth := &tokenAuthHandler{token: expectedToken}
+	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", tokenAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -217,8 +242,8 @@ func TestGetBucketDetailsFromURL_AuthToken(t *testing.T) {
 	}
 }
 
-func TestGetBucketDetailsFromURL_NoAuthToken(t *testing.T) {
-	// Test that empty auth token doesn't add Authorization header
+func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
+	// Test that nil AuthHandler works (no auth added)
 	authHeaderPresent := false
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,24 +266,54 @@ func TestGetBucketDetailsFromURL_NoAuthToken(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
 	if authHeaderPresent {
-		t.Error("Authorization header should not be present when auth token is empty")
+		t.Error("Authorization header should not be present when AuthHandler is nil")
 	}
 }
 
-// TestGetBucketDetails_MockServer is kept as a placeholder for integration-level testing
-// The new getBucketDetailsFromURL function is tested above with httptest.Server
+func TestGetBucketDetailsWithAuth_AuthHandlerError(t *testing.T) {
+	// Test that errors from AuthHandler are properly propagated
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Should not reach here if auth fails
+		t.Error("Server handler should not be called when auth fails")
+	}))
+	defer server.Close()
+
+	// Create a mock auth handler that returns an error
+	errorAuth := &errorMockAuthHandler{err: errors.New("auth failed")}
+
+	ctx := context.Background()
+	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", errorAuth, server.Client())
+
+	if err == nil {
+		t.Fatal("Expected error from auth handler, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to add authentication") {
+		t.Errorf("Expected error to mention authentication failure, got: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "auth failed") {
+		t.Errorf("Expected error to contain original auth error, got: %v", err)
+	}
+}
+
+// errorMockAuthHandler is a test helper that always returns an error
+type errorMockAuthHandler struct {
+	err error
+}
+
+func (e *errorMockAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+	return e.err
+}
 
 // Unit Tests for S3BucketsResponse structure
-
-// Unit Tests for S3BucketsResponse structure
-
 func TestS3BucketsResponse_UnmarshalValid(t *testing.T) {
 	jsonData := `{
 		"S3_BUCKETS": {
@@ -904,5 +959,3 @@ func TestS3URLParsing_EdgeCases(t *testing.T) {
 		})
 	}
 }
-
-// Test error wrapping and messages

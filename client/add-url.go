@@ -78,15 +78,16 @@ func WithHTTPClient(client *http.Client) AddURLOption {
 	}
 }
 
-// getBucketDetailsFromURL is the core HTTP logic for fetching bucket details.
-// It's separated for easier unit testing with httptest.Server.
+// getBucketDetailsWithAuth fetches bucket details from Gen3 using an AuthHandler.
+// This function accepts an auth handler for dependency injection, making it testable.
 // Parameters:
 //   - ctx: context for the request
 //   - bucket: the bucket name to look up
 //   - bucketsEndpointURL: full URL to the /user/data/buckets endpoint
-//   - authToken: the Bearer token for authentication (can be empty for testing)
+//   - profile: the Gen3 profile to use for authentication
+//   - authHandler: handler for adding authentication headers
 //   - httpClient: the HTTP client to use
-func getBucketDetailsFromURL(ctx context.Context, bucket, bucketsEndpointURL, authToken string, httpClient *http.Client) (S3Bucket, error) {
+func getBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, profile string, authHandler AuthHandler, httpClient *http.Client) (S3Bucket, error) {
 	// Use provided client or create default
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -97,9 +98,11 @@ func getBucketDetailsFromURL(ctx context.Context, bucket, bucketsEndpointURL, au
 		return S3Bucket{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add auth header if token provided
-	if authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+authToken)
+	// Add authentication using the auth handler
+	if authHandler != nil {
+		if err := authHandler.AddAuthHeader(req, profile); err != nil {
+			return S3Bucket{}, fmt.Errorf("failed to add authentication: %w", err)
+		}
 	}
 
 	resp, err := httpClient.Do(req)
@@ -149,20 +152,8 @@ func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Clien
 	}
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 
-	// Get auth token
-	// For now, we create a temporary request to get the auth header
-	// In a future refactor, we could extract token generation separately
-	tempReq, _ := http.NewRequest("GET", baseURL.String(), nil)
-	if err := addGen3AuthHeader(tempReq, cfg.Servers.Gen3.Auth.Profile); err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to add Gen3 authentication: %w", err)
-	}
-	authHeader := tempReq.Header.Get("Authorization")
-	authToken := ""
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		authToken = strings.TrimPrefix(authHeader, "Bearer ")
-	}
-
-	return getBucketDetailsFromURL(ctx, bucket, baseURL.String(), authToken, httpClient)
+	// Use the AuthHandler pattern for cleaner auth handling
+	return getBucketDetailsWithAuth(ctx, bucket, baseURL.String(), cfg.Servers.Gen3.Auth.Profile, &RealAuthHandler{}, httpClient)
 }
 
 func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client) (int64, string, error) {

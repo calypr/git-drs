@@ -78,36 +78,28 @@ func WithHTTPClient(client *http.Client) AddURLOption {
 	}
 }
 
-func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (S3Bucket, error) {
+// getBucketDetailsFromURL is the core HTTP logic for fetching bucket details.
+// It's separated for easier unit testing with httptest.Server.
+// Parameters:
+//   - ctx: context for the request
+//   - bucket: the bucket name to look up
+//   - bucketsEndpointURL: full URL to the /user/data/buckets endpoint
+//   - authToken: the Bearer token for authentication (can be empty for testing)
+//   - httpClient: the HTTP client to use
+func getBucketDetailsFromURL(ctx context.Context, bucket, bucketsEndpointURL, authToken string, httpClient *http.Client) (S3Bucket, error) {
 	// Use provided client or create default
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
 
-	// load config
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// confirm current server exists and is gen3
-	if cfg.CurrentServer != "gen3" && (cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Endpoint == "") {
-		return S3Bucket{}, errors.New("Gen3 server endpoint is not configured in the config. Use `git drs list-config` to see and `git drs init` to .")
-	}
-
-	// get all buckets
-	baseURL, err := url.Parse(cfg.Servers.Gen3.Endpoint)
-	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to parse base URL: %w", err)
-	}
-	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
-	req, err := http.NewRequestWithContext(ctx, "GET", baseURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", bucketsEndpointURL, nil)
 	if err != nil {
 		return S3Bucket{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if err := addGen3AuthHeader(req, cfg.Servers.Gen3.Auth.Profile); err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to add Gen3 authentication: %w", err)
+	// Add auth header if token provided
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -133,7 +125,44 @@ func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Clien
 		return S3Bucket{}, errors.New("endpoint_url or region not found for bucket")
 	}
 
-	return S3Bucket{}, nil
+	return S3Bucket{}, errors.New("bucket not found")
+}
+
+// getBucketDetails fetches bucket details from Gen3, loading config and auth.
+// This is the production version that includes all config/auth dependencies.
+func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (S3Bucket, error) {
+	// load config
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return S3Bucket{}, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// confirm current server exists and is gen3
+	if cfg.CurrentServer != "gen3" && (cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Endpoint == "") {
+		return S3Bucket{}, errors.New("Gen3 server endpoint is not configured in the config. Use `git drs list-config` to see and `git drs init` to .")
+	}
+
+	// get all buckets
+	baseURL, err := url.Parse(cfg.Servers.Gen3.Endpoint)
+	if err != nil {
+		return S3Bucket{}, fmt.Errorf("failed to parse base URL: %w", err)
+	}
+	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
+
+	// Get auth token
+	// For now, we create a temporary request to get the auth header
+	// In a future refactor, we could extract token generation separately
+	tempReq, _ := http.NewRequest("GET", baseURL.String(), nil)
+	if err := addGen3AuthHeader(tempReq, cfg.Servers.Gen3.Auth.Profile); err != nil {
+		return S3Bucket{}, fmt.Errorf("failed to add Gen3 authentication: %w", err)
+	}
+	authHeader := tempReq.Header.Get("Authorization")
+	authToken := ""
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		authToken = strings.TrimPrefix(authHeader, "Bearer ")
+	}
+
+	return getBucketDetailsFromURL(ctx, bucket, baseURL.String(), authToken, httpClient)
 }
 
 func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client) (int64, string, error) {
@@ -293,25 +322,16 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 // upserts index record, so that if...
 // 1. the record exists for the project, it updates the URL
 // 2. the record for the project does not exist, it creates a new one
-func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
-	// setup indexd client
-	logger, err := NewLogger("", false)
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-	defer logger.Close()
-
-	indexdClient, err := NewIndexDClient(logger)
-	if err != nil {
-		return fmt.Errorf("failed to initialize IndexD client: %w", err)
-	}
-
-	// get project ID and UUID
-	projectId, err := config.GetProjectId()
-	if err != nil {
-		return fmt.Errorf("Error getting project ID: %v", err)
-	}
-
+// upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
+// It's separated for easier unit testing with mock clients.
+// Parameters:
+//   - indexdClient: the indexd client interface (can be mocked)
+//   - projectId: the project ID to use for the record
+//   - url: the S3 URL to register
+//   - sha256: the SHA256 hash of the file
+//   - fileSize: the size of the file in bytes
+//   - modifiedDate: the modification date of the file
+func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url, sha256 string, fileSize int64, modifiedDate string) error {
 	uuid := DrsUUID(projectId, sha256)
 
 	// handle if record already exists
@@ -376,6 +396,29 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 
 	fmt.Println("Indexd record created successfully.")
 	return nil
+}
+
+// upsertIndexdRecord is the production wrapper that loads config and creates clients.
+func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
+	// setup indexd client
+	logger, err := NewLogger("", false)
+	if err != nil {
+		return fmt.Errorf("failed to initialize logger: %w", err)
+	}
+	defer logger.Close()
+
+	indexdClient, err := NewIndexDClient(logger)
+	if err != nil {
+		return fmt.Errorf("failed to initialize IndexD client: %w", err)
+	}
+
+	// get project ID
+	projectId, err := config.GetProjectId()
+	if err != nil {
+		return fmt.Errorf("Error getting project ID: %v", err)
+	}
+
+	return upsertIndexdRecordWithClient(indexdClient, projectId, url, sha256, fileSize, modifiedDate)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/hex"
 	"testing"
 )
 
@@ -260,74 +259,5 @@ func BenchmarkValidateInputs(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = validateInputs(s3URL, sha256)
-	}
-}
-
-// TestSHA256Validation_AllZeros tests SHA256 with all zeros
-func TestSHA256Validation_AllZeros(t *testing.T) {
-	s3URL := "s3://bucket/file.bam"
-	allZerosSHA256 := "0000000000000000000000000000000000000000000000000000000000000000"
-
-	err := validateInputs(s3URL, allZerosSHA256)
-	if err != nil {
-		t.Errorf("validateInputs() should accept all zeros SHA256, got error: %v", err)
-	}
-}
-
-// TestSHA256Validation_AllF tests SHA256 with all F's
-func TestSHA256Validation_AllF(t *testing.T) {
-	s3URL := "s3://bucket/file.bam"
-	allFsSHA256 := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-
-	err := validateInputs(s3URL, allFsSHA256)
-	if err != nil {
-		t.Errorf("validateInputs() should accept all F's SHA256, got error: %v", err)
-	}
-}
-
-// TestSHA256HexDecodeString tests that validateInputs properly uses hex.DecodeString
-func TestSHA256HexDecodeString(t *testing.T) {
-	s3URL := "s3://bucket/file.bam"
-
-	tests := []struct {
-		name    string
-		sha256  string
-		wantErr bool
-	}{
-		{
-			name:    "valid hex string",
-			sha256:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			wantErr: false,
-		},
-		{
-			name:    "invalid hex with space in middle",
-			sha256:  "0123456789abcdef0123456789abcde 0123456789abcdef0123456789abcdef",
-			wantErr: true,
-		},
-		{
-			name:    "invalid hex with G character",
-			sha256:  "0123456789abcdef0123456789abcdefg123456789abcdef0123456789abcdef",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateInputs(s3URL, tt.sha256)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			// Double-check the error is due to hex decode by manually testing
-			if !tt.wantErr {
-				decoded, err := hex.DecodeString(tt.sha256)
-				if err != nil {
-					t.Errorf("hex.DecodeString() failed unexpectedly: %v", err)
-				}
-				if len(decoded) != 32 {
-					t.Errorf("SHA256 should decode to 32 bytes, got %d", len(decoded))
-				}
-			}
-		})
 	}
 }

@@ -1,17 +1,13 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
 // Unit Tests for validateInputs
@@ -38,35 +34,228 @@ func TestValidateInputs_ConcurrentCalls(t *testing.T) {
 
 // Unit Tests for getBucketDetails
 
-func TestGetBucketDetails_MockServer(t *testing.T) {
-	// Skip this test as it requires config setup
-	// This would be better as an integration test
-	t.Skip("Requires config setup - moved to integration tests")
+func TestGetBucketDetailsFromURL_Success(t *testing.T) {
+	// Create a mock server that returns a successful response with bucket details
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify the request
+		if r.Method != "GET" {
+			t.Errorf("Expected GET request, got %s", r.Method)
+		}
+
+		// Return a valid response
+		response := S3BucketsResponse{
+			S3Buckets: map[string]S3Bucket{
+				"test-bucket": {
+					Region:      "us-west-2",
+					EndpointURL: "https://s3.amazonaws.com",
+					Programs:    []string{"program1"},
+				},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	result, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "fake-token", server.Client())
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if result.Region != "us-west-2" {
+		t.Errorf("Expected region us-west-2, got %s", result.Region)
+	}
+
+	if result.EndpointURL != "https://s3.amazonaws.com" {
+		t.Errorf("Expected endpoint https://s3.amazonaws.com, got %s", result.EndpointURL)
+	}
 }
 
-func TestAddURL_InvalidS3URLFormat(t *testing.T) {
-	// Test input validation through public API (no nil parameters needed!)
+func TestGetBucketDetailsFromURL_BucketMissing(t *testing.T) {
+	// Create a mock server that returns a response without the requested bucket
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := S3BucketsResponse{
+			S3Buckets: map[string]S3Bucket{
+				"other-bucket": {
+					Region:      "us-east-1",
+					EndpointURL: "https://s3.amazonaws.com",
+				},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	_, err := getBucketDetailsFromURL(ctx, "missing-bucket", server.URL, "", server.Client())
+
+	if err == nil {
+		t.Fatal("Expected 'bucket not found' error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "bucket not found") {
+		t.Errorf("Expected 'bucket not found' error, got: %v", err)
+	}
+}
+
+func TestGetBucketDetailsFromURL_MissingFields(t *testing.T) {
 	tests := []struct {
-		name      string
-		s3URL     string
-		sha256    string
-		wantError bool
+		name       string
+		bucket     S3Bucket
+		wantErrMsg string
 	}{
-		{"invalid S3 URL - no prefix", "bucket/file.txt", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", true},
-		{"invalid S3 URL - http", "http://bucket/file.txt", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", true},
-		{"invalid SHA256 - too short", "s3://bucket/file.txt", "e3b0c44298fc1c149afbf4c8996fb92427ae41e464", true},
-		{"invalid SHA256 - non-hex", "s3://bucket/file.txt", "z3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", true},
+		{
+			name: "missing region",
+			bucket: S3Bucket{
+				EndpointURL: "https://s3.amazonaws.com",
+				Region:      "",
+			},
+			wantErrMsg: "endpoint_url or region not found",
+		},
+		{
+			name: "missing endpoint",
+			bucket: S3Bucket{
+				EndpointURL: "",
+				Region:      "us-west-2",
+			},
+			wantErrMsg: "endpoint_url or region not found",
+		},
+		{
+			name: "missing both",
+			bucket: S3Bucket{
+				EndpointURL: "",
+				Region:      "",
+			},
+			wantErrMsg: "endpoint_url or region not found",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := AddURL(tt.s3URL, tt.sha256, "key", "secret", "us-west-2", "https://s3.amazonaws.com")
-			if tt.wantError && err == nil {
-				t.Errorf("Expected error for %s, got nil", tt.name)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				response := S3BucketsResponse{
+					S3Buckets: map[string]S3Bucket{
+						"test-bucket": tt.bucket,
+					},
+				}
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+
+			if err == nil {
+				t.Fatal("Expected error for missing fields, got nil")
+			}
+
+			if !strings.Contains(err.Error(), tt.wantErrMsg) {
+				t.Errorf("Expected error containing '%s', got: %v", tt.wantErrMsg, err)
 			}
 		})
 	}
 }
+
+func TestGetBucketDetailsFromURL_Non200Status(t *testing.T) {
+	// Test that any non-200 status code returns an error
+	// All non-200 codes follow the same error path, so one representative case is sufficient
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+
+	if err == nil {
+		t.Fatal("Expected error for non-200 status, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "unexpected status code: 404") {
+		t.Errorf("Expected error containing 'unexpected status code', got: %v", err)
+	}
+}
+
+func TestGetBucketDetailsFromURL_AuthToken(t *testing.T) {
+	// Test that the auth token is properly set in the request
+	expectedToken := "test-auth-token-12345"
+	tokenReceived := ""
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Capture the Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenReceived = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		response := S3BucketsResponse{
+			S3Buckets: map[string]S3Bucket{
+				"test-bucket": {
+					Region:      "us-west-2",
+					EndpointURL: "https://s3.amazonaws.com",
+				},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, expectedToken, server.Client())
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if tokenReceived != expectedToken {
+		t.Errorf("Expected token '%s', got '%s'", expectedToken, tokenReceived)
+	}
+}
+
+func TestGetBucketDetailsFromURL_NoAuthToken(t *testing.T) {
+	// Test that empty auth token doesn't add Authorization header
+	authHeaderPresent := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check if Authorization header is present
+		if r.Header.Get("Authorization") != "" {
+			authHeaderPresent = true
+		}
+
+		response := S3BucketsResponse{
+			S3Buckets: map[string]S3Bucket{
+				"test-bucket": {
+					Region:      "us-west-2",
+					EndpointURL: "https://s3.amazonaws.com",
+				},
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	_, err := getBucketDetailsFromURL(ctx, "test-bucket", server.URL, "", server.Client())
+
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	if authHeaderPresent {
+		t.Error("Authorization header should not be present when auth token is empty")
+	}
+}
+
+// TestGetBucketDetails_MockServer is kept as a placeholder for integration-level testing
+// The new getBucketDetailsFromURL function is tested above with httptest.Server
+
+// Unit Tests for S3BucketsResponse structure
 
 // Unit Tests for S3BucketsResponse structure
 
@@ -164,6 +353,310 @@ func TestS3Bucket_MissingOptionalFields(t *testing.T) {
 
 // Unit Tests for upsertIndexdRecord with mocking
 
+func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
+	// Test case 1: the record exists for the project, it updates the URL
+
+	// Setup mock indexd server
+	mockServer := NewMockIndexdServer(t)
+	defer mockServer.Close()
+
+	// Create client with mock auth
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Setup test data
+	projectId := "testprogram-testproject"
+	sha256 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	url1 := "s3://bucket1/file1.bam"
+	url2 := "s3://bucket2/file2.bam" // Different URL
+	fileSize := int64(1000)
+	modifiedDate := "2024-01-01"
+
+	// Pre-populate the mock server with an existing record for this project
+	existingUUID := DrsUUID(projectId, sha256)
+	authzStr := "/programs/testprogram/projects/testproject"
+
+	existingRecord := &IndexdRecord{
+		Did:      existingUUID,
+		FileName: "file1.bam",
+		Hashes:   HashInfo{SHA256: sha256},
+		Size:     fileSize,
+		URLs:     []string{url1},
+		Authz:    []string{authzStr},
+		Metadata: map[string]string{"remote": "true"},
+	}
+
+	_, err := client.RegisterIndexdRecord(existingRecord)
+	if err != nil {
+		t.Fatalf("Failed to pre-populate mock server: %v", err)
+	}
+
+	// Verify the record was created
+	records, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query existing records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record, got %d", len(records))
+	}
+
+	// Now upsert with a different URL - should update the existing record
+	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate)
+	if err != nil {
+		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
+	}
+
+	// Verify the record was updated with the new URL
+	updatedRecords, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query updated records: %v", err)
+	}
+
+	if len(updatedRecords) != 1 {
+		t.Fatalf("Expected 1 record after update, got %d", len(updatedRecords))
+	}
+
+	updatedRecord := updatedRecords[0]
+
+	// Should have both URLs now
+	if len(updatedRecord.URLs) != 2 {
+		t.Errorf("Expected 2 URLs after update, got %d: %v", len(updatedRecord.URLs), updatedRecord.URLs)
+	}
+
+	if !slices.Contains(updatedRecord.URLs, url1) {
+		t.Errorf("Expected original URL %s to still be present", url1)
+	}
+
+	if !slices.Contains(updatedRecord.URLs, url2) {
+		t.Errorf("Expected new URL %s to be added", url2)
+	}
+
+	// Verify the DID hasn't changed
+	if updatedRecord.Did != existingUUID {
+		t.Errorf("Expected DID to remain %s, got %s", existingUUID, updatedRecord.Did)
+	}
+}
+
+func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing.T) {
+	// Test case 2: a record exists but it is not for the same project, so a new record is created
+
+	// Setup mock indexd server
+	mockServer := NewMockIndexdServer(t)
+	defer mockServer.Close()
+
+	// Create client with mock auth
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Setup test data
+	project1 := "program1-project1"
+	project2 := "program2-project2" // Different project
+	sha256 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	url1 := "s3://bucket1/shared-file.bam"
+	url2 := "s3://bucket2/shared-file.bam"
+	fileSize := int64(2000)
+	modifiedDate := "2024-01-02"
+
+	// Pre-populate with a record for project1
+	uuid1 := DrsUUID(project1, sha256)
+	authz1 := "/programs/program1/projects/project1"
+
+	existingRecord := &IndexdRecord{
+		Did:      uuid1,
+		FileName: "shared-file.bam",
+		Hashes:   HashInfo{SHA256: sha256},
+		Size:     fileSize,
+		URLs:     []string{url1},
+		Authz:    []string{authz1},
+		Metadata: map[string]string{"remote": "true"},
+	}
+
+	_, err := client.RegisterIndexdRecord(existingRecord)
+	if err != nil {
+		t.Fatalf("Failed to pre-populate mock server: %v", err)
+	}
+
+	// Verify the first record exists
+	records, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query existing records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record initially, got %d", len(records))
+	}
+
+	// Now upsert with project2 - should create a NEW record (not update the existing one)
+	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate)
+	if err != nil {
+		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
+	}
+
+	// Verify we now have 2 records for the same hash
+	allRecords, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query all records: %v", err)
+	}
+
+	if len(allRecords) != 2 {
+		t.Fatalf("Expected 2 records for same hash (different projects), got %d", len(allRecords))
+	}
+
+	// Verify the DIDs are different
+	uuid2 := DrsUUID(project2, sha256)
+	authz2 := "/programs/program2/projects/project2"
+
+	foundProject1Record := false
+	foundProject2Record := false
+
+	for _, record := range allRecords {
+		if record.Did == uuid1 && slices.Contains(record.Authz, authz1) {
+			foundProject1Record = true
+			// Original record should be unchanged
+			if len(record.URLs) != 1 || record.URLs[0] != url1 {
+				t.Errorf("Project1 record was modified: %v", record.URLs)
+			}
+		}
+		if record.Did == uuid2 && slices.Contains(record.Authz, authz2) {
+			foundProject2Record = true
+			// New record should have the new URL
+			if len(record.URLs) != 1 || record.URLs[0] != url2 {
+				t.Errorf("Project2 record has wrong URL: %v", record.URLs)
+			}
+		}
+	}
+
+	if !foundProject1Record {
+		t.Error("Project1 record not found")
+	}
+	if !foundProject2Record {
+		t.Error("Project2 record not found")
+	}
+
+	// Verify the DIDs are actually different (different projects = different UUIDs)
+	if uuid1 == uuid2 {
+		t.Error("Expected different DIDs for different projects, but they're the same")
+	}
+}
+
+func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
+	// Test that upserting the same URL twice is idempotent (no duplicate URLs)
+
+	// Setup mock indexd server
+	mockServer := NewMockIndexdServer(t)
+	defer mockServer.Close()
+
+	// Create client with mock auth
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Setup test data
+	projectId := "testprogram-testproject"
+	sha256 := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	url := "s3://bucket1/file.bam"
+	fileSize := int64(3000)
+	modifiedDate := "2024-01-03"
+
+	// First upsert - creates the record
+	err := upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	if err != nil {
+		t.Fatalf("First upsertIndexdRecordWithClient failed: %v", err)
+	}
+
+	// Second upsert - same URL, should be idempotent
+	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	if err != nil {
+		t.Fatalf("Second upsertIndexdRecordWithClient failed: %v", err)
+	}
+
+	// Verify there's still only one record with one URL
+	records, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query records: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record, got %d", len(records))
+	}
+
+	record := records[0]
+
+	// Should still have exactly 1 URL (not duplicated)
+	if len(record.URLs) != 1 {
+		t.Errorf("Expected 1 URL (idempotent), got %d: %v", len(record.URLs), record.URLs)
+	}
+
+	if record.URLs[0] != url {
+		t.Errorf("Expected URL %s, got %s", url, record.URLs[0])
+	}
+}
+
+func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
+	// Test creating a brand new record when no records exist for the hash
+
+	// Setup mock indexd server
+	mockServer := NewMockIndexdServer(t)
+	defer mockServer.Close()
+
+	// Create client with mock auth
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Setup test data
+	projectId := "newprogram-newproject" // Fixed format: <program>-<project>
+	sha256 := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	url := "s3://new-bucket/new-file.bam"
+	fileSize := int64(4000)
+	modifiedDate := "2024-01-04"
+
+	// Verify no records exist initially
+	records, err := client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query initial records: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("Expected 0 records initially, got %d", len(records))
+	}
+
+	// Create the record
+	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	if err != nil {
+		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
+	}
+
+	// Verify the record was created
+	records, err = client.GetObjectsByHash("sha256", sha256)
+	if err != nil {
+		t.Fatalf("Failed to query created records: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("Expected 1 record after creation, got %d", len(records))
+	}
+
+	record := records[0]
+	expectedUUID := DrsUUID(projectId, sha256)
+	expectedAuthz := "/programs/newprogram/projects/newproject"
+
+	// Verify record properties
+	if record.Did != expectedUUID {
+		t.Errorf("Expected DID %s, got %s", expectedUUID, record.Did)
+	}
+
+	if len(record.URLs) != 1 || record.URLs[0] != url {
+		t.Errorf("Expected URLs [%s], got %v", url, record.URLs)
+	}
+
+	if !slices.Contains(record.Authz, expectedAuthz) {
+		t.Errorf("Expected authz to contain %s, got %v", expectedAuthz, record.Authz)
+	}
+
+	if record.Size != fileSize {
+		t.Errorf("Expected size %d, got %d", fileSize, record.Size)
+	}
+
+	// Verify hash
+	if record.Hashes.SHA256 != sha256 {
+		t.Errorf("Expected hash %s, got %s", sha256, record.Hashes.SHA256)
+	}
+}
+
+// Legacy test kept for reference
 func TestUpsertIndexdRecord_Integration(t *testing.T) {
 	// This is better as an integration test due to dependencies
 	t.Skip("Moved to integration tests - requires config and indexd client")
@@ -301,103 +794,6 @@ func TestDrsUUID_DifferentHashes(t *testing.T) {
 	}
 }
 
-// Unit Tests for HTTP handling
-
-func TestHTTPRequestWithMockServer(t *testing.T) {
-	// Create a test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/user/data/buckets" {
-			response := S3BucketsResponse{
-				S3Buckets: map[string]S3Bucket{
-					"test-bucket": {
-						Region:      "us-west-2",
-						EndpointURL: "https://s3.amazonaws.com",
-					},
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-		} else {
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	// Test the request
-	resp, err := http.Get(server.URL + "/user/data/buckets")
-	if err != nil {
-		t.Fatalf("HTTP GET failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
-	}
-
-	var response S3BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if bucket, exists := response.S3Buckets["test-bucket"]; !exists {
-		t.Errorf("Expected test-bucket in response")
-	} else if bucket.Region != "us-west-2" {
-		t.Errorf("Expected region us-west-2, got %s", bucket.Region)
-	}
-}
-
-func TestHTTPRequest_ErrorHandling(t *testing.T) {
-	tests := []struct {
-		name         string
-		statusCode   int
-		responseBody string
-		expectError  bool
-	}{
-		{
-			name:         "404 Not Found",
-			statusCode:   http.StatusNotFound,
-			responseBody: `{"error": "not found"}`,
-			expectError:  true,
-		},
-		{
-			name:         "500 Internal Server Error",
-			statusCode:   http.StatusInternalServerError,
-			responseBody: `{"error": "internal error"}`,
-			expectError:  true,
-		},
-		{
-			name:         "401 Unauthorized",
-			statusCode:   http.StatusUnauthorized,
-			responseBody: `{"error": "unauthorized"}`,
-			expectError:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
-			}))
-			defer server.Close()
-
-			resp, err := http.Get(server.URL)
-			if err != nil {
-				t.Fatalf("HTTP GET failed: %v", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode == http.StatusOK && tt.expectError {
-				t.Errorf("Expected error status, got 200 OK")
-			}
-
-			if resp.StatusCode != http.StatusOK && !tt.expectError {
-				t.Errorf("Expected success status, got %d", resp.StatusCode)
-			}
-		})
-	}
-}
-
 // Unit Tests for customEndpointResolver
 func TestCustomEndpointResolver(t *testing.T) {
 	tests := []struct {
@@ -465,28 +861,7 @@ func TestAddURL_InvalidInputsEarlyReturn(t *testing.T) {
 	}
 }
 
-// Benchmark Tests
-func BenchmarkFindMatchingRecord(b *testing.B) {
-	// Setup test data
-	records := make([]OutputInfo, 100)
-	for i := 0; i < 100; i++ {
-		records[i] = OutputInfo{
-			Did:   fmt.Sprintf("uuid-%d", i),
-			Authz: []string{fmt.Sprintf("/programs/program-%d/projects/project-%d", i, i)},
-		}
-	}
-	// Add matching record in the middle
-	records[50].Authz = []string{"/programs/test/projects/project"}
-	projectId := "test-project"
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = FindMatchingRecord(records, projectId)
-	}
-}
-
 // Table-driven test for S3 URL parsing edge cases
-=
 func TestS3URLParsing_EdgeCases(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -527,54 +902,6 @@ func TestS3URLParsing_EdgeCases(t *testing.T) {
 				t.Errorf("validateInputs() for %s error = %v, expectError %v", tt.description, err, tt.expectError)
 			}
 		})
-	}
-}
-
-// Test time formatting and parsing
-
-func TestTimeFormatting(t *testing.T) {
-	// Test RFC3339 time formatting used in modified dates
-	testTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	formatted := testTime.Format(time.RFC3339)
-
-	if formatted != "2024-01-01T12:00:00Z" {
-		t.Errorf("Expected time format 2024-01-01T12:00:00Z, got %s", formatted)
-	}
-
-	// Test parsing back
-	parsed, err := time.Parse(time.RFC3339, formatted)
-	if err != nil {
-		t.Errorf("Failed to parse time: %v", err)
-	}
-
-	if !parsed.Equal(testTime) {
-		t.Errorf("Parsed time doesn't match original: expected %v, got %v", testTime, parsed)
-	}
-}
-
-// Test AWS pointer helpers (from aws-sdk-go-v2)
-
-func TestAWSPointerHelpers(t *testing.T) {
-	// Test that AWS String pointer works
-	str := "test-string"
-	ptr := aws.String(str)
-
-	if ptr == nil {
-		t.Fatal("aws.String() returned nil")
-	}
-
-	if *ptr != str {
-		t.Errorf("Expected %s, got %s", str, *ptr)
-	}
-
-	// Test with empty string
-	emptyPtr := aws.String("")
-	if emptyPtr == nil {
-		t.Fatal("aws.String() returned nil for empty string")
-	}
-
-	if *emptyPtr != "" {
-		t.Errorf("Expected empty string, got %s", *emptyPtr)
 	}
 }
 

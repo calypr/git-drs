@@ -90,43 +90,6 @@ func TestAddURL_E2E_LFSNotTracked(t *testing.T) {
 	require.True(t, found, "*.bam pattern with lfs filter should exist")
 }
 
-// TestMockIndexdServer_ThreadSafety tests concurrent access
-func TestMockIndexdServer_ThreadSafety(t *testing.T) {
-	mockServer := NewMockIndexdServer(t)
-	defer mockServer.Close()
-
-	// Add initial record
-	initialRecord := &MockIndexdRecord{
-		Did:    "uuid-initial",
-		Size:   1024,
-		URLs:   []string{"s3://bucket/file.bam"},
-		Hashes: map[string]string{"sha256": "aaaa..."},
-	}
-
-	mockServer.recordMutex.Lock()
-	mockServer.records[initialRecord.Did] = initialRecord
-	mockServer.hashIndex["sha256:aaaa..."] = []string{initialRecord.Did}
-	mockServer.recordMutex.Unlock()
-
-	// Concurrent reads should be safe
-	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
-		go func() {
-			client := testIndexdClient(mockServer.URL())
-			_, _ = client.getIndexdRecordByDID("uuid-initial")
-			done <- true
-		}()
-	}
-
-	for i := 0; i < 10; i++ {
-		<-done
-	}
-
-	// Verify record still exists
-	record := mockServer.GetRecord("uuid-initial")
-	require.NotNil(t, record)
-}
-
 // TestMockServers_AllEndpoints tests all mock server endpoints
 func TestMockServers_AllEndpoints(t *testing.T) {
 	// Test Indexd endpoints

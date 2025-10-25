@@ -443,6 +443,7 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 		"", "", "", "", // No AWS credentials/region/endpoint in params (using client)
 		bucketDetails,
 		s3Client,
+		nil, // Use NoOpLogger
 	)
 
 	if err != nil {
@@ -483,6 +484,7 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 		s3Mock.URL(),
 		bucketDetails,
 		nil, // No s3Client provided - will create one
+		nil, // Use NoOpLogger
 	)
 
 	if err != nil {
@@ -523,6 +525,7 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 		"", // No endpoint param - should use bucketDetails
 		bucketDetails,
 		nil,
+		nil, // Use NoOpLogger
 	)
 
 	if err != nil {
@@ -553,6 +556,7 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 		"key", "secret", "us-west-2", "http://endpoint",
 		bucketDetails,
 		nil,
+		nil, // Use NoOpLogger
 	)
 
 	if err == nil {
@@ -588,6 +592,7 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 		"", // No endpoint
 		bucketDetails,
 		nil, // No s3Client - will try to create one
+		nil, // Use NoOpLogger
 	)
 
 	// Should fail on missing region at minimum
@@ -620,6 +625,7 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 		"",
 		bucketDetails,
 		nil,
+		nil, // Use NoOpLogger
 	)
 
 	if err == nil {
@@ -665,6 +671,7 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 		"", "", "", "",
 		bucketDetails,
 		s3Client,
+		nil, // Use NoOpLogger
 	)
 
 	if err == nil {
@@ -713,6 +720,7 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 		"", "", "", "",
 		bucketDetails,
 		s3Client,
+		nil, // Use NoOpLogger
 	)
 
 	if err != nil {
@@ -754,6 +762,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 		s3Mock.URL(), // Override bucketDetails' "http://different-endpoint"
 		bucketDetails,
 		nil,
+		nil, // Use NoOpLogger
 	)
 
 	if err != nil {
@@ -818,7 +827,7 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	}
 
 	// Now upsert with a different URL - should update the existing record
-	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate)
+	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -902,7 +911,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	// Now upsert with project2 - should create a NEW record (not update the existing one)
-	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate)
+	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -972,13 +981,13 @@ func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 	modifiedDate := "2024-01-03"
 
 	// First upsert - creates the record
-	err := upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	err := upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("First upsertIndexdRecordWithClient failed: %v", err)
 	}
 
 	// Second upsert - same URL, should be idempotent
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("Second upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1032,7 +1041,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	// Create the record
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate)
+	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1072,12 +1081,6 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	if record.Hashes.SHA256 != sha256 {
 		t.Errorf("Expected hash %s, got %s", sha256, record.Hashes.SHA256)
 	}
-}
-
-// Legacy test kept for reference
-func TestUpsertIndexdRecord_Integration(t *testing.T) {
-	// This is better as an integration test due to dependencies
-	t.Skip("Moved to integration tests - requires config and indexd client")
 }
 
 // Unit Tests for FindMatchingRecord
@@ -1271,7 +1274,7 @@ func TestAddURL_InvalidInputsEarlyReturn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := AddURL(tt.s3URL, tt.sha256, "key", "secret", "us-west-2", "https://s3.amazonaws.com")
+			_, err := AddURL(tt.s3URL, tt.sha256, "key", "secret", "us-west-2", "https://s3.amazonaws.com")
 			if err == nil {
 				t.Errorf("Expected error for %s, got nil", tt.name)
 			}

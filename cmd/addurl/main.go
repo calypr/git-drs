@@ -24,7 +24,7 @@ var AddURLCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
-		myLogger, err := client.NewLogger("", false)
+		myLogger, err := client.NewLogger("", true) // Log to both file and stdout
 		if err != nil {
 			fmt.Printf("Failed to open log file: %v", err)
 			return err
@@ -52,11 +52,11 @@ var AddURLCmd = &cobra.Command{
 
 		// if none provided, use default AWS configuration on file
 		if awsAccessKey == "" && awsSecretKey == "" {
-			fmt.Println("No AWS credentials provided. Using default AWS configuration from file.")
+			myLogger.Log("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
 		// Call client.AddURL to handle Gen3 interactions
-		fileSize, _, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint)
+		meta, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint, client.WithLogger(myLogger))
 		if err != nil {
 			return err
 		}
@@ -66,10 +66,10 @@ var AddURLCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to parse S3 URL: %w", err)
 		}
-		if err := generatePointerFile(relFilePath, sha256, fileSize); err != nil {
+		if err := generatePointerFile(relFilePath, sha256, meta.Size); err != nil {
 			return fmt.Errorf("failed to generate pointer file: %w", err)
 		}
-		fmt.Println("S3 URL successfully added to Git DRS repo.")
+		myLogger.Log("S3 URL successfully added to Git DRS repo.")
 		return nil
 	},
 }

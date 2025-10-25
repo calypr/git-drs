@@ -33,6 +33,12 @@ type S3Bucket struct {
 	Programs    []string `json:"programs,omitempty"`
 }
 
+// S3Meta holds S3 object metadata
+type S3Meta struct {
+	Size         int64
+	LastModified string
+}
+
 type customEndpointResolver struct {
 	endpoint string
 }
@@ -59,6 +65,7 @@ func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.En
 type AddURLConfig struct {
 	s3Client   *s3.Client
 	httpClient *http.Client
+	logger     LoggerInterface
 }
 
 // AddURLOption is a functional option for configuring AddURL
@@ -75,6 +82,13 @@ func WithS3Client(client *s3.Client) AddURLOption {
 func WithHTTPClient(client *http.Client) AddURLOption {
 	return func(cfg *AddURLConfig) {
 		cfg.httpClient = client
+	}
+}
+
+// WithLogger provides a custom logger to AddURL
+func WithLogger(logger LoggerInterface) AddURLOption {
+	return func(cfg *AddURLConfig) {
+		cfg.logger = logger
 	}
 }
 
@@ -158,7 +172,12 @@ func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Clien
 
 // fetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails S3Bucket, s3Client *s3.Client) (int64, string, error) {
+func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails S3Bucket, s3Client *s3.Client, logger LoggerInterface) (int64, string, error) {
+	// Use NoOpLogger if no logger provided
+	if logger == nil {
+		logger = &NoOpLogger{}
+	}
+
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
@@ -167,7 +186,7 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 	// region + endpoint must be supplied if bucket not registered in gen3
 	if bucketDetails.EndpointURL == "" || bucketDetails.Region == "" {
-		fmt.Println("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
+		logger.Log("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
 	}
 
 	// Create s3 client if not passed as param
@@ -257,7 +276,7 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 		// Check endpoint, ok if missing
 		if finalEndpoint == "" {
-			fmt.Println("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
+			logger.Log("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
 		}
 
 		// Note: We don't validate endpoint here because:
@@ -309,7 +328,12 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 // fetchS3Metadata fetches S3 metadata (size, modified date) for a given S3 URL.
 // This is the production version that fetches bucket details from Gen3.
-func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client) (int64, string, error) {
+func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger LoggerInterface) (int64, string, error) {
+	// Use NoOpLogger if no logger provided
+	if logger == nil {
+		logger = &NoOpLogger{}
+	}
+
 	// Fetch AWS bucket region and endpoint from /data/buckets (fence in gen3)
 	bucket, _, err := utils.ParseS3URL(s3URL)
 	if err != nil {
@@ -321,7 +345,7 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 		return 0, "", fmt.Errorf("Unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, ADDURL_HELP_MSG)
 	}
 
-	return fetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client)
+	return fetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
 }
 
 // upserts index record, so that if...
@@ -336,7 +360,13 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 //   - sha256: the SHA256 hash of the file
 //   - fileSize: the size of the file in bytes
 //   - modifiedDate: the modification date of the file
-func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url, sha256 string, fileSize int64, modifiedDate string) error {
+//   - logger: the logger interface for output
+func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger LoggerInterface) error {
+	// Use NoOpLogger if no logger provided
+	if logger == nil {
+		logger = &NoOpLogger{}
+	}
+
 	uuid := DrsUUID(projectId, sha256)
 
 	// handle if record already exists
@@ -353,13 +383,13 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 	if matchingRecord != nil && matchingRecord.Did == uuid {
 		// if record exists and contains requested url, nothing to do
 		if slices.Contains(matchingRecord.URLs, url) {
-			fmt.Println("Nothing to do: file already registered")
+			logger.Log("Nothing to do: file already registered")
 			return nil
 		}
 
 		// if record exists with different url, update via index/{guid}
 		if matchingRecord.Did == uuid && !slices.Contains(matchingRecord.URLs, url) {
-			fmt.Println("updating existing record with new url")
+			logger.Log("updating existing record with new url")
 
 			updateInfo := UpdateInputInfo{
 				URLs: []string{url},
@@ -399,20 +429,25 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		return fmt.Errorf("failed to register indexd record: %w", err)
 	}
 
-	fmt.Println("Indexd record created successfully.")
+	logger.Log("Indexd record created successfully.")
 	return nil
 }
 
 // upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string) error {
+func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger LoggerInterface) error {
+	// Use NoOpLogger if no logger provided
+	if logger == nil {
+		logger = &NoOpLogger{}
+	}
+
 	// setup indexd client
-	logger, err := NewLogger("", false)
+	indexdLogger, err := NewLogger("", false)
 	if err != nil {
 		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
-	defer logger.Close()
+	defer indexdLogger.Close()
 
-	indexdClient, err := NewIndexDClient(logger)
+	indexdClient, err := NewIndexDClient(indexdLogger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize IndexD client: %w", err)
 	}
@@ -423,11 +458,11 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 		return fmt.Errorf("Error getting project ID: %v", err)
 	}
 
-	return upsertIndexdRecordWithClient(indexdClient, projectId, url, sha256, fileSize, modifiedDate)
+	return upsertIndexdRecordWithClient(indexdClient, projectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...AddURLOption) (int64, string, error) {
+func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...AddURLOption) (S3Meta, error) {
 	// Create context with 10-second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -438,41 +473,52 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 		opt(cfg)
 	}
 
+	// Use NoOpLogger if no logger provided
+	if cfg.logger == nil {
+		cfg.logger = &NoOpLogger{}
+	}
+
 	// Validate inputs
 	if err := validateInputs(s3URL, sha256); err != nil {
-		return 0, "", err
+		return S3Meta{}, err
 	}
 
 	// check that lfs is tracking the file
 	_, relPath, err := utils.ParseS3URL(s3URL)
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
+		return S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
 	// open .gitattributes
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
-		return 0, "", fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
+		return S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
 	}
 	if !isLFS {
-		return 0, "", fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
+		return S3Meta{}, fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
 	}
 
 	// Fetch S3 metadata (size, modified date)
-	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.s3Client, cfg.httpClient)
+	cfg.logger.Log("Fetching S3 metadata...")
+	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.s3Client, cfg.httpClient, cfg.logger)
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to fetch S3 metadata: %w", err)
+		return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
-	fmt.Println("Fetched S3 metadata successfully:")
-	fmt.Printf(" - File Size: %d bytes\n", fileSize)
-	fmt.Printf(" - Last Modified: %s\n", modifiedDate)
+	cfg.logger.Log("Fetched S3 metadata successfully:")
+	cfg.logger.Logf(" - File Size: %d bytes", fileSize)
+	cfg.logger.Logf(" - Last Modified: %s", modifiedDate)
 
 	// Create indexd record
-	if err := upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate); err != nil {
-		return 0, "", fmt.Errorf("failed to create indexd record: %w", err)
+	cfg.logger.Log("Creating indexd record...")
+	if err := upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, cfg.logger); err != nil {
+		return S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
+	cfg.logger.Log("Indexd record created successfully")
 
-	return fileSize, modifiedDate, nil
+	return S3Meta{
+		Size:         fileSize,
+		LastModified: modifiedDate,
+	}, nil
 }
 
 func validateInputs(s3URL string, sha256 string) error {

@@ -428,8 +428,6 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 	if err != nil {
 		return fmt.Errorf("failed to register indexd record: %w", err)
 	}
-
-	logger.Log("Indexd record created successfully.")
 	return nil
 }
 
@@ -509,11 +507,11 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	cfg.logger.Logf(" - Last Modified: %s", modifiedDate)
 
 	// Create indexd record
-	cfg.logger.Log("Creating indexd record...")
+	cfg.logger.Log("Processing indexd record...")
 	if err := upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, cfg.logger); err != nil {
 		return S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
-	cfg.logger.Log("Indexd record created successfully")
+	cfg.logger.Log("Indexd updated")
 
 	return S3Meta{
 		Size:         fileSize,

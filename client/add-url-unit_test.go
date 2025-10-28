@@ -119,14 +119,14 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
+	bd, err := getBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
 
-	if err == nil {
-		t.Fatal("Expected 'bucket not found' error, got nil")
+	if err != nil {
+		t.Fatal("Expected no error, got: ", err)
 	}
 
-	if !strings.Contains(err.Error(), "bucket not found") {
-		t.Errorf("Expected 'bucket not found' error, got: %v", err)
+	if bd.Region != "" || bd.EndpointURL != "" || bd.Programs != nil {
+		t.Errorf("Expected empty bucket, got: %v", bd)
 	}
 }
 
@@ -409,6 +409,7 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup mock S3 server
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -463,6 +464,7 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 	// Test creating S3 client from provided credentials in function params
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -504,6 +506,7 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 	// Test that bucket details (region/endpoint) from Gen3 are used when params are empty
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -545,6 +548,7 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 	// Test that invalid S3 URL is rejected early
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	bucketDetails := S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: "http://endpoint",
@@ -575,6 +579,7 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 	// However, in CI/local environments with AWS credentials, this test may pass.
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -611,6 +616,7 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 	ctx := context.Background()
 
 	// Bucket details WITHOUT region
+	ignoreAWSConfigFiles(t)
 	bucketDetails := S3Bucket{
 		EndpointURL: "http://s3-endpoint",
 		// No region field
@@ -642,6 +648,7 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 	// Test when S3 HeadObject fails because object doesn't exist
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -690,6 +697,7 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 	// This test documents that behavior
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
@@ -740,6 +748,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 	// Test that function parameters take priority over bucket details
 	ctx := context.Background()
 
+	ignoreAWSConfigFiles(t)
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 

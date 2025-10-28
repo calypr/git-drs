@@ -142,7 +142,7 @@ func getBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, p
 		return S3Bucket{}, errors.New("endpoint_url or region not found for bucket")
 	}
 
-	return S3Bucket{}, errors.New("bucket not found")
+	return S3Bucket{}, nil
 }
 
 // getBucketDetails fetches bucket details from Gen3, loading config and auth.
@@ -404,6 +404,7 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 	}
 
 	// If no record exists, create indexd record
+	logger.Log("creating new record")
 	authzStr, err := utils.ProjectToResource(projectId)
 	if err != nil {
 		return err
@@ -438,14 +439,7 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 		logger = &NoOpLogger{}
 	}
 
-	// setup indexd client
-	indexdLogger, err := NewLogger("", false)
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-	defer indexdLogger.Close()
-
-	indexdClient, err := NewIndexDClient(indexdLogger)
+	indexdClient, err := NewIndexDClient(&NoOpLogger{})
 	if err != nil {
 		return fmt.Errorf("failed to initialize IndexD client: %w", err)
 	}
@@ -500,6 +494,10 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	cfg.logger.Log("Fetching S3 metadata...")
 	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.s3Client, cfg.httpClient, cfg.logger)
 	if err != nil {
+		// if err contains 403, probably misconfigured credentials
+		if strings.Contains(err.Error(), "403") {
+			return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w. Double check your configured AWS credentials and endpoint url", err)
+		}
 		return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
 	cfg.logger.Log("Fetched S3 metadata successfully:")

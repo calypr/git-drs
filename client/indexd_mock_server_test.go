@@ -412,6 +412,12 @@ type MockS3Server struct {
 	objMutex   sync.RWMutex
 }
 
+// ignoreAWSConfigFiles is a helper function to prevent reading from the real AWS config files
+func ignoreAWSConfigFiles(t *testing.T) {
+	t.Setenv("AWS_CONFIG_FILE", "/dev/null")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
+}
+
 // NewMockS3Server creates and starts a mock S3 server
 func NewMockS3Server(t *testing.T) *MockS3Server {
 	mss := &MockS3Server{

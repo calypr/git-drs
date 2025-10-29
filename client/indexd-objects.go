@@ -1,5 +1,8 @@
 package client
 
+// Based on OpenAPI specification
+// https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
+
 // HashInfo represents file hash information as per OpenAPI spec
 // Patterns are documented for reference, but not enforced at struct level
 // md5:    ^[0-9a-f]{32}$
@@ -18,7 +21,6 @@ type HashInfo struct {
 }
 
 // subset of the OpenAPI spec for the InputInfo object in indexd
-// https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
 // TODO: make another object based on VersionInputInfo that has content_created_date and so can handle a POST of dates via indexd/<GUID>
 type IndexdRecord struct {
 	// Unique identifier for the record (UUID)
@@ -53,6 +55,14 @@ type IndexdRecord struct {
 	// // Updated timestamp (RFC3339 format)
 	// ContentUpdatedDate string `json:"content_updated_date,omitempty"`
 }
+
+// create indexd record struct used for POSTs that is IndexdRecord with form field
+type IndexdRecordForm struct {
+	IndexdRecord
+	Form string `json:"form"`
+	Rev  string `json:"rev,omitempty"`
+}
+
 type ListRecordsResult struct {
 	Record *OutputInfo
 	Error  error
@@ -89,4 +99,28 @@ type OutputInfo struct {
 	CreatedDate  string         `json:"created_date"`
 	Metadata     map[string]any `json:"metadata"`
 	URLsMetadata map[string]any `json:"urls_metadata"`
+}
+
+// UpdateInputInfo is the put object for index records
+type UpdateInputInfo struct {
+	// Human-readable file name
+	FileName string `json:"file_name,omitempty"`
+
+	// Additional metadata as key-value pairs
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+
+	// URL-specific metadata as key-value pairs
+	URLsMetadata map[string]interface{} `json:"urls_metadata,omitempty"`
+
+	// Version of the record
+	Version string `json:"version,omitempty"`
+
+	// List of URLs where the file can be accessed
+	URLs []string `json:"urls,omitempty"`
+
+	// List of access control lists (ACLs)
+	ACL []string `json:"acl,omitempty"`
+
+	// List of authorization policies
+	Authz []string `json:"authz,omitempty"`
 }

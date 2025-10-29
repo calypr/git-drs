@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -92,6 +93,7 @@ func getConfigPath() (string, error) {
 	return configPath, nil
 }
 
+// updates and git adds a Git DRS config file
 // this should handle three cases:
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
@@ -138,6 +140,12 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	file.Truncate(0)
 	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
 		return nil, fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	// add to git
+	cmd := exec.Command("git", "add", configPath)
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("Error on doing git add %s: %v", configPath, err)
 	}
 
 	return &cfg, nil

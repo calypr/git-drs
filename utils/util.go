@@ -90,3 +90,16 @@ func ParseAPIEndpointFromToken(tokenString string) (string, error) {
 	}
 	return fmt.Sprintf("%s://%s", parsedURL.Scheme, parsedURL.Host), nil
 }
+
+func ParseS3URL(s3url string) (string, string, error) {
+	s3Prefix := "s3://"
+	if !strings.HasPrefix(s3url, s3Prefix) {
+		return "", "", fmt.Errorf("S3 URL requires prefix 's3://': %s", s3url)
+	}
+	trimmed := strings.TrimPrefix(s3url, s3Prefix)
+	slashIndex := strings.Index(trimmed, "/")
+	if slashIndex == -1 || slashIndex == len(trimmed)-1 {
+		return "", "", fmt.Errorf("invalid S3 file URL: %s", s3url)
+	}
+	return trimmed[:slashIndex], trimmed[slashIndex+1:], nil
+}

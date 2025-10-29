@@ -2,6 +2,7 @@ package initialize
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -95,6 +96,11 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	// if anvilMode is not set, ensure all other flags are provided
 	switch server {
 	case string(config.Gen3ServerType):
+		// make sure at least one of the credentials params is provided
+		if credFile == "" && fenceToken == "" && profile == "" {
+			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+		}
+
 		// if the config file is missing anything, require all gen3 params
 		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
 			if bucket == "" || project == "" || profile == "" {
@@ -148,8 +154,8 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	}
 
 	// final logs
+	logg.Log("Git DRS configuration added to git.")
 	logg.Log("Git DRS initialized successfully!")
-	logg.Log("To stage any configuration changes, use 'git add .drs/config.yaml'")
 	return nil
 }
 

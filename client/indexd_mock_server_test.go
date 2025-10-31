@@ -82,21 +82,32 @@ func NewMockIndexdServer(t *testing.T) *MockIndexdServer {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
-	// /ga4gh/drs/v1/objects/ handles GET requests for DRS object
+	// /ga4gh/drs/v1/objects/ handles GET requests for DRS object and signed URLs
 	mux.HandleFunc("/ga4gh/drs/v1/objects/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		// Extract ID from path: /ga4gh/drs/v1/objects/{id} -> {id}
-		id := strings.TrimPrefix(r.URL.Path, "/ga4gh/drs/v1/objects/")
-		if id == "" {
+		// Extract path after /ga4gh/drs/v1/objects/
+		path := strings.TrimPrefix(r.URL.Path, "/ga4gh/drs/v1/objects/")
+		if path == "" {
 			http.Error(w, "Missing object ID", http.StatusBadRequest)
 			return
 		}
 
-		mis.handleGetDRSObject(w, r, id)
+		// Split path to determine if this is object request or access request
+		pathParts := strings.Split(path, "/")
+
+		if len(pathParts) == 1 {
+			// GET /ga4gh/drs/v1/objects/{id} - get DRS object
+			mis.handleGetDRSObject(w, r, pathParts[0])
+		} else if len(pathParts) == 3 && pathParts[1] == "access" {
+			// GET /ga4gh/drs/v1/objects/{id}/access/{accessId} - get signed URL
+			mis.handleGetSignedURL(w, r, pathParts[0], pathParts[2])
+		} else {
+			http.Error(w, "Invalid path", http.StatusBadRequest)
+		}
 	})
 
 	// /index/ matches /index/{guid} (trailing slash pattern)
@@ -165,6 +176,28 @@ func (mis *MockIndexdServer) handleGetDRSObject(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(drsObj)
+}
+
+func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.Request, objectId, accessId string) {
+	mis.recordMutex.RLock()
+	_, exists := mis.records[objectId]
+	mis.recordMutex.RUnlock()
+
+	if !exists {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Object not found"})
+		return
+	}
+
+	// Create a mock signed URL
+	signedURL := drs.AccessURL{
+		URL:     fmt.Sprintf("https://signed-url.example.com/%s/%s", objectId, accessId),
+		Headers: []string{},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(signedURL)
 }
 
 func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
@@ -542,9 +575,10 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)
-	for _, url := range record.URLs {
+	for i, url := range record.URLs {
 		accessMethods = append(accessMethods, drs.AccessMethod{
-			Type: "https",
+			Type:     "https",
+			AccessID: fmt.Sprintf("access-method-%d", i),
 			AccessURL: drs.AccessURL{
 				URL:     url,
 				Headers: []string{},

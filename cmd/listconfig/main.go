@@ -1,6 +1,7 @@
 package listconfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -26,10 +27,8 @@ var Cmd = &cobra.Command{
 
 		if jsonOutput {
 			// Output as JSON if requested
-			encoder := yaml.NewEncoder(os.Stdout)
-			encoder.SetIndent(2)
-			defer encoder.Close()
-
+			encoder := json.NewEncoder(os.Stdout)
+			encoder.SetIndent("", "  ")
 			return encoder.Encode(cfg)
 		} else {
 			// Default YAML output with nice formatting
@@ -43,4 +42,5 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.Flags().BoolVarP(&jsonOutput, "json", "j", false, "output in JSON format")
 }

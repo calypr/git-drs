@@ -135,6 +135,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		cl.logger.Logf("error finding matching record for project %s: %s", cl.ProjectId, err)
 		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
 	}
+	if matchingRecord == nil {
+		cl.logger.Logf("no matching record found for project %s", cl.ProjectId)
+		return nil, fmt.Errorf("no matching record found for project %s", cl.ProjectId)
+	}
 
 	// Get the DRS object for the matching record
 	drsObj, err := cl.GetObject(matchingRecord.Did)
@@ -144,6 +148,12 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	}
 
 	// FIXME: generalize access ID method
+	// Check if access methods exist
+	if len(drsObj.AccessMethods) == 0 {
+		cl.logger.Logf("no access methods available for DRS object %s", drsObj.Id)
+		return nil, fmt.Errorf("no access methods available for DRS object %s", drsObj.Id)
+	}
+
 	// naively get access ID from splitting first path into :
 	accessId := drsObj.AccessMethods[0].AccessID
 

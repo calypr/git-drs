@@ -155,29 +155,35 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 
 func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
 	// double check that one of the credentials params is provided
-	if credFile == "" && fenceToken == "" {
-		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
-	}
+
 	var err error
-	var optCredential = &jwt.Credential{}
 	if fenceToken == "" {
 		cred := jwt.Configure{}
-		optCredential, err = cred.ReadCredentials(credFile, "")
+		if credFile == "" {
+			client.ProfileConfig, err = cred.ParseConfig(profile)
+			fenceToken = client.ProfileConfig.AccessToken
+		} else {
+			optCredential, err := cred.ReadCredentials(credFile, "")
+			if err != nil {
+				return err
+			}
+			client.ProfileConfig = *optCredential
+			fenceToken = optCredential.AccessToken
+		}
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(client.ProfileConfig.APIKey)
 		if err != nil {
 			return err
 		}
-		fenceToken = optCredential.AccessToken
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(optCredential.APIKey)
-		if err != nil {
-			return err
-		}
-
 	}
 	if apiEndpoint == "" {
 		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
 		if err != nil {
 			return err
 		}
+	}
+
+	if credFile == "" && fenceToken == "" {
+		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
 	}
 
 	// if all of the necessary params are filled, then configure the gen3 server
@@ -226,22 +232,24 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 
 	// authenticate with gen3
 	// if no credFile is specfied, don't go for the update
-	cred := &jwt.Credential{
-		Profile:            profile,
-		APIEndpoint:        apiEndpoint,
-		AccessToken:        fenceToken,
-		UseShepherd:        "false",
-		MinShepherdVersion: "",
-		KeyId:              optCredential.KeyId,
-		APIKey:             optCredential.APIKey,
-	}
-	err = jwt.UpdateConfig(cred)
-	if err != nil {
-		errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
-		if strings.Contains(errStr, "apiendpoint") {
-			errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
+	if credFile != "" {
+		cred := &jwt.Credential{
+			Profile:            profile,
+			APIEndpoint:        apiEndpoint,
+			AccessToken:        fenceToken,
+			UseShepherd:        "false",
+			MinShepherdVersion: "",
+			KeyId:              client.ProfileConfig.KeyId,
+			APIKey:             client.ProfileConfig.APIKey,
 		}
-		return fmt.Errorf(errStr)
+		err = jwt.UpdateConfig(cred)
+		if err != nil {
+			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
+			if strings.Contains(errStr, "apiendpoint") {
+				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
+			}
+			return fmt.Errorf(errStr)
+		}
 	}
 
 	return nil

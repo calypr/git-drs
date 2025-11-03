@@ -231,7 +231,7 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 	}
 
 	// authenticate with gen3
-	// if no credFile is specfied, don't go for the update
+	// if no credFile is specified, don't go for the update
 	if credFile != "" {
 		cred := &jwt.Credential{
 			Profile:            profile,

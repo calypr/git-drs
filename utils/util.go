@@ -82,7 +82,7 @@ func ParseAPIEndpointFromToken(tokenString string) (string, error) {
 	}
 	issUrl, ok := claims["iss"].(string)
 	if !ok {
-		return "", fmt.Errorf("missing or invalid 'context' claim structure")
+		return "", fmt.Errorf("missing or invalid 'iss' claim")
 	}
 	parsedURL, err := url.Parse(issUrl)
 	if err != nil {

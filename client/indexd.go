@@ -40,6 +40,19 @@ func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error
 	return addGen3AuthHeader(req, profile)
 }
 
+// AuthHandler is an interface for adding authentication headers
+// This allows us to inject different auth implementations for testing vs production
+type AuthHandler interface {
+	AddAuthHeader(req *http.Request, profile string) error
+}
+
+// RealAuthHandler uses actual Gen3 authentication
+type RealAuthHandler struct{}
+
+func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+	return addGen3AuthHeader(req, profile)
+}
+
 type IndexDClient struct {
 	Base        *url.URL
 	Profile     string

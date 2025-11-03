@@ -265,7 +265,7 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 			if strings.Contains(errStr, "apiendpoint") {
 				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
 			}
-			return fmt.Errorf(errStr)
+			return fmt.Errorf("%s", errStr)
 		}
 	}
 

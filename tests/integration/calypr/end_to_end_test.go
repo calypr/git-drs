@@ -15,7 +15,7 @@ import (
 	"time"
 
 	dcJWT "github.com/calypr/data-client/client/jwt"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/calypr/git-drs/utils"
 )
 
 const DEFAULT_BUCKET string = "cbds"
@@ -97,7 +97,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Parse config: %v", err)
 	}
 
-	email, err := parseEmailUnverified(cred.AccessToken)
+	email, err := utils.ParseEmailFromToken(cred.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,28 +372,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	if err := os.RemoveAll(cloneRepoDir); err != nil {
 		t.Errorf("Failed to remove cloned repo dir %s: %v", cloneRepoDir, err)
 	}
-}
-
-func parseEmailUnverified(tokenString string) (string, error) {
-	claims := jwt.MapClaims{}
-	_, _, err := jwt.NewParser().ParseUnverified(tokenString, &claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode token: '%s': %w", tokenString, err)
-	}
-
-	context, ok := claims["context"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("missing or invalid 'context' claim structure")
-	}
-	user, ok := context["user"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("missing or invalid 'context.user' claim structure")
-	}
-	name, ok := user["name"].(string)
-	if !ok {
-		return "", fmt.Errorf("missing or invalid 'context.user.name' claim")
-	}
-	return name, nil
 }
 
 // createRemoteRepo creates a new repo on GHE via API

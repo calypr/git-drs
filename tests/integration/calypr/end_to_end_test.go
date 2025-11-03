@@ -305,11 +305,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to change to cloned repo dir %s: %v", cloneRepoDir, err)
 	}
 
-	cmd = exec.Command("git", "lfs", "install", "--skip-smudge")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git lfs install in %s: %v", cloneRepoDir, err)
-	}
-
 	cmd = exec.Command("git-drs", "init", "--project", repoName, "--bucket", DEFAULT_BUCKET, "--profile", profile)
 	output, err = cmd.CombinedOutput()
 	if err != nil {

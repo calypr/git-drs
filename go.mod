@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/bmeg/grip-graphql v0.0.0-20250924224746-dc7f74b4040f
-	github.com/calypr/data-client v0.0.0-20251009221450-92246d753b31
+	github.com/calypr/data-client v0.0.0-20251103160310-cc0ca9939fe7
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1

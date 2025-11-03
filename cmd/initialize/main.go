@@ -63,7 +63,7 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		return err
 	}
 
-	if server == "gen3" && bucket == "" || project == "" || profile == "" {
+	if server == "gen3" && (bucket == "" || project == "" || profile == "") {
 		return fmt.Errorf("Error: bucket, project and profile must be configured for initialize to work.")
 	}
 

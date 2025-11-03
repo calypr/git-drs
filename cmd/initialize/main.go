@@ -63,9 +63,6 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		return err
 	}
 
-		return fmt.Errorf("Error: bucket, project and profile must be configured for initialize to work.")
-	}
-
 	// setup logging
 	logg, err := client.NewLogger("", true)
 	if err != nil {

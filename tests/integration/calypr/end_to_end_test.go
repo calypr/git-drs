@@ -265,6 +265,15 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("Path: %s", path)
 
+	_, err = os.Stat(path)
+
+	if os.IsNotExist(err) {
+		t.Fatalf("File or directory not found at path: %s", path)
+	}
+	if err != nil {
+		t.Fatalf("Error checking path existence %s: %v", path, err)
+	}
+
 	// Verify pre-commit hook was called by checking .drs/ logs
 	files, err := fs.ReadDir(os.DirFS(config.DRS_DIR), ".")
 	if err != nil {

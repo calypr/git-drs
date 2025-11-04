@@ -9,11 +9,13 @@ Complete reference for Git DRS and related Git LFS commands.
 Initialize or configure Git DRS for a repository. Required after each clone.
 
 **Basic Usage:**
+
 ```bash
 git drs init --cred /path/to/credentials.json
 ```
 
 **Full Configuration:**
+
 ```bash
 git drs init --profile <name> \
              --url <server-url> \
@@ -22,7 +24,22 @@ git drs init --profile <name> \
              --bucket <bucket-name>
 ```
 
+**Simplified Configuration:**
+
+Use this configuration if you have already setup an authentication profile with `git drs init --cred /path/to/credentials.json --profile <name>` and you want to use that profile again:
+
+```bash
+git drs init --profile <name> --project <project-id> --bucket <bucket-name>
+```
+
+In cases where you are cloning a repository that already exists and want to keep the existing project and bucket names you will only need to do:
+
+```bash
+git drs init --profile <name>
+```
+
 **Server-Specific:**
+
 ```bash
 # AnVIL server
 git drs init --server anvil --terraProject <terra-project-id>
@@ -32,6 +49,7 @@ git drs init --server anvil
 ```
 
 **Options:**
+
 - `--profile <name>`: Server profile name
 - `--url <url>`: DRS server endpoint URL
 - `--cred <file>`: Path to credentials JSON file
@@ -49,6 +67,7 @@ git drs list-config
 ```
 
 Shows:
+
 - Current active server
 - Configured servers and their endpoints
 - Project IDs and bucket configurations
@@ -59,6 +78,7 @@ Shows:
 Add a file reference via S3 URL without copying the data.
 
 **Basic Usage:**
+
 ```bash
 export AWS_ACCESS_KEY_ID=<key>
 export AWS_SECRET_ACCESS_KEY=<secret>
@@ -67,6 +87,7 @@ git drs add-url s3://bucket/path/file --sha256 <hash>
 ```
 
 **With Credentials Flags:**
+
 ```bash
 git drs add-url s3://bucket/path/file \
   --sha256 <hash> \
@@ -75,6 +96,7 @@ git drs add-url s3://bucket/path/file \
 ```
 
 **External Bucket:**
+
 ```bash
 export AWS_ACCESS_KEY_ID=<key>
 export AWS_SECRET_ACCESS_KEY=<secret>
@@ -86,6 +108,7 @@ git drs add-url s3://external-bucket/file \
 ```
 
 **Options:**
+
 - `--sha256 <hash>`: Required SHA256 hash of the file
 - `--aws-access-key <key>`: AWS access key (overrides `AWS_ACCESS_KEY_ID`)
 - `--aws-secret-key <key>`: AWS secret key (overrides `AWS_SECRET_ACCESS_KEY`)
@@ -123,11 +146,13 @@ These commands are called automatically by Git hooks:
 Manage file tracking patterns.
 
 **View Tracked Patterns:**
+
 ```bash
 git lfs track
 ```
 
 **Track New Pattern:**
+
 ```bash
 git lfs track "*.bam"
 git lfs track "data/**"
@@ -135,6 +160,7 @@ git lfs track "specific-file.txt"
 ```
 
 **Untrack Pattern:**
+
 ```bash
 git lfs untrack "*.bam"
 ```
@@ -144,17 +170,20 @@ git lfs untrack "*.bam"
 List LFS-tracked files in the repository.
 
 **All Files:**
+
 ```bash
 git lfs ls-files
 ```
 
 **Specific Pattern:**
+
 ```bash
 git lfs ls-files -I "*.bam"
 git lfs ls-files -I "data/**"
 ```
 
 **Output Format:**
+
 - `*` prefix: File is localized (downloaded)
 - `-` prefix: File is not localized
 - No prefix: File status unknown
@@ -164,11 +193,13 @@ git lfs ls-files -I "data/**"
 Download LFS-tracked files.
 
 **All Files:**
+
 ```bash
 git lfs pull
 ```
 
 **Specific Files:**
+
 ```bash
 git lfs pull -I "*.bam"
 git lfs pull -I "data/important.txt"
@@ -176,6 +207,7 @@ git lfs pull -I "results/**"
 ```
 
 **Multiple Patterns:**
+
 ```bash
 git lfs pull -I "*.bam" -I "*.vcf"
 ```
@@ -185,11 +217,13 @@ git lfs pull -I "*.bam" -I "*.vcf"
 Configure Git LFS for the system or repository.
 
 **System-wide:**
+
 ```bash
 git lfs install --skip-smudge
 ```
 
 **Repository-only:**
+
 ```bash
 git lfs install --local --skip-smudge
 ```

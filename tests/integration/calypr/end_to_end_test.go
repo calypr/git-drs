@@ -306,7 +306,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to change to cloned repo dir %s: %v", cloneRepoDir, err)
 	}
 
-	cmd = exec.Command("git-drs", "init", "--project", repoName, "--bucket", DEFAULT_BUCKET, "--profile", profile)
+	cmd = exec.Command("git-drs", "init", "--profile", profile)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("git-drs init (clone) output: %s", output)

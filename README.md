@@ -16,6 +16,7 @@ Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Re
 ## How It Works
 
 Git DRS extends Git LFS by:
+
 1. **Initialization**: Set up repository and DRS server configuration
 2. **Automatic Commits**: Create DRS objects during pre-commit hooks
 3. **Automatic Pushes**: Register files with DRS servers and upload to configured storage
@@ -39,7 +40,7 @@ export GIT_DRS_VERSION=0.2.2
 
 ```bash
 # Initialize repository
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 
 # Track files
 git lfs track "*.bam"
@@ -53,7 +54,6 @@ git push
 # Download files
 git lfs pull -I "*.bam"
 ```
-
 
 ## Documentation
 
@@ -71,21 +71,21 @@ For detailed setup and usage information, see the documentation:
 - **Gen3 Data Commons** (eg CALYPR)
 - **AnVIL/Terra** DRS servers
 
-
 ## Supported Environments
+
 - **Local Development** environments
 - **HPC Systems** (eg ARC)
 
 ## Commands Overview
 
-| Command | Description |
-|---------|-------------|
-| `git drs init` | Initialize repository with DRS configuration |
-| `git drs list-config` | View current configuration |
-| `git drs add-url` | Add files via S3 URLs |
-| `git lfs track` | Track file patterns with LFS |
-| `git lfs pull` | Download tracked files |
-| `git lfs ls-files` | List tracked files |
+| Command               | Description                                  |
+| --------------------- | -------------------------------------------- |
+| `git drs init`        | Initialize repository with DRS configuration |
+| `git drs list-config` | View current configuration                   |
+| `git drs add-url`     | Add files via S3 URLs                        |
+| `git lfs track`       | Track file patterns with LFS                 |
+| `git lfs pull`        | Download tracked files                       |
+| `git lfs ls-files`    | List tracked files                           |
 
 Use `--help` with any command for detailed usage information.
 

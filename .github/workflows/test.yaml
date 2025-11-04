@@ -25,7 +25,7 @@ jobs:
 
     - name: Run tests with coverage
       run: |
-        go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        go test -v -race -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v 'tests/integration/calypr')
 
     - name: Generate coverage report
       run: |

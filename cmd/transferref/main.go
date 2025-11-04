@@ -210,9 +210,9 @@ func downloadFile(sha string) (string, error) {
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	err = cmd.Run()
+	cmdOut, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("error running drs_downloader for sha %s: %v", sha, err)
+		return "", fmt.Errorf("error running drs_downloader for sha %s: %s", sha, cmdOut)
 	}
 
 	//rename file to sha

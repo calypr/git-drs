@@ -230,6 +230,41 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git commit in %s: %v", repoDir, err)
 	}
 
+	// Verify LFS files are listed
+	cmd = exec.Command("git", "lfs", "ls-files", "--json")
+	output, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("Failed to git lfs ls-files in %s: %v", repoDir, err)
+	}
+	if string(output) == "" {
+		t.Fatalf("No LFS files listed after commit in %s", repoDir)
+	}
+
+	type File struct {
+		Name       string `json:"name"`
+		Size       int64  `json:"size"`
+		Checkout   bool   `json:"checkout"`
+		Downloaded bool   `json:"downloaded"`
+		OIDType    string `json:"oid_type"`
+		OID        string `json:"oid"`
+		Version    string `json:"version"`
+	}
+	type FileContainer struct {
+		Files []File `json:"files"`
+	}
+
+	var fileMap FileContainer
+	err = json.Unmarshal(output, &fileMap)
+
+	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	if err != nil {
+		t.Fatalf("Failed to get object path %s: %v", path, err)
+	}
+	if path == "" {
+		t.Fatalf("Expecting path but got %s instead", path)
+	}
+	t.Logf("Path: %s", path)
+
 	// Verify pre-commit hook was called by checking .drs/ logs
 	files, err := fs.ReadDir(os.DirFS(config.DRS_DIR), ".")
 	if err != nil {
@@ -258,16 +293,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)
 	} else {
 		t.Log("Push succeeded with dummy DRS server")
-	}
-
-	// Verify LFS files are listed
-	cmd = exec.Command("git", "lfs", "ls-files")
-	output, err = cmd.Output()
-	if err != nil {
-		t.Fatalf("Failed to git lfs ls-files in %s: %v", repoDir, err)
-	}
-	if string(output) == "" {
-		t.Fatalf("No LFS files listed after commit in %s", repoDir)
 	}
 
 	// Clean up the initial repository
@@ -336,30 +361,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git lfs ls-files in %s: %v", cloneRepoDir, err)
 	}
 
-	type File struct {
-		Name       string `json:"name"`
-		Size       int64  `json:"size"`
-		Checkout   bool   `json:"checkout"`
-		Downloaded bool   `json:"downloaded"`
-		OIDType    string `json:"oid_type"`
-		OID        string `json:"oid"`
-		Version    string `json:"version"`
-	}
-	type FileContainer struct {
-		Files []File `json:"files"`
-	}
-
-	var fileMap FileContainer
 	err = json.Unmarshal(output, &fileMap)
-
-	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID)
-	if err != nil {
-		t.Fatalf("Failed to get object path %s: %v", path, err)
-	}
-	if path == "" {
-		t.Fatalf("Expecting path but got %s instead", path)
-	}
-	t.Logf("Path: %s", path)
 
 	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID)
 	output, err = cmd.Output()

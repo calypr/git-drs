@@ -11,7 +11,7 @@ Initialize or configure Git DRS for a repository. Required after each clone.
 **Basic Usage:**
 
 ```bash
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 ```
 
 **Full Configuration:**
@@ -268,7 +268,7 @@ Clone repository. Use with Git DRS initialization:
 ```bash
 git clone <repo-url>
 cd <repo-name>
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 ```
 
 ## Workflow Examples
@@ -277,7 +277,7 @@ git drs init --cred /path/to/credentials.json
 
 ```bash
 # 0. Initialize project
-git drs init --cred path/to/cred
+git drs init --cred path/to/cred --profile <name>
 
 # 1. Ensure file type is tracked
 git lfs track "*.bam"
@@ -300,7 +300,7 @@ git push
 
 ```bash
 # 0. Initialize project
-git drs init --cred path/to/cred
+git drs init --cred path/to/cred --profile <name>
 
 # Check what's available
 git lfs ls-files

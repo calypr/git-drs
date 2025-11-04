@@ -7,36 +7,45 @@ Common issues and solutions when working with Git DRS.
 Understanding when to use Git, Git LFS, or Git DRS commands:
 
 ### Git DRS Commands
+
 **Use for**: Repository initialization and configuration
+
 - `git drs init` - Set up credentials and server configuration
 - `git drs list-config` - Check configuration
 - `git drs add-url` - Add S3 file references
 
-**When**: 
+**When**:
+
 - Setting up a new repository
 - Refreshing expired credentials
 - Adding external file references
 
 ### Git LFS Commands
+
 **Use for**: File tracking and management
+
 - `git lfs track` - Define which files to track
 - `git lfs ls-files` - See tracked files and status
 - `git lfs pull` - Download specific files
 - `git lfs untrack` - Stop tracking file patterns
 
 **When**:
+
 - Managing which files are stored externally
 - Downloading specific files
 - Checking file localization status
 
 ### Standard Git Commands
+
 **Use for**: Version control operations
+
 - `git add` - Stage files for commit
 - `git commit` - Create commits
 - `git push` - Upload commits and trigger file uploads
 - `git pull` - Get latest commits
 
 **When**:
+
 - Normal development workflow
 - Git DRS runs automatically in the background
 
@@ -49,13 +58,15 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 **Cause**: Expired or invalid credentials
 
 **Solution**:
+
 ```bash
 # Download new credentials from your data commons
 # Then refresh them
-git drs init --cred /path/to/new-credentials.json
+git drs init --cred /path/to/new-credentials.json --profile <name>
 ```
 
-**Prevention**: 
+**Prevention**:
+
 - Credentials expire after 30 days
 - Set a reminder to refresh them regularly
 
@@ -66,10 +77,11 @@ git drs init --cred /path/to/new-credentials.json
 **Cause**: DRS server is temporarily unavailable or credentials expired
 
 **Solutions**:
+
 1. Wait and retry the operation
 2. Refresh credentials:
    ```bash
-   git drs init --cred /path/to/credentials.json
+   git drs init --cred /path/to/credentials.json --profile <name>
    ```
 3. If persistent, download new credentials from the data commons
 
@@ -79,7 +91,8 @@ git drs init --cred /path/to/new-credentials.json
 
 **Cause**: Network connectivity issues
 
-**Solution**: 
+**Solution**:
+
 - Simply retry the command
 - These are usually temporary network issues
 
@@ -90,6 +103,7 @@ git drs init --cred /path/to/new-credentials.json
 **Cause**: Long-running operations timing out
 
 **Solution**: Add to `~/.ssh/config`:
+
 ```
 Host github.com
     TCPKeepAlive yes
@@ -100,11 +114,13 @@ Host github.com
 
 **Error**: Files not being tracked by LFS
 
-**Symptoms**: 
+**Symptoms**:
+
 - Large files committed directly to Git
 - `git lfs ls-files` doesn't show your files
 
 **Solution**:
+
 ```bash
 # Check what's currently tracked
 git lfs track
@@ -123,16 +139,18 @@ git commit -m "Track large file with LFS"
 
 **Error**: `[404] Object does not exist on the server`
 
-**Symptoms**: 
+**Symptoms**:
+
 - After clone, git pull fails
 
 **Solution**:
+
 ```bash
 # confirm repo has complete configuration
 git drs list-config
 
 # init your git drs project
-git drs init --cred /path/to/cred/file
+git drs init --cred /path/to/cred/file --profile <name>
 
 # attempt git pull again
 git lfs pull -I path/to/file
@@ -145,6 +163,7 @@ git lfs pull -I path/to/file
 **Cause**: Files may not have been properly uploaded or DRS records missing
 
 **Solution**:
+
 ```bash
 # Check repository status
 git drs list-config
@@ -163,9 +182,10 @@ cat .drs/*.log
 **Cause**: Repository not properly initialized
 
 **Solution**:
+
 ```bash
 # For existing Gen3 setup
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 
 # For new Gen3 setup
 git drs init --profile <name> \
@@ -185,13 +205,14 @@ git drs init --server anvil --terraProject <project-id>
 **Cause**: Mismatched configuration between global and local settings
 
 **Solution**:
+
 ```bash
 # Check both configurations
 cat ~/.drs/config
 cat .drs/config
 
 # Re-initialize if needed
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 ```
 
 ## Undoing Changes

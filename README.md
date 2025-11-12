@@ -1,90 +1,106 @@
 # Git DRS
 
-## About
+[![Tests](https://github.com/calypr/git-drs/actions/workflows/test.yaml/badge.svg)](https://github.com/calypr/git-drs/actions/workflows/test.yaml)
 
-Built off [Git LFS](https://git-lfs.com/), Git DRS allows you to store file contents outside of the Git repo such as in a gen3 bucket, while keeping a pointer to the file inside the repo. With Git DRS, data files that are traditionally too large to store in Git can be tracked along with your code in a single Git repo! And the best part: you can still use the same Git commands you know (and possibly love)! Using just a few extra command line tools, Git DRS helps consolidate your data and code into a single location. 
+**Git-LFS file management for DRS servers**
 
-## Basics
+Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with data platforms like Gen3 and AnVIL while maintaining your familiar Git workflow.
 
-Git DRS functions within Git, so you will only need a few extra commands (`git-lfs pull`, `git-drs init`, etc) that aren't the usual Git commands to do this. Git DRS primarily plugs in the following ways:
-- `git add`: during each add, Git LFS processes your file and checks in a pointer to git.
-- `git commit`: before each commit, Git DRS creates a DRS object that stores the details of your file needed to push.
-- `git push` / `git pull`: before each push, Git DRS handles the transfer of each committed file 
-- `git pull`: Git DRS pulls from the DRS server to your working directory if it doesn't already exists locally
+## Key Features
 
-## Getting Started: Gen3 DRS Server
+- **Unified Workflow**: Manage both code and large data files using standard Git commands
+- **DRS Integration**: Built-in support for Gen3 and AnVIL DRS servers
+- **Automatic Processing**: Files are processed automatically during commits and pushes
+- **Flexible Tracking**: Track individual files, patterns, or entire directories
 
-### Dependencies
+## How It Works
 
-1. Download [Git LFS](https://git-lfs.com/) (`brew install git-lfs` for Mac users)
-2. Configure LFS on your machine
-    ```
-    git lfs install --skip-smudge
-    ```
-3. Download credentials from your data commons
-   1. Login to your data commons
-   2. Click your email in the top right to go to your profile
-   3. Click Create API Key -> Download JSON
-   4. Make note of the path that it downloaded to
-4. Download Git DRS
-    ```
-    # build git-drs from source w/ custom gen3-client dependency
-    git clone --recurse-submodule https://github.com/bmeg/git-drs.git
-    cd git-drs
-    go build
+Git DRS extends Git LFS by:
 
-    # make the executable accessible
-    export PATH=$PATH:$(pwd)
-    ```
-5. Clone an existing DRS repo. If you don't already have one set up see "Setting up your repo"
-    ```
-    cd ..
+1. **Initialization**: Set up repository and DRS server configuration
+2. **Automatic Commits**: Create DRS objects during pre-commit hooks
+3. **Automatic Pushes**: Register files with DRS servers and upload to configured storage
+4. **On-Demand Downloads**: Pull specific files or patterns as needed
 
-    # clone test repo
-    git clone git@source.ohsu.edu:CBDS/git-drs-test-repo.git
-    cd git-drs-test-repo
-    ```
-6. Configure general acccess to your data commons
-    ```
-    git drs init --profile <data-commons-name> --apiendpoint https://data-commons-name.com/ --cred /path/to/downloaded/credentials.json
-    ```
+## Quick Start
 
-### Project Setup
+### Installation
 
-When you do `git drs init`, there are a couple things already set up for you...
-- `.drs` directory to automatically store any background files and logs needed during execution
-- Git settings to sync up the git with gen3 services
-- a gen3 profile is created for you so that you can access gen3
+```bash
+# Install Git LFS first
+brew install git-lfs  # macOS
+git lfs install --skip-smudge
 
-In your own repo, all you need to setup is a .drsconfig file. Once you have created a Git repo, create a `.drs/config` with the following structure
-
+# Install Git DRS (replace with desired version)
+export GIT_DRS_VERSION=0.2.2
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)" -- $GIT_DRS_VERSION
 ```
-{
-  "gen3Profile": "<gen3-profile-here>",
-  "gen3Project": "<project-id-here>",
-  "gen3Bucket": "<bucket-name-here>"
-}
-```
-- `gen3Profile` stores the name of the profile you specified in `git drs init` (eg the  `<data-commons-name>` above)
-- `gen3Project` is the project ID uniquely describing the data from your project. This will be provided to you by a data commons administrator
-- `gen3Bucket` is the name of the bucket that you will be using to store all your files. This will also be provided by a data commons administrator
 
+### Basic Usage
 
-### Quick Start Commands
+```bash
+# Initialize repository
+git drs init --cred /path/to/credentials.json --profile <name>
 
-**Track Specific File Types**
-Store all bam files as a pointer in the Git repo and store actual contents in the DRS server. This is handled by a configuration line in `.gitattributes`
-```
+# Track files
 git lfs track "*.bam"
 git add .gitattributes
+
+# Add and commit files
+git add my-file.bam
+git commit -m "Add data file"
+git push
+
+# Download files
+git lfs pull -I "*.bam"
 ```
 
-**Pull Files**
-Pull a single file
-```
-git lfs pull -I /path/to/file
-```
-Pull all non-localized files
-```
-git lfs pull
-```
+## Documentation
+
+For detailed setup and usage information, see the documentation:
+
+- **[Installation Guide](docs/installation.md)** - Platform-specific installation instructions
+- **[Getting Started](docs/getting-started.md)** - Repository initialization and basic workflows
+- **[Common Commands](docs/commands.md)** - Complete command reference and examples
+- **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
+- **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[Developer Guide](docs/developer-guide.md)** - Internals and development information
+
+## Supported Server
+
+- **Gen3 Data Commons** (eg CALYPR)
+- **AnVIL/Terra** DRS servers
+
+## Supported Environments
+
+- **Local Development** environments
+- **HPC Systems** (eg ARC)
+
+## Commands Overview
+
+| Command               | Description                                  |
+| --------------------- | -------------------------------------------- |
+| `git drs init`        | Initialize repository with DRS configuration |
+| `git drs list-config` | View current configuration                   |
+| `git drs add-url`     | Add files via S3 URLs                        |
+| `git lfs track`       | Track file patterns with LFS                 |
+| `git lfs pull`        | Download tracked files                       |
+| `git lfs ls-files`    | List tracked files                           |
+
+Use `--help` with any command for detailed usage information.
+
+## Requirements
+
+- Git LFS installed and configured
+- Access credentials for your DRS server
+- Go 1.24+ (for building from source)
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/calypr/git-drs/issues)
+- **Releases**: [GitHub Releases](https://github.com/calypr/git-drs/releases)
+- **Documentation**: See `docs/` folder for detailed guides
+
+## License
+
+This project is part of the CALYPR data commons ecosystem.

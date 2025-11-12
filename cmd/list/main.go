@@ -1,0 +1,158 @@
+package list
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drs"
+	"github.com/spf13/cobra"
+)
+
+var outJson = false
+var outFile string
+var listOutFile string
+
+var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
+
+func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
+	for i, s := range a {
+		if q == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// Pick out the most preferred checksum to display
+func getCheckSumStr(obj drs.DRSObject) string {
+	curPos := len(checksumPref) + 1
+	curVal := ""
+	for _, e := range obj.Checksums {
+		c := getChecksumPos(e.Type, checksumPref)
+		if c != -1 && c < curPos {
+			curPos = c
+			curVal = e.Type.String() + ":" + e.Checksum
+		}
+	}
+	return curVal
+}
+
+// Cmd line declaration
+var Cmd = &cobra.Command{
+	Use:   "list",
+	Short: "List DRS entities from server",
+	Args:  cobra.ExactArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+
+		logger, err := client.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		var f *os.File
+		var outWriter io.Writer
+		if listOutFile != "" {
+			f, err = os.Create(listOutFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			outWriter = f
+		} else {
+			outWriter = os.Stdout
+		}
+
+		client, err := client.NewIndexDClient(logger)
+		if err != nil {
+			return err
+		}
+		objChan, err := client.ListObjects()
+		if err != nil {
+			return err
+		}
+		if !outJson {
+			fmt.Fprintf(outWriter, "%-55s\t%-15s\t%-75s\t%s\n", "URI", "Size", "Checksum", "Name")
+		}
+
+		// for each result, check for error and print
+		for objResult := range objChan {
+			if objResult.Error != nil {
+				return objResult.Error
+			}
+			obj := objResult.Object
+			if outJson {
+				out, err := json.Marshal(*obj)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(outWriter, "%s\n", string(out))
+			} else {
+				fmt.Fprintf(outWriter, "%s\t%-15d\t%-75s\t%s\n", obj.SelfURI, obj.Size, getCheckSumStr(*obj), obj.Name)
+			}
+		}
+		return nil
+	},
+}
+var ListProjectCmd = &cobra.Command{
+	Use:   "list-project <project-id>",
+	Short: "List DRS entities from server",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		logger, err := client.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+
+		client, err := client.NewIndexDClient(logger)
+		if err != nil {
+			return err
+		}
+		objChan, err := client.ListObjectsByProject(args[0])
+		if err != nil {
+			return err
+		}
+
+		var f *os.File
+		var outWriter io.Writer
+		if outFile != "" {
+			f, err = os.Create(outFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			outWriter = f
+		} else {
+			outWriter = os.Stdout
+		}
+		for objResult := range objChan {
+			if objResult.Error != nil {
+				return objResult.Error
+			}
+			obj := objResult.Record
+			out, err := json.Marshal(*obj)
+			if err != nil {
+				return err
+			}
+			_, err = outWriter.Write(out)
+			if err != nil {
+				return err
+			}
+			_, err = outWriter.Write([]byte("\n"))
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+}
+
+func init() {
+	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
+	Cmd.Flags().StringVarP(&listOutFile, "out", "o", listOutFile, "File path to save output to")
+	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
+}

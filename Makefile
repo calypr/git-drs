@@ -22,11 +22,11 @@ else
 endif
 
 VERSION_LDFLAGS=\
- -X "github.com/bmeg/git-drs/version.BuildDate=$(shell date)" \
- -X "github.com/bmeg/git-drs/version.GitCommit=$(git_commit)" \
- -X "github.com/bmeg/git-drs/version.GitBranch=$(git_branch)" \
- -X "github.com/bmeg/git-drs/version.GitUpstream=$(git_upstream)" \
- -X "github.com/bmeg/git-drs/version.Version=$(version)"
+ -X "github.com/calypr/git-drs/version.BuildDate=$(shell date)" \
+ -X "github.com/calypr/git-drs/version.GitCommit=$(git_commit)" \
+ -X "github.com/calypr/git-drs/version.GitBranch=$(git_branch)" \
+ -X "github.com/calypr/git-drs/version.GitUpstream=$(git_upstream)" \
+ -X "github.com/calypr/git-drs/version.Version=$(version)"
 
 export CGO_ENABLED=0
 
@@ -39,18 +39,29 @@ build:
 	@go build -ldflags '$(VERSION_LDFLAGS)' -buildvcs=false .
 
 lint-depends:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.50.1
-	go install golang.org/x/tools/cmd/goimports
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/client9/misspell/cmd/misspell@latest
 
 # Run code style and other checks
+# Note: Using native Go tools instead of golangci-lint for Go 1.24 compatibility
 lint:
-	@golangci-lint run --timeout 3m --disable-all \
-	    --enable=vet \
-	    --enable=golint \
-	    --enable=gofmt \
-	    --enable=goimports \
-	    --enable=misspell \
-	    ./...
+	@echo "Running go vet..."
+	@go vet ./...
+	@echo "Running gofmt..."
+	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || (echo "Please run: gofmt -s -w ." && exit 1)
+	@echo "Running goimports..."
+	@test -z "$$(goimports -l . | tee /dev/stderr)" || (echo "Please run: goimports -w ." && exit 1)
+	@echo "Running misspell..."
+	@misspell -error .
+	@echo "✅ All lint checks passed!"
+
+# Auto-fix formatting issues
+fmt:
+	@echo "Formatting with gofmt..."
+	@gofmt -s -w .
+	@echo "Formatting with goimports..."
+	@goimports -w .
+	@echo "✅ Formatting complete!"
 
 # Run all tests
 test:
@@ -58,6 +69,21 @@ test:
 
 test-verbose:
 	@go test -v $(TESTS)
+
+# Run tests with coverage
+test-coverage:
+	@go test -v -race -coverprofile=coverage.out -covermode=atomic $(TESTS)
+	@go tool cover -func=coverage.out | tail -1
+
+# Generate HTML coverage report
+coverage-html: test-coverage
+	@go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+	@echo "Open it with: open coverage.html (macOS) or xdg-open coverage.html (Linux)"
+
+# View coverage in browser
+coverage-view: coverage-html
+	@open coverage.html || xdg-open coverage.html || echo "Please open coverage.html manually"
 
 # Make everything usually needed to prepare for a pull request
 full: proto install tidy lint test website webdash

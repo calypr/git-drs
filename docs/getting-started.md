@@ -9,6 +9,7 @@ Every Git repository using Git DRS must be initialized, whether you're creating 
 ### Cloning Existing Repository (Gen3)
 
 1. **Clone the Repository**
+
    ```bash
    git clone <repo-clone-url>.git
    cd <name-of-repo>
@@ -16,6 +17,7 @@ Every Git repository using Git DRS must be initialized, whether you're creating 
 
 2. **Configure SSH (for SSH URLs)**
    If using SSH URLs like `git@github.com:user/repo.git`, add to `~/.ssh/config`:
+
    ```
    Host github.com
        TCPKeepAlive yes
@@ -23,20 +25,23 @@ Every Git repository using Git DRS must be initialized, whether you're creating 
    ```
 
 3. **Get Credentials**
+
    - Log in to your data commons (e.g., https://calypr-public.ohsu.edu/)
    - Profile → Create API Key → Download JSON
    - Note the path for initialization
    - **Note**: Credentials expire after 30 days
 
 4. **Verify Configuration**
+
    ```bash
    git drs list-config
    ```
+
    Ensure `current_server` is `gen3` and `servers.gen3` contains endpoint, project ID, and bucket.
 
 5. **Initialize Session**
    ```bash
-   git drs init --cred /path/to/downloaded/credentials.json
+   git drs init --cred /path/to/downloaded/credentials.json --profile <name>
    ```
 
 ### New Repository Setup (Gen3)
@@ -44,6 +49,7 @@ Every Git repository using Git DRS must be initialized, whether you're creating 
 1. **Create GitHub Repository**
 
 2. **Clone and Navigate**
+
    ```bash
    git clone <repo-clone-url>.git
    cd <name-of-repo>
@@ -55,11 +61,13 @@ Every Git repository using Git DRS must be initialized, whether you're creating 
 
 5. **Get Project Details**
    Contact your data coordinator for:
+
    - Website URL
-   - Project ID  
+   - Project ID
    - Bucket name
 
 6. **Initialize Git DRS**
+
    ```bash
    git drs init --profile <data_commons_name> \
                 --url https://datacommons.com/ \
@@ -86,18 +94,21 @@ git lfs track
 ### Track Files
 
 **Single File**
+
 ```bash
 git lfs track path/to/specific-file.txt
 git add .gitattributes
 ```
 
 **File Pattern**
+
 ```bash
 git lfs track "*.bam"
 git add .gitattributes
 ```
 
 **Directory**
+
 ```bash
 git lfs track "data/**"
 git add .gitattributes
@@ -123,7 +134,7 @@ git add .gitattributes
 ```bash
 # Verify configuration
 git drs list-config
-git drs init --cred /path/to/credentials.json
+git drs init --cred /path/to/credentials.json --profile <name>
 
 # Track file type (if not already tracked)
 git lfs track "*.bam"
@@ -145,21 +156,25 @@ git push
 ### Downloading Files
 
 **Single File**
+
 ```bash
 git lfs pull -I path/to/file.bam
 ```
 
 **Pattern**
+
 ```bash
 git lfs pull -I "*.bam"
 ```
 
 **All Files**
+
 ```bash
 git lfs pull
 ```
 
 **Directory**
+
 ```bash
 git lfs pull -I "data/**"
 ```
@@ -203,44 +218,48 @@ See [S3 Integration Guide](adding-s3-files.md) for detailed examples.
 ## Configuration Management
 
 ### View Configuration
+
 ```bash
 git drs list-config
 ```
 
 ### Update Configuration
+
 ```bash
 # Refresh credentials
-git drs init --cred /path/to/new-credentials.json
+git drs init --cred /path/to/new-credentials.json --profile <name>
 
 # Change server
 git drs init --server anvil --terraProject <project-id>
 ```
 
 ### Configuration Locations
+
 - Global config: `~/.drs/config`
 - Repository config: `.drs/config`
 - Logs: `.drs/` directory
 
 ## Command Summary
 
-| Action | Commands |
-|--------|----------|
-| **Initialize** | `git drs init --cred <file>` |
-| **Track files** | `git lfs track "pattern"` |
-| **Add files** | `git add file.ext` |
-| **Commit** | `git commit -m "message"` |
-| **Push** | `git push` |
-| **Download** | `git lfs pull -I "pattern"` |
-| **Check status** | `git lfs ls-files` |
-| **View config** | `git drs list-config` |
+| Action           | Commands                                      |
+| ---------------- | --------------------------------------------- |
+| **Initialize**   | `git drs init --cred <file> --profile <name>` |
+| **Track files**  | `git lfs track "pattern"`                     |
+| **Add files**    | `git add file.ext`                            |
+| **Commit**       | `git commit -m "message"`                     |
+| **Push**         | `git push`                                    |
+| **Download**     | `git lfs pull -I "pattern"`                   |
+| **Check status** | `git lfs ls-files`                            |
+| **View config**  | `git drs list-config`                         |
 
 ## Session Workflow
 
 For each work session:
 
 1. **Initialize credentials** (if expired)
+
    ```bash
-   git drs init --cred /path/to/credentials.json
+   git drs init --cred /path/to/credentials.json --profile <name>
    ```
 
 2. **Work with files** (track, add, commit, push)

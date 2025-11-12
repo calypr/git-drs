@@ -24,7 +24,7 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
-		myLogger, err := client.NewLogger("", false)
+		myLogger, err := client.NewLogger("", true)
 		if err != nil {
 			myLogger.Logf("Failed to open log file: %v", err)
 			return err
@@ -40,14 +40,12 @@ var Cmd = &cobra.Command{
 		}
 		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
-		fmt.Println("Preparing DRS objects for commit...")
 		myLogger.Logf("Preparing DRS objects for commit...\n")
 		err = client.UpdateDrsObjects(myLogger)
 		if err != nil {
 			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err
 		}
-		fmt.Println("DRS objects prepared for commit!")
 		myLogger.Logf("DRS objects prepared for commit!\n")
 
 		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")

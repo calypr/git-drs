@@ -86,6 +86,21 @@ func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 		drsId := ComputeDeterministicUUID(file.Name, file.Oid)
 		if processedDrsIds[drsId] {
 			logger.Logf("Skipping staged file %s with OID %s, DRS ID %s already processed in this batch.", file.Name, file.Oid, drsId)
+
+		// check hash to see if record already exists in indexd (source of truth)
+		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
+		if err != nil {
+			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
+		}
+
+		matchingRecord, err := FindMatchingRecord(records, cfg.ProjectId, &file.Name)
+		if err != nil {
+			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.ProjectId, err)
+		}
+
+		// skip if matching record exists
+		if matchingRecord != nil {
+			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}
 		processedDrsIds[drsId] = true

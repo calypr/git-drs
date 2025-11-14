@@ -18,27 +18,35 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download <oid>",
+	Use:   "download <remote> <oid> --name",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		oid := args[0]
+		remote, oid := args[0], args[1]
+		var namePtr *string = nil
+		if cmd.Flags().Changed("name") {
+			nameVal, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+			namePtr = &nameVal
+		}
 		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
 		}
 		defer logger.Close()
 
-		indexdClient, err := client.NewIndexDClient(logger)
+		indexdClient, err := client.NewIndexDClient(logger, config.Profile(remote))
 		if err != nil {
 			logger.Logf("\nerror creating indexd client: %s", err)
 			return err
 		}
 
 		// get signed url
-		accessUrl, err := indexdClient.GetDownloadURL(oid)
+		accessUrl, err := indexdClient.GetDownloadURL(oid, namePtr)
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
 		}
@@ -70,4 +78,5 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
+	Cmd.Flags().String("name", "", "Optional file name to select a specific record for download (required if multiple records share the same OID)")
 }

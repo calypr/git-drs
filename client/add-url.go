@@ -101,7 +101,7 @@ func WithLogger(logger LoggerInterface) AddURLOption {
 //   - profile: the Gen3 profile to use for authentication
 //   - authHandler: handler for adding authentication headers
 //   - httpClient: the HTTP client to use
-func getBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, profile string, authHandler AuthHandler, httpClient *http.Client) (S3Bucket, error) {
+func getBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL string, profile config.Profile, authHandler AuthHandler, httpClient *http.Client) (*S3Bucket, error) {
 	// Use provided client or create default
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -109,77 +109,81 @@ func getBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, p
 
 	req, err := http.NewRequestWithContext(ctx, "GET", bucketsEndpointURL, nil)
 	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Add authentication using the auth handler
 	if authHandler != nil {
 		if err := authHandler.AddAuthHeader(req, profile); err != nil {
-			return S3Bucket{}, fmt.Errorf("failed to add authentication: %w", err)
+			return nil, fmt.Errorf("failed to add authentication: %w", err)
 		}
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to fetch bucket information: %w", err)
+		return nil, fmt.Errorf("failed to fetch bucket information: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return S3Bucket{}, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
 	// extract bucket endpoint
 	var bucketInfo S3BucketsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&bucketInfo); err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to decode bucket information: %w", err)
+		return nil, fmt.Errorf("failed to decode bucket information: %w", err)
 	}
 
 	if info, exists := bucketInfo.S3Buckets[bucket]; exists {
 		if info.EndpointURL != "" && info.Region != "" {
-			return info, nil
+			return &info, nil
 		}
-		return S3Bucket{}, errors.New("endpoint_url or region not found for bucket")
+		return nil, errors.New("endpoint_url or region not found for bucket")
 	}
 
-	return S3Bucket{}, nil
+	return nil, nil
 }
 
 // getBucketDetails fetches bucket details from Gen3, loading config and auth.
 // This is the production version that includes all config/auth dependencies.
-func getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (S3Bucket, error) {
+func getBucketDetails(ctx context.Context, bucket string, profile config.Profile, httpClient *http.Client) (*S3Bucket, error) {
 	// load config
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to load config: %w", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+	gfg, err := cfg.SelectGen3ServerConfig(profile)
+	if err != nil {
+		return nil, err
 	}
 
 	// confirm current server exists and is gen3
-	if cfg.CurrentServer != "gen3" && (cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Endpoint == "") {
-		return S3Bucket{}, errors.New("Gen3 server endpoint is not configured in the config. Use `git drs list-config` to see and `git drs init` to .")
+	if cfg.CurrentServer != "gen3" || cfg.Servers.Gen3 == nil {
+		return nil, errors.New("Gen3 server endpoint is not configured in the config. Use `git drs list-config` to see and `git drs init` to .")
 	}
 
 	// get all buckets
-	baseURL, err := url.Parse(cfg.Servers.Gen3.Endpoint)
+	baseURL, err := url.Parse(gfg.Endpoint)
 	if err != nil {
-		return S3Bucket{}, fmt.Errorf("failed to parse base URL: %w", err)
+		return nil, fmt.Errorf("failed to parse base URL: %w", err)
 	}
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 
 	// Use the AuthHandler pattern for cleaner auth handling
-	return getBucketDetailsWithAuth(ctx, bucket, baseURL.String(), cfg.Servers.Gen3.Auth.Profile, &RealAuthHandler{}, httpClient)
+	return getBucketDetailsWithAuth(ctx, bucket, baseURL.String(), profile, &RealAuthHandler{}, httpClient)
 }
 
 // fetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails S3Bucket, s3Client *s3.Client, logger LoggerInterface) (int64, string, error) {
+func fetchS3MetadataWithBucketDetails(ctx context.Context, cmd *AddUrlCmd, bucketDetails *S3Bucket, s3Client *s3.Client, logger LoggerInterface) (int64, string, error) {
 	// Use NoOpLogger if no logger provided
 	if logger == nil {
 		logger = &NoOpLogger{}
 	}
 
 	// Parse S3 URL
-	bucket, key, err := utils.ParseS3URL(s3URL)
+	bucket, key, err := utils.ParseS3URL(cmd.S3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
@@ -205,11 +209,11 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 		var configOptions []func(*awsConfig.LoadOptions) error
 
 		// Override credentials if provided
-		if awsAccessKey != "" && awsSecretKey != "" {
+		if cmd.AwsAccessKey != "" && cmd.AwsSecretKey != "" {
 			configOptions = append(configOptions,
 				awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-					awsAccessKey,
-					awsSecretKey,
+					cmd.AwsAccessKey,
+					cmd.AwsSecretKey,
 					"", // session token (empty for basic credentials)
 				)),
 			)
@@ -217,8 +221,8 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 		// Override region with priority: parameter > bucketDetails > default
 		regionToUse := ""
-		if region != "" {
-			regionToUse = region
+		if cmd.RegionFlag != "" {
+			regionToUse = cmd.RegionFlag
 		} else if bucketDetails.Region != "" {
 			regionToUse = bucketDetails.Region
 		}
@@ -236,8 +240,8 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 		// Determine endpoint with priority: parameter > bucketDetails > default config
 		endpointToUse := ""
-		if endpoint != "" {
-			endpointToUse = endpoint
+		if cmd.EndpointFlag != "" {
+			endpointToUse = cmd.EndpointFlag
 		} else if bucketDetails.EndpointURL != "" {
 			endpointToUse = bucketDetails.EndpointURL
 		}
@@ -328,24 +332,24 @@ func fetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 // fetchS3Metadata fetches S3 metadata (size, modified date) for a given S3 URL.
 // This is the production version that fetches bucket details from Gen3.
-func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger LoggerInterface) (int64, string, error) {
+func fetchS3Metadata(ctx context.Context, cmd *AddUrlCmd, s3Client *s3.Client, httpClient *http.Client, logger LoggerInterface) (int64, string, error) {
 	// Use NoOpLogger if no logger provided
 	if logger == nil {
 		logger = &NoOpLogger{}
 	}
 
 	// Fetch AWS bucket region and endpoint from /data/buckets (fence in gen3)
-	bucket, _, err := utils.ParseS3URL(s3URL)
+	bucket, _, err := utils.ParseS3URL(cmd.S3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	bucketDetails, err := getBucketDetails(ctx, bucket, httpClient)
+	bucketDetails, err := getBucketDetails(ctx, bucket, cmd.Profile, httpClient)
 	if err != nil {
 		return 0, "", fmt.Errorf("Unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, ADDURL_HELP_MSG)
 	}
 
-	return fetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
+	return fetchS3MetadataWithBucketDetails(ctx, cmd, bucketDetails, s3Client, logger)
 }
 
 // upserts index record, so that if...
@@ -369,13 +373,12 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 
 	uuid := DrsUUID(projectId, sha256)
 
-	// handle if record already exists
 	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
-	matchingRecord, err := FindMatchingRecord(records, projectId)
+	matchingRecord, err := FindMatchingRecord(records, projectId, &url)
 	if err != nil {
 		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}
@@ -390,11 +393,9 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		// if record exists with different url, update via index/{guid}
 		if matchingRecord.Did == uuid && !slices.Contains(matchingRecord.URLs, url) {
 			logger.Log("updating existing record with new url")
-
 			updateInfo := UpdateInputInfo{
 				URLs: []string{url},
 			}
-
 			_, err := indexdClient.UpdateIndexdRecord(&updateInfo, matchingRecord.Did)
 			if err != nil {
 				return fmt.Errorf("failed to update indexd record: %w", err)
@@ -432,29 +433,18 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 	return nil
 }
 
-// upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger LoggerInterface) error {
-	// Use NoOpLogger if no logger provided
-	if logger == nil {
-		logger = &NoOpLogger{}
-	}
-
-	indexdClient, err := NewIndexDClient(&NoOpLogger{})
-	if err != nil {
-		return fmt.Errorf("failed to initialize IndexD client: %w", err)
-	}
-
-	// get project ID
-	projectId, err := config.GetProjectId()
-	if err != nil {
-		return fmt.Errorf("Error getting project ID: %v", err)
-	}
-
-	return upsertIndexdRecordWithClient(indexdClient, projectId, url, sha256, fileSize, modifiedDate, logger)
+type AddUrlCmd struct {
+	Profile      config.Profile `json:"remote"`
+	S3URL        string         `json:"s3URL"`
+	Sha256       string         `json:"sha256"`
+	AwsAccessKey string         `json:"awsAccessKey"`
+	AwsSecretKey string         `json:"awsSecretKey"`
+	RegionFlag   string         `json:"regionFlag"`
+	EndpointFlag string         `json:"endpointFlag"`
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...AddURLOption) (S3Meta, error) {
+func AddURL(cmd *AddUrlCmd, opts ...AddURLOption) (*S3Meta, error) {
 	// Create context with 10-second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -471,34 +461,34 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 	}
 
 	// Validate inputs
-	if err := validateInputs(s3URL, sha256); err != nil {
-		return S3Meta{}, err
+	if err := validateInputs(cmd.S3URL, cmd.Sha256); err != nil {
+		return nil, err
 	}
 
 	// check that lfs is tracking the file
-	_, relPath, err := utils.ParseS3URL(s3URL)
+	_, relPath, err := utils.ParseS3URL(cmd.S3URL)
 	if err != nil {
-		return S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
+		return nil, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
 	// open .gitattributes
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
-		return S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
+		return nil, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
 	}
 	if !isLFS {
-		return S3Meta{}, fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
+		return nil, fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
 	}
 
 	// Fetch S3 metadata (size, modified date)
 	cfg.logger.Log("Fetching S3 metadata...")
-	fileSize, modifiedDate, err := fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.s3Client, cfg.httpClient, cfg.logger)
+	fileSize, modifiedDate, err := fetchS3Metadata(ctx, cmd, cfg.s3Client, cfg.httpClient, cfg.logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {
-			return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w. Double check your configured AWS credentials and endpoint url", err)
+			return nil, fmt.Errorf("failed to fetch S3 metadata: %w. Double check your configured AWS credentials and endpoint url", err)
 		}
-		return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
+		return nil, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
 	cfg.logger.Log("Fetched S3 metadata successfully:")
 	cfg.logger.Logf(" - File Size: %d bytes", fileSize)
@@ -506,12 +496,24 @@ func AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag 
 
 	// Create indexd record
 	cfg.logger.Log("Processing indexd record...")
-	if err := upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, cfg.logger); err != nil {
-		return S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
+
+	indexdClient, err := NewIndexDClient(&NoOpLogger{}, config.Profile(cmd.Profile))
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize IndexD client: %w", err)
 	}
+	cl, ok := indexdClient.(*IndexDClient)
+	if !ok {
+		return nil, fmt.Errorf("indexdClient is not of type *IndexDClient")
+	}
+
+	err = upsertIndexdRecordWithClient(indexdClient, cl.ProjectId, cmd.S3URL, cmd.Sha256, fileSize, modifiedDate, cl.logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create indexd record: %w", err)
+	}
+
 	cfg.logger.Log("Indexd updated")
 
-	return S3Meta{
+	return &S3Meta{
 		Size:         fileSize,
 		LastModified: modifiedDate,
 	}, nil

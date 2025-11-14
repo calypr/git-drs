@@ -17,7 +17,6 @@ var (
 	drsClient client.ObjectStoreClient
 	operation string // "upload" or "download", set by the init message
 )
-
 var Cmd = &cobra.Command{
 	Use:   "transfer",
 	Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
@@ -36,13 +35,50 @@ var Cmd = &cobra.Command{
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
 
-		drsClient, err = client.NewIndexDClient(myLogger)
+		var remoteName string
+
+		// Read the first (init) message outside the main loop
+		if !scanner.Scan() {
+			err := fmt.Errorf("failed to read initial message from stdin")
+			myLogger.Logf("Error: %s", err)
+			// No OID yet, so pass empty string
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		var initMsg map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
+			myLogger.Logf("error decoding initial JSON message: %s", err)
+			return err
+		}
+
+		// Handle "init" event and extract remote
+		if evt, ok := initMsg["event"]; ok && evt == "init" {
+			if r, ok := initMsg["remote"].(string); ok {
+				remoteName = r
+				myLogger.Logf("Initializing connection. Remote used: %s", remoteName)
+			} else {
+				myLogger.Log("Initializing connection, but remote field was not found or wasn't a string.")
+			}
+
+			// Respond with an empty json object via stdout
+			encoder.Encode(struct{}{})
+		} else {
+			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
+			myLogger.Logf("Error: %s", err)
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		// Pass the extracted remoteName to NewIndexDClient
+		drsClient, err = client.NewIndexDClient(myLogger, config.Profile(remoteName))
 		if err != nil {
 			myLogger.Logf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())
 			return err
 		}
 
+		// The scanner is now positioned for the next message (download/upload/terminate)
 		for scanner.Scan() {
 			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
@@ -51,14 +87,7 @@ var Cmd = &cobra.Command{
 				continue
 			}
 
-			// Example: handle only "init" event
-			if evt, ok := msg["event"]; ok && evt == "init" {
-
-				// Respond with an empty json object via stdout
-				encoder.Encode(struct{}{})
-				myLogger.Log("Initializing connection")
-
-			} else if evt, ok := msg["event"]; ok && evt == "download" {
+			if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
 				myLogger.Logf("Download requested")
 
@@ -73,7 +102,7 @@ var Cmd = &cobra.Command{
 				myLogger.Logf("Downloading file OID %s", downloadMsg.Oid)
 
 				// get signed url
-				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
+				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid, &downloadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
@@ -123,7 +152,7 @@ var Cmd = &cobra.Command{
 				myLogger.Log(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 
 				// otherwise, register the file (create indexd record and upload file)
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+				drsObj, err := drsClient.RegisterFile(&uploadMsg)
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
 					myLogger.Log(errMsg)

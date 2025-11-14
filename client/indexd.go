@@ -21,6 +21,7 @@ import (
 	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -30,19 +31,19 @@ var ProfileConfig jwt.Credential
 // AuthHandler is an interface for adding authentication headers
 // This allows us to inject different auth implementations for testing vs production
 type AuthHandler interface {
-	AddAuthHeader(req *http.Request, profile string) error
+	AddAuthHeader(req *http.Request, profile config.Profile) error
 }
 
 // RealAuthHandler uses actual Gen3 authentication
 type RealAuthHandler struct{}
 
-func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile config.Profile) error {
 	return addGen3AuthHeader(req, profile)
 }
 
 type IndexDClient struct {
 	Base        *url.URL
-	Profile     string
+	Profile     config.Profile
 	ProjectId   string
 	BucketName  string
 	logger      LoggerInterface
@@ -54,7 +55,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
+func NewIndexDClient(logger LoggerInterface, profile config.Profile) (ObjectStoreClient, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, err
@@ -64,7 +65,11 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	if cfg.CurrentServer != config.Gen3ServerType {
 		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
 	}
-	gen3Auth := cfg.Servers.Gen3.Auth
+
+	gsc, err := cfg.SelectGen3ServerConfig(profile)
+	if err != nil {
+		return nil, err
+	}
 
 	var clientLogger LoggerInterface
 	if logger == nil {
@@ -73,16 +78,10 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 		clientLogger = logger
 	}
 
-	// get the gen3Profile and endpoint
-	profile := gen3Auth.Profile
-	if profile == "" {
-		return nil, fmt.Errorf("No gen3 profile specified. Please provide a gen3Profile key in your .drs/config")
-	}
-
 	// Attempt to parse config defined in .gen3/ directory.
 	// In instances where a token and not a file is provided, This function can be ignored.
 	if ProfileConfig.AccessToken == "" {
-		ProfileConfig, err = conf.ParseConfig(profile)
+		ProfileConfig, err = conf.ParseConfig(string(profile))
 		if err != nil && !errors.Is(err, jwt.ErrProfileNotFound) {
 			return nil, err
 		}
@@ -94,12 +93,12 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 	}
 
 	// get the gen3Project and gen3Bucket from the config
-	projectId := gen3Auth.ProjectID
+	projectId := gsc.ProjectID
 	if projectId == "" {
 		return nil, fmt.Errorf("No gen3 project specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 
-	bucketName := gen3Auth.Bucket
+	bucketName := gsc.Bucket
 	if bucketName == "" {
 		return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
 	}
@@ -114,9 +113,10 @@ func NewIndexDClient(logger LoggerInterface) (ObjectStoreClient, error) {
 }
 
 // GetDownloadURL implements ObjectStoreClient
-func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
+func (cl *IndexDClient) GetDownloadURL(oid string, name *string) (*drs.AccessURL, error) {
 
 	cl.logger.Logf("Try to get download url for file OID %s", oid)
+	cl.logger.Logf("Try to get download name %s", *name)
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
@@ -131,7 +131,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	}
 
 	// Find a record that matches the client's project ID
-	matchingRecord, err := FindMatchingRecord(records, cl.ProjectId)
+	matchingRecord, err := FindMatchingRecord(records, cl.ProjectId, name)
 	if err != nil {
 		cl.logger.Logf("error finding matching record for project %s: %s", cl.ProjectId, err)
 		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
@@ -193,22 +193,24 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
 // DRS will use any matching indexd record / file that already exists
-func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
-	cl.logger.Logf("register file started for oid: %s", oid)
+func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, error) {
+	cl.logger.Logf("Record path: '%s'", uRec.Path)
+	cl.logger.Logf("register file started for oid: %s", uRec.Oid)
 
+	oid := uRec.Oid
 	// get all existing hashes
-	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), oid)
+	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), uRec.Oid)
 	if err != nil {
-		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
+		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", uRec.Oid, err)
 	}
 
 	// use any indexd record from the same project if it exists
-	projectId, err := config.GetProjectId()
+	projectId, err := config.GetProjectId(cl.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("Error getting project ID: %v", err)
 	}
 
-	matchingRecord, err := FindMatchingRecord(records, projectId)
+	matchingRecord, err := FindMatchingRecord(records, projectId, &uRec.Path)
 	if err != nil {
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}
@@ -255,7 +257,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	// determine if file is downloadable
 	isDownloadable := true
 	cl.logger.Log("checking if file is downloadable")
-	signedUrl, err := cl.GetDownloadURL(oid)
+	signedUrl, err := cl.GetDownloadURL(oid, &uRec.Path)
 	if err != nil || signedUrl == nil {
 		isDownloadable = false
 	} else { // signedUrl exists
@@ -278,7 +280,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
+		err = g3cmd.UploadSingleMultipart(string(cl.Profile), filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -410,11 +412,11 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 // HELPERS //
 /////////////
 
-func addGen3AuthHeader(req *http.Request, profile string) error {
+func addGen3AuthHeader(req *http.Request, profile config.Profile) error {
 	// extract accessToken from gen3 profile and insert into header of request
 	var err error
 	if ProfileConfig.AccessToken == "" {
-		ProfileConfig, err = conf.ParseConfig(profile)
+		ProfileConfig, err = conf.ParseConfig(string(profile))
 		if err != nil {
 			if errors.Is(err, jwt.ErrProfileNotFound) {
 				return fmt.Errorf("Profile not in config file. Need to run 'git drs init' for gen3 first, see git drs init --help\n")
@@ -637,7 +639,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, error) {
+func FindMatchingRecord(records []OutputInfo, projectId string, name *string) (*OutputInfo, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -650,12 +652,17 @@ func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, er
 
 	// Get the first record with matching authz if exists
 	for _, record := range records {
+		// You get back the first record found if name is not specified
 		if slices.Contains(record.Authz, expectedAuthz) {
-			return &record, nil
+			if name == nil {
+				return &record, nil
+			} else if name != nil && record.FileName == *name {
+				return &record, nil
+			}
 		}
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("No record found that contains the project %s or has the filename %s", expectedAuthz, *name)
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET

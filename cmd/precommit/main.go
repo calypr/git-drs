@@ -18,12 +18,14 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "precommit",
+	Use:   "precommit <remote>",
 	Short: "pre-commit hook to create DRS objects",
 	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
+
+		remote := config.Profile(args[0])
 		myLogger, err := client.NewLogger("", true)
 		if err != nil {
 			myLogger.Logf("Failed to open log file: %v", err)
@@ -41,7 +43,7 @@ var Cmd = &cobra.Command{
 		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
 		myLogger.Logf("Preparing DRS objects for commit...\n")
-		err = client.UpdateDrsObjects(myLogger)
+		err = client.UpdateDrsObjects(myLogger, remote)
 		if err != nil {
 			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err

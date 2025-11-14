@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/spf13/cobra"
 )
@@ -42,9 +43,9 @@ func getCheckSumStr(obj drs.DRSObject) string {
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list <remote>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		logger, err := client.NewLogger("", true)
@@ -66,7 +67,7 @@ var Cmd = &cobra.Command{
 			outWriter = os.Stdout
 		}
 
-		client, err := client.NewIndexDClient(logger)
+		client, err := client.NewIndexDClient(logger, config.Profile(args[0]))
 		if err != nil {
 			return err
 		}
@@ -98,7 +99,7 @@ var Cmd = &cobra.Command{
 	},
 }
 var ListProjectCmd = &cobra.Command{
-	Use:   "list-project <project-id>",
+	Use:   "list-project <remote>",
 	Short: "List DRS entities from server",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -108,11 +109,16 @@ var ListProjectCmd = &cobra.Command{
 		}
 		defer logger.Close()
 
-		client, err := client.NewIndexDClient(logger)
+		idxCli, err := client.NewIndexDClient(logger, config.Profile(args[0]))
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListObjectsByProject(args[0])
+
+		dcl, ok := idxCli.(*client.IndexDClient)
+		if !ok {
+			return fmt.Errorf("client is not an indexclient")
+		}
+		objChan, err := idxCli.ListObjectsByProject(dcl.ProjectId)
 		if err != nil {
 			return err
 		}

@@ -8,17 +8,18 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
 // AddURLCmd represents the add-url command
 var AddURLCmd = &cobra.Command{
-	Use:   "add-url <url> --sha256 <sha256>",
+	Use:   "add-url <remote> <url> --sha256 <sha256>",
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return fmt.Errorf("add-url requires 1 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+		if len(args) != 2 {
+			return fmt.Errorf("add-url requires 2 args, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
 		}
 		return nil
 	},
@@ -38,7 +39,7 @@ var AddURLCmd = &cobra.Command{
 		}
 
 		// Parse arguments
-		s3URL := args[0]
+		s3URL := args[1]
 		sha256, _ := cmd.Flags().GetString("sha256")
 		awsAccessKey, _ := cmd.Flags().GetString(client.AWS_KEY_FLAG_NAME)
 		awsSecretKey, _ := cmd.Flags().GetString(client.AWS_SECRET_FLAG_NAME)
@@ -55,8 +56,18 @@ var AddURLCmd = &cobra.Command{
 			myLogger.Log("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
-		// Call client.AddURL to handle Gen3 interactions
-		meta, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint, client.WithLogger(myLogger))
+		meta, err := client.AddURL(
+			&client.AddUrlCmd{
+				Profile:      config.Profile(args[0]),
+				S3URL:        s3URL,
+				Sha256:       sha256,
+				AwsAccessKey: awsAccessKey,
+				AwsSecretKey: awsSecretKey,
+				RegionFlag:   awsRegion,
+				EndpointFlag: awsEndpoint,
+			},
+			client.WithLogger(myLogger),
+		)
 		if err != nil {
 			return err
 		}

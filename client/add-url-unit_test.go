@@ -1117,7 +1117,7 @@ func TestFindMatchingRecord_SingleMatch(t *testing.T) {
 	}
 	projectId := "test-project"
 
-	result, err := FindMatchingRecord(records, projectId)
+	result, err := FindMatchingRecord(records, projectId, &records[0].URLs[0])
 	if err != nil {
 		t.Errorf("FindMatchingRecord() unexpected error: %v", err)
 	}
@@ -1127,6 +1127,7 @@ func TestFindMatchingRecord_SingleMatch(t *testing.T) {
 	if result.Did != "uuid-1" {
 		t.Errorf("FindMatchingRecord() expected Did uuid-1, got %s", result.Did)
 	}
+
 }
 
 func TestFindMatchingRecord_MultipleRecordsFirstMatch(t *testing.T) {
@@ -1149,16 +1150,18 @@ func TestFindMatchingRecord_MultipleRecordsFirstMatch(t *testing.T) {
 	}
 	projectId := "test-project"
 
-	result, err := FindMatchingRecord(records, projectId)
-	if err != nil {
-		t.Errorf("FindMatchingRecord() unexpected error: %v", err)
-	}
-	if result == nil {
-		t.Fatalf("FindMatchingRecord() expected a match, got nil")
-	}
-	// Should return the first matching record
-	if result.Did != "uuid-1" {
-		t.Errorf("FindMatchingRecord() expected Did uuid-1, got %s", result.Did)
+	results, err := FindMatchingRecord(records, projectId)
+	for _, result := range results {
+		if err != nil {
+			t.Errorf("FindMatchingRecord() unexpected error: %v", err)
+		}
+		if result == nil {
+			t.Fatalf("FindMatchingRecord() expected a match, got nil")
+		}
+		// Should return the first matching record
+		if result.Did != "uuid-1" {
+			t.Errorf("FindMatchingRecord() expected Did uuid-1, got %s", result.Did)
+		}
 	}
 }
 
@@ -1176,7 +1179,7 @@ func TestFindMatchingRecord_NoMatch(t *testing.T) {
 	if err != nil {
 		t.Errorf("FindMatchingRecord() unexpected error: %v", err)
 	}
-	if result != nil {
+	if result[0] != nil {
 		t.Errorf("FindMatchingRecord() expected nil for no match, got %v", result)
 	}
 }

@@ -11,6 +11,14 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
+func GitRemoteAdd(remote, ghRepo string) (string, error) {
+	resp, err := SimpleRun([]string{"git", "remote", "add", remote, ghRepo})
+	if err != nil {
+		return "", err
+	}
+	return resp, nil
+}
+
 func GitTopLevel() (string, error) {
 	path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
 	if err != nil {

@@ -1,4 +1,4 @@
-package initialize
+package remote
 
 import (
 	"bufio"
@@ -16,52 +16,49 @@ import (
 )
 
 var (
-	server       string
-	apiEndpoint  string
-	bucket       string
-	credFile     string
-	fenceToken   string
-	profile      string
-	project      string
-	terraProject string
+	bucket     string
+	credFile   string
+	fenceToken string
+	project    string
+	ghRepo     string
 )
 
-// Cmd line declaration
+var Remote = &cobra.Command{
+	Use:   "remote", // The name the user types: 'remote'
+	Short: "Manage git-drs remote servers",
+	Long:  `Description: Commands for managing remote data repository servers (e.g., gen3, AnVIL).`,
+}
+
 var Cmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize repo and server access for git-drs",
+	Use:   "add <remote_name> <github_remote_location>",
+	Short: "Add a remote to git-drs",
 	Long: "Description:" +
-		"\n  Initialize repo and server access for git-drs with a gen3 or AnVIL server, gen3 as default" +
+		"\n  Add a remote to a repo and server access for git-drs with a gen3 or AnVIL server, gen3 as default" +
 		"\n  How to Use:" +
-		"\n   ~ gen3 first init: provide a --url, --bucket, --profile, --project, and either a --cred or --token flag" +
-		"\n   ~ general gen3 inits: just pass in a --cred or --token flag" +
-		"\n   ~ AnVIL first init: set --server as anvil and provide a --terraProject" +
-		"\n   ~ general AnVIL inits: set --server as anvil" +
-		"\n   ~ See below for the flag requirements for each server",
-	Args: cobra.ExactArgs(0),
+		"\n   ~ First init: provide a --bucket, --project, and either a --cred or --token" +
+		"\n   ~ refresh token re-add: just pass in a --cred or --token flag",
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Init(server, apiEndpoint, bucket, credFile, fenceToken, profile, project, terraProject)
+		profile := args[0]
+		ghremote := args[1]
+		return Add(config.Profile(profile), ghremote, bucket, credFile, fenceToken, project)
 	},
 }
 
 func init() {
-	Cmd.Flags().StringVar(&server, "server", "gen3", "Options for DRS server: gen3 or anvil")
-	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
+	Remote.AddCommand(Cmd)
 	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
 	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
 	Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Specify the token to be used as a replacement for a credential file for temporary access")
-	Cmd.Flags().StringVar(&profile, "profile", "", "[gen3] Specify the gen3 profile to use")
 	Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
-	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")
 }
 
-func Init(server string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
-	// validate server
-
-	err := config.IsValidServerType(server)
+func Add(profile config.Profile, ghRepo string, bucket string, credFile string, fenceToken string, project string) error {
+	resp, err := utils.GitRemoteAdd(string(profile), ghRepo)
 	if err != nil {
 		return err
 	}
+	fmt.Println("REMOTE ADD RESP: ", resp)
 
 	// setup logging
 	logg, err := client.NewLogger("", true)
@@ -88,28 +85,25 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 		return fmt.Errorf("Error: unable to load config file: %v\n", err)
 	}
 
-	// if anvilMode is not set, ensure all other flags are provided
-	switch server {
-	case string(config.Gen3ServerType):
-		// make sure at least one of the credentials params is provided
-		if credFile == "" && fenceToken == "" && profile == "" {
-			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
-		}
+	gsc, err := cfg.SelectGen3ServerConfig(profile)
+	if err != nil {
+		return err
+	}
 
-		err = gen3Init(config.Profile(profile), credFile, fenceToken, project, bucket, logg)
-		if err != nil {
-			return fmt.Errorf("Error configuring gen3 server: %v", err)
-		}
-	case string(config.AnvilServerType):
-		// ensure either terraProject is provided or already in config
-		if terraProject == "" && (cfg.Servers.Anvil == nil || cfg.Servers.Anvil.Auth.TerraProject == "") {
-			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
-		}
+	// make sure at least one of the credentials params is provided
+	if credFile == "" && fenceToken == "" && profile == "" {
+		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+	}
 
-		err = anvilInit(terraProject, logg)
-		if err != nil {
-			return fmt.Errorf("Error configuring anvil server: %v", err)
-		}
+	if (gsc.Bucket == "" || gsc.ProjectID == "") ||
+		(bucket == "" || project == "" || profile == "") {
+		return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
+
+	}
+
+	err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
+	if err != nil {
+		return fmt.Errorf("Error configuring gen3 server: %v", err)
 	}
 
 	// add some patterns to the .gitignore if not already present
@@ -118,7 +112,7 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 
 	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
 	for _, pattern := range gitignorePatterns {
-		if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
+		if err := ensureDrsObjectsIgnore(pattern); err != nil {
 			return fmt.Errorf("Init Error: %v\n", err)
 		}
 	}
@@ -150,6 +144,7 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 func gen3Init(profile config.Profile, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
 	// double check that one of the credentials params is provided
 
+	var apiEndpoint string
 	var err error
 	if fenceToken == "" {
 		cred := jwt.Configure{}
@@ -226,7 +221,7 @@ func gen3Init(profile config.Profile, credFile string, fenceToken string, projec
 	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config
-	err = initGitConfig(config.Gen3ServerType)
+	err = initGitConfig()
 	if err != nil {
 		return err
 	}
@@ -265,90 +260,28 @@ func gen3Init(profile config.Profile, credFile string, fenceToken string, projec
 	}
 
 	return nil
-
 }
 
-func anvilInit(terraProject string, log *client.Logger) error {
-	// make sure terra project is provided
-	if terraProject != "" {
-		// populate anvil config
-		serversMap := &config.ServersMap{
-			Anvil: &config.AnvilServer{
-				Endpoint: client.ANVIL_ENDPOINT,
-				Auth: config.AnvilAuth{
-					TerraProject: terraProject,
-				},
-			},
-		}
-		_, err := config.UpdateServer(serversMap)
-		if err != nil {
-			return fmt.Errorf("Error: unable to update config file: %v\n", err)
-		}
-	}
-
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return err
-	}
-	// update current server in config
-	cfg, err = cfg.UpdateConfigFromFile(config.AnvilServerType)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
-	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
-
-	// init git config for anvil
-	err = initGitConfig(config.AnvilServerType)
-	if err != nil {
-		return err
-	}
-
-	// remove the pre-commit hook if it exists
-	hooksDir := filepath.Join(".git", "hooks")
-	preCommitPath := filepath.Join(hooksDir, "pre-commit")
-	if _, err := os.Stat(preCommitPath); err == nil {
-		if err := os.Remove(preCommitPath); err != nil {
-			log.Log("[ERROR] unable to remove pre-commit hook:", err)
-			return err
-		}
-	}
-
-	return nil
-}
-
-func initGitConfig(mode config.ServerType) error {
-	var cmdName string
-	var allowIncompletePush string
-	switch mode {
-	case config.Gen3ServerType:
-		cmdName = "transfer"
-		allowIncompletePush = "false"
-	case config.AnvilServerType:
-		cmdName = "transfer-ref"
-		allowIncompletePush = "true"
-	}
-
+func initGitConfig() error {
 	configs := [][]string{
 		{"lfs.standalonetransferagent", "gen3"},
 		{"lfs.customtransfer.gen3.path", "git-drs"},
 		{"lfs.customtransfer.gen3.concurrent", "false"},
-		{"lfs.customtransfer.gen3.args", cmdName},
-		{"lfs.allowincompletepush", allowIncompletePush},
+		{"lfs.customtransfer.gen3.args", "transfer"},
+		{"lfs.allowincompletepush", "false"},
 	}
-
 	for _, args := range configs {
 		cmd := exec.Command("git", "config", args[0], args[1])
 		if cmdOut, err := cmd.Output(); err != nil {
 			return fmt.Errorf("Unable to set git config %s: %s", args[0], cmdOut)
 		}
 	}
-
 	return nil
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
+func ensureDrsObjectsIgnore(ignorePattern string) error {
 	const (
 		gitignorePath = ".gitignore"
 	)

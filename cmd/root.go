@@ -6,11 +6,11 @@ import (
 	"github.com/calypr/git-drs/cmd/cache"
 	"github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/download"
-	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/listconfig"
 	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/query"
+	"github.com/calypr/git-drs/cmd/remote"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/cmd/version"
@@ -32,7 +32,7 @@ func init() {
 	RootCmd.AddCommand(cache.Cmd)
 	RootCmd.AddCommand(delete.Cmd)
 	RootCmd.AddCommand(download.Cmd)
-	RootCmd.AddCommand(initialize.Cmd)
+	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(list.ListProjectCmd)
 	RootCmd.AddCommand(listconfig.Cmd)

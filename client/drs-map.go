@@ -30,14 +30,25 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func UpdateDrsObjects(logger *Logger) error {
+func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 
 	logger.Log("Update to DRS objects started")
 
 	// init indexd client
-	indexdClient, err := NewIndexDClient(logger)
+	indexdClient, err := NewIndexDClient(logger, profile)
 	if err != nil {
 		return fmt.Errorf("error initializing indexd with credentials: %v", err)
+	}
+
+	cfg, ok := indexdClient.(*IndexDClient)
+	if !ok {
+		return fmt.Errorf("IndexdClient is not of type *IndexDClient")
+	}
+	if cfg.BucketName == "" {
+		return fmt.Errorf("error: bucket name is empty in config file")
+	}
+	if cfg.ProjectId == "" {
+		return fmt.Errorf("error: projectI is empty in config file")
 	}
 
 	// get the name of repository
@@ -78,14 +89,9 @@ func UpdateDrsObjects(logger *Logger) error {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 
-		// check if record with matching project ID already exists in indexd
-		projectId, err := config.GetProjectId()
+		matchingRecord, err := FindMatchingRecord(records, cfg.ProjectId, &file.Name)
 		if err != nil {
-			return fmt.Errorf("Error getting project ID: %v", err)
-		}
-		matchingRecord, err := FindMatchingRecord(records, projectId)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.ProjectId, err)
 		}
 
 		// skip if matching record exists
@@ -124,20 +130,9 @@ func UpdateDrsObjects(logger *Logger) error {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
 
-		// get gen3 config
-		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
-		if err != nil {
-			return fmt.Errorf("error loading config: %v", err)
-		}
+		fileURL := fmt.Sprintf("s3://%s", filepath.Join(cfg.BucketName, drsId, file.Oid))
 
-		// get auth info from config
-		gen3Auth := cfg.Servers.Gen3.Auth
-		if gen3Auth.Bucket == "" {
-			return fmt.Errorf("error: bucket name is empty in config file")
-		}
-		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
-
-		authzStr, err := utils.ProjectToResource(gen3Auth.ProjectID)
+		authzStr, err := utils.ProjectToResource(cfg.ProjectId)
 		if err != nil {
 			return err
 		}

@@ -12,13 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Gen3Auth holds authentication info for Gen3
-type Gen3Auth struct {
-	Profile   string `yaml:"profile"`
-	ProjectID string `yaml:"project_id"`
-	Bucket    string `yaml:"bucket"`
-}
-
 // AnvilAuth holds authentication info for Anvil
 type AnvilAuth struct {
 	TerraProject string `yaml:"terra_project"`
@@ -53,8 +46,9 @@ func IsValidServerType(mode string) error {
 
 // Gen3Server holds Gen3 server config
 type Gen3Server struct {
-	Endpoint string   `yaml:"endpoint"`
-	Auth     Gen3Auth `yaml:",inline"`
+	Endpoint  string `yaml:"endpoint"`
+	ProjectID string `yaml:"project_id"`
+	Bucket    string `yaml:"bucket"`
 }
 
 // AnvilServer holds Anvil server config
@@ -63,10 +57,13 @@ type AnvilServer struct {
 	Auth     AnvilAuth `yaml:",inline"`
 }
 
+// Profile defines the name of the profile or `Remote` that is being used for this server config
+type Profile string
+
 // ServersMap holds all possible server configs
 type ServersMap struct {
-	Gen3  *Gen3Server  `yaml:"gen3,omitempty"`
-	Anvil *AnvilServer `yaml:"anvil,omitempty"`
+	Gen3  map[Profile]*Gen3Server `yaml:"gen3,omitempty"`
+	Anvil *AnvilServer            `yaml:"anvil,omitempty"`
 }
 
 // Config holds the overall config structure
@@ -151,12 +148,7 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	return &cfg, nil
 }
 
-func UpdateCurrentServer(serverType ServerType) (*Config, error) {
-	// load existing config
-	cfg, err := LoadConfig()
-	if err != nil {
-		return nil, err
-	}
+func (cfg *Config) UpdateConfigFromFile(serverType ServerType) (*Config, error) {
 
 	// set current server
 	cfg.CurrentServer = serverType
@@ -180,6 +172,14 @@ func UpdateCurrentServer(serverType ServerType) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func (cfg *Config) SelectGen3ServerConfig(remote Profile) (*Gen3Server, error) {
+	g3s, ok := cfg.Servers.Gen3[remote]
+	if !ok {
+		return nil, fmt.Errorf("remote specified: %s is not configured in your config: %#v", remote, cfg.Servers.Gen3)
+	}
+	return g3s, nil
 }
 
 // load an existing config
@@ -210,6 +210,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("Config file at %s is invalid: %w", configPath, err)
 	}
 
+	// Add config validation here. Shouldn't have to do it in every function just centralize it here
 	return &conf, nil
 }
 
@@ -234,13 +235,21 @@ func CreateEmptyConfig() error {
 	return nil
 }
 
-func GetProjectId() (string, error) {
+func GetProjectId(profile Profile) (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return "", fmt.Errorf("Error loading config: %v", err)
 	}
-	if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
+
+	if cfg.Servers.Gen3 == nil {
+		return "", fmt.Errorf("Gen3 not configured in config")
+	}
+	profCfg, ok := cfg.Servers.Gen3[profile]
+	if !ok {
+		return "", fmt.Errorf("No profile %s found in config", profile)
+	}
+	if profCfg.ProjectID == "" {
 		return "", fmt.Errorf("No project ID found in config")
 	}
-	return cfg.Servers.Gen3.Auth.ProjectID, nil
+	return profCfg.ProjectID, nil
 }

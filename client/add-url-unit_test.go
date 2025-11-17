@@ -887,8 +887,8 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	// Setup test data - use DIFFERENT file paths to get different UUIDs
 	project2 := "program2-project2" // Different project
 	sha256 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	url1 := "s3://bucket1/project1-file.bam"  // Different path
-	url2 := "s3://bucket2/project2-file.bam"  // Different path
+	url1 := "s3://bucket1/project1-file.bam" // Different path
+	url2 := "s3://bucket2/project2-file.bam" // Different path
 	fileSize := int64(2000)
 	modifiedDate := "2024-01-02"
 

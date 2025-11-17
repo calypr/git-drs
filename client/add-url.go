@@ -428,6 +428,17 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		// ContentCreatedDate: modifiedDate, // TODO: setting created/updated time in indexd requires second API call
 	}
 
+	// save to local path similar to precommit hook
+	// lets us skip over the add-url files during commit time without pinging server
+	drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, sha256)
+	if err != nil {
+		return fmt.Errorf("error getting DRS object path for oid %s: %v", sha256, err)
+	}
+	err = writeDrsObj(*indexdObject, sha256, drsObjPath)
+	if err != nil {
+		return fmt.Errorf("error writing DRS object for oid %s: %v", sha256, err)
+	}
+
 	_, err = indexdClient.RegisterIndexdRecord(indexdObject)
 	if err != nil {
 		return fmt.Errorf("failed to register indexd record: %w", err)

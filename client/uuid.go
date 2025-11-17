@@ -10,12 +10,12 @@ import (
 
 // AUTHORITY is the canonical authority for Git-DRS UUIDs
 // Used in the DID format: did:gen3:AUTHORITY:path:sha256:size
-const AUTHORITY = "calypr.org"
+const AUTHORITY = "https://calypr.org"
 
-// ACED_NAMESPACE is the deterministic namespace UUID for all Git-DRS UUIDs
+// NAMESPACE is the deterministic namespace UUID for all Git-DRS UUIDs
 // Derived from DNS namespace to ensure global uniqueness and reproducibility
 // This matches the pattern: uuid.uuid3(uuid.NAMESPACE_DNS, b'aced-idp.org')
-var ACED_NAMESPACE = uuid.NewMD5(uuid.NameSpaceDNS, []byte("aced-idp.org"))
+var NAMESPACE = uuid.NewMD5(uuid.NameSpaceDNS, []byte(AUTHORITY))
 
 // NormalizeLogicalPath normalizes a file path to ensure consistent UUID generation
 // Rules:
@@ -68,12 +68,11 @@ func ComputeDeterministicUUID(logicalPath, sha256 string, size int64) string {
 	normalizedSHA256 := strings.ToLower(sha256)
 
 	// Build canonical DID string
-	canonical := fmt.Sprintf("did:gen3:%s:%s:%s:%d",
-		AUTHORITY,
+	canonical := fmt.Sprintf("did:gen3:%s:%s:%d",
 		normalizedPath,
 		normalizedSHA256,
 		size)
 
 	// Generate UUIDv5 (SHA1-based) from canonical string
-	return uuid.NewSHA1(ACED_NAMESPACE, []byte(canonical)).String()
+	return uuid.NewSHA1(NAMESPACE, []byte(canonical)).String()
 }

@@ -84,17 +84,17 @@ func TestNormalizeLogicalPath_BasicCases(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"data/sample.fastq", "/data/sample.fastq"},           // Add leading slash
-		{"/data/sample.fastq", "/data/sample.fastq"},          // Already normalized
-		{"/data//sample.fastq", "/data/sample.fastq"},         // Remove duplicate slashes
-		{"/data/sample.fastq/", "/data/sample.fastq"},         // Remove trailing slash
-		{"data///sample.fastq", "/data/sample.fastq"},         // Multiple issues
-		{"/", "/"},                                            // Root should keep trailing slash
-		{"//data//sample.fastq//", "/data/sample.fastq"},      // All normalizations
-		{"data\\sample.fastq", "/data/sample.fastq"},          // Backslash to forward slash
-		{"/data/dir/", "/data/dir"},                           // Trailing slash on directory
-		{"./data/sample.fastq", "/./data/sample.fastq"},       // Relative path (keeps ./)
-		{"../data/sample.fastq", "/../data/sample.fastq"},     // Parent directory (keeps ../)
+		{"data/sample.fastq", "/data/sample.fastq"},   // Add leading slash
+		{"/data/sample.fastq", "/data/sample.fastq"},  // Already normalized
+		{"/data//sample.fastq", "/data/sample.fastq"}, // Remove duplicate slashes
+		{"/data/sample.fastq/", "/data/sample.fastq"}, // Remove trailing slash
+		{"data///sample.fastq", "/data/sample.fastq"}, // Multiple issues
+		{"/", "/"}, // Root should keep trailing slash
+		{"//data//sample.fastq//", "/data/sample.fastq"},  // All normalizations
+		{"data\\sample.fastq", "/data/sample.fastq"},      // Backslash to forward slash
+		{"/data/dir/", "/data/dir"},                       // Trailing slash on directory
+		{"./data/sample.fastq", "/./data/sample.fastq"},   // Relative path (keeps ./)
+		{"../data/sample.fastq", "/../data/sample.fastq"}, // Parent directory (keeps ../)
 	}
 
 	for _, tt := range tests {
@@ -190,7 +190,7 @@ func TestComputeDeterministicUUID_LanguageAgnostic(t *testing.T) {
 
 	t.Logf("Generated UUID: %s", uuid)
 	t.Logf("Canonical string: did:gen3:%s:%s:%s:%d", AUTHORITY, path, sha256, size)
-	t.Logf("Namespace UUID: %s", ACED_NAMESPACE.String())
+	t.Logf("Namespace UUID: %s", NAMESPACE.String())
 
 	// This test documents the expected UUID for external tool verification
 	// External tools (Python, etc.) should be able to reproduce this exact UUID
@@ -200,7 +200,7 @@ func TestComputeDeterministicUUID_LanguageAgnostic(t *testing.T) {
 func TestACED_NAMESPACE_Value(t *testing.T) {
 	// Verify namespace is derived from DNS namespace and "aced-idp.org"
 	// This should match: uuid.uuid3(uuid.NAMESPACE_DNS, b'aced-idp.org')
-	namespace := ACED_NAMESPACE.String()
+	namespace := NAMESPACE.String()
 
 	if namespace == "" {
 		t.Error("ACED_NAMESPACE is empty")

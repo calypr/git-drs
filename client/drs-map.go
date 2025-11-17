@@ -34,18 +34,6 @@ func UpdateDrsObjects(logger *Logger) error {
 
 	logger.Log("Update to DRS objects started")
 
-	// init indexd client
-	indexdClient, err := NewIndexDClient(logger)
-	if err != nil {
-		return fmt.Errorf("error initializing indexd with credentials: %v", err)
-	}
-
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
-	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
-	}
-
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
 	if err != nil {
@@ -72,28 +60,6 @@ func UpdateDrsObjects(logger *Logger) error {
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
 
-		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
-		}
-
-		// check if record with matching project ID already exists in indexd
-		projectId, err := config.GetProjectId()
-		if err != nil {
-			return fmt.Errorf("Error getting project ID: %v", err)
-		}
-		matchingRecord, err := FindMatchingRecord(records, projectId)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-		}
-
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
-		}
-
 		// check if indexd object already prepared, skip if so
 		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
@@ -110,9 +76,8 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
-		// create a local DRS object for it
-		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		// create a local DRS object for it using deterministic UUID
+		drsId := ComputeDeterministicUUID(file.Name, file.Oid, file.Size)
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record

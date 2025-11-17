@@ -367,7 +367,14 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		logger = &NoOpLogger{}
 	}
 
-	uuid := DrsUUID(projectId, sha256)
+	// Extract relative path from S3 URL for UUID computation
+	_, relPath, err := utils.ParseS3URL(url)
+	if err != nil {
+		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
+	}
+
+	// Compute deterministic UUID based on path, hash, and size
+	uuid := ComputeDeterministicUUID(relPath, sha256, fileSize)
 
 	// handle if record already exists
 	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
@@ -408,10 +415,6 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 	authzStr, err := utils.ProjectToResource(projectId)
 	if err != nil {
 		return err
-	}
-	_, relPath, err := utils.ParseS3URL(url)
-	if err != nil {
-		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
 	indexdObject := &IndexdRecord{

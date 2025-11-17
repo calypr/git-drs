@@ -803,12 +803,13 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	projectId := "testprogram-testproject"
 	sha256 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	url1 := "s3://bucket1/file1.bam"
-	url2 := "s3://bucket2/file2.bam" // Different URL
+	url2 := "s3://bucket2/file1.bam" // Same file path, different bucket location
 	fileSize := int64(1000)
 	modifiedDate := "2024-01-01"
 
 	// Pre-populate the mock server with an existing record for this project
-	existingUUID := DrsUUID(projectId, sha256)
+	// UUID is now computed from path, not project ID
+	existingUUID := ComputeDeterministicUUID("file1.bam", sha256, fileSize)
 	authzStr := "/programs/testprogram/projects/testproject"
 
 	existingRecord := &IndexdRecord{
@@ -874,6 +875,7 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 
 func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing.T) {
 	// Test case 2: a record exists but it is not for the same project, so a new record is created
+	// NOTE: With new UUID scheme, different paths produce different UUIDs (not project-dependent)
 
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
@@ -882,22 +884,21 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	// Create client with mock auth
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
-	// Setup test data
-	project1 := "program1-project1"
+	// Setup test data - use DIFFERENT file paths to get different UUIDs
 	project2 := "program2-project2" // Different project
 	sha256 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	url1 := "s3://bucket1/shared-file.bam"
-	url2 := "s3://bucket2/shared-file.bam"
+	url1 := "s3://bucket1/project1-file.bam"  // Different path
+	url2 := "s3://bucket2/project2-file.bam"  // Different path
 	fileSize := int64(2000)
 	modifiedDate := "2024-01-02"
 
 	// Pre-populate with a record for project1
-	uuid1 := DrsUUID(project1, sha256)
+	uuid1 := ComputeDeterministicUUID("project1-file.bam", sha256, fileSize)
 	authz1 := "/programs/program1/projects/project1"
 
 	existingRecord := &IndexdRecord{
 		Did:      uuid1,
-		FileName: "shared-file.bam",
+		FileName: "project1-file.bam",
 		Hashes:   HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url1},
@@ -919,7 +920,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 		t.Fatalf("Expected 1 record initially, got %d", len(records))
 	}
 
-	// Now upsert with project2 - should create a NEW record (not update the existing one)
+	// Now upsert with project2 - should create a NEW record (different path = different UUID)
 	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
@@ -932,11 +933,11 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	if len(allRecords) != 2 {
-		t.Fatalf("Expected 2 records for same hash (different projects), got %d", len(allRecords))
+		t.Fatalf("Expected 2 records for same hash (different paths), got %d", len(allRecords))
 	}
 
-	// Verify the DIDs are different
-	uuid2 := DrsUUID(project2, sha256)
+	// Verify the DIDs are different (because paths are different)
+	uuid2 := ComputeDeterministicUUID("project2-file.bam", sha256, fileSize)
 	authz2 := "/programs/program2/projects/project2"
 
 	foundProject1Record := false
@@ -966,9 +967,9 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 		t.Error("Project2 record not found")
 	}
 
-	// Verify the DIDs are actually different (different projects = different UUIDs)
+	// Verify the DIDs are actually different (different paths = different UUIDs)
 	if uuid1 == uuid2 {
-		t.Error("Expected different DIDs for different projects, but they're the same")
+		t.Error("Expected different DIDs for different paths, but they're the same")
 	}
 }
 
@@ -1066,7 +1067,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	record := records[0]
-	expectedUUID := DrsUUID(projectId, sha256)
+	expectedUUID := ComputeDeterministicUUID("new-file.bam", sha256, fileSize)
 	expectedAuthz := "/programs/newprogram/projects/newproject"
 
 	// Verify record properties

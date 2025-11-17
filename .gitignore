@@ -7,3 +7,4 @@ git-drs
 venv*
 coverage.out
 coverage.html
+**/.drs/**

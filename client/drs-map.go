@@ -116,9 +116,8 @@ func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 		}
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
-		// create a local DRS object for it
-		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		// create a local DRS object for it using deterministic UUID
+		drsId := ComputeDeterministicUUID(file.Name, file.Oid, file.Size)
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record

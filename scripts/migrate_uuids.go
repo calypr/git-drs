@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
@@ -36,16 +39,16 @@ type UUIDMapping struct {
 }
 
 type MigrationReport struct {
-	ProjectID      string         `json:"project_id"`
-	StartTime      time.Time      `json:"start_time"`
-	EndTime        time.Time      `json:"end_time"`
-	DryRun         bool           `json:"dry_run"`
-	TotalFiles     int            `json:"total_files"`
-	Migrated       int            `json:"migrated"`
-	Skipped        int            `json:"skipped"`
-	Errors         int            `json:"errors"`
-	UUIDMappings   []UUIDMapping  `json:"uuid_mappings"`
-	ExistingUUIDs  int            `json:"existing_uuids"`
+	ProjectID     string        `json:"project_id"`
+	StartTime     time.Time     `json:"start_time"`
+	EndTime       time.Time     `json:"end_time"`
+	DryRun        bool          `json:"dry_run"`
+	TotalFiles    int           `json:"total_files"`
+	Migrated      int           `json:"migrated"`
+	Skipped       int           `json:"skipped"`
+	Errors        int           `json:"errors"`
+	UUIDMappings  []UUIDMapping `json:"uuid_mappings"`
+	ExistingUUIDs int           `json:"existing_uuids"`
 }
 
 func main() {
@@ -71,7 +74,7 @@ func main() {
 	}
 
 	// Initialize indexd client
-	logger := &client.NoOpLogger{}
+	var logger client.LoggerInterface = &client.NoOpLogger{}
 	if cfg.Verbose {
 		logger, _ = client.NewLogger("", false)
 	}

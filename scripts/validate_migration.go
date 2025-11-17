@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 package main
 
 import (
@@ -20,24 +23,24 @@ type ValidationConfig struct {
 }
 
 type ValidationResult struct {
-	FilePath       string `json:"file_path"`
-	NewUUID        string `json:"new_uuid"`
-	LegacyUUID     string `json:"legacy_uuid"`
-	NewExists      bool   `json:"new_exists"`
-	LegacyExists   bool   `json:"legacy_exists"`
-	BothDownload   bool   `json:"both_downloadable"`
-	Status         string `json:"status"` // "pass", "warn", "fail"
-	Error          string `json:"error,omitempty"`
+	FilePath     string `json:"file_path"`
+	NewUUID      string `json:"new_uuid"`
+	LegacyUUID   string `json:"legacy_uuid"`
+	NewExists    bool   `json:"new_exists"`
+	LegacyExists bool   `json:"legacy_exists"`
+	BothDownload bool   `json:"both_downloadable"`
+	Status       string `json:"status"` // "pass", "warn", "fail"
+	Error        string `json:"error,omitempty"`
 }
 
 type ValidationReport struct {
-	ProjectID       string             `json:"project_id"`
-	ValidationTime  time.Time          `json:"validation_time"`
-	TotalFiles      int                `json:"total_files"`
-	Passed          int                `json:"passed"`
-	Warnings        int                `json:"warnings"`
-	Failed          int                `json:"failed"`
-	Results         []ValidationResult `json:"results"`
+	ProjectID      string             `json:"project_id"`
+	ValidationTime time.Time          `json:"validation_time"`
+	TotalFiles     int                `json:"total_files"`
+	Passed         int                `json:"passed"`
+	Warnings       int                `json:"warnings"`
+	Failed         int                `json:"failed"`
+	Results        []ValidationResult `json:"results"`
 }
 
 func main() {
@@ -61,7 +64,7 @@ func main() {
 	}
 
 	// Initialize indexd client
-	logger := &client.NoOpLogger{}
+	var logger client.LoggerInterface = &client.NoOpLogger{}
 	if cfg.Verbose {
 		logger, _ = client.NewLogger("", false)
 	}
@@ -289,14 +292,14 @@ type UUIDMapping struct {
 }
 
 type MigrationReport struct {
-	ProjectID     string         `json:"project_id"`
-	StartTime     time.Time      `json:"start_time"`
-	EndTime       time.Time      `json:"end_time"`
-	DryRun        bool           `json:"dry_run"`
-	TotalFiles    int            `json:"total_files"`
-	Migrated      int            `json:"migrated"`
-	Skipped       int            `json:"skipped"`
-	Errors        int            `json:"errors"`
-	UUIDMappings  []UUIDMapping  `json:"uuid_mappings"`
-	ExistingUUIDs int            `json:"existing_uuids"`
+	ProjectID     string        `json:"project_id"`
+	StartTime     time.Time     `json:"start_time"`
+	EndTime       time.Time     `json:"end_time"`
+	DryRun        bool          `json:"dry_run"`
+	TotalFiles    int           `json:"total_files"`
+	Migrated      int           `json:"migrated"`
+	Skipped       int           `json:"skipped"`
+	Errors        int           `json:"errors"`
+	UUIDMappings  []UUIDMapping `json:"uuid_mappings"`
+	ExistingUUIDs int           `json:"existing_uuids"`
 }

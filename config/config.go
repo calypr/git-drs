@@ -174,12 +174,18 @@ func (cfg *Config) UpdateConfigFromFile(serverType ServerType) (*Config, error) 
 	return cfg, nil
 }
 
-func (cfg *Config) SelectGen3ServerConfig(remote Profile) (*Gen3Server, error) {
+func (cfg *Config) SelectGen3ServerConfig(remote Profile) (Profile, *Gen3Server, error) {
+	// if no remote is specified and there only exists one server config use that one
+	if string(remote) == "" && len(cfg.Servers.Gen3) == 1 {
+		for profile, srv := range cfg.Servers.Gen3 {
+			return profile, srv, nil
+		}
+	}
 	g3s, ok := cfg.Servers.Gen3[remote]
 	if !ok {
-		return nil, fmt.Errorf("remote specified: %s is not configured in your config: %#v", remote, cfg.Servers.Gen3)
+		return remote, nil, fmt.Errorf("remote specified: %s is not configured in your config: %#v", remote, cfg.Servers.Gen3)
 	}
-	return g3s, nil
+	return "", g3s, nil
 }
 
 // load an existing config

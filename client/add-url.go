@@ -153,7 +153,7 @@ func getBucketDetails(ctx context.Context, bucket string, profile config.Profile
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	gfg, err := cfg.SelectGen3ServerConfig(profile)
+	profile, gfg, err := cfg.SelectGen3ServerConfig(profile)
 	if err != nil {
 		return nil, err
 	}

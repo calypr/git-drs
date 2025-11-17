@@ -66,7 +66,7 @@ func NewIndexDClient(logger LoggerInterface, profile config.Profile) (ObjectStor
 		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
 	}
 
-	gsc, err := cfg.SelectGen3ServerConfig(profile)
+	profile, gsc, err := cfg.SelectGen3ServerConfig(profile)
 	if err != nil {
 		return nil, err
 	}

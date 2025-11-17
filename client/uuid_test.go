@@ -185,38 +185,44 @@ func TestComputeDeterministicUUID_LanguageAgnostic(t *testing.T) {
 	uuid := ComputeDeterministicUUID(path, sha256, size)
 
 	// The canonical string should be:
-	// "did:gen3:calypr.org:/projectA/raw/reads/R1.fastq.gz:4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0:382991274"
-	// UUID should be UUIDv5(ACED_NAMESPACE, canonical)
+	// "did:gen3:/projectA/raw/reads/R1.fastq.gz:4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0:382991274"
+	// UUID should be UUIDv5(NAMESPACE, canonical)
+	// Note: AUTHORITY is NOT included in the canonical string format
 
 	t.Logf("Generated UUID: %s", uuid)
-	t.Logf("Canonical string: did:gen3:%s:%s:%s:%d", AUTHORITY, path, sha256, size)
+	t.Logf("Canonical string: did:gen3:%s:%s:%d", path, sha256, size)
 	t.Logf("Namespace UUID: %s", NAMESPACE.String())
+	t.Logf("AUTHORITY (for reference): %s", AUTHORITY)
 
 	// This test documents the expected UUID for external tool verification
 	// External tools (Python, etc.) should be able to reproduce this exact UUID
 }
 
-// TestACED_NAMESPACE_Value verifies the namespace UUID is correct
-func TestACED_NAMESPACE_Value(t *testing.T) {
-	// Verify namespace is derived from DNS namespace and "aced-idp.org"
-	// This should match: uuid.uuid3(uuid.NAMESPACE_DNS, b'aced-idp.org')
+// TestNAMESPACE_Value verifies the namespace UUID is correct
+func TestNAMESPACE_Value(t *testing.T) {
+	// Verify namespace is derived from DNS namespace and AUTHORITY
+	// This should match: uuid.uuid3(uuid.NAMESPACE_DNS, b'https://calypr.org')
 	namespace := NAMESPACE.String()
 
 	if namespace == "" {
-		t.Error("ACED_NAMESPACE is empty")
+		t.Error("NAMESPACE is empty")
 	}
 
 	// Should be a valid UUID format
 	if len(namespace) != 36 {
-		t.Errorf("ACED_NAMESPACE has incorrect length: %d, expected 36", len(namespace))
+		t.Errorf("NAMESPACE has incorrect length: %d, expected 36", len(namespace))
 	}
 
-	t.Logf("ACED_NAMESPACE: %s", namespace)
+	t.Logf("NAMESPACE: %s", namespace)
+	t.Logf("AUTHORITY: %s", AUTHORITY)
 }
 
 // TestAUTHORITY_Value verifies the authority constant
 func TestAUTHORITY_Value(t *testing.T) {
-	if AUTHORITY != "calypr.org" {
-		t.Errorf("AUTHORITY = %q, want %q", AUTHORITY, "calypr.org")
+	expected := "https://calypr.org"
+	if AUTHORITY != expected {
+		t.Errorf("AUTHORITY = %q, want %q", AUTHORITY, expected)
 	}
+
+	t.Logf("AUTHORITY: %s", AUTHORITY)
 }

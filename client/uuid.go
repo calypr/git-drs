@@ -9,12 +9,14 @@ import (
 )
 
 // AUTHORITY is the canonical authority for Git-DRS UUIDs
-// Used in the DID format: did:gen3:AUTHORITY:path:sha256:size
+// Used to derive the NAMESPACE UUID, but NOT included in the canonical DID string
+// for UUID generation. The canonical format is: did:gen3:path:sha256:size
 const AUTHORITY = "https://calypr.org"
 
 // NAMESPACE is the deterministic namespace UUID for all Git-DRS UUIDs
-// Derived from DNS namespace to ensure global uniqueness and reproducibility
-// This matches the pattern: uuid.uuid3(uuid.NAMESPACE_DNS, b'aced-idp.org')
+// Derived from DNS namespace and AUTHORITY to ensure global uniqueness and reproducibility
+// This matches the pattern: uuid.uuid3(uuid.NAMESPACE_DNS, AUTHORITY)
+// Where AUTHORITY = "https://calypr.org"
 var NAMESPACE = uuid.NewMD5(uuid.NameSpaceDNS, []byte(AUTHORITY))
 
 // NormalizeLogicalPath normalizes a file path to ensure consistent UUID generation
@@ -47,8 +49,11 @@ func NormalizeLogicalPath(path string) string {
 
 // ComputeDeterministicUUID generates a deterministic UUID based on the canonical DID string
 // This follows the specification:
-// Canonical format: did:gen3:{authority}:{logical_path}:{sha256}:{size}
-// UUID = UUIDv5(ACED_NAMESPACE, canonical_string)
+// Canonical format: did:gen3:{logical_path}:{sha256}:{size}
+// UUID = UUIDv5(NAMESPACE, canonical_string)
+//
+// The NAMESPACE is derived from AUTHORITY but the AUTHORITY itself is NOT included
+// in the canonical string used for UUID generation.
 //
 // Parameters:
 //   - logicalPath: The repository-relative path to the file (will be normalized)
@@ -67,7 +72,7 @@ func ComputeDeterministicUUID(logicalPath, sha256 string, size int64) string {
 	normalizedPath := NormalizeLogicalPath(logicalPath)
 	normalizedSHA256 := strings.ToLower(sha256)
 
-	// Build canonical DID string
+	// Build canonical DID string (WITHOUT authority in the string itself)
 	canonical := fmt.Sprintf("did:gen3:%s:%s:%d",
 		normalizedPath,
 		normalizedSHA256,

@@ -73,10 +73,9 @@ func ComputeDeterministicUUID(logicalPath, sha256 string, size int64) string {
 	normalizedSHA256 := strings.ToLower(sha256)
 
 	// Build canonical DID string (WITHOUT authority in the string itself)
-	canonical := fmt.Sprintf("did:gen3:%s:%s:%d",
+	canonical := fmt.Sprintf("did:gen3:%s:%s",
 		normalizedPath,
-		normalizedSHA256,
-		size)
+		normalizedSHA256)
 
 	// Generate UUIDv5 (SHA1-based) from canonical string
 	return uuid.NewSHA1(NAMESPACE, []byte(canonical)).String()

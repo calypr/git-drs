@@ -377,8 +377,8 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
-	// Compute deterministic UUID based on path, hash, and size
-	uuid := ComputeDeterministicUUID(relPath, sha256, fileSize)
+	// Compute deterministic UUID based on path and hash
+	uuid := ComputeDeterministicUUID(relPath, sha256)
 
 	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
 	if err != nil {

@@ -808,8 +808,8 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	modifiedDate := "2024-01-01"
 
 	// Pre-populate the mock server with an existing record for this project
-	// UUID is now computed from path, not project ID
-	existingUUID := ComputeDeterministicUUID("file1.bam", sha256, fileSize)
+	// UUID is now computed from path and hash
+	existingUUID := ComputeDeterministicUUID("file1.bam", sha256)
 	authzStr := "/programs/testprogram/projects/testproject"
 
 	existingRecord := &IndexdRecord{
@@ -893,7 +893,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	modifiedDate := "2024-01-02"
 
 	// Pre-populate with a record for project1
-	uuid1 := ComputeDeterministicUUID("project1-file.bam", sha256, fileSize)
+	uuid1 := ComputeDeterministicUUID("project1-file.bam", sha256)
 	authz1 := "/programs/program1/projects/project1"
 
 	existingRecord := &IndexdRecord{
@@ -937,7 +937,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	// Verify the DIDs are different (because paths are different)
-	uuid2 := ComputeDeterministicUUID("project2-file.bam", sha256, fileSize)
+	uuid2 := ComputeDeterministicUUID("project2-file.bam", sha256)
 	authz2 := "/programs/program2/projects/project2"
 
 	foundProject1Record := false
@@ -1067,7 +1067,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	record := records[0]
-	expectedUUID := ComputeDeterministicUUID("new-file.bam", sha256, fileSize)
+	expectedUUID := ComputeDeterministicUUID("new-file.bam", sha256)
 	expectedAuthz := "/programs/newprogram/projects/newproject"
 
 	// Verify record properties

@@ -8,12 +8,11 @@ import (
 func TestComputeDeterministicUUID_Reproducibility(t *testing.T) {
 	path := "/data/sample.fastq"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	size := int64(1024000)
 
 	// Generate UUID multiple times
-	uuid1 := ComputeDeterministicUUID(path, sha256, size)
-	uuid2 := ComputeDeterministicUUID(path, sha256, size)
-	uuid3 := ComputeDeterministicUUID(path, sha256, size)
+	uuid1 := ComputeDeterministicUUID(path, sha256)
+	uuid2 := ComputeDeterministicUUID(path, sha256)
+	uuid3 := ComputeDeterministicUUID(path, sha256)
 
 	// All should be identical
 	if uuid1 != uuid2 || uuid2 != uuid3 {
@@ -29,10 +28,9 @@ func TestComputeDeterministicUUID_Reproducibility(t *testing.T) {
 // TestComputeDeterministicUUID_DifferentPaths verifies that different paths produce different UUIDs
 func TestComputeDeterministicUUID_DifferentPaths(t *testing.T) {
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	size := int64(1024000)
 
-	uuid1 := ComputeDeterministicUUID("/data/sample.fastq", sha256, size)
-	uuid2 := ComputeDeterministicUUID("/backup/sample.fastq", sha256, size)
+	uuid1 := ComputeDeterministicUUID("/data/sample.fastq", sha256)
+	uuid2 := ComputeDeterministicUUID("/backup/sample.fastq", sha256)
 
 	if uuid1 == uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different paths, got: %s", uuid1)
@@ -42,36 +40,36 @@ func TestComputeDeterministicUUID_DifferentPaths(t *testing.T) {
 // TestComputeDeterministicUUID_DifferentHashes verifies that different hashes produce different UUIDs
 func TestComputeDeterministicUUID_DifferentHashes(t *testing.T) {
 	path := "/data/sample.fastq"
-	size := int64(1024000)
 
-	uuid1 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", size)
-	uuid2 := ComputeDeterministicUUID(path, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", size)
+	uuid1 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid2 := ComputeDeterministicUUID(path, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 	if uuid1 == uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different hashes, got: %s", uuid1)
 	}
 }
 
-// TestComputeDeterministicUUID_DifferentSizes verifies that different sizes produce different UUIDs
-func TestComputeDeterministicUUID_DifferentSizes(t *testing.T) {
+// TestComputeDeterministicUUID_SameSizesProduceSameUUID verifies that size doesn't affect UUID generation
+// This test replaces the old TestComputeDeterministicUUID_DifferentSizes test
+func TestComputeDeterministicUUID_SameSizesProduceSameUUID(t *testing.T) {
 	path := "/data/sample.fastq"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-	uuid1 := ComputeDeterministicUUID(path, sha256, 1024000)
-	uuid2 := ComputeDeterministicUUID(path, sha256, 2048000)
+	// Size is no longer part of UUID generation, so these should be the same
+	uuid1 := ComputeDeterministicUUID(path, sha256)
+	uuid2 := ComputeDeterministicUUID(path, sha256)
 
-	if uuid1 == uuid2 {
-		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different sizes, got: %s", uuid1)
+	if uuid1 != uuid2 {
+		t.Errorf("ComputeDeterministicUUID() should generate same UUIDs regardless of size metadata, got: %s and %s", uuid1, uuid2)
 	}
 }
 
 // TestComputeDeterministicUUID_CaseInsensitiveHash verifies that hash case doesn't matter
 func TestComputeDeterministicUUID_CaseInsensitiveHash(t *testing.T) {
 	path := "/data/sample.fastq"
-	size := int64(1024000)
 
-	uuid1 := ComputeDeterministicUUID(path, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", size)
-	uuid2 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", size)
+	uuid1 := ComputeDeterministicUUID(path, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
+	uuid2 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 	if uuid1 != uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should be case-insensitive for hashes: got %s and %s", uuid1, uuid2)
@@ -135,13 +133,12 @@ func TestNormalizeLogicalPath_PathEquivalence(t *testing.T) {
 // TestComputeDeterministicUUID_PathNormalization verifies that equivalent paths produce the same UUID
 func TestComputeDeterministicUUID_PathNormalization(t *testing.T) {
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	size := int64(1024000)
 
 	// These paths should all normalize to the same thing
-	uuid1 := ComputeDeterministicUUID("data/sample.fastq", sha256, size)
-	uuid2 := ComputeDeterministicUUID("/data/sample.fastq", sha256, size)
-	uuid3 := ComputeDeterministicUUID("//data//sample.fastq", sha256, size)
-	uuid4 := ComputeDeterministicUUID("/data/sample.fastq/", sha256, size)
+	uuid1 := ComputeDeterministicUUID("data/sample.fastq", sha256)
+	uuid2 := ComputeDeterministicUUID("/data/sample.fastq", sha256)
+	uuid3 := ComputeDeterministicUUID("//data//sample.fastq", sha256)
+	uuid4 := ComputeDeterministicUUID("/data/sample.fastq/", sha256)
 
 	if uuid1 != uuid2 || uuid2 != uuid3 || uuid3 != uuid4 {
 		t.Errorf("ComputeDeterministicUUID() should produce same UUID for equivalent paths: got %s, %s, %s, %s", uuid1, uuid2, uuid3, uuid4)
@@ -153,9 +150,8 @@ func TestComputeDeterministicUUID_MatchesSpecification(t *testing.T) {
 	// Test with known inputs to verify the canonical string format
 	path := "/projectA/raw/reads/R1.fastq.gz"
 	sha256 := "4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
-	size := int64(382991274)
 
-	uuid := ComputeDeterministicUUID(path, sha256, size)
+	uuid := ComputeDeterministicUUID(path, sha256)
 
 	// UUID should not be empty
 	if uuid == "" {
@@ -168,7 +164,7 @@ func TestComputeDeterministicUUID_MatchesSpecification(t *testing.T) {
 	}
 
 	// Should be reproducible
-	uuid2 := ComputeDeterministicUUID(path, sha256, size)
+	uuid2 := ComputeDeterministicUUID(path, sha256)
 	if uuid != uuid2 {
 		t.Errorf("ComputeDeterministicUUID() not reproducible: %s != %s", uuid, uuid2)
 	}
@@ -180,17 +176,17 @@ func TestComputeDeterministicUUID_LanguageAgnostic(t *testing.T) {
 	// Test case from specification
 	path := "/projectA/raw/reads/R1.fastq.gz"
 	sha256 := "4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
-	size := int64(382991274)
 
-	uuid := ComputeDeterministicUUID(path, sha256, size)
+	uuid := ComputeDeterministicUUID(path, sha256)
 
 	// The canonical string should be:
-	// "did:gen3:/projectA/raw/reads/R1.fastq.gz:4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0:382991274"
+	// "did:gen3:/projectA/raw/reads/R1.fastq.gz:4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
 	// UUID should be UUIDv5(NAMESPACE, canonical)
 	// Note: AUTHORITY is NOT included in the canonical string format
+	// Note: Size is NOT included in the canonical string
 
 	t.Logf("Generated UUID: %s", uuid)
-	t.Logf("Canonical string: did:gen3:%s:%s:%d", path, sha256, size)
+	t.Logf("Canonical string: did:gen3:%s:%s", path, sha256)
 	t.Logf("Namespace UUID: %s", NAMESPACE.String())
 	t.Logf("AUTHORITY (for reference): %s", AUTHORITY)
 

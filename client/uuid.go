@@ -49,7 +49,7 @@ func NormalizeLogicalPath(path string) string {
 
 // ComputeDeterministicUUID generates a deterministic UUID based on the canonical DID string
 // This follows the specification:
-// Canonical format: did:gen3:{logical_path}:{sha256}:{size}
+// Canonical format: did:gen3:{logical_path}:{sha256}
 // UUID = UUIDv5(NAMESPACE, canonical_string)
 //
 // The NAMESPACE is derived from AUTHORITY but the AUTHORITY itself is NOT included
@@ -58,16 +58,15 @@ func NormalizeLogicalPath(path string) string {
 // Parameters:
 //   - logicalPath: The repository-relative path to the file (will be normalized)
 //   - sha256: The SHA256 hash of the file (lowercase hex string)
-//   - size: The size of the file in bytes
 //
 // Returns:
 //   - A deterministic UUID string that can be reproduced by any tool with the same inputs
 //
 // Example:
 //
-//	uuid := ComputeDeterministicUUID("/data/sample.fastq", "abc123...", 1024000)
+//	uuid := ComputeDeterministicUUID("/data/sample.fastq", "abc123...")
 //	// Returns: "8f6f3f44-2a51-5e7d-b8d6-1f2a1b0c9d77" (deterministic)
-func ComputeDeterministicUUID(logicalPath, sha256 string, size int64) string {
+func ComputeDeterministicUUID(logicalPath, sha256 string) string {
 	// Normalize inputs
 	normalizedPath := NormalizeLogicalPath(logicalPath)
 	normalizedSHA256 := strings.ToLower(sha256)

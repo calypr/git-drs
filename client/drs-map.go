@@ -77,7 +77,7 @@ func UpdateDrsObjects(logger *Logger) error {
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it using deterministic UUID
-		drsId := ComputeDeterministicUUID(file.Name, file.Oid, file.Size)
+		drsId := ComputeDeterministicUUID(file.Name, file.Oid)
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record

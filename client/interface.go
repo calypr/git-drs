@@ -15,7 +15,7 @@ type ObjectStoreClient interface {
 
 	// Put file into object storage and obtain a DRS record pointing to it
 	// no DRS write endpoint exists, so this is custom code
-	RegisterFile(oid string) (*drs.DRSObject, error)
+	RegisterFile(oid string, path string) (*drs.DRSObject, error)
 
 	// Get a signed url given a DRS ID
 	// corresponds to /ga4gh/drs/v1/objects/{object_id}/access/{access_id}

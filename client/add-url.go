@@ -430,7 +430,7 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 
 	// save to local path similar to precommit hook
 	// lets us skip over the add-url files during commit time without pinging server
-	drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, sha256)
+	drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, sha256, relPath)
 	if err != nil {
 		return fmt.Errorf("error getting DRS object path for oid %s: %v", sha256, err)
 	}

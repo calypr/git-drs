@@ -56,7 +56,7 @@ var Cmd = &cobra.Command{
 
 		// download url to destination path or LFS objects if not specified
 		if dstPath == "" {
-			dstPath, err = client.GetObjectPath(config.LFS_OBJS_PATH, oid)
+			dstPath, err = client.GetObjectPath(config.LFS_OBJS_PATH, oid, name)
 		}
 		if err != nil {
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)

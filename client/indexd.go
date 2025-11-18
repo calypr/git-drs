@@ -226,7 +226,7 @@ func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, e
 		cl.logger.Log("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		indexdObj, err := DrsInfoFromOid(oid)
+		indexdObj, err := DrsInfoFromOid(oid, path)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
@@ -274,7 +274,7 @@ func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, e
 		cl.logger.Logf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
 
 		// modified from gen3-client/g3cmd/upload-single.go
-		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid)
+		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid, path)
 		if err != nil {
 			cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
@@ -290,7 +290,7 @@ func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, e
 	}
 
 	// if all successful, remove temp DRS object
-	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
+	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid, path)
 	if err == nil {
 		_ = os.Remove(drsPath)
 	}

@@ -63,7 +63,8 @@ var Cmd = &cobra.Command{
 			fmt.Printf("Indexing DRS URI %s with sha256 %s\n", drsURI, sha)
 
 			// create sha to DRS URI mapping
-			objPath, err := client.GetObjectPath(client.DRS_REF_DIR, sha)
+			// TODO: FIX THIS ""
+			objPath, err := client.GetObjectPath(client.DRS_REF_DIR, sha, "")
 			if err != nil {
 				return fmt.Errorf("failed to get object path for %s: %w", sha, err)
 			}

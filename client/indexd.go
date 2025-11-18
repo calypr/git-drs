@@ -213,8 +213,12 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}
 
-	drsObj := &drs.DRSObject{}
+	var drsObj *drs.DRSObject
+	recordAlreadyExisted := false
+
 	if matchingRecord != nil {
+		cl.logger.Logf("found existing indexd record with DID %s for this project", matchingRecord.Did)
+		recordAlreadyExisted = true
 		drsObj, err = cl.GetObject(matchingRecord.Did)
 		if err != nil {
 			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
@@ -238,8 +242,9 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 	}
 
 	// delete indexd record if subsequent file upload code errors out
+	// but only if we just created it (don't delete pre-existing records)
 	defer func() {
-		if err != nil {
+		if err != nil && !recordAlreadyExisted {
 			cl.logger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.DeleteIndexdRecord(drsObj.Id)
 			if err != nil {
@@ -272,7 +277,8 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 		cl.logger.Logf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
 
 		// modified from gen3-client/g3cmd/upload-single.go
-		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid, path)
+		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid, "")
+		cl.logger.Logf("file path to upload: %s", filePath)
 		if err != nil {
 			cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)

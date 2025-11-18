@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/cmd/listconfig"
 	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/query"
+	"github.com/calypr/git-drs/cmd/register"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/cmd/version"
@@ -38,6 +39,7 @@ func init() {
 	RootCmd.AddCommand(listconfig.Cmd)
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(query.Cmd)
+	RootCmd.AddCommand(register.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.AddCommand(version.Cmd)

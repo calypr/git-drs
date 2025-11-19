@@ -56,9 +56,12 @@ func init() {
 func Add(profile config.Profile, ghRepo string, bucket string, credFile string, fenceToken string, project string) error {
 	resp, err := utils.GitRemoteAdd(string(profile), ghRepo)
 	if err != nil {
-		return err
+		if strings.Contains(resp, fmt.Sprintf("remote %s already exists", profile)) {
+			fmt.Printf("Remote '%s' already exists. Ignoring this error and continuing.\n", profile)
+		} else {
+			return fmt.Errorf("ERROR: %s: %w", resp, err)
+		}
 	}
-	fmt.Println("REMOTE ADD RESP: ", resp)
 
 	// setup logging
 	logg, err := client.NewLogger("", true)
@@ -79,73 +82,7 @@ func Add(profile config.Profile, ghRepo string, bucket string, credFile string, 
 		return fmt.Errorf("Error: unable to create config file: %v\n", err)
 	}
 
-	// load the config
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("Error: unable to load config file: %v\n", err)
-	}
-
-	gsc, err := cfg.SelectGen3ServerConfig(profile)
-	if err != nil {
-		return err
-	}
-
-	// make sure at least one of the credentials params is provided
-	if credFile == "" && fenceToken == "" && profile == "" {
-		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
-	}
-
-	if (gsc.Bucket == "" || gsc.ProjectID == "") ||
-		(bucket == "" || project == "" || profile == "") {
-		return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
-
-	}
-
-	err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
-	if err != nil {
-		return fmt.Errorf("Error configuring gen3 server: %v", err)
-	}
-
-	// add some patterns to the .gitignore if not already present
-	configStr := "!" + filepath.Join(config.DRS_DIR, config.CONFIG_YAML)
-	drsDirStr := fmt.Sprintf("%s/**", config.DRS_DIR)
-
-	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
-	for _, pattern := range gitignorePatterns {
-		if err := ensureDrsObjectsIgnore(pattern); err != nil {
-			return fmt.Errorf("Init Error: %v\n", err)
-		}
-	}
-
-	// log message based on if .gitignore is untracked or modified (i.e. if we actually made changes something)
-	statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
-	output, err := statusCmd.Output()
-	if err != nil {
-		return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
-	}
-	if len(output) > 0 {
-		logg.Log(".gitignore has been updated and staged")
-	} else {
-		logg.Log(".gitignore already up to date")
-	}
-
-	// git add .gitignore
-	cmd := exec.Command("git", "add", ".gitignore")
-	if cmdOut, err := cmd.Output(); err != nil {
-		return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
-	}
-
-	// final logs
-	logg.Log("Git DRS configuration added to git.")
-	logg.Log("Git DRS initialized successfully!")
-	return nil
-}
-
-func gen3Init(profile config.Profile, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
-	// double check that one of the credentials params is provided
-
 	var apiEndpoint string
-	var err error
 	if fenceToken == "" {
 		cred := jwt.Configure{}
 		if credFile == "" {
@@ -207,18 +144,11 @@ func gen3Init(profile config.Profile, credFile string, fenceToken string, projec
 		}
 	}
 
-	// load existing config
+	// load the config
 	cfg, err := config.LoadConfig()
-	if err != nil {
-		return err
+	if err != nil || cfg == nil {
+		return fmt.Errorf("Error: unable to load config file: %v\n", err)
 	}
-
-	// update current server in config
-	cfg, err = cfg.UpdateConfigFromFile(config.Gen3ServerType)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
-	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
 
 	// init git config
 	err = initGitConfig()
@@ -235,6 +165,20 @@ func gen3Init(profile config.Profile, credFile string, fenceToken string, projec
 	hookContent := "#!/bin/sh\ngit drs precommit\n"
 	if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
 		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
+	}
+
+	// Create .git/hooks/pre-push file
+	// This registers all pending DRS objects with indexd before LFS transfer begins
+	prePushPath := filepath.Join(hooksDir, "pre-push")
+	prePushContent := `#!/bin/sh
+# Git DRS pre-push hook
+# Register all pending DRS objects with indexd before LFS transfer
+command -v git-lfs >/dev/null 2>&1 || { printf >&2 "\n%s\n\n" "This repository is configured for Git LFS but 'git-lfs' was not found on your path. If you no longer wish to use Git LFS, remove this hook by deleting the 'pre-push' file in the hooks directory (set by 'core.hookspath'; usually '.git/hooks')."; exit 2; }
+git drs register
+git lfs pre-push "$@"
+`
+	if err := os.WriteFile(prePushPath, []byte(prePushContent), 0755); err != nil {
+		return fmt.Errorf("[ERROR] unable to write to pre-push hook: %v", err)
 	}
 
 	// authenticate with gen3
@@ -259,6 +203,60 @@ func gen3Init(profile config.Profile, credFile string, fenceToken string, projec
 		}
 	}
 
+	// update current server in config
+	cfg, err = cfg.UpdateConfigFromFile(config.Gen3ServerType)
+	if err != nil {
+		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
+	}
+
+	profile, gsc, err := cfg.SelectGen3ServerConfig(profile)
+	if err != nil {
+		return err
+	}
+
+	// make sure at least one of the credentials params is provided
+	if credFile == "" && fenceToken == "" && profile == "" {
+		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+	}
+
+	if (gsc.Bucket == "" || gsc.ProjectID == "") ||
+		(bucket == "" || project == "" || profile == "") {
+		return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
+
+	}
+
+	// add some patterns to the .gitignore if not already present
+	configStr := "!" + filepath.Join(config.DRS_DIR, config.CONFIG_YAML)
+	drsDirStr := fmt.Sprintf("%s/**", config.DRS_DIR)
+
+	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
+	for _, pattern := range gitignorePatterns {
+		if err := ensureDrsObjectsIgnore(pattern); err != nil {
+			return fmt.Errorf("Init Error: %v\n", err)
+		}
+	}
+
+	// log message based on if .gitignore is untracked or modified (i.e. if we actually made changes something)
+	statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
+	output, err := statusCmd.Output()
+	if err != nil {
+		return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
+	}
+	if len(output) > 0 {
+		logg.Log(".gitignore has been updated and staged")
+	} else {
+		logg.Log(".gitignore already up to date")
+	}
+
+	// git add .gitignore
+	cmd := exec.Command("git", "add", ".gitignore")
+	if cmdOut, err := cmd.Output(); err != nil {
+		return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
+	}
+
+	// final logs
+	logg.Log("Git DRS configuration added to git.")
+	logg.Log("Git DRS initialized successfully!")
 	return nil
 }
 

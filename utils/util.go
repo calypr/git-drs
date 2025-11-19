@@ -11,29 +11,26 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-func GitRemoteAdd(remote, ghRepo string) (string, error) {
-	resp, err := SimpleRun([]string{"git", "remote", "add", remote, ghRepo})
-	if err != nil {
-		return "", err
-	}
-	return resp, nil
-}
-
 func GitTopLevel() (string, error) {
 	path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
 	if err != nil {
-		return "", err
+		return path, err
 	}
 	return strings.TrimSuffix(path, "\n"), nil
+}
+
+func GitRemoteAdd(remote, ghRepo string) (string, error) {
+	return SimpleRun([]string{"git", "remote", "add", remote, ghRepo})
 }
 
 func SimpleRun(cmds []string) (string, error) {
 	exePath, err := exec.LookPath(cmds[0])
 	if err != nil {
+		fmt.Println("ERR IS HERE: ", err)
 		return "", fmt.Errorf("command not found: %s: %w", cmds[0], err)
 	}
 	cmd := exec.Command(exePath, cmds[1:]...)
-	cmdOut, err := cmd.Output()
+	cmdOut, err := cmd.CombinedOutput()
 	return string(cmdOut), err
 }
 

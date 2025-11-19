@@ -51,12 +51,6 @@ func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 		return fmt.Errorf("error: projectI is empty in config file")
 	}
 
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
-	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
-	}
-
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
 	if err != nil {
@@ -79,53 +73,18 @@ func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 	}
 	logger.Logf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
 
-	processedDrsIds := map[string]bool{}
-	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
 		drsId := ComputeDeterministicUUID(file.Name, file.Oid)
-		if processedDrsIds[drsId] {
-			logger.Logf("Skipping staged file %s with OID %s, DRS ID %s already processed in this batch.", file.Name, file.Oid, drsId)
-
-		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
-		}
-
-		matchingRecord, err := FindMatchingRecord(records, cfg.ProjectId, &file.Name)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.ProjectId, err)
-		}
-
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
-		}
-		processedDrsIds[drsId] = true
-
-		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
-		}
-
-		matchingRecord, err := FindMatchingRecord(records, cfg.ProjectId, &file.Name)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.ProjectId, err)
-		}
-
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
-		}
 
 		// check if indexd object already prepared, skip if so
 		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid, file.Name)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
+		}
+		if _, err := os.Stat(drsObjPath); err == nil {
+			logger.Logf("Skipping staged file %s with OID %s, DRS object already created at %s", file.Name, file.Oid, drsObjPath)
+			continue
 		}
 
 		// confirm file contents are localized
@@ -145,6 +104,8 @@ func UpdateDrsObjects(logger *Logger, profile config.Profile) error {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
+
+		// get gen3 config
 
 		fileURL := fmt.Sprintf("s3://%s", filepath.Join(cfg.BucketName, drsId, file.Oid))
 
@@ -201,12 +162,6 @@ func DrsUUID(repoName string, hash string) string {
 
 // creates index record from file
 func DrsInfoFromOid(oid string, path string) (*IndexdRecord, error) {
-	// unmarshal the DRS object
-	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid, path)
-	if err != nil {
-		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
-	}
-
 	indexdObjBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)

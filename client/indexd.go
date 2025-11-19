@@ -66,11 +66,7 @@ func NewIndexDClient(logger LoggerInterface, profile config.Profile) (ObjectStor
 		return nil, fmt.Errorf("current server is not gen3, current server: %s. Please use git drs init with the --gen3 flag", cfg.CurrentServer)
 	}
 
-<<<<<<< HEAD
 	profile, gsc, err := cfg.SelectGen3ServerConfig(profile)
-=======
-	gsc, err := cfg.SelectGen3ServerConfig(profile)
->>>>>>> 12eee95 (begin refactor. Construction code)
 	if err != nil {
 		return nil, err
 	}
@@ -230,11 +226,19 @@ func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, e
 			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
 		}
 	} else {
+		// Since the register hook exists now, this is no-mans land. If you get here I would consider it an error state and you will most likely error out. Thoughts?
+
 		// otherwise, create indexd record
 		cl.logger.Log("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		indexdObj, err := DrsInfoFromOid(oid, path)
+		cl.logger.Log("PATH: ", uRec.Path)
+		indexdObjBytes, err := os.ReadFile(uRec.Path)
+		if err != nil {
+			return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
+		}
+		cl.logger.Log("BYTES: ", string(indexdObjBytes))
+		indexdObj, err := DrsInfoFromOid(oid, uRec.Path)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
@@ -300,7 +304,7 @@ func (cl *IndexDClient) RegisterFile(uRec *lfs.UploadMessage) (*drs.DRSObject, e
 	}
 
 	// if all successful, remove temp DRS object
-	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid, path)
+	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid, "")
 	if err == nil {
 		_ = os.Remove(drsPath)
 	}
@@ -650,6 +654,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]Output
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
 func FindMatchingRecord(records []OutputInfo, projectId string, name *string) (*OutputInfo, error) {
+
 	if len(records) == 0 {
 		return nil, nil
 	}

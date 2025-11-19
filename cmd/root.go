@@ -33,7 +33,7 @@ func init() {
 	RootCmd.AddCommand(cache.Cmd)
 	RootCmd.AddCommand(delete.Cmd)
 	RootCmd.AddCommand(download.Cmd)
-	RootCmd.AddCommand(remote.Cmd)
+	RootCmd.AddCommand(remote.Remote)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(list.ListProjectCmd)
 	RootCmd.AddCommand(listconfig.Cmd)
@@ -44,6 +44,7 @@ func init() {
 	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(addurl.AddURLCmd)
+	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

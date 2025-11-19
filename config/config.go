@@ -86,8 +86,7 @@ func getConfigPath() (string, error) {
 		return "", err
 	}
 
-	configPath := filepath.Join(topLevel, DRS_DIR, CONFIG_YAML)
-	return configPath, nil
+	return filepath.Join(topLevel, DRS_DIR, CONFIG_YAML), nil
 }
 
 // updates and git adds a Git DRS config file
@@ -174,12 +173,19 @@ func (cfg *Config) UpdateConfigFromFile(serverType ServerType) (*Config, error) 
 	return cfg, nil
 }
 
-func (cfg *Config) SelectGen3ServerConfig(remote Profile) (*Gen3Server, error) {
-	g3s, ok := cfg.Servers.Gen3[remote]
-	if !ok {
-		return nil, fmt.Errorf("remote specified: %s is not configured in your config: %#v", remote, cfg.Servers.Gen3)
+func (cfg *Config) SelectGen3ServerConfig(remote Profile) (Profile, *Gen3Server, error) {
+	if remote != "" {
+		g3s, ok := cfg.Servers.Gen3[remote]
+		if !ok {
+			return "", nil, fmt.Errorf("remote specified: %s is not configured in your config: %#v", remote, cfg.Servers.Gen3)
+		}
+		return remote, g3s, nil
+	} else if remote == "" && len(cfg.Servers.Gen3) == 1 {
+		for prf, srv := range cfg.Servers.Gen3 {
+			return prf, srv, nil
+		}
 	}
-	return g3s, nil
+	return "", nil, fmt.Errorf("No remote specified, with greater than 1 remotes configured in your config.")
 }
 
 // load an existing config
@@ -202,6 +208,9 @@ func LoadConfig() (*Config, error) {
 	b, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to read config file at %s", configPath)
+	}
+	if len(b) == 0 {
+		return nil, fmt.Errorf("Unable to read the contents fo file %s", configPath)
 	}
 
 	conf := Config{}

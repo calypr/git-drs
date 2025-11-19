@@ -12,20 +12,31 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:   "register",
+	Use:   "register [remote]",
 	Short: "Register all pending DRS objects with indexd",
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
+	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var remote config.Profile = ""
+		if len(args) == 1 {
+			remote = config.Profile(args[0])
+		}
 		logger, err := client.NewLogger("", false)
 		if err != nil {
 			return err
 		}
 		defer logger.Close()
 
-		drsClient, err := client.NewIndexDClient(logger)
+		drsClient, err := client.NewIndexDClient(logger, remote)
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
+
+		cli, ok := drsClient.(*client.IndexDClient)
+		if !ok {
+			return fmt.Errorf("IndexdClient is not drsClient")
+		}
+		remote = cli.Profile
 
 		// Get all pending objects
 		pendingObjects, err := getPendingObjects(logger)
@@ -81,14 +92,14 @@ var Cmd = &cobra.Command{
 
 			// If there's an existing record in the same project with this SHA,
 			// reuse its URL so all duplicates point to the same S3 file
-			projectId, err := config.GetProjectId()
+			projectId, err := config.GetProjectId(remote)
 			if err != nil {
 				logger.Logf("Error getting project ID: %v", err)
 				errorCount++
 				continue
 			}
 
-			matchingRecord, err := client.FindMatchingRecord(records, projectId)
+			matchingRecord, err := client.FindMatchingRecord(records, projectId, &obj.Path)
 			if err != nil {
 				logger.Logf("Error finding matching record for project: %v", err)
 				errorCount++

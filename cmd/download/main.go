@@ -21,9 +21,12 @@ var Cmd = &cobra.Command{
 	Use:   "download <remote> <oid> --name",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
+		var name string = ""
+		if len(args) == 3 {
+			name = args[2]
+		}
 		remote, oid := args[0], args[1]
 		var namePtr *string = nil
 		if cmd.Flags().Changed("name") {

@@ -28,7 +28,7 @@ git lfs install --skip-smudge
 
 1. **Install Git DRS**
    ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)"
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    ```
 
 2. **Update PATH**

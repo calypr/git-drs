@@ -6,13 +6,14 @@ import (
 
 // TestComputeDeterministicUUID_Reproducibility verifies that the same inputs always produce the same UUID
 func TestComputeDeterministicUUID_Reproducibility(t *testing.T) {
+	collection := "gdc-tcga"
 	path := "/data/sample.fastq"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 	// Generate UUID multiple times
-	uuid1 := ComputeDeterministicUUID(path, sha256)
-	uuid2 := ComputeDeterministicUUID(path, sha256)
-	uuid3 := ComputeDeterministicUUID(path, sha256)
+	uuid1 := ComputeDeterministicUUID(collection, path, sha256)
+	uuid2 := ComputeDeterministicUUID(collection, path, sha256)
+	uuid3 := ComputeDeterministicUUID(collection, path, sha256)
 
 	// All should be identical
 	if uuid1 != uuid2 || uuid2 != uuid3 {
@@ -27,10 +28,11 @@ func TestComputeDeterministicUUID_Reproducibility(t *testing.T) {
 
 // TestComputeDeterministicUUID_DifferentPaths verifies that different paths produce different UUIDs
 func TestComputeDeterministicUUID_DifferentPaths(t *testing.T) {
+	collection := "gdc-tcga"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-	uuid1 := ComputeDeterministicUUID("/data/sample.fastq", sha256)
-	uuid2 := ComputeDeterministicUUID("/backup/sample.fastq", sha256)
+	uuid1 := ComputeDeterministicUUID(collection, "/data/sample.fastq", sha256)
+	uuid2 := ComputeDeterministicUUID(collection, "/backup/sample.fastq", sha256)
 
 	if uuid1 == uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different paths, got: %s", uuid1)
@@ -39,10 +41,11 @@ func TestComputeDeterministicUUID_DifferentPaths(t *testing.T) {
 
 // TestComputeDeterministicUUID_DifferentHashes verifies that different hashes produce different UUIDs
 func TestComputeDeterministicUUID_DifferentHashes(t *testing.T) {
+	collection := "gdc-tcga"
 	path := "/data/sample.fastq"
 
-	uuid1 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-	uuid2 := ComputeDeterministicUUID(path, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid1 := ComputeDeterministicUUID(collection, path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid2 := ComputeDeterministicUUID(collection, path, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 	if uuid1 == uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different hashes, got: %s", uuid1)
@@ -52,12 +55,13 @@ func TestComputeDeterministicUUID_DifferentHashes(t *testing.T) {
 // TestComputeDeterministicUUID_SameSizesProduceSameUUID verifies that size doesn't affect UUID generation
 // This test replaces the old TestComputeDeterministicUUID_DifferentSizes test
 func TestComputeDeterministicUUID_SameSizesProduceSameUUID(t *testing.T) {
+	collection := "gdc-tcga"
 	path := "/data/sample.fastq"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 	// Size is no longer part of UUID generation, so these should be the same
-	uuid1 := ComputeDeterministicUUID(path, sha256)
-	uuid2 := ComputeDeterministicUUID(path, sha256)
+	uuid1 := ComputeDeterministicUUID(collection, path, sha256)
+	uuid2 := ComputeDeterministicUUID(collection, path, sha256)
 
 	if uuid1 != uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should generate same UUIDs regardless of size metadata, got: %s and %s", uuid1, uuid2)
@@ -66,10 +70,11 @@ func TestComputeDeterministicUUID_SameSizesProduceSameUUID(t *testing.T) {
 
 // TestComputeDeterministicUUID_CaseInsensitiveHash verifies that hash case doesn't matter
 func TestComputeDeterministicUUID_CaseInsensitiveHash(t *testing.T) {
+	collection := "gdc-tcga"
 	path := "/data/sample.fastq"
 
-	uuid1 := ComputeDeterministicUUID(path, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
-	uuid2 := ComputeDeterministicUUID(path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid1 := ComputeDeterministicUUID(collection, path, "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855")
+	uuid2 := ComputeDeterministicUUID(collection, path, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 	if uuid1 != uuid2 {
 		t.Errorf("ComputeDeterministicUUID() should be case-insensitive for hashes: got %s and %s", uuid1, uuid2)
@@ -132,13 +137,14 @@ func TestNormalizeLogicalPath_PathEquivalence(t *testing.T) {
 
 // TestComputeDeterministicUUID_PathNormalization verifies that equivalent paths produce the same UUID
 func TestComputeDeterministicUUID_PathNormalization(t *testing.T) {
+	collection := "gdc-tcga"
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 	// These paths should all normalize to the same thing
-	uuid1 := ComputeDeterministicUUID("data/sample.fastq", sha256)
-	uuid2 := ComputeDeterministicUUID("/data/sample.fastq", sha256)
-	uuid3 := ComputeDeterministicUUID("//data//sample.fastq", sha256)
-	uuid4 := ComputeDeterministicUUID("/data/sample.fastq/", sha256)
+	uuid1 := ComputeDeterministicUUID(collection, "data/sample.fastq", sha256)
+	uuid2 := ComputeDeterministicUUID(collection, "/data/sample.fastq", sha256)
+	uuid3 := ComputeDeterministicUUID(collection, "//data//sample.fastq", sha256)
+	uuid4 := ComputeDeterministicUUID(collection, "/data/sample.fastq/", sha256)
 
 	if uuid1 != uuid2 || uuid2 != uuid3 || uuid3 != uuid4 {
 		t.Errorf("ComputeDeterministicUUID() should produce same UUID for equivalent paths: got %s, %s, %s, %s", uuid1, uuid2, uuid3, uuid4)
@@ -148,10 +154,11 @@ func TestComputeDeterministicUUID_PathNormalization(t *testing.T) {
 // TestComputeDeterministicUUID_MatchesSpecification verifies the canonical format
 func TestComputeDeterministicUUID_MatchesSpecification(t *testing.T) {
 	// Test with known inputs to verify the canonical string format
+	collection := "gdc-tcga"
 	path := "/projectA/raw/reads/R1.fastq.gz"
 	sha256 := "4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
 
-	uuid := ComputeDeterministicUUID(path, sha256)
+	uuid := ComputeDeterministicUUID(collection, path, sha256)
 
 	// UUID should not be empty
 	if uuid == "" {
@@ -164,7 +171,7 @@ func TestComputeDeterministicUUID_MatchesSpecification(t *testing.T) {
 	}
 
 	// Should be reproducible
-	uuid2 := ComputeDeterministicUUID(path, sha256)
+	uuid2 := ComputeDeterministicUUID(collection, path, sha256)
 	if uuid != uuid2 {
 		t.Errorf("ComputeDeterministicUUID() not reproducible: %s != %s", uuid, uuid2)
 	}
@@ -174,19 +181,20 @@ func TestComputeDeterministicUUID_MatchesSpecification(t *testing.T) {
 // This test documents the expected behavior for external tools
 func TestComputeDeterministicUUID_LanguageAgnostic(t *testing.T) {
 	// Test case from specification
+	collection := "gdc-tcga"
 	path := "/projectA/raw/reads/R1.fastq.gz"
 	sha256 := "4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
 
-	uuid := ComputeDeterministicUUID(path, sha256)
+	uuid := ComputeDeterministicUUID(collection, path, sha256)
 
 	// The canonical string should be:
-	// "did:gen3:/projectA/raw/reads/R1.fastq.gz:4d9670e4c8f3e8b8a6c2d4f9136d7b89e4b9d5e0d2a1c0b9f4c2de0e8c7ac1a0"
+	// "did:gen3:{collection}:{path}:{sha256}"
 	// UUID should be UUIDv5(NAMESPACE, canonical)
 	// Note: AUTHORITY is NOT included in the canonical string format
 	// Note: Size is NOT included in the canonical string
 
 	t.Logf("Generated UUID: %s", uuid)
-	t.Logf("Canonical string: did:gen3:%s:%s", path, sha256)
+	t.Logf("Canonical string: did:gen3:%s:%s:%s", collection, path, sha256)
 	t.Logf("Namespace UUID: %s", NAMESPACE.String())
 	t.Logf("AUTHORITY (for reference): %s", AUTHORITY)
 
@@ -221,4 +229,90 @@ func TestAUTHORITY_Value(t *testing.T) {
 	}
 
 	t.Logf("AUTHORITY: %s", AUTHORITY)
+}
+
+// TestComputeDeterministicUUID_DifferentCollections verifies that different collections produce different UUIDs
+func TestComputeDeterministicUUID_DifferentCollections(t *testing.T) {
+	path := "/data/sample.fastq"
+	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	// Generate UUIDs with different collections
+	uuid1 := ComputeDeterministicUUID("gdc-tcga", path, sha256)
+	uuid2 := ComputeDeterministicUUID("gdc-target", path, sha256)
+	uuid3 := ComputeDeterministicUUID("my-bucket", path, sha256)
+
+	// All should be different
+	if uuid1 == uuid2 {
+		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different collections: gdc-tcga=%s, gdc-target=%s", uuid1, uuid2)
+	}
+	if uuid1 == uuid3 {
+		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different collections: gdc-tcga=%s, my-bucket=%s", uuid1, uuid3)
+	}
+	if uuid2 == uuid3 {
+		t.Errorf("ComputeDeterministicUUID() should generate different UUIDs for different collections: gdc-target=%s, my-bucket=%s", uuid2, uuid3)
+	}
+
+	t.Logf("UUID for gdc-tcga: %s", uuid1)
+	t.Logf("UUID for gdc-target: %s", uuid2)
+	t.Logf("UUID for my-bucket: %s", uuid3)
+}
+
+// TestComputeDeterministicUUID_EmptyCollection verifies handling of empty collection
+func TestComputeDeterministicUUID_EmptyCollection(t *testing.T) {
+	path := "/data/sample.fastq"
+	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	// Empty collection should still work (for standalone repos without project context)
+	uuid := ComputeDeterministicUUID("", path, sha256)
+
+	if uuid == "" {
+		t.Error("ComputeDeterministicUUID() returned empty UUID for empty collection")
+	}
+
+	// Empty collection should produce different UUID than named collection
+	uuidWithCollection := ComputeDeterministicUUID("gdc-tcga", path, sha256)
+	if uuid == uuidWithCollection {
+		t.Error("ComputeDeterministicUUID() should produce different UUIDs for empty vs named collection")
+	}
+
+	t.Logf("UUID for empty collection: %s", uuid)
+	t.Logf("UUID for gdc-tcga: %s", uuidWithCollection)
+}
+
+// TestComputeDeterministicUUID_CollectionFormats verifies various collection format conventions
+func TestComputeDeterministicUUID_CollectionFormats(t *testing.T) {
+	path := "/data/sample.fastq"
+	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	testCases := []struct {
+		name       string
+		collection string
+	}{
+		{"Gen3 program-project", "gdc-tcga"},
+		{"S3 bucket", "my-genomics-bucket"},
+		{"Workspace ID", "workspace-12345"},
+		{"Study ID", "study-abc"},
+		{"Repo name", "anvil-git-drs-test-repo"},
+	}
+
+	uuids := make(map[string]string)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			uuid := ComputeDeterministicUUID(tc.collection, path, sha256)
+
+			if uuid == "" {
+				t.Errorf("ComputeDeterministicUUID() returned empty UUID for collection %q", tc.collection)
+			}
+
+			// Check uniqueness
+			for prevColl, prevUUID := range uuids {
+				if uuid == prevUUID {
+					t.Errorf("ComputeDeterministicUUID() produced same UUID for different collections: %s and %s", tc.collection, prevColl)
+				}
+			}
+
+			uuids[tc.collection] = uuid
+			t.Logf("UUID for %s (%s): %s", tc.name, tc.collection, uuid)
+		})
+	}
 }

@@ -56,10 +56,16 @@ func UpdateDrsObjects(logger *Logger) error {
 	}
 	logger.Logf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
 
+	// Get collection identifier for UUID generation
+	collection, err := config.GetCollection()
+	if err != nil {
+		return fmt.Errorf("failed to get collection: %w", err)
+	}
+
 	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
-		drsId := ComputeDeterministicUUID(file.Name, file.Oid)
+		drsId := ComputeDeterministicUUID(collection, file.Name, file.Oid)
 
 		// check if indexd object already prepared, skip if so
 		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid, file.Name)

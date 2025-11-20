@@ -234,6 +234,17 @@ func CreateEmptyConfig() error {
 	return nil
 }
 
+// GetProjectId returns the Gen3 project ID for authorization (authz) purposes.
+// This is Gen3-specific and used for:
+//   - Creating authz resource paths (e.g., "/programs/gdc/projects/tcga")
+//   - Filtering indexd records by project ownership
+//   - Gen3 access control
+//
+// Note: This is different from GetCollection() which is used for UUID generation
+// and works across all server types (Gen3, Anvil, standalone). They happen to
+// return the same value for Gen3, but serve different semantic purposes.
+// Not consolidated because: authz filtering is Gen3-specific, while collection
+// namespacing is cross-platform.
 func GetProjectId() (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -243,4 +254,44 @@ func GetProjectId() (string, error) {
 		return "", fmt.Errorf("No project ID found in config")
 	}
 	return cfg.Servers.Gen3.Auth.ProjectID, nil
+}
+
+// GetCollection returns the collection identifier for UUID generation based on server type
+// This provides project-level isolation to prevent UUID collisions across different contexts
+//
+// Collection mappings:
+//   - Gen3: Uses project_id (e.g., "gdc-tcga")
+//   - Anvil: Uses terra_project (e.g., "anvil-datastorage")
+//   - Standalone/Other: Returns empty string (or could use repo name in future)
+//
+// Returns:
+//   - collection: The collection identifier string
+//   - error: Any error encountered loading config
+func GetCollection() (string, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		// If no config exists (standalone repo), return empty collection
+		// This allows git-drs to work without initialization for basic use cases
+		return "", nil
+	}
+
+	// Determine collection based on current server type
+	switch cfg.CurrentServer {
+	case Gen3ServerType:
+		if cfg.Servers.Gen3 != nil && cfg.Servers.Gen3.Auth.ProjectID != "" {
+			return cfg.Servers.Gen3.Auth.ProjectID, nil
+		}
+		return "", fmt.Errorf("Gen3 server selected but no project_id configured")
+
+	case AnvilServerType:
+		if cfg.Servers.Anvil != nil && cfg.Servers.Anvil.Auth.TerraProject != "" {
+			return cfg.Servers.Anvil.Auth.TerraProject, nil
+		}
+		return "", fmt.Errorf("Anvil server selected but no terra_project configured")
+
+	default:
+		// For unknown/unset server types, return empty collection
+		// This maintains backward compatibility for repos without server config
+		return "", nil
+	}
 }

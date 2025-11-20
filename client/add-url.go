@@ -355,13 +355,14 @@ func fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, reg
 // It's separated for easier unit testing with mock clients.
 // Parameters:
 //   - indexdClient: the indexd client interface (can be mocked)
+//   - collection: the collection identifier for UUID generation (e.g., project ID)
 //   - projectId: the project ID to use for the record
 //   - url: the S3 URL to register
 //   - sha256: the SHA256 hash of the file
 //   - fileSize: the size of the file in bytes
 //   - modifiedDate: the modification date of the file
 //   - logger: the logger interface for output
-func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger LoggerInterface) error {
+func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, collection, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger LoggerInterface) error {
 	// Use NoOpLogger if no logger provided
 	if logger == nil {
 		logger = &NoOpLogger{}
@@ -373,8 +374,8 @@ func upsertIndexdRecordWithClient(indexdClient ObjectStoreClient, projectId, url
 		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
-	// Compute deterministic UUID based on path and hash
-	uuid := ComputeDeterministicUUID(relPath, sha256)
+	// Compute deterministic UUID based on collection, path and hash
+	uuid := ComputeDeterministicUUID(collection, relPath, sha256)
 
 	// handle if record already exists
 	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
@@ -458,13 +459,19 @@ func upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate 
 		return fmt.Errorf("failed to initialize IndexD client: %w", err)
 	}
 
+	// get collection identifier for UUID generation
+	collection, err := config.GetCollection()
+	if err != nil {
+		return fmt.Errorf("Error getting collection: %v", err)
+	}
+
 	// get project ID
 	projectId, err := config.GetProjectId()
 	if err != nil {
 		return fmt.Errorf("Error getting project ID: %v", err)
 	}
 
-	return upsertIndexdRecordWithClient(indexdClient, projectId, url, sha256, fileSize, modifiedDate, logger)
+	return upsertIndexdRecordWithClient(indexdClient, collection, projectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL

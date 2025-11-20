@@ -48,14 +48,20 @@ func NormalizeLogicalPath(path string) string {
 }
 
 // ComputeDeterministicUUID generates a deterministic UUID based on the canonical DID string
-// This follows the specification:
-// Canonical format: did:gen3:{logical_path}:{sha256}
+// This follows the specification with collection-aware namespacing:
+// Canonical format: did:gen3:{collection}:{logical_path}:{sha256}
 // UUID = UUIDv5(NAMESPACE, canonical_string)
 //
 // The NAMESPACE is derived from AUTHORITY but the AUTHORITY itself is NOT included
 // in the canonical string used for UUID generation.
 //
+// The collection parameter provides project-level isolation to prevent UUID collisions:
+//   - Gen3: collection = "program-project" (e.g., "gdc-tcga")
+//   - Other DRS: collection = bucket_name or workspace_id or study_id
+//   - Standalone: collection = repo_name or empty string
+//
 // Parameters:
+//   - collection: The collection/namespace identifier (e.g., project ID, bucket name)
 //   - logicalPath: The repository-relative path to the file (will be normalized)
 //   - sha256: The SHA256 hash of the file (lowercase hex string)
 //
@@ -64,15 +70,17 @@ func NormalizeLogicalPath(path string) string {
 //
 // Example:
 //
-//	uuid := ComputeDeterministicUUID("/data/sample.fastq", "abc123...")
+//	uuid := ComputeDeterministicUUID("gdc-tcga", "/data/sample.fastq", "abc123...")
 //	// Returns: "8f6f3f44-2a51-5e7d-b8d6-1f2a1b0c9d77" (deterministic)
-func ComputeDeterministicUUID(logicalPath, sha256 string) string {
+func ComputeDeterministicUUID(collection, logicalPath, sha256 string) string {
 	// Normalize inputs
 	normalizedPath := NormalizeLogicalPath(logicalPath)
 	normalizedSHA256 := strings.ToLower(sha256)
 
 	// Build canonical DID string (WITHOUT authority in the string itself)
-	canonical := fmt.Sprintf("did:gen3:%s:%s",
+	// Format: did:gen3:{collection}:{path}:{sha256}
+	canonical := fmt.Sprintf("did:gen3:%s:%s:%s",
+		collection,
 		normalizedPath,
 		normalizedSHA256)
 

@@ -810,8 +810,9 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	modifiedDate := "2024-01-01"
 
 	// Pre-populate the mock server with an existing record for this project
-	// UUID is now computed from path and hash
-	existingUUID := ComputeDeterministicUUID("file1.bam", sha256)
+	// UUID is now computed from collection, path and hash
+	collection := "testprogram-testproject" // Matches projectId
+	existingUUID := ComputeDeterministicUUID(collection, "file1.bam", sha256)
 	authzStr := "/programs/testprogram/projects/testproject"
 
 	existingRecord := &IndexdRecord{
@@ -839,7 +840,7 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	}
 
 	// Now upsert with a different URL - should update the existing record
-	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -901,7 +902,9 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	modifiedDate := "2024-01-02"
 
 	// Pre-populate with a record for project1
-	uuid1 := ComputeDeterministicUUID("project1-file.bam", sha256)
+	collection1 := "program1-project1" // Collection for project1
+	collection2 := project2            // Collection for project2 (same as project ID)
+	uuid1 := ComputeDeterministicUUID(collection1, "project1-file.bam", sha256)
 	authz1 := "/programs/program1/projects/project1"
 
 	existingRecord := &IndexdRecord{
@@ -929,7 +932,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	// Now upsert with project2 - should create a NEW record (different path = different UUID)
-	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection2, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -945,7 +948,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	// Verify the DIDs are different (because paths are different)
-	uuid2 := ComputeDeterministicUUID("project2-file.bam", sha256)
+	uuid2 := ComputeDeterministicUUID(collection2, "project2-file.bam", sha256)
 	authz2 := "/programs/program2/projects/project2"
 
 	foundProject1Record := false
@@ -999,19 +1002,20 @@ func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 
 	// Setup test data
 	projectId := "testprogram-testproject"
+	collection := projectId // Collection matches project ID
 	sha256 := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	url := "s3://bucket1/file.bam"
 	fileSize := int64(3000)
 	modifiedDate := "2024-01-03"
 
 	// First upsert - creates the record
-	err := upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err := upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("First upsertIndexdRecordWithClient failed: %v", err)
 	}
 
 	// Second upsert - same URL, should be idempotent
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("Second upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1056,6 +1060,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 
 	// Setup test data
 	projectId := "newprogram-newproject" // Fixed format: <program>-<project>
+	collection := projectId              // Collection matches project ID
 	sha256 := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	url := "s3://new-bucket/new-file.bam"
 	fileSize := int64(4000)
@@ -1071,7 +1076,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	// Create the record
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1087,7 +1092,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	record := records[0]
-	expectedUUID := ComputeDeterministicUUID("new-file.bam", sha256)
+	expectedUUID := ComputeDeterministicUUID(collection, "new-file.bam", sha256)
 	expectedAuthz := "/programs/newprogram/projects/newproject"
 
 	// Verify record properties

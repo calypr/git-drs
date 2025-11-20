@@ -311,13 +311,21 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 					metadata[k] = v
 				}
 
+				// Format CreatedAt as RFC3339 string for CreatedDate field
+				var createdDate string
+				if !record.CreatedAt.IsZero() {
+					createdDate = record.CreatedAt.Format(time.RFC3339)
+				}
+
 				outputRecords = append(outputRecords, OutputInfo{
-					Did:      record.Did,
-					Size:     record.Size,
-					Hashes:   hashes,
-					URLs:     record.URLs,
-					Authz:    record.Authz,
-					Metadata: metadata,
+					Did:         record.Did,
+					FileName:    record.FileName,
+					Size:        record.Size,
+					Hashes:      hashes,
+					URLs:        record.URLs,
+					Authz:       record.Authz,
+					Metadata:    metadata,
+					CreatedDate: createdDate,
 				})
 			}
 		}

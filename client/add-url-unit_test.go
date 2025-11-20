@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/calypr/git-drs/config"
 )
 
 // Unit Tests for validateInputs
@@ -877,6 +879,12 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	// Test case 2: a record exists but it is not for the same project, so a new record is created
 	// NOTE: With new UUID scheme, different paths produce different UUIDs (not project-dependent)
 
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
+
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
@@ -976,6 +984,12 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 	// Test that upserting the same URL twice is idempotent (no duplicate URLs)
 
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
+
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
@@ -1026,6 +1040,12 @@ func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 
 func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	// Test creating a brand new record when no records exist for the hash
+
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
 
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)

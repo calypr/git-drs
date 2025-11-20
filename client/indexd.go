@@ -203,9 +203,13 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 	}
 
 	// use any indexd record from the same project if it exists
-	projectId, err := config.GetProjectId()
-	if err != nil {
-		return nil, fmt.Errorf("Error getting project ID: %v", err)
+	// Use cl.ProjectId if set (for testing), otherwise get from config
+	projectId := cl.ProjectId
+	if projectId == "" {
+		projectId, err = config.GetProjectId()
+		if err != nil {
+			return nil, fmt.Errorf("Error getting project ID: %v", err)
+		}
 	}
 
 	// If multiple project-matching records exist for this hash, choose a canonical one
@@ -701,8 +705,27 @@ func FindEarliestCreatedRecordForProject(records []OutputInfo, projectId string)
 			continue
 		}
 
-		createdAt, err := time.Parse(time.RFC3339, record.CreatedDate)
-		if err != nil {
+		// Try parsing with multiple formats since indexd may return timestamps
+		// without timezone information
+		var createdAt time.Time
+		formats := []string{
+			time.RFC3339,                 // 2006-01-02T15:04:05Z07:00
+			time.RFC3339Nano,             // 2006-01-02T15:04:05.999999999Z07:00
+			"2006-01-02T15:04:05.999999", // indexd format without timezone
+			"2006-01-02T15:04:05",        // without microseconds or timezone
+		}
+
+		parsed := false
+		for _, format := range formats {
+			t, err := time.Parse(format, record.CreatedDate)
+			if err == nil {
+				createdAt = t
+				parsed = true
+				break
+			}
+		}
+
+		if !parsed {
 			// Skip records with invalid timestamps
 			if canonical == nil {
 				canonical = record
@@ -710,7 +733,10 @@ func FindEarliestCreatedRecordForProject(records []OutputInfo, projectId string)
 			continue
 		}
 
-		if canonical == nil || createdAt.Before(canonicalTime) {
+		if canonical == nil {
+			canonical = record
+			canonicalTime = createdAt
+		} else if createdAt.Before(canonicalTime) {
 			canonical = record
 			canonicalTime = createdAt
 		}

@@ -256,7 +256,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	var fileMap FileContainer
 	err = json.Unmarshal(output, &fileMap)
 
-	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID, "")
 	if err != nil {
 		t.Fatalf("Failed to get object path %s: %v", path, err)
 	}
@@ -265,13 +265,17 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("Path: %s", path)
 
-	_, err = os.Stat(path)
-
+	// With the updated GetObjectPath behavior, this path points to the DRS object
+	// directory for the given OID. Verify that this directory exists.
+	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		t.Fatalf("File or directory not found at path: %s", path)
 	}
 	if err != nil {
 		t.Fatalf("Error checking path existence %s: %v", path, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("Expected %s to be a directory, got file instead", path)
 	}
 
 	// Verify pre-commit hook was called by checking .drs/ logs

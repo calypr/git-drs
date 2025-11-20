@@ -455,7 +455,15 @@ func TestIndexdClient_RegisterFile_UsesEarliestCreatedRecord(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, canonical, "FindEarliestCreatedRecordForProject should return a canonical record")
 	require.Equal(t, oldestDid, canonical.Did, "FindEarliestCreatedRecordForProject should select the oldest record")
-	require.Equal(t, "1969-12-31T16:16:40-08:00", canonical.CreatedDate, "Canonical record should have the earliest CreatedDate")
+	
+	// Verify the CreatedDate corresponds to Unix timestamp 1000 (the oldest)
+	// Parse and compare as time.Time to avoid timezone formatting differences
+	canonicalTime, err := time.Parse(time.RFC3339, canonical.CreatedDate)
+	require.NoError(t, err, "CreatedDate should be parseable as RFC3339")
+	expectedTime := time.Unix(1000, 0)
+	require.True(t, canonicalTime.Equal(expectedTime), 
+		"Canonical record should have CreatedDate equal to Unix timestamp 1000 (got %v, expected %v)", 
+		canonicalTime, expectedTime)
 
 	// Verify that GetObject works for the canonical record
 	drsObj, err := client.GetObject(canonical.Did)

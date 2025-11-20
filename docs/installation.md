@@ -57,10 +57,10 @@ git lfs install --skip-smudge
 1. **Install Git LFS on HPC**
    ```bash
    # Download and install Git LFS
-   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz
-   tar -xvf git-lfs-linux-amd64-v3.7.0.tar.gz
+   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.1.tar.gz
+   tar -xvf git-lfs-linux-amd64-v3.7.1.tar.gz
    export PREFIX=$HOME
-   ./git-lfs-v3.7.0/install.sh
+   ./git-lfs-3.7.1/install.sh
    
    # Make permanent
    echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile

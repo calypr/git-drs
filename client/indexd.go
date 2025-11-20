@@ -208,20 +208,23 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 		return nil, fmt.Errorf("Error getting project ID: %v", err)
 	}
 
-	matchingRecord, err := FindMatchingRecord(records, projectId)
+	// If multiple project-matching records exist for this hash, choose a canonical one
+	// based on earliest CreatedDate. This ensures we consistently use the same DID
+	// that was first created in indexd when uploading the file.
+	canonicalRecord, err := FindEarliestCreatedRecordForProject(records, projectId)
 	if err != nil {
-		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+		return nil, fmt.Errorf("Error selecting canonical record for project %s: %v", projectId, err)
 	}
 
 	var drsObj *drs.DRSObject
 	recordAlreadyExisted := false
 
-	if matchingRecord != nil {
-		cl.logger.Logf("found existing indexd record with DID %s for this project", matchingRecord.Did)
+	if canonicalRecord != nil {
+		cl.logger.Logf("found existing canonical indexd record with DID %s for this project (created_date=%s)", canonicalRecord.Did, canonicalRecord.CreatedDate)
 		recordAlreadyExisted = true
-		drsObj, err = cl.GetObject(matchingRecord.Did)
+		drsObj, err = cl.GetObject(canonicalRecord.Did)
 		if err != nil {
-			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
+			return nil, fmt.Errorf("Error getting DRS object for canonical record %s: %v", canonicalRecord.Did, err)
 		}
 	} else {
 		// otherwise, create indexd record
@@ -284,6 +287,8 @@ func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, e
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
+		// figure out what is being actually called
+		cl.logger.Logf("running g3cmd.UploadSingleMultipart with filepath %s, profile %s, bucket %s, DRS ID %s", filePath, cl.Profile, cl.BucketName, drsObj.Id)
 		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)
@@ -662,6 +667,56 @@ func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, er
 	}
 
 	return nil, nil
+}
+
+// FindEarliestCreatedRecordForProject selects a canonical record for a given project
+// from a list of OutputInfo objects. If multiple records belong to the same project,
+// it returns the one with the earliest CreatedDate timestamp (RFC3339). If no
+// matching records are found, it returns nil.
+func FindEarliestCreatedRecordForProject(records []OutputInfo, projectId string) (*OutputInfo, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	expectedAuthz, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	}
+
+	var canonical *OutputInfo
+	var canonicalTime time.Time
+
+	for i := range records {
+		record := &records[i]
+		if !slices.Contains(record.Authz, expectedAuthz) {
+			continue
+		}
+
+		// If CreatedDate is empty or unparsable, treat it as "infinite" (skip) so that
+		// well-formed timestamps always take precedence.
+		if record.CreatedDate == "" {
+			if canonical == nil {
+				canonical = record
+			}
+			continue
+		}
+
+		createdAt, err := time.Parse(time.RFC3339, record.CreatedDate)
+		if err != nil {
+			// Skip records with invalid timestamps
+			if canonical == nil {
+				canonical = record
+			}
+			continue
+		}
+
+		if canonical == nil || createdAt.Before(canonicalTime) {
+			canonical = record
+			canonicalTime = createdAt
+		}
+	}
+
+	return canonical, nil
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET

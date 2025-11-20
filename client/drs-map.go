@@ -34,18 +34,6 @@ func UpdateDrsObjects(logger *Logger) error {
 
 	logger.Log("Update to DRS objects started")
 
-	// init indexd client
-	indexdClient, err := NewIndexDClient(logger)
-	if err != nil {
-		return fmt.Errorf("error initializing indexd with credentials: %v", err)
-	}
-
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
-	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
-	}
-
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
 	if err != nil {
@@ -68,39 +56,24 @@ func UpdateDrsObjects(logger *Logger) error {
 	}
 	logger.Logf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
 
+	// Get collection identifier for UUID generation
+	collection, err := config.GetCollection()
+	if err != nil {
+		return fmt.Errorf("failed to get collection: %w", err)
+	}
+
 	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
-
-		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
-		}
-
-		// check if record with matching project ID already exists in indexd
-		projectId, err := config.GetProjectId()
-		if err != nil {
-			return fmt.Errorf("Error getting project ID: %v", err)
-		}
-		matchingRecord, err := FindMatchingRecord(records, projectId)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-		}
-
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
-		}
+		drsId := ComputeDeterministicUUID(collection, file.Name, file.Oid)
 
 		// check if indexd object already prepared, skip if so
-		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
+		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid, file.Name)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+			logger.Logf("Skipping staged file %s with OID %s, DRS object already created at %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 
@@ -110,13 +83,11 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
-		// create a local DRS object for it
-		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		// create a local DRS object for it using deterministic UUID
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid)
+		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid, file.Name)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -158,6 +129,7 @@ func UpdateDrsObjects(logger *Logger) error {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
 		logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Did)
+		logger.Log("DRS OBJECT PATH: ++++++++++++++++++++++++++++", drsObjPath)
 	}
 
 	return nil
@@ -188,9 +160,9 @@ func DrsUUID(repoName string, hash string) string {
 }
 
 // creates index record from file
-func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
+func DrsInfoFromOid(oid string, path string) (*IndexdRecord, error) {
 	// unmarshal the DRS object
-	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
+	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid, path)
 	if err != nil {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
@@ -209,13 +181,13 @@ func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
 	return &indexdObj, nil
 }
 
-func GetObjectPath(basePath string, oid string) (string, error) {
+func GetObjectPath(basePath string, oid string, path string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
 		return "", errors.New(fmt.Sprintf("Error: %s is not a valid sha256 hash", oid))
 	}
 
-	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil
+	return filepath.Join(basePath, oid[:2], oid[2:4], oid, path), nil
 }
 
 ////////////////

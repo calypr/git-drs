@@ -193,7 +193,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
 // DRS will use any matching indexd record / file that already exists
-func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
+func (cl *IndexDClient) RegisterFile(oid string, path string) (*drs.DRSObject, error) {
 	cl.logger.Logf("register file started for oid: %s", oid)
 
 	// get all existing hashes
@@ -203,28 +203,39 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	}
 
 	// use any indexd record from the same project if it exists
-	projectId, err := config.GetProjectId()
-	if err != nil {
-		return nil, fmt.Errorf("Error getting project ID: %v", err)
-	}
-
-	matchingRecord, err := FindMatchingRecord(records, projectId)
-	if err != nil {
-		return nil, fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-	}
-
-	drsObj := &drs.DRSObject{}
-	if matchingRecord != nil {
-		drsObj, err = cl.GetObject(matchingRecord.Did)
+	// Use cl.ProjectId if set (for testing), otherwise get from config
+	projectId := cl.ProjectId
+	if projectId == "" {
+		projectId, err = config.GetProjectId()
 		if err != nil {
-			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Did, err)
+			return nil, fmt.Errorf("Error getting project ID: %v", err)
+		}
+	}
+
+	// If multiple project-matching records exist for this hash, choose a canonical one
+	// based on earliest CreatedDate. This ensures we consistently use the same DID
+	// that was first created in indexd when uploading the file.
+	canonicalRecord, err := FindEarliestCreatedRecordForProject(records, projectId)
+	if err != nil {
+		return nil, fmt.Errorf("Error selecting canonical record for project %s: %v", projectId, err)
+	}
+
+	var drsObj *drs.DRSObject
+	recordAlreadyExisted := false
+
+	if canonicalRecord != nil {
+		cl.logger.Logf("found existing canonical indexd record with DID %s for this project (created_date=%s)", canonicalRecord.Did, canonicalRecord.CreatedDate)
+		recordAlreadyExisted = true
+		drsObj, err = cl.GetObject(canonicalRecord.Did)
+		if err != nil {
+			return nil, fmt.Errorf("Error getting DRS object for canonical record %s: %v", canonicalRecord.Did, err)
 		}
 	} else {
 		// otherwise, create indexd record
 		cl.logger.Log("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		indexdObj, err := DrsInfoFromOid(oid)
+		indexdObj, err := DrsInfoFromOid(oid, path)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
@@ -238,8 +249,9 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	}
 
 	// delete indexd record if subsequent file upload code errors out
+	// but only if we just created it (don't delete pre-existing records)
 	defer func() {
-		if err != nil {
+		if err != nil && !recordAlreadyExisted {
 			cl.logger.Logf("registration incomplete, cleaning up indexd record for oid %s", oid)
 			err = cl.DeleteIndexdRecord(drsObj.Id)
 			if err != nil {
@@ -272,12 +284,15 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		cl.logger.Logf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
 
 		// modified from gen3-client/g3cmd/upload-single.go
-		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid)
+		filePath, err := GetObjectPath(config.LFS_OBJS_PATH, oid, "")
+		cl.logger.Logf("file path to upload: %s", filePath)
 		if err != nil {
 			cl.logger.Logf("error getting object path for oid %s: %s", oid, err)
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
+		// figure out what is being actually called
+		cl.logger.Logf("running g3cmd.UploadSingleMultipart with filepath %s, profile %s, bucket %s, DRS ID %s", filePath, cl.Profile, cl.BucketName, drsObj.Id)
 		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)
@@ -288,7 +303,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	}
 
 	// if all successful, remove temp DRS object
-	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
+	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid, path)
 	if err == nil {
 		_ = os.Remove(drsPath)
 	}
@@ -656,6 +671,78 @@ func FindMatchingRecord(records []OutputInfo, projectId string) (*OutputInfo, er
 	}
 
 	return nil, nil
+}
+
+// FindEarliestCreatedRecordForProject selects a canonical record for a given project
+// from a list of OutputInfo objects. If multiple records belong to the same project,
+// it returns the one with the earliest CreatedDate timestamp (RFC3339). If no
+// matching records are found, it returns nil.
+func FindEarliestCreatedRecordForProject(records []OutputInfo, projectId string) (*OutputInfo, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	expectedAuthz, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	}
+
+	var canonical *OutputInfo
+	var canonicalTime time.Time
+
+	for i := range records {
+		record := &records[i]
+		if !slices.Contains(record.Authz, expectedAuthz) {
+			continue
+		}
+
+		// If CreatedDate is empty or unparsable, treat it as "infinite" (skip) so that
+		// well-formed timestamps always take precedence.
+		if record.CreatedDate == "" {
+			if canonical == nil {
+				canonical = record
+			}
+			continue
+		}
+
+		// Try parsing with multiple formats since indexd may return timestamps
+		// without timezone information
+		var createdAt time.Time
+		formats := []string{
+			time.RFC3339,                 // 2006-01-02T15:04:05Z07:00
+			time.RFC3339Nano,             // 2006-01-02T15:04:05.999999999Z07:00
+			"2006-01-02T15:04:05.999999", // indexd format without timezone
+			"2006-01-02T15:04:05",        // without microseconds or timezone
+		}
+
+		parsed := false
+		for _, format := range formats {
+			t, err := time.Parse(format, record.CreatedDate)
+			if err == nil {
+				createdAt = t
+				parsed = true
+				break
+			}
+		}
+
+		if !parsed {
+			// Skip records with invalid timestamps
+			if canonical == nil {
+				canonical = record
+			}
+			continue
+		}
+
+		if canonical == nil {
+			canonical = record
+			canonicalTime = createdAt
+		} else if createdAt.Before(canonicalTime) {
+			canonical = record
+			canonicalTime = createdAt
+		}
+	}
+
+	return canonical, nil
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET

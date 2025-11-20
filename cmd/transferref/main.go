@@ -35,7 +35,6 @@ var Cmd = &cobra.Command{
 		defer myLogger.Close()
 
 		myLogger.Log("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
-
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
 
@@ -70,7 +69,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// call DRS Downloader via downloadFile
-				dstPath, err := downloadFile(downloadMsg.Oid)
+				dstPath, err := downloadFile(downloadMsg.Oid, downloadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
@@ -125,7 +124,7 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func downloadFile(sha string) (string, error) {
+func downloadFile(sha string, path string) (string, error) {
 	//setup logging to file for debugging
 	myLogger, err := client.NewLogger(client.DRS_LOG_FILE, false)
 	if err != nil {
@@ -150,7 +149,7 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error: project key is empty in config file")
 	}
 
-	filePath, err := client.GetObjectPath(client.DRS_REF_DIR, sha)
+	filePath, err := client.GetObjectPath(client.DRS_REF_DIR, sha, path)
 	if err != nil {
 		return "", fmt.Errorf("error getting object path for sha %s: %v", sha, err)
 	}
@@ -201,7 +200,7 @@ func downloadFile(sha string) (string, error) {
 	defer logFile.Close()
 
 	// download file, make sure its name is the sha
-	dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, sha)
+	dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, sha, path)
 	dstDir := filepath.Dir(dstPath)
 	cmd := exec.Command("drs_downloader", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
 

@@ -18,13 +18,14 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download <oid>",
+	Use:   "download <oid> <name>",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		oid := args[0]
+		name := args[1]
 		logger, err := client.NewLogger("", true)
 		if err != nil {
 			return err
@@ -48,7 +49,7 @@ var Cmd = &cobra.Command{
 
 		// download url to destination path or LFS objects if not specified
 		if dstPath == "" {
-			dstPath, err = client.GetObjectPath(config.LFS_OBJS_PATH, oid)
+			dstPath, err = client.GetObjectPath(config.LFS_OBJS_PATH, oid, name)
 		}
 		if err != nil {
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)

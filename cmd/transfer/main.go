@@ -86,7 +86,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// download signed url
-				dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, downloadMsg.Oid)
+				dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, downloadMsg.Oid, downloadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
@@ -123,7 +123,7 @@ var Cmd = &cobra.Command{
 				myLogger.Log(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 
 				// otherwise, register the file (create indexd record and upload file)
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, uploadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
 					myLogger.Log(errMsg)

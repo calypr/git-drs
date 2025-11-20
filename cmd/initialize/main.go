@@ -232,15 +232,31 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 		return err
 	}
 
-	// Create .git/hooks/pre-commit file
+	// Create .git/hooks directory if it doesn't exist
 	hooksDir := filepath.Join(".git", "hooks")
-	preCommitPath := filepath.Join(hooksDir, "pre-commit")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
+		return fmt.Errorf("[ERROR] unable to create hooks directory: %v", err)
 	}
-	hookContent := "#!/bin/sh\ngit drs precommit\n"
-	if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
+
+	// Create .git/hooks/pre-commit file
+	preCommitPath := filepath.Join(hooksDir, "pre-commit")
+	preCommitContent := "#!/bin/sh\ngit drs precommit\n"
+	if err := os.WriteFile(preCommitPath, []byte(preCommitContent), 0755); err != nil {
 		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
+	}
+
+	// Create .git/hooks/pre-push file
+	// This registers all pending DRS objects with indexd before LFS transfer begins
+	prePushPath := filepath.Join(hooksDir, "pre-push")
+	prePushContent := `#!/bin/sh
+# Git DRS pre-push hook
+# Register all pending DRS objects with indexd before LFS transfer
+command -v git-lfs >/dev/null 2>&1 || { printf >&2 "\n%s\n\n" "This repository is configured for Git LFS but 'git-lfs' was not found on your path. If you no longer wish to use Git LFS, remove this hook by deleting the 'pre-push' file in the hooks directory (set by 'core.hookspath'; usually '.git/hooks')."; exit 2; }
+git drs register
+git lfs pre-push "$@"
+`
+	if err := os.WriteFile(prePushPath, []byte(prePushContent), 0755); err != nil {
+		return fmt.Errorf("[ERROR] unable to write to pre-push hook: %v", err)
 	}
 
 	// authenticate with gen3
@@ -300,12 +316,21 @@ func anvilInit(terraProject string, log *client.Logger) error {
 		return err
 	}
 
-	// remove the pre-commit hook if it exists
+	// remove the pre-commit and pre-push hooks if they exist (AnVIL uses different workflow)
 	hooksDir := filepath.Join(".git", "hooks")
+
 	preCommitPath := filepath.Join(hooksDir, "pre-commit")
 	if _, err := os.Stat(preCommitPath); err == nil {
 		if err := os.Remove(preCommitPath); err != nil {
 			log.Log("[ERROR] unable to remove pre-commit hook:", err)
+			return err
+		}
+	}
+
+	prePushPath := filepath.Join(hooksDir, "pre-push")
+	if _, err := os.Stat(prePushPath); err == nil {
+		if err := os.Remove(prePushPath); err != nil {
+			log.Log("[ERROR] unable to remove pre-push hook:", err)
 			return err
 		}
 	}

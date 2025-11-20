@@ -16,6 +16,7 @@ pip install -e [wherever your calypr_admin directory is]
 cd to where your git-drs directory is
 export GIT_DRS_PROFILE="YOUR_PROFILE_NAME_GOES_HERE"
 export GH_PAT="YOUR_SOURCE_GH_P_ACCESS_TOKEN_GOES_HERE"
+export PATH=$PATH:<path/to/git-drs/build>
 go test ./...
 ```
 

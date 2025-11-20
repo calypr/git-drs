@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/calypr/git-drs/config"
 )
 
 // Unit Tests for validateInputs
@@ -803,12 +805,14 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	projectId := "testprogram-testproject"
 	sha256 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	url1 := "s3://bucket1/file1.bam"
-	url2 := "s3://bucket2/file2.bam" // Different URL
+	url2 := "s3://bucket2/file1.bam" // Same file path, different bucket location
 	fileSize := int64(1000)
 	modifiedDate := "2024-01-01"
 
 	// Pre-populate the mock server with an existing record for this project
-	existingUUID := DrsUUID(projectId, sha256)
+	// UUID is now computed from collection, path and hash
+	collection := "testprogram-testproject" // Matches projectId
+	existingUUID := ComputeDeterministicUUID(collection, "file1.bam", sha256)
 	authzStr := "/programs/testprogram/projects/testproject"
 
 	existingRecord := &IndexdRecord{
@@ -836,7 +840,7 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	}
 
 	// Now upsert with a different URL - should update the existing record
-	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -874,6 +878,13 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 
 func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing.T) {
 	// Test case 2: a record exists but it is not for the same project, so a new record is created
+	// NOTE: With new UUID scheme, different paths produce different UUIDs (not project-dependent)
+
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
 
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
@@ -882,22 +893,23 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	// Create client with mock auth
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
-	// Setup test data
-	project1 := "program1-project1"
+	// Setup test data - use DIFFERENT file paths to get different UUIDs
 	project2 := "program2-project2" // Different project
 	sha256 := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	url1 := "s3://bucket1/shared-file.bam"
-	url2 := "s3://bucket2/shared-file.bam"
+	url1 := "s3://bucket1/project1-file.bam" // Different path
+	url2 := "s3://bucket2/project2-file.bam" // Different path
 	fileSize := int64(2000)
 	modifiedDate := "2024-01-02"
 
 	// Pre-populate with a record for project1
-	uuid1 := DrsUUID(project1, sha256)
+	collection1 := "program1-project1" // Collection for project1
+	collection2 := project2            // Collection for project2 (same as project ID)
+	uuid1 := ComputeDeterministicUUID(collection1, "project1-file.bam", sha256)
 	authz1 := "/programs/program1/projects/project1"
 
 	existingRecord := &IndexdRecord{
 		Did:      uuid1,
-		FileName: "shared-file.bam",
+		FileName: "project1-file.bam",
 		Hashes:   HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url1},
@@ -919,8 +931,8 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 		t.Fatalf("Expected 1 record initially, got %d", len(records))
 	}
 
-	// Now upsert with project2 - should create a NEW record (not update the existing one)
-	err = upsertIndexdRecordWithClient(client, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	// Now upsert with project2 - should create a NEW record (different path = different UUID)
+	err = upsertIndexdRecordWithClient(client, collection2, project2, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -932,11 +944,11 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	if len(allRecords) != 2 {
-		t.Fatalf("Expected 2 records for same hash (different projects), got %d", len(allRecords))
+		t.Fatalf("Expected 2 records for same hash (different paths), got %d", len(allRecords))
 	}
 
-	// Verify the DIDs are different
-	uuid2 := DrsUUID(project2, sha256)
+	// Verify the DIDs are different (because paths are different)
+	uuid2 := ComputeDeterministicUUID(collection2, "project2-file.bam", sha256)
 	authz2 := "/programs/program2/projects/project2"
 
 	foundProject1Record := false
@@ -966,14 +978,20 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 		t.Error("Project2 record not found")
 	}
 
-	// Verify the DIDs are actually different (different projects = different UUIDs)
+	// Verify the DIDs are actually different (different paths = different UUIDs)
 	if uuid1 == uuid2 {
-		t.Error("Expected different DIDs for different projects, but they're the same")
+		t.Error("Expected different DIDs for different paths, but they're the same")
 	}
 }
 
 func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 	// Test that upserting the same URL twice is idempotent (no duplicate URLs)
+
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
 
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
@@ -984,19 +1002,20 @@ func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 
 	// Setup test data
 	projectId := "testprogram-testproject"
+	collection := projectId // Collection matches project ID
 	sha256 := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	url := "s3://bucket1/file.bam"
 	fileSize := int64(3000)
 	modifiedDate := "2024-01-03"
 
 	// First upsert - creates the record
-	err := upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err := upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("First upsertIndexdRecordWithClient failed: %v", err)
 	}
 
 	// Second upsert - same URL, should be idempotent
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("Second upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1026,6 +1045,12 @@ func TestUpsertIndexdRecordWithClient_IdempotentSameURL(t *testing.T) {
 func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	// Test creating a brand new record when no records exist for the hash
 
+	// Ensure a clean DRS objects directory to avoid file/dir conflicts across tests
+	_ = os.RemoveAll(config.DRS_OBJS_PATH)
+	if err := os.MkdirAll(config.DRS_OBJS_PATH, 0o755); err != nil {
+		t.Fatalf("failed to create DRS objects directory: %v", err)
+	}
+
 	// Setup mock indexd server
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
@@ -1035,6 +1060,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 
 	// Setup test data
 	projectId := "newprogram-newproject" // Fixed format: <program>-<project>
+	collection := projectId              // Collection matches project ID
 	sha256 := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
 	url := "s3://new-bucket/new-file.bam"
 	fileSize := int64(4000)
@@ -1050,7 +1076,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	// Create the record
-	err = upsertIndexdRecordWithClient(client, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = upsertIndexdRecordWithClient(client, collection, projectId, url, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -1066,7 +1092,7 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordNoExisting(t *testing.T) {
 	}
 
 	record := records[0]
-	expectedUUID := DrsUUID(projectId, sha256)
+	expectedUUID := ComputeDeterministicUUID(collection, "new-file.bam", sha256)
 	expectedAuthz := "/programs/newprogram/projects/newproject"
 
 	// Verify record properties

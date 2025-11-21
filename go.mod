@@ -4,13 +4,16 @@ go 1.24.0
 
 require (
 	github.com/bmeg/grip-graphql v0.0.0-20250924224746-dc7f74b4040f
-	github.com/calypr/data-client v0.0.0-20251121152434-1127cf384d3b
+	github.com/calypr/data-client v0.0.0-20251121163152-9aa110d402e6
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+// for testing purposes
+// replace github.com/calypr/data-client => ../data-client
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect

@@ -290,7 +290,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 		defer tempLogger.Close()
 
-		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
+		err = g3cmd.UploadSingleMultipartWithLogWriter(cl.Profile, filePath, cl.BucketName, drsObj.Id, tempLogger)
+		// err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)

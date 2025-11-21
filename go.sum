@@ -40,14 +40,6 @@ github.com/bmeg/grip v0.0.0-20250714173925-c1892d4f63b1 h1:19EoCYhIUMQO7eOYaveue
 github.com/bmeg/grip v0.0.0-20250714173925-c1892d4f63b1/go.mod h1:laB5Md64qjhrb9spgvViXG/eeOfx+mNpLcsYJWbJyMs=
 github.com/bmeg/grip-graphql v0.0.0-20250924224746-dc7f74b4040f h1:GQxRuotthPMMnds1EpYWlveOShUWuCEKhO3tc1KLYPI=
 github.com/bmeg/grip-graphql v0.0.0-20250924224746-dc7f74b4040f/go.mod h1:mbCMMkG3xa2/mhs1pbKWoCb95STPri/bqCJtTn2oIKw=
-github.com/calypr/data-client v0.0.0-20251103160310-cc0ca9939fe7 h1:NVO5FpugLr+6rhTS/er1B2Ui8RIykbFL+IJcOXDdqBo=
-github.com/calypr/data-client v0.0.0-20251103160310-cc0ca9939fe7/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
-github.com/calypr/data-client v0.0.0-20251118191400-62c3ff1c6b37 h1:77/noS5ibtDSH230lEAtHOc3OncW7mKfW5os8yYeMN4=
-github.com/calypr/data-client v0.0.0-20251118191400-62c3ff1c6b37/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
-github.com/calypr/data-client v0.0.0-20251121150640-b0f9a969037e h1:WWo6HgGPb8b3j6YWB+5rHTeRlxs80hi3NhJ/Whhn/Qg=
-github.com/calypr/data-client v0.0.0-20251121150640-b0f9a969037e/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
-github.com/calypr/data-client v0.0.0-20251121152434-1127cf384d3b h1:5MR+Lu8teEdqkS5N+kbSHzysNKTn46kSp9I6V8Q8EOM=
-github.com/calypr/data-client v0.0.0-20251121152434-1127cf384d3b/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
 github.com/clipperhouse/uax29/v2 v2.2.0 h1:ChwIKnQN3kcZteTXMgb1wztSgaU+ZemkgWdohwgs8tY=
 github.com/clipperhouse/uax29/v2 v2.2.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=

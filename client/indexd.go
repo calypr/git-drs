@@ -278,6 +278,18 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
+		// figure out what is being actually called
+		cl.logger.Logf("running g3cmd.UploadSingleMultipart with filepath %s, profile %s, bucket %s, DRS ID %s", filePath, cl.Profile, cl.BucketName, drsObj.Id)
+
+		// create temp logger for now
+		filename := filepath.Join(config.DRS_DIR, "git-drs.log")
+		tempLogger, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			cl.logger.Logf("error creating temp logger: %s", err)
+			return nil, fmt.Errorf("error creating temp logger: %v", err)
+		}
+		defer tempLogger.Close()
+
 		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.logger.Logf("error uploading file to bucket: %s", err)

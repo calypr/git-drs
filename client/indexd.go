@@ -278,23 +278,42 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		// figure out what is being actually called
-		cl.logger.Logf("running g3cmd.UploadSingleMultipart with filepath %s, profile %s, bucket %s, DRS ID %s", filePath, cl.Profile, cl.BucketName, drsObj.Id)
-
-		// create temp logger for now
-		filename := filepath.Join(config.DRS_DIR, "git-drs.log")
-		tempLogger, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		// Get file size to determine upload method
+		fileInfo, err := os.Stat(filePath)
 		if err != nil {
-			cl.logger.Logf("error creating temp logger: %s", err)
-			return nil, fmt.Errorf("error creating temp logger: %v", err)
+			cl.logger.Logf("error getting file info for %s: %s", filePath, err)
+			return nil, fmt.Errorf("error getting file info: %v", err)
 		}
-		defer tempLogger.Close()
+		fileSize := fileInfo.Size()
+		const fiveGB = int64(5 * 1024 * 1024 * 1024)
 
-		err = g3cmd.UploadSingleMultipartWithLogWriter(cl.Profile, filePath, cl.BucketName, drsObj.Id, tempLogger)
-		// err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
-		if err != nil {
-			cl.logger.Logf("error uploading file to bucket: %s", err)
-			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+		// Use single-part upload for files < 5GB, multipart for >= 5GB
+		if fileSize < fiveGB {
+			cl.logger.Logf("file size %d bytes (< 5GB), using single-part upload", fileSize)
+			cl.logger.Logf("running g3cmd.UploadSingle with filepath %s, guid %s, bucket %s", filePath, drsObj.Id, cl.BucketName)
+			err = g3cmd.UploadSingle(cl.Profile, drsObj.Id, filePath, cl.BucketName, false)
+			if err != nil {
+				cl.logger.Logf("error uploading file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			}
+		} else {
+			cl.logger.Logf("file size %d bytes (>= 5GB), using multipart upload", fileSize)
+			cl.logger.Logf("running g3cmd.UploadSingleMultipart with filepath %s, profile %s, bucket %s, DRS ID %s", filePath, cl.Profile, cl.BucketName, drsObj.Id)
+
+			// create temp logger for now
+			filename := filepath.Join(config.DRS_DIR, "git-drs.log")
+			tempLogger, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				cl.logger.Logf("error creating temp logger: %s", err)
+				return nil, fmt.Errorf("error creating temp logger: %v", err)
+			}
+			defer tempLogger.Close()
+
+			err = g3cmd.UploadSingleMultipartWithLogWriter(cl.Profile, filePath, cl.BucketName, drsObj.Id, tempLogger)
+			if err != nil {
+				cl.logger.Logf("error uploading file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			}
 		}
 	} else {
 		cl.logger.Log("file exists in bucket, skipping upload")

@@ -44,6 +44,8 @@ github.com/calypr/data-client v0.0.0-20251121163152-9aa110d402e6 h1:/wuCVdLxWquM
 github.com/calypr/data-client v0.0.0-20251121163152-9aa110d402e6/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
 github.com/calypr/data-client v0.0.0-20251121190854-f57b120ad36d h1:Mqe0J0GUGnrbou/X6SVh97TfnHo7AdSdX+xmjmtPXdM=
 github.com/calypr/data-client v0.0.0-20251121190854-f57b120ad36d/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
+github.com/calypr/data-client v0.0.0-20251121210102-4fc29c20242f h1:kcJaHdpoJpcZrnT4QFFCMz8D+v6sBd12VWOD9v8OLbY=
+github.com/calypr/data-client v0.0.0-20251121210102-4fc29c20242f/go.mod h1:w0FrIP2TNqsBJcHUm3M04/5ZKKX7MHKRrYlYDU/A4sI=
 github.com/clipperhouse/uax29/v2 v2.2.0 h1:ChwIKnQN3kcZteTXMgb1wztSgaU+ZemkgWdohwgs8tY=
 github.com/clipperhouse/uax29/v2 v2.2.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=

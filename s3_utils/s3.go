@@ -25,8 +25,8 @@ type S3Meta struct {
 	LastModified string
 }
 
-type customEndpointResolver struct {
-	endpoint string
+type CustomEndpointResolver struct {
+	Endpoint string
 }
 
 const (
@@ -46,9 +46,9 @@ type AuthHandler interface {
 	AddAuthHeader(req *http.Request, profile string) error
 }
 
-func (r *customEndpointResolver) ResolveEndpoint(service, region string) (aws.Endpoint, error) {
+func (r *CustomEndpointResolver) ResolveEndpoint(service, region string) (aws.Endpoint, error) {
 	return aws.Endpoint{
-		URL: r.endpoint,
+		URL: r.Endpoint,
 	}, nil
 }
 

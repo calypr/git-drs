@@ -224,7 +224,7 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 //   - fileSize: the size of the file in bytes
 //   - modifiedDate: the modification date of the file
 //   - logger: the logger interface for output
-func upsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger log.LoggerInterface) error {
+func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger log.LoggerInterface) error {
 	// Use NoOpLogger if no logger provided
 	if logger == nil {
 		logger = &log.NoOpLogger{}
@@ -303,7 +303,7 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 	if logger == nil {
 		logger = &log.NoOpLogger{}
 	}
-	return upsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
+	return UpsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL

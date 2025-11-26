@@ -1,4 +1,4 @@
-package client
+package log
 
 import (
 	"io"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/projectdir"
 )
 
 // Logger wraps a log.Logger and the file it writes to.
@@ -21,11 +21,11 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 
 	if filename == "" {
 		//create drs dir if it doesn't exist
-		if err := os.MkdirAll(config.DRS_DIR, 0755); err != nil {
+		if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil {
 			return nil, err
 		}
 
-		filename = filepath.Join(config.DRS_DIR, "git-drs.log") // Assuming transfer.log is a variable
+		filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log") // Assuming transfer.log is a variable
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -39,7 +39,8 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	}
 
 	multiWriter := io.MultiWriter(writers...)
-	logger := log.New(multiWriter, "", log.LstdFlags) // Standard log flags
+	//TODO: make Llongfile optional via config
+	logger := log.New(multiWriter, "", log.LstdFlags|log.Llongfile) // Standard log flags
 
 	return &Logger{file: file, logger: logger}, nil
 }

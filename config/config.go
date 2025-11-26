@@ -4,41 +4,35 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/client"
+	anvil_client "github.com/calypr/git-drs/client/anvil"
+	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"gopkg.in/yaml.v3"
 )
 
-// Gen3Auth holds authentication info for Gen3
-type Gen3Auth struct {
-	Profile   string `yaml:"profile"`
-	ProjectID string `yaml:"project_id"`
-	Bucket    string `yaml:"bucket"`
-}
-
-// AnvilAuth holds authentication info for Anvil
-type AnvilAuth struct {
-	TerraProject string `yaml:"terra_project"`
-}
-
-// ServerType represents the type of server being initialized
-type ServerType string
+// RemoteType represents the type of server being initialized
+type RemoteType string
 
 const (
-	Gen3ServerType  ServerType = "gen3"
-	AnvilServerType ServerType = "anvil"
+	ORIGIN = "origin"
+
+	Gen3ServerType  RemoteType = "gen3"
+	AnvilServerType RemoteType = "anvil"
 )
 
-func AllServerTypes() []ServerType {
-	return []ServerType{Gen3ServerType, AnvilServerType}
+func AllRemoteTypes() []RemoteType {
+	return []RemoteType{Gen3ServerType, AnvilServerType}
 }
 
-func IsValidServerType(mode string) error {
-	modeOptions := make([]string, len(AllServerTypes()))
-	for i, m := range AllServerTypes() {
+func IsValidRemoteType(mode string) error {
+	modeOptions := make([]string, len(AllRemoteTypes()))
+	for i, m := range AllRemoteTypes() {
 		modeOptions[i] = string(m)
 	}
 
@@ -51,37 +45,60 @@ func IsValidServerType(mode string) error {
 	return fmt.Errorf("invalid mode '%s'. Valid options are: %s", mode, strings.Join(modeOptions, ", "))
 }
 
-// Gen3Server holds Gen3 server config
-type Gen3Server struct {
-	Endpoint string   `yaml:"endpoint"`
-	Auth     Gen3Auth `yaml:",inline"`
+// DRSRemote holds pointers to remote types
+type DRSRemote interface {
+	GetProjectId() string
+	GetEndpoint() string
+	GetBucketName() string
+	GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error)
 }
 
-// AnvilServer holds Anvil server config
-type AnvilServer struct {
-	Endpoint string    `yaml:"endpoint"`
-	Auth     AnvilAuth `yaml:",inline"`
-}
-
-// ServersMap holds all possible server configs
-type ServersMap struct {
-	Gen3  *Gen3Server  `yaml:"gen3,omitempty"`
-	Anvil *AnvilServer `yaml:"anvil,omitempty"`
+type RemoteSelect struct {
+	Gen3  *indexd_client.Gen3Remote `yaml:"gen3,omitempty"`
+	Anvil *anvil_client.AnvilRemote `yaml:"anvil,omitempty"`
 }
 
 // Config holds the overall config structure
 type Config struct {
-	CurrentServer ServerType `yaml:"current_server"`
-	Servers       ServersMap `yaml:"servers"`
+	CurrentRemote string                  `yaml:"current_remote"`
+	Remotes       map[string]RemoteSelect `yaml:"remotes"`
 }
 
-const (
-	LFS_OBJS_PATH = ".git/lfs/objects"
-	DRS_DIR       = ".drs"
-	// FIXME: should this be /lfs/objects or just /objects?
-	DRS_OBJS_PATH = DRS_DIR + "/lfs/objects"
-	CONFIG_YAML   = "config.yaml"
-)
+func (c Config) GetCurrentRemoteName() string {
+	return c.CurrentRemote
+}
+
+func (c Config) GetCurrentRemoteClient(logger *log.Logger) (client.DRSClient, error) {
+	if c.CurrentRemote == "" {
+		return nil, fmt.Errorf("no current remote set in config")
+	}
+	x, ok := c.Remotes[c.CurrentRemote]
+	if !ok {
+		return nil, fmt.Errorf("no remote configuration found for current remote: %s", c.CurrentRemote)
+	}
+	if x.Gen3 != nil {
+		return x.Gen3.GetClient(nil, logger)
+	} else if x.Anvil != nil {
+		return x.Anvil.GetClient(nil, logger)
+	}
+	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", c.CurrentRemote)
+}
+
+func (c Config) GetCurrentRemote() DRSRemote {
+	if c.CurrentRemote == "" {
+		return nil
+	}
+	x, ok := c.Remotes[c.CurrentRemote]
+	if !ok {
+		return nil
+	}
+	if x.Gen3 != nil {
+		return x.Gen3
+	} else if x.Anvil != nil {
+		return x.Anvil
+	}
+	return nil
+}
 
 func getConfigPath() (string, error) {
 	topLevel, err := utils.GitTopLevel()
@@ -89,7 +106,7 @@ func getConfigPath() (string, error) {
 		return "", err
 	}
 
-	configPath := filepath.Join(topLevel, DRS_DIR, CONFIG_YAML)
+	configPath := filepath.Join(topLevel, projectdir.DRS_DIR, projectdir.CONFIG_YAML)
 	return configPath, nil
 }
 
@@ -98,7 +115,7 @@ func getConfigPath() (string, error) {
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
-func UpdateServer(serversMap *ServersMap) (*Config, error) {
+func UpdateRemote(name string, serversMap RemoteSelect) (*Config, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
 		return nil, err
@@ -123,16 +140,8 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 	if err := yaml.NewDecoder(file).Decode(&cfg); err != nil {
 		// if the file is empty, we can just create a new config
 		cfg = Config{
-			Servers: ServersMap{},
+			Remotes: map[string]RemoteSelect{},
 		}
-	}
-
-	// update existing config, combining new serversMap with existing one
-	if serversMap.Gen3 != nil {
-		cfg.Servers.Gen3 = serversMap.Gen3
-	}
-	if serversMap.Anvil != nil {
-		cfg.Servers.Anvil = serversMap.Anvil
 	}
 
 	// overwrite the file using config
@@ -142,24 +151,25 @@ func UpdateServer(serversMap *ServersMap) (*Config, error) {
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
+	// TODO: doing this automatically feels weird
 	// add to git
-	cmd := exec.Command("git", "add", configPath)
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("Error on doing git add %s: %v", configPath, err)
-	}
+	// cmd := exec.Command("git", "add", configPath)
+	// if err := cmd.Run(); err != nil {
+	//	return nil, fmt.Errorf("Error on doing git add %s: %v", configPath, err)
+	// }
 
 	return &cfg, nil
 }
 
-func UpdateCurrentServer(serverType ServerType) (*Config, error) {
+func UpdateCurrentRemote(remoteName string) (*Config, error) {
 	// load existing config
 	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	// set current server
-	cfg.CurrentServer = serverType
+	// set current remote
+	cfg.CurrentRemote = remoteName
 
 	// overwrite the existing config file
 	configPath, err := getConfigPath()
@@ -195,19 +205,19 @@ func LoadConfig() (*Config, error) {
 
 	reader, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to open config file at %s", configPath)
+		return nil, fmt.Errorf("failed to open config file at %s", configPath)
 	}
 	defer reader.Close()
 
 	b, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to read config file at %s", configPath)
+		return nil, fmt.Errorf("unable to read config file at %s", configPath)
 	}
 
 	conf := Config{}
 	err = yaml.Unmarshal(b, &conf)
 	if err != nil {
-		return nil, fmt.Errorf("Config file at %s is invalid: %w", configPath, err)
+		return nil, fmt.Errorf("config file at %s is invalid: %w", configPath, err)
 	}
 
 	return &conf, nil
@@ -237,10 +247,11 @@ func CreateEmptyConfig() error {
 func GetProjectId() (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
-		return "", fmt.Errorf("Error loading config: %v", err)
+		return "", fmt.Errorf("error loading config: %v", err)
 	}
-	if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
-		return "", fmt.Errorf("No project ID found in config")
+	rmt := cfg.GetCurrentRemote()
+	if rmt == nil {
+		return "", fmt.Errorf("no remote configuration found for current remote: %s", cfg.CurrentRemote)
 	}
-	return cfg.Servers.Gen3.Auth.ProjectID, nil
+	return rmt.GetProjectId(), nil
 }

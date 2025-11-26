@@ -1,4 +1,4 @@
-package client
+package indexd_tests
 
 import (
 	"fmt"
@@ -6,7 +6,10 @@ import (
 	"net/url"
 	"testing"
 
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/s3_utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,18 +152,18 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 			tt.setupMockData(mockServer)
 
 			// Create client with appropriate auth handler
-			var authHandler AuthHandler = &MockAuthHandler{}
+			var authHandler s3_utils.AuthHandler = &MockAuthHandler{}
 			if tt.name == "auth handler returns error" {
 				authHandler = &testErrorAuthHandler{err: fmt.Errorf("auth failed")}
 			}
 
-			client := &IndexDClient{
+			client := &indexd_client.IndexDClient{
 				Base:        parseURL(mockServer.URL()),
 				Profile:     "test-profile",
 				ProjectId:   "test-project", // This will become /programs/test/projects/project
 				BucketName:  "test-bucket",
-				logger:      &NoOpLogger{},
-				authHandler: authHandler,
+				Logger:      &log.NoOpLogger{},
+				AuthHandler: authHandler,
 			}
 
 			// Execute method under test

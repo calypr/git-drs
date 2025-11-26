@@ -1,4 +1,4 @@
-package client
+package indexd_tests
 
 import (
 	"encoding/json"
@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,7 +81,7 @@ func TestIndexdClient_GetRecord(t *testing.T) {
 
 	// Act: Use client method with mocked auth (tests actual client logic)
 	client := testIndexdClientWithMockAuth(mockServer.URL())
-	record, err := client.getIndexdRecordByDID("uuid-test-123")
+	record, err := client.GetIndexdRecordByDID("uuid-test-123")
 
 	// Assert: Test actual client logic, not just HTTP endpoint
 	require.NoError(t, err)
@@ -96,7 +99,7 @@ func TestIndexdClient_GetRecord_NotFound(t *testing.T) {
 
 	// Act: Use client method to request non-existent record
 	client := testIndexdClientWithMockAuth(mockServer.URL())
-	record, err := client.getIndexdRecordByDID("does-not-exist")
+	record, err := client.GetIndexdRecordByDID("does-not-exist")
 
 	// Assert: Client should handle 404 errors properly
 	require.Error(t, err)
@@ -137,11 +140,13 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 
 	// Verify correct record was returned
 	record := results[0]
-	require.Equal(t, "uuid-test-456", record.Did)
+	require.Equal(t, "uuid-test-456", record.Id)
 	require.Equal(t, int64(2048), record.Size)
-	require.Equal(t, sha256, record.Hashes.SHA256)
-	require.Equal(t, []string{"s3://test-bucket/file.bam"}, record.URLs)
-	require.Equal(t, []string{"/workspace/demo"}, record.Authz)
+	require.Equal(t, sha256, record.Checksums[0].Checksum)
+	require.Equal(t, drs.ChecksumTypeSHA256, record.Checksums[0].Type)
+
+	require.Equal(t, []string{"s3://test-bucket/file.bam"}, record.AccessMethods[0].AccessURL)
+	require.Equal(t, []string{"/workspace/demo"}, record.AccessMethods[0].Authorizations.Value)
 
 	// Test: Query with non-existent hash
 	emptyResults, err := client.GetObjectsByHash("sha256", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -199,7 +204,7 @@ func TestIndexdClient_UpdateRecord(t *testing.T) {
 	// Verify client method receives the mocked auth correctly
 	// by checking that the client can be created with MockAuthHandler
 	require.NotNil(t, client)
-	require.NotNil(t, client.authHandler)
+	require.NotNil(t, client.AuthHandler)
 }
 
 // TestIndexdClient_RegisterIndexdRecord_Creates tests record creation via client method
@@ -210,13 +215,13 @@ func TestIndexdClient_RegisterIndexdRecord_Creates(t *testing.T) {
 	// Test that MockAuthHandler is properly initialized and can add headers
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 	require.NotNil(t, client)
-	require.NotNil(t, client.authHandler)
+	require.NotNil(t, client.AuthHandler)
 
 	// Create a test request and verify MockAuthHandler adds the header
 	req, err := http.NewRequest("POST", "http://test.com", nil)
 	require.NoError(t, err)
 
-	err = client.authHandler.AddAuthHeader(req, "test-profile")
+	err = client.AuthHandler.AddAuthHeader(req, "test-profile")
 	require.NoError(t, err)
 
 	// Verify the header was set
@@ -307,29 +312,29 @@ func (m *MockAuthHandler) AddAuthHeader(req *http.Request, profile string) error
 }
 
 // testIndexdClient creates an IndexdClient pointing to a mock server with real auth handler
-func testIndexdClient(baseURL string) *IndexDClient {
+func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
-	return &IndexDClient{
+	return &indexd_client.IndexDClient{
 		Base:        url,
 		Profile:     "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		logger:      &NoOpLogger{},
-		authHandler: &RealAuthHandler{},
+		Logger:      &log.NoOpLogger{},
+		AuthHandler: &indexd_client.RealAuthHandler{},
 	}
 }
 
 // testIndexdClientWithMockAuth creates an IndexdClient with mocked authentication for testing
 // This helper enables testing client methods without requiring Gen3 credentials or config files
-func testIndexdClientWithMockAuth(baseURL string) *IndexDClient {
+func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
-	return &IndexDClient{
+	return &indexd_client.IndexDClient{
 		Base:        url,
 		Profile:     "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		logger:      &NoOpLogger{},
-		authHandler: &MockAuthHandler{},
+		Logger:      &log.NoOpLogger{},
+		AuthHandler: &MockAuthHandler{},
 	}
 }
 
@@ -342,13 +347,13 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Create input record to register
-	newRecord := &IndexdRecord{
+	newRecord := &indexd_client.IndexdRecord{
 		Did:      "uuid-register-test",
 		FileName: "new-file.bam",
 		Size:     5000,
 		URLs:     []string{"s3://bucket/new-file.bam"},
 		Authz:    []string{"/workspace/test"},
-		Hashes: HashInfo{
+		Hashes: indexd_client.HashInfo{
 			SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		},
 		Metadata: map[string]string{
@@ -416,8 +421,9 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Create update info with new URL
-	updateInfo := &UpdateInputInfo{
-		URLs: []string{"s3://new-bucket/file-v2.bam"},
+	updateInfo := &drs.DRSObject{
+		AccessMethods: []drs.AccessMethod{drs.AccessMethod{AccessURL: drs.AccessURL{URL: "s3://new-bucket/file-v2.bam"}}},
+		//URLs: []string{"s3://new-bucket/file-v2.bam"},
 	}
 
 	// Act: Call the UpdateIndexdRecord client method
@@ -431,7 +437,7 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	// 7. Handling 200 OK response
 	// 8. Querying the updated record via GET /ga4gh/drs/v1/objects/{did}
 	// 9. Returning a valid DRSObject
-	drsObj, err := client.UpdateIndexdRecord(updateInfo, did)
+	drsObj, err := client.UpdateRecord(updateInfo, did)
 
 	// Assert: Verify the client method executed successfully
 	require.NoError(t, err, "UpdateIndexdRecord should succeed")

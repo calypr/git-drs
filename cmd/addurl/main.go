@@ -7,7 +7,9 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +26,7 @@ var AddURLCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
-		myLogger, err := client.NewLogger("", true) // Log to both file and stdout
+		myLogger, err := log.NewLogger("", true) // Log to both file and stdout
 		if err != nil {
 			fmt.Printf("Failed to open log file: %v", err)
 			return err
@@ -40,14 +42,14 @@ var AddURLCmd = &cobra.Command{
 		// Parse arguments
 		s3URL := args[0]
 		sha256, _ := cmd.Flags().GetString("sha256")
-		awsAccessKey, _ := cmd.Flags().GetString(client.AWS_KEY_FLAG_NAME)
-		awsSecretKey, _ := cmd.Flags().GetString(client.AWS_SECRET_FLAG_NAME)
-		awsRegion, _ := cmd.Flags().GetString(client.AWS_REGION_FLAG_NAME)
-		awsEndpoint, _ := cmd.Flags().GetString(client.AWS_ENDPOINT_URL_FLAG_NAME)
+		awsAccessKey, _ := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
+		awsSecretKey, _ := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
+		awsRegion, _ := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
+		awsEndpoint, _ := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
 
 		// if providing credentials, access key and secret must both be provided
 		if (awsAccessKey == "" && awsSecretKey != "") || (awsAccessKey != "" && awsSecretKey == "") {
-			return errors.New("Incomplete credentials provided as environment variables. Please run `export " + client.AWS_KEY_ENV_VAR + "=<key>` and `export " + client.AWS_SECRET_ENV_VAR + "=<secret>` to configure both.")
+			return errors.New("Incomplete credentials provided as environment variables. Please run `export " + s3_utils.AWS_KEY_ENV_VAR + "=<key>` and `export " + s3_utils.AWS_SECRET_ENV_VAR + "=<secret>` to configure both.")
 		}
 
 		// if none provided, use default AWS configuration on file
@@ -55,8 +57,18 @@ var AddURLCmd = &cobra.Command{
 			myLogger.Log("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
+		if err != nil {
+			return fmt.Errorf("error getting current remote client: %v", err)
+		}
+
 		// Call client.AddURL to handle Gen3 interactions
-		meta, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint, client.WithLogger(myLogger))
+		meta, err := drsClient.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint)
 		if err != nil {
 			return err
 		}
@@ -76,10 +88,10 @@ var AddURLCmd = &cobra.Command{
 
 func init() {
 	AddURLCmd.Flags().String("sha256", "", "[required] SHA256 hash of the file")
-	AddURLCmd.Flags().String(client.AWS_KEY_FLAG_NAME, os.Getenv(client.AWS_KEY_ENV_VAR), "AWS access key")
-	AddURLCmd.Flags().String(client.AWS_SECRET_FLAG_NAME, os.Getenv(client.AWS_SECRET_ENV_VAR), "AWS secret key")
-	AddURLCmd.Flags().String(client.AWS_REGION_FLAG_NAME, os.Getenv(client.AWS_REGION_ENV_VAR), "AWS S3 region")
-	AddURLCmd.Flags().String(client.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(client.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
+	AddURLCmd.Flags().String(s3_utils.AWS_KEY_FLAG_NAME, os.Getenv(s3_utils.AWS_KEY_ENV_VAR), "AWS access key")
+	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
+	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
+	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
 	AddURLCmd.MarkFlagRequired("sha256")
 }
 

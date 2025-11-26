@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -119,20 +121,20 @@ func TestDrsUUID(t *testing.T) {
 	sha256b := "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 	// Test consistency: same inputs produce same UUID
-	uuid1 := DrsUUID(projectID, sha256a)
-	uuid2 := DrsUUID(projectID, sha256a)
+	uuid1 := drsmap.DrsUUID(projectID, sha256a)
+	uuid2 := drsmap.DrsUUID(projectID, sha256a)
 	if uuid1 != uuid2 {
 		t.Errorf("DrsUUID() not consistent: uuid1=%s, uuid2=%s", uuid1, uuid2)
 	}
 
 	// Test uniqueness: different hashes produce different UUIDs
-	uuid3 := DrsUUID(projectID, sha256b)
+	uuid3 := drsmap.DrsUUID(projectID, sha256b)
 	if uuid1 == uuid3 {
 		t.Errorf("DrsUUID() should generate different UUIDs for different hashes")
 	}
 
 	// Test uniqueness: different projects produce different UUIDs
-	uuid4 := DrsUUID("different-project", sha256a)
+	uuid4 := drsmap.DrsUUID("different-project", sha256a)
 	if uuid1 == uuid4 {
 		t.Errorf("DrsUUID() should generate different UUIDs for different projects")
 	}
@@ -147,8 +149,8 @@ func TestGetBucketDetails_Gen3Success(t *testing.T) {
 			return
 		}
 
-		response := S3BucketsResponse{
-			S3Buckets: map[string]S3Bucket{
+		response := s3_utils.S3BucketsResponse{
+			S3Buckets: map[string]s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.aws.amazon.com",

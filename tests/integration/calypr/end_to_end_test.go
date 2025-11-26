@@ -15,8 +15,8 @@ import (
 	"time"
 
 	dcJWT "github.com/calypr/data-client/client/jwt"
-	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -256,7 +256,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	var fileMap FileContainer
 	err = json.Unmarshal(output, &fileMap)
 
-	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
 	if err != nil {
 		t.Fatalf("Failed to get object path %s: %v", path, err)
 	}
@@ -275,15 +275,15 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// Verify pre-commit hook was called by checking .drs/ logs
-	files, err := fs.ReadDir(os.DirFS(config.DRS_DIR), ".")
+	files, err := fs.ReadDir(os.DirFS(projectdir.DRS_DIR), ".")
 	if err != nil {
-		t.Fatalf("Failed to read .drs dir %s: %v", config.DRS_DIR, err)
+		t.Fatalf("Failed to read .drs dir %s: %v", projectdir.DRS_DIR, err)
 	}
 	logFound := false
 	for _, file := range files {
 		if !file.IsDir() && len(file.Name()) > 0 && file.Name() != "config.yaml" {
 			logFound = true
-			logPath := filepath.Join(config.DRS_DIR, file.Name())
+			logPath := filepath.Join(projectdir.DRS_DIR, file.Name())
 			logContent, err := os.ReadFile(logPath)
 			if err != nil {
 				t.Fatalf("Failed to read log file %s: %v", logPath, err)
@@ -293,7 +293,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		}
 	}
 	if !logFound {
-		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", config.DRS_DIR)
+		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", projectdir.DRS_DIR)
 	}
 
 	cmd = exec.Command("git", "push", "--set-upstream", "origin", "main")

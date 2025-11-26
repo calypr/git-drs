@@ -3,9 +3,10 @@ package precommit
 import (
 	"fmt"
 
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/log"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +25,7 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
-		myLogger, err := client.NewLogger("", true)
+		myLogger, err := log.NewLogger("", true)
 		if err != nil {
 			myLogger.Logf("Failed to open log file: %v", err)
 			return err
@@ -38,10 +39,12 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error getting config: %v", err)
 		}
-		myLogger.Logf("Current server: %s", cfg.CurrentServer)
+		myLogger.Logf("Current server: %s", cfg.GetCurrentRemoteName())
+
+		client, err := cfg.GetCurrentRemoteClient(myLogger)
 
 		myLogger.Logf("Preparing DRS objects for commit...\n")
-		err = client.UpdateDrsObjects(myLogger)
+		err = drsmap.UpdateDrsObjects(client, myLogger)
 		if err != nil {
 			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err

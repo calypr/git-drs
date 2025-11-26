@@ -3,9 +3,10 @@ package delete
 import (
 	"fmt"
 
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/log"
 	"github.com/spf13/cobra"
 )
 
@@ -31,19 +32,24 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("invalid hash type: %s", hashType)
 		}
 
-		logger, err := client.NewLogger("", true)
+		logger, err := log.NewLogger("", true)
 		if err != nil {
 			return err
 		}
 		defer logger.Close()
 
-		indexdClient, err := client.NewIndexDClient(logger)
+		config, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		drsClient, err := config.GetCurrentRemoteClient(logger)
 		if err != nil {
 			logger.Logf("error creating indexd client: %s", err)
 			return err
 		}
 		// get records by hash
-		records, err := indexdClient.GetObjectsByHash(hashType, oid)
+		records, err := drsClient.GetObjectsByHash(hashType, oid)
 		if err != nil {
 			return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
 		}
@@ -51,26 +57,17 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("No records found for OID %s", oid)
 		}
 
-		// Get project ID from config to find matching record
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("Error loading config: %v", err)
-		}
-		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
-			return fmt.Errorf("No project ID found in config")
-		}
-
 		// Find a record that matches the project ID
-		matchingRecord, err := client.FindMatchingRecord(records, cfg.Servers.Gen3.Auth.ProjectID)
+		matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
 		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.Servers.Gen3.Auth.ProjectID, err)
+			return fmt.Errorf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
 		}
 		if matchingRecord == nil {
-			return fmt.Errorf("No matching record found for project %s", cfg.Servers.Gen3.Auth.ProjectID)
+			return fmt.Errorf("No matching record found for project %s", drsClient.GetProjectId())
 		}
 
 		// Delete the matching record
-		err = indexdClient.DeleteIndexdRecord(matchingRecord.Did)
+		err = drsClient.DeleteRecord(matchingRecord.Id)
 		if err != nil {
 			return fmt.Errorf("Error deleting file for OID %s: %v", oid, err)
 		}

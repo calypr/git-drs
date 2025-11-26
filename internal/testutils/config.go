@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -49,11 +51,11 @@ func SetupTestGitRepo(t *testing.T) string {
 func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) string {
 	t.Helper()
 
-	configDir := filepath.Join(tmpDir, config.DRS_DIR)
+	configDir := filepath.Join(tmpDir, projectdir.DRS_DIR)
 	err := os.MkdirAll(configDir, 0755)
 	require.NoError(t, err)
 
-	configPath := filepath.Join(configDir, config.CONFIG_YAML)
+	configPath := filepath.Join(configDir, projectdir.CONFIG_YAML)
 	file, err := os.Create(configPath)
 	require.NoError(t, err)
 	defer file.Close()
@@ -70,14 +72,16 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 	t.Helper()
 
 	testConfig := &config.Config{
-		CurrentServer: config.Gen3ServerType,
-		Servers: config.ServersMap{
-			Gen3: &config.Gen3Server{
-				Endpoint: "https://test.gen3.org",
-				Auth: config.Gen3Auth{
-					Profile:   "test-profile",
-					ProjectID: "test-program-test-project",
-					Bucket:    "test-bucket",
+		CurrentRemote: "origin",
+		Remotes: map[string]config.RemoteSelect{
+			"origin": config.RemoteSelect{
+				Gen3: &indexd_client.Gen3Remote{
+					Endpoint: "https://test.gen3.org",
+					Auth: indexd_client.Gen3Auth{
+						Profile:   "test-profile",
+						ProjectID: "test-program-test-project",
+						Bucket:    "test-bucket",
+					},
 				},
 			},
 		},

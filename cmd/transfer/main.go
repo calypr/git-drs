@@ -8,13 +8,17 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
 
 var (
 	req       lfs.InitMessage
-	drsClient client.ObjectStoreClient
+	drsClient client.DRSClient
 	operation string // "upload" or "download", set by the init message
 )
 
@@ -25,7 +29,7 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
 
-		myLogger, err := client.NewLogger("", false)
+		myLogger, err := log.NewLogger("", false)
 		if err != nil {
 			return err
 		}
@@ -36,7 +40,13 @@ var Cmd = &cobra.Command{
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
 
-		drsClient, err = client.NewIndexDClient(myLogger)
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			myLogger.Logf("Error loading config: %v", err)
+			return err
+		}
+
+		drsClient, err = cfg.GetCurrentRemoteClient(myLogger)
 		if err != nil {
 			myLogger.Logf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())
@@ -86,14 +96,14 @@ var Cmd = &cobra.Command{
 				}
 
 				// download signed url
-				dstPath, err := client.GetObjectPath(config.LFS_OBJS_PATH, downloadMsg.Oid)
+				dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
-				err = client.DownloadSignedUrl(accessUrl.URL, dstPath)
+				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Log(errMsg)
@@ -122,17 +132,21 @@ var Cmd = &cobra.Command{
 				}
 				myLogger.Log(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 
+				//TODO: write code to take Oid and generate DRSRecord
 				// otherwise, register the file (create indexd record and upload file)
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
-				if err != nil {
-					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
-					myLogger.Log(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
-				}
-
-				// send success message back
-				lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
-				myLogger.Logf("Upload for OID %s complete", uploadMsg.Oid)
+				myLogger.Log("Uploading files is not yet implemented")
+				//TODO: re-implement this with new DRSClient methods
+				/*
+					drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+					if err != nil {
+						errMsg := fmt.Sprintln("Error registering file: " + err.Error())
+						myLogger.Log(errMsg)
+						lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					}
+					// send success message back
+					lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
+					myLogger.Logf("Upload for OID %s complete", uploadMsg.Oid)
+				*/
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event

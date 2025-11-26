@@ -9,8 +9,11 @@ import (
 	"strings"
 
 	"github.com/calypr/data-client/client/jwt"
-	"github.com/calypr/git-drs/client"
+	anvil_client "github.com/calypr/git-drs/client/anvil"
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
@@ -58,13 +61,8 @@ func init() {
 func Init(server string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
 	// validate server
 
-	err := config.IsValidServerType(server)
-	if err != nil {
-		return err
-	}
-
 	// setup logging
-	logg, err := client.NewLogger("", true)
+	logg, err := log.NewLogger("", true)
 	if err != nil {
 		return err
 	}
@@ -83,8 +81,9 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	}
 
 	// load the config
-	cfg, err := config.LoadConfig()
+	_, err = config.LoadConfig()
 	if err != nil {
+		logg.Logf("We should probably fix this: %v", err)
 		return fmt.Errorf("Error: unable to load config file: %v\n", err)
 	}
 
@@ -96,20 +95,13 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
 		}
 
-		// if the config file is missing anything, require all gen3 params
-		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.Bucket == "" || cfg.Servers.Gen3.Auth.ProjectID == "" {
-			if bucket == "" || project == "" || profile == "" {
-				return fmt.Errorf("Error: No gen3 server configured yet. Please provide a --profile, --project, and --bucket, as well as either a --cred or --token. See 'git drs init --help' for more details")
-			}
-		}
-
 		err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
 	case string(config.AnvilServerType):
 		// ensure either terraProject is provided or already in config
-		if terraProject == "" && (cfg.Servers.Anvil == nil || cfg.Servers.Anvil.Auth.TerraProject == "") {
+		if terraProject == "" {
 			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
 		}
 
@@ -120,8 +112,8 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	}
 
 	// add some patterns to the .gitignore if not already present
-	configStr := "!" + filepath.Join(config.DRS_DIR, config.CONFIG_YAML)
-	drsDirStr := fmt.Sprintf("%s/**", config.DRS_DIR)
+	configStr := "!" + filepath.Join(projectdir.DRS_DIR, projectdir.CONFIG_YAML)
+	drsDirStr := fmt.Sprintf("%s/**", projectdir.DRS_DIR)
 
 	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
 	for _, pattern := range gitignorePatterns {
@@ -154,28 +146,32 @@ func Init(server string, apiEndpoint string, bucket string, credFile string, fen
 	return nil
 }
 
-func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *client.Logger) error {
+func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
 	// double check that one of the credentials params is provided
 
 	var err error
-	if fenceToken == "" {
-		cred := jwt.Configure{}
-		if credFile == "" {
-			client.ProfileConfig, err = cred.ParseConfig(profile)
-			fenceToken = client.ProfileConfig.AccessToken
-		} else {
-			optCredential, err := cred.ReadCredentials(credFile, "")
+	// TODO: fix this part
+	/*
+		var cfg *jwt.Config
+		if fenceToken == "" {
+			cred := jwt.Configure{}
+			if credFile == "" {
+				cfg, err = cred.ParseConfig(profile)
+				fenceToken = cfg.AccessToken
+			} else {
+				optCredential, err := cred.ReadCredentials(credFile, "")
+				if err != nil {
+					return err
+				}
+				client.ProfileConfig = *optCredential
+				fenceToken = optCredential.AccessToken
+			}
+			apiEndpoint, err = utils.ParseAPIEndpointFromToken(client.ProfileConfig.APIKey)
 			if err != nil {
 				return err
 			}
-			client.ProfileConfig = *optCredential
-			fenceToken = optCredential.AccessToken
 		}
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(client.ProfileConfig.APIKey)
-		if err != nil {
-			return err
-		}
-	}
+	*/
 	if apiEndpoint == "" {
 		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
 		if err != nil {
@@ -203,28 +199,28 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 	firstTimeSetup := apiEndpoint != "" && project != "" && bucket != "" && profile != ""
 	if firstTimeSetup {
 		// update config file with gen3 server info
-		serversMap := &config.ServersMap{
-			Gen3: &config.Gen3Server{
+		remoteGen3 := config.RemoteSelect{
+			Gen3: &indexd_client.Gen3Remote{
 				Endpoint: apiEndpoint,
-				Auth: config.Gen3Auth{
+				Auth: indexd_client.Gen3Auth{
 					Profile:   profile,
 					ProjectID: project,
 					Bucket:    bucket,
 				},
 			},
 		}
-		_, err := config.UpdateServer(serversMap)
+		_, err := config.UpdateRemote(config.ORIGIN, remoteGen3)
 		if err != nil {
 			return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
 		}
 	}
 
-	// update current server in config
-	cfg, err := config.UpdateCurrentServer(config.Gen3ServerType)
+	_, err = config.UpdateCurrentRemote(config.ORIGIN)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
 	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
+	// TODO: Get Better logging here
+	log.Logf("Current server set to %s\n", config.ORIGIN)
 
 	// init git config
 	err = initGitConfig(config.Gen3ServerType)
@@ -252,8 +248,9 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 			AccessToken:        fenceToken,
 			UseShepherd:        "false",
 			MinShepherdVersion: "",
-			KeyId:              client.ProfileConfig.KeyId,
-			APIKey:             client.ProfileConfig.APIKey,
+			// TODO: Don't store profile specific credentials in a global variable
+			//KeyId:              client.ProfileConfig.KeyId,
+			//APIKey:             client.ProfileConfig.APIKey,
 		}
 		err = jwt.UpdateConfig(cred)
 		if err != nil {
@@ -269,30 +266,30 @@ func gen3Init(profile string, credFile string, fenceToken string, project string
 
 }
 
-func anvilInit(terraProject string, log *client.Logger) error {
+func anvilInit(terraProject string, logger *log.Logger) error {
 	// make sure terra project is provided
 	if terraProject != "" {
 		// populate anvil config
-		serversMap := &config.ServersMap{
-			Anvil: &config.AnvilServer{
-				Endpoint: client.ANVIL_ENDPOINT,
-				Auth: config.AnvilAuth{
+		remoteAnvil := config.RemoteSelect{
+			Anvil: &anvil_client.AnvilRemote{
+				Endpoint: anvil_client.ANVIL_ENDPOINT,
+				Auth: anvil_client.AnvilAuth{
 					TerraProject: terraProject,
 				},
 			},
 		}
-		_, err := config.UpdateServer(serversMap)
+		_, err := config.UpdateRemote(config.ORIGIN, remoteAnvil)
 		if err != nil {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
 	}
 
 	// update current server in config
-	cfg, err := config.UpdateCurrentServer(config.AnvilServerType)
+	cfg, err := config.UpdateCurrentRemote(config.ORIGIN)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
 	}
-	log.Logf("Current server set to %s\n", cfg.CurrentServer)
+	logger.Logf("Current server set to %s\n", cfg.GetCurrentRemote().GetEndpoint())
 
 	// init git config for anvil
 	err = initGitConfig(config.AnvilServerType)
@@ -305,7 +302,7 @@ func anvilInit(terraProject string, log *client.Logger) error {
 	preCommitPath := filepath.Join(hooksDir, "pre-commit")
 	if _, err := os.Stat(preCommitPath); err == nil {
 		if err := os.Remove(preCommitPath); err != nil {
-			log.Log("[ERROR] unable to remove pre-commit hook:", err)
+			logger.Log("[ERROR] unable to remove pre-commit hook:", err)
 			return err
 		}
 	}
@@ -313,7 +310,7 @@ func anvilInit(terraProject string, log *client.Logger) error {
 	return nil
 }
 
-func initGitConfig(mode config.ServerType) error {
+func initGitConfig(mode config.RemoteType) error {
 	var cmdName string
 	var allowIncompletePush string
 	switch mode {
@@ -345,7 +342,7 @@ func initGitConfig(mode config.ServerType) error {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string, logger *client.Logger) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *log.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)

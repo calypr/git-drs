@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
 )
@@ -30,7 +32,7 @@ var Cmd = &cobra.Command{
 
 		fmt.Printf("Adding reference to DRS object %s\n", drsUri)
 		// setup logging to file for debugging
-		logger, err := client.NewLogger(client.DRS_LOG_FILE, true)
+		logger, err := log.NewLogger(projectdir.DRS_LOG_FILE, true)
 		if err != nil {
 			return fmt.Errorf("Failed to open log file: %v", err)
 		}
@@ -48,7 +50,7 @@ var Cmd = &cobra.Command{
 		logger.Logf("Fetched DRS object: %+v", drsObj)
 
 		// get sha256 for the drs ID from the cache
-		shaPath, err := client.CreateCustomPath(client.DRS_REF_DIR, drsObj.Id)
+		shaPath, err := drsmap.CreateCustomPath(projectdir.DRS_REF_DIR, drsObj.Id)
 		shaFile, err := os.ReadFile(shaPath)
 		if err != nil {
 			return fmt.Errorf("failed to read sha file at %s: %w", shaPath, err)
@@ -114,14 +116,13 @@ func GetObject(objectID string) (*drs.DRSObject, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	if cfg.Servers.Anvil == nil {
-		return nil, fmt.Errorf("Anvil server config not found in config file")
-	}
-	if cfg.Servers.Anvil.Endpoint == "" {
-		return nil, fmt.Errorf("Anvil server endpoint is empty in config file")
+
+	remote := cfg.GetCurrentRemote()
+	if remote == nil {
+		return nil, fmt.Errorf("no current server set in config")
 	}
 
-	req, err := http.NewRequest("POST", cfg.Servers.Anvil.Endpoint, bytes.NewBuffer(bodyBytes))
+	req, err := http.NewRequest("POST", remote.GetEndpoint(), bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}

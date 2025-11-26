@@ -1,4 +1,4 @@
-package client
+package indexd_tests
 
 import (
 	"context"
@@ -14,6 +14,9 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/s3_utils"
 )
 
 // Unit Tests for validateInputs
@@ -39,7 +42,7 @@ func TestValidateInputs_ConcurrentCalls(t *testing.T) {
 	errChan := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			errChan <- validateInputs(validS3URL, validSHA256)
+			errChan <- s3_utils.ValidateInputs(validS3URL, validSHA256)
 		}()
 	}
 
@@ -65,8 +68,8 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 		// Capture the auth header set by the handler
 		authHeaderValue = r.Header.Get("Authorization")
 
-		response := S3BucketsResponse{
-			S3Buckets: map[string]S3Bucket{
+		response := s3_utils.S3BucketsResponse{
+			S3Buckets: map[string]s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -81,7 +84,7 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 
 	ctx := context.Background()
 	mockAuth := &MockAuthHandler{}
-	result, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", mockAuth, server.Client())
+	result, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", mockAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -105,8 +108,8 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	// Test that missing bucket returns proper error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := S3BucketsResponse{
-			S3Buckets: map[string]S3Bucket{
+		response := s3_utils.S3BucketsResponse{
+			S3Buckets: map[string]s3_utils.S3Bucket{
 				"other-bucket": {
 					Region:      "us-east-1",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -119,7 +122,7 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	bd, err := getBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
+	bd, err := indexd_client.GetBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err != nil {
 		t.Fatal("Expected no error, got: ", err)
@@ -133,12 +136,12 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 	tests := []struct {
 		name       string
-		bucket     S3Bucket
+		bucket     s3_utils.S3Bucket
 		wantErrMsg string
 	}{
 		{
 			name: "missing region",
-			bucket: S3Bucket{
+			bucket: s3_utils.S3Bucket{
 				EndpointURL: "https://s3.amazonaws.com",
 				Region:      "",
 			},
@@ -146,7 +149,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 		},
 		{
 			name: "missing endpoint",
-			bucket: S3Bucket{
+			bucket: s3_utils.S3Bucket{
 				EndpointURL: "",
 				Region:      "us-west-2",
 			},
@@ -154,7 +157,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 		},
 		{
 			name: "missing both",
-			bucket: S3Bucket{
+			bucket: s3_utils.S3Bucket{
 				EndpointURL: "",
 				Region:      "",
 			},
@@ -165,8 +168,8 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				response := S3BucketsResponse{
-					S3Buckets: map[string]S3Bucket{
+				response := s3_utils.S3BucketsResponse{
+					S3Buckets: map[string]s3_utils.S3Bucket{
 						"test-bucket": tt.bucket,
 					},
 				}
@@ -176,7 +179,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 			defer server.Close()
 
 			ctx := context.Background()
-			_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+			_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 			if err == nil {
 				t.Fatal("Expected error for missing fields, got nil")
@@ -198,7 +201,7 @@ func TestGetBucketDetailsWithAuth_Non200Status(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected error for non-200 status, got nil")
@@ -221,8 +224,8 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 			tokenReceived = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
-		response := S3BucketsResponse{
-			S3Buckets: map[string]S3Bucket{
+		response := s3_utils.S3BucketsResponse{
+			S3Buckets: map[string]s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -236,7 +239,7 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 
 	ctx := context.Background()
 	tokenAuth := &tokenAuthHandler{token: expectedToken}
-	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", tokenAuth, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", tokenAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -257,8 +260,8 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 			authHeaderPresent = true
 		}
 
-		response := S3BucketsResponse{
-			S3Buckets: map[string]S3Bucket{
+		response := s3_utils.S3BucketsResponse{
+			S3Buckets: map[string]s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -271,7 +274,7 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -294,7 +297,7 @@ func TestGetBucketDetailsWithAuth_AuthHandlerError(t *testing.T) {
 	errorAuth := &errorMockAuthHandler{err: errors.New("auth failed")}
 
 	ctx := context.Background()
-	_, err := getBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", errorAuth, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", errorAuth, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected error from auth handler, got nil")
@@ -331,7 +334,7 @@ func TestS3BucketsResponse_UnmarshalValid(t *testing.T) {
 		"GS_BUCKETS": {}
 	}`
 
-	var response S3BucketsResponse
+	var response s3_utils.S3BucketsResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3BucketsResponse: %v", err)
@@ -365,7 +368,7 @@ func TestS3BucketsResponse_EmptyBuckets(t *testing.T) {
 		"GS_BUCKETS": {}
 	}`
 
-	var response S3BucketsResponse
+	var response s3_utils.S3BucketsResponse
 	err := json.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal empty S3BucketsResponse: %v", err)
@@ -383,7 +386,7 @@ func TestS3Bucket_MissingOptionalFields(t *testing.T) {
 		"region": "us-west-2"
 	}`
 
-	var bucket S3Bucket
+	var bucket s3_utils.S3Bucket
 	err := json.Unmarshal([]byte(jsonData), &bucket)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3Bucket: %v", err)
@@ -431,14 +434,14 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 	})
 
 	// Provide bucket details directly (bypass getBucketDetails)
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 		Programs:    []string{"test-program"},
 	}
 
 	// Call fetchS3MetadataWithBucketDetails with provided client and bucket details
-	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+	size, modifiedDate, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/path/to/file.bam",
 		"", "", "", "", // No AWS credentials/region/endpoint in params (using client)
@@ -470,14 +473,14 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 
 	s3Mock.AddObject("test-bucket", "file.bam", 1024)
 
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
 
 	// Call without providing s3Client, but with credentials in params
 	// Note: This will create its own client and validate credentials
-	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+	size, modifiedDate, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/file.bam",
 		"test-access-key",
@@ -513,13 +516,13 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 	s3Mock.AddObject("test-bucket", "data.bam", 512)
 
 	// Bucket details from Gen3 (simulated)
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
 
 	// Don't provide region/endpoint in params - should use bucketDetails
-	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+	size, modifiedDate, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/data.bam",
 		"test-key",
@@ -549,12 +552,12 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 	ctx := context.Background()
 
 	ignoreAWSConfigFiles(t)
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: "http://endpoint",
 	}
 
-	_, _, err := fetchS3MetadataWithBucketDetails(
+	_, _, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"not-an-s3-url",
 		"key", "secret", "us-west-2", "http://endpoint",
@@ -583,13 +586,13 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "", // No region - this will definitely trigger validation error
 		EndpointURL: s3Mock.URL(),
 	}
 
 	// Try to create client without credentials and without region
-	_, _, err := fetchS3MetadataWithBucketDetails(
+	_, _, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/file.bam",
 		"", "", // No credentials in params
@@ -617,12 +620,12 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 
 	// Bucket details WITHOUT region
 	ignoreAWSConfigFiles(t)
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		EndpointURL: "http://s3-endpoint",
 		// No region field
 	}
 
-	_, _, err := fetchS3MetadataWithBucketDetails(
+	_, _, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/file.bam",
 		"test-key",
@@ -667,12 +670,12 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
 
-	_, _, err = fetchS3MetadataWithBucketDetails(
+	_, _, err = indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/nonexistent.bam",
 		"", "", "", "",
@@ -717,12 +720,12 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
 
-	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+	size, modifiedDate, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/empty.bam",
 		"", "", "", "",
@@ -753,7 +756,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 	defer s3Mock.Close()
 
 	// Bucket details with DIFFERENT endpoint
-	bucketDetails := S3Bucket{
+	bucketDetails := s3_utils.S3Bucket{
 		Region:      "us-east-1", // Different region
 		EndpointURL: "http://different-endpoint",
 		Programs:    []string{"test-program"},
@@ -762,7 +765,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 	s3Mock.AddObject("test-bucket", "file.bam", 1024)
 
 	// Provide explicit region/endpoint in params - these should override bucket details
-	size, modifiedDate, err := fetchS3MetadataWithBucketDetails(
+	size, modifiedDate, err := indexd_client.FetchS3MetadataWithBucketDetails(
 		ctx,
 		"s3://test-bucket/file.bam",
 		"test-key",
@@ -808,13 +811,13 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	modifiedDate := "2024-01-01"
 
 	// Pre-populate the mock server with an existing record for this project
-	existingUUID := DrsUUID(projectId, sha256)
+	existingUUID := drsmap.DrsUUID(projectId, sha256)
 	authzStr := "/programs/testprogram/projects/testproject"
 
-	existingRecord := &IndexdRecord{
+	existingRecord := &indexd_client.IndexdRecord{
 		Did:      existingUUID,
 		FileName: "file1.bam",
-		Hashes:   HashInfo{SHA256: sha256},
+		Hashes:   indexd_client.HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url1},
 		Authz:    []string{authzStr},
@@ -836,7 +839,7 @@ func TestUpsertIndexdRecordWithClient_UpdateExistingRecord(t *testing.T) {
 	}
 
 	// Now upsert with a different URL - should update the existing record
-	err = upsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
+	err = indexd_client.UpsertIndexdRecordWithClient(client, projectId, url2, sha256, fileSize, modifiedDate, nil) // Use NoOpLogger
 	if err != nil {
 		t.Fatalf("upsertIndexdRecordWithClient failed: %v", err)
 	}
@@ -892,13 +895,13 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	modifiedDate := "2024-01-02"
 
 	// Pre-populate with a record for project1
-	uuid1 := DrsUUID(project1, sha256)
+	uuid1 := drsmap.DrsUUID(project1, sha256)
 	authz1 := "/programs/program1/projects/project1"
 
-	existingRecord := &IndexdRecord{
+	existingRecord := &indexd_client.IndexdRecord{
 		Did:      uuid1,
 		FileName: "shared-file.bam",
-		Hashes:   HashInfo{SHA256: sha256},
+		Hashes:   indexd_client.HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url1},
 		Authz:    []string{authz1},
@@ -936,14 +939,14 @@ func TestUpsertIndexdRecordWithClient_CreateNewRecordDifferentProject(t *testing
 	}
 
 	// Verify the DIDs are different
-	uuid2 := DrsUUID(project2, sha256)
+	uuid2 := drsmap.DrsUUID(project2, sha256)
 	authz2 := "/programs/program2/projects/project2"
 
 	foundProject1Record := false
 	foundProject2Record := false
 
 	for _, record := range allRecords {
-		if record.Did == uuid1 && slices.Contains(record.Authz, authz1) {
+		if record.Id == uuid1 && slices.Contains(record.Authz, authz1) {
 			foundProject1Record = true
 			// Original record should be unchanged
 			if len(record.URLs) != 1 || record.URLs[0] != url1 {
@@ -1130,7 +1133,7 @@ func TestFindMatchingRecord_SingleMatch(t *testing.T) {
 }
 
 func TestFindMatchingRecord_MultipleRecordsFirstMatch(t *testing.T) {
-	records := []OutputInfo{
+	records := []indexd_client.OutputInfo{
 		{
 			Did:   "uuid-1",
 			Authz: []string{"/programs/test/projects/project"},
@@ -1149,7 +1152,7 @@ func TestFindMatchingRecord_MultipleRecordsFirstMatch(t *testing.T) {
 	}
 	projectId := "test-project"
 
-	result, err := FindMatchingRecord(records, projectId)
+	result, err := drsmap.FindMatchingRecord(records, projectId)
 	if err != nil {
 		t.Errorf("FindMatchingRecord() unexpected error: %v", err)
 	}
@@ -1190,7 +1193,7 @@ func TestDrsUUID_ReproducibleGeneration(t *testing.T) {
 	// Generate UUID multiple times
 	uuids := make([]string, 100)
 	for i := 0; i < 100; i++ {
-		uuids[i] = DrsUUID(projectID, sha256)
+		uuids[i] = drsmap.DrsUUID(projectID, sha256)
 	}
 
 	// All UUIDs should be identical
@@ -1205,8 +1208,8 @@ func TestDrsUUID_ReproducibleGeneration(t *testing.T) {
 func TestDrsUUID_DifferentProjects(t *testing.T) {
 	sha256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-	uuid1 := DrsUUID("project-1", sha256)
-	uuid2 := DrsUUID("project-2", sha256)
+	uuid1 := drsmap.DrsUUID("project-1", sha256)
+	uuid2 := drsmap.DrsUUID("project-2", sha256)
 
 	if uuid1 == uuid2 {
 		t.Errorf("DrsUUID() should generate different UUIDs for different projects")
@@ -1216,8 +1219,8 @@ func TestDrsUUID_DifferentProjects(t *testing.T) {
 func TestDrsUUID_DifferentHashes(t *testing.T) {
 	projectID := "test-project"
 
-	uuid1 := DrsUUID(projectID, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-	uuid2 := DrsUUID(projectID, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid1 := drsmap.DrsUUID(projectID, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+	uuid2 := drsmap.DrsUUID(projectID, "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 	if uuid1 == uuid2 {
 		t.Errorf("DrsUUID() should generate different UUIDs for different hashes")

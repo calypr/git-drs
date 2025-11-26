@@ -42,6 +42,7 @@ type AccessURL struct {
 
 type Authorizations struct {
 	//This structue is not stored in the file system
+	Value string `json:"value"`
 }
 
 type AccessMethod struct {

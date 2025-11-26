@@ -1,4 +1,6 @@
-package client
+package drsmap
+
+// Utilities to map between Git LFS files and DRS objects
 
 import (
 	"encoding/json"
@@ -9,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/google/uuid"
 )
 
@@ -30,15 +34,9 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func UpdateDrsObjects(logger *Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 
 	logger.Log("Update to DRS objects started")
-
-	// init indexd client
-	indexdClient, err := NewIndexDClient(logger)
-	if err != nil {
-		return fmt.Errorf("error initializing indexd with credentials: %v", err)
-	}
 
 	// get the name of repository
 	repoName, err := GetRepoNameFromGit()
@@ -73,15 +71,15 @@ func UpdateDrsObjects(logger *Logger) error {
 	for _, file := range lfsStagedFiles {
 
 		// check hash to see if record already exists in indexd (source of truth)
-		records, err := indexdClient.GetObjectsByHash(file.OidType, file.Oid)
+		records, err := drsClient.GetObjectsByHash(file.OidType, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 
 		// check if record with matching project ID already exists in indexd
-		projectId, err := config.GetProjectId()
-		if err != nil {
-			return fmt.Errorf("Error getting project ID: %v", err)
+		projectId := drsClient.GetProjectId()
+		if projectId == "" {
+			return fmt.Errorf("Error getting project ID")
 		}
 		matchingRecord, err := FindMatchingRecord(records, projectId)
 		if err != nil {
@@ -95,7 +93,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		}
 
 		// check if indexd object already prepared, skip if so
-		drsObjPath, err := GetObjectPath(config.DRS_OBJS_PATH, file.Oid)
+		drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -116,7 +114,7 @@ func UpdateDrsObjects(logger *Logger) error {
 		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(config.LFS_OBJS_PATH, file.Oid)
+		path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -124,46 +122,45 @@ func UpdateDrsObjects(logger *Logger) error {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
 
-		// get gen3 config
-		cfg, err := config.LoadConfig() // should this be handled only via indexd client?
-		if err != nil {
-			return fmt.Errorf("error loading config: %v", err)
-		}
+		logger.Logf("Error, hit broken code block DRS object for staged file %s with OID %s", file.Name, file.Oid)
+		// TODO: why is this here and not in the DRSClient implementation?
+		/*
+			bucket := drsClient.GetDefaultBucketName()
+			if bucket == "" {
+				return fmt.Errorf("error: bucket name is empty in config file")
+			}
+			fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, file.Oid))
 
-		// get auth info from config
-		gen3Auth := cfg.Servers.Gen3.Auth
-		if gen3Auth.Bucket == "" {
-			return fmt.Errorf("error: bucket name is empty in config file")
-		}
-		fileURL := fmt.Sprintf("s3://%s", filepath.Join(gen3Auth.Bucket, drsId, file.Oid))
+			authzStr, err := utils.ProjectToResource(drsClient.GetProjectId())
+			if err != nil {
+				return err
+			}
 
-		authzStr, err := utils.ProjectToResource(gen3Auth.ProjectID)
-		if err != nil {
-			return err
-		}
+			// create IndexdRecord
+			indexdObj := drs.DRSObject{
+				Id:            drsId,
+				Name:          file.Name,
+				AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: fileURL}}},
+				//URLs:          []string{fileURL},
+				//Hashes:    HashInfo{SHA256: file.Oid},
+				Checksums: []drs.Checksum{drs.Checksum{Checksum: file.Oid, Type: drs.ChecksumTypeSHA256}},
+				Size:      file.Size,
+				Authz:     []string{authzStr},
+			}
 
-		// create IndexdRecord
-		indexdObj := IndexdRecord{
-			Did:      drsId,
-			FileName: file.Name,
-			URLs:     []string{fileURL},
-			Hashes:   HashInfo{SHA256: file.Oid},
-			Size:     file.Size,
-			Authz:    []string{authzStr},
-		}
-
-		// write drs objects to DRS_OBJS_PATH
-		err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
-		if err != nil {
-			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
-		}
-		logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Did)
+			// write drs objects to DRS_OBJS_PATH
+			err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
+			if err != nil {
+				return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
+			}
+			logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Id)
+		*/
 	}
 
 	return nil
 }
 
-func writeDrsObj(indexdObj IndexdRecord, oid string, drsObjPath string) error {
+func writeDrsObj(indexdObj drs.DRSObject, oid string, drsObjPath string) error {
 	// get object bytes
 	indexdObjBytes, err := json.Marshal(indexdObj)
 	if err != nil {
@@ -188,9 +185,9 @@ func DrsUUID(repoName string, hash string) string {
 }
 
 // creates index record from file
-func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
+func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 	// unmarshal the DRS object
-	path, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
+	path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
 	if err != nil {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
@@ -200,7 +197,7 @@ func DrsInfoFromOid(oid string) (*IndexdRecord, error) {
 		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
 	}
 
-	var indexdObj IndexdRecord
+	var indexdObj drs.DRSObject
 	err = json.Unmarshal(indexdObjBytes, &indexdObj)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
@@ -312,4 +309,58 @@ func getAllLfsFiles() (map[string]LfsFileInfo, error) {
 	}
 
 	return lfsFileMap, nil
+}
+
+// CreateCustomPath creates a custom path based on the DRS URI
+// For example, DRS URI drs://<namespace>:<drs_id>
+// create custom path <baseDir>/<namespace>/<drs_id>
+func CreateCustomPath(baseDir, drsURI string) (string, error) {
+	const prefix = "drs://"
+	if len(drsURI) <= len(prefix) || drsURI[:len(prefix)] != prefix {
+		return "", fmt.Errorf("invalid DRS URI: %s", drsURI)
+	}
+	rest := drsURI[len(prefix):]
+
+	// Split by first colon
+	colonIdx := -1
+	for i, c := range rest {
+		if c == ':' {
+			colonIdx = i
+			break
+		}
+	}
+	if colonIdx == -1 {
+		return "", fmt.Errorf("DRS URI missing colon: %s", drsURI)
+	}
+	namespace := rest[:colonIdx]
+	drsId := rest[colonIdx+1:]
+	return filepath.Join(baseDir, namespace, drsId), nil
+}
+
+// FindMatchingRecord finds a record from the list that matches the given project ID authz
+// If no matching record is found return nil
+func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) {
+	if len(records) == 0 {
+		return nil, nil
+	}
+
+	// Convert project ID to resource path format for comparison
+	// expectedAuthz, err := utils.ProjectToResource(projectId)
+	// if err != nil {
+	//	return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	// }
+
+	//TODO: determine what filtering logic should be here
+	// Get the first record with matching authz if exists
+	for _, record := range records {
+		//for _, access := range record.AccessMethods {
+		//for _, authz := range access.Authorizations.Value {
+		//if authz == expectedAuthz {
+		return &record, nil
+		//}
+		//	}
+		//}
+	}
+
+	return nil, nil
 }

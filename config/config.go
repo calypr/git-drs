@@ -115,7 +115,7 @@ func getConfigPath() (string, error) {
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
-func UpdateRemote(name string, serversMap RemoteSelect) (*Config, error) {
+func UpdateRemote(name string, remote RemoteSelect) (*Config, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
 		return nil, err
@@ -143,6 +143,8 @@ func UpdateRemote(name string, serversMap RemoteSelect) (*Config, error) {
 			Remotes: map[string]RemoteSelect{},
 		}
 	}
+
+	cfg.Remotes[name] = remote
 
 	// overwrite the file using config
 	file.Seek(0, 0)

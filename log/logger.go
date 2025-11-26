@@ -39,8 +39,8 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	}
 
 	multiWriter := io.MultiWriter(writers...)
-	//TODO: make Llongfile optional via config
-	logger := log.New(multiWriter, "", log.LstdFlags|log.Llongfile) // Standard log flags
+	//TODO: make Lshortfile optional via config
+	logger := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile) // Standard log flags
 
 	return &Logger{file: file, logger: logger}, nil
 }

@@ -8,25 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/calypr/data-client/client/jwt"
-	anvil_client "github.com/calypr/git-drs/client/anvil"
-	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
-)
-
-var (
-	server       string
-	apiEndpoint  string
-	bucket       string
-	credFile     string
-	fenceToken   string
-	profile      string
-	project      string
-	terraProject string
 )
 
 // Cmd line declaration
@@ -43,271 +29,65 @@ var Cmd = &cobra.Command{
 		"\n   ~ See below for the flag requirements for each server",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Init(server, apiEndpoint, bucket, credFile, fenceToken, profile, project, terraProject)
+		// setup logging
+		logg, err := log.NewLogger("", true)
+		if err != nil {
+			return err
+		}
+		defer logg.Close()
+
+		// check if .git dir exists to ensure you're in a git repository
+		_, err = utils.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
+		}
+
+		// create config file if it doesn't exist
+		err = config.CreateEmptyConfig()
+		if err != nil {
+			return fmt.Errorf("Error: unable to create config file: %v\n", err)
+		}
+
+		// load the config
+		_, err = config.LoadConfig()
+		if err != nil {
+			logg.Logf("We should probably fix this: %v", err)
+			return fmt.Errorf("Error: unable to load config file: %v\n", err)
+		}
+
+		// add some patterns to the .gitignore if not already present
+		configStr := "!" + filepath.Join(projectdir.DRS_DIR, projectdir.CONFIG_YAML)
+		drsDirStr := fmt.Sprintf("%s/**", projectdir.DRS_DIR)
+
+		gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
+		for _, pattern := range gitignorePatterns {
+			if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
+				return fmt.Errorf("Init Error: %v\n", err)
+			}
+		}
+
+		// log message based on if .gitignore is untracked or modified (i.e. if we actually made changes something)
+		statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
+		output, err := statusCmd.Output()
+		if err != nil {
+			return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
+		}
+		if len(output) > 0 {
+			logg.Log(".gitignore has been updated and staged")
+		} else {
+			logg.Log(".gitignore already up to date")
+		}
+
+		// git add .gitignore
+		gitCmd := exec.Command("git", "add", ".gitignore")
+		if cmdOut, err := gitCmd.Output(); err != nil {
+			return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
+		}
+
+		// final logs
+		logg.Log("Git DRS initialized")
+		return nil
 	},
-}
-
-func init() {
-	Cmd.Flags().StringVar(&server, "server", "gen3", "Options for DRS server: gen3 or anvil")
-	Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
-	Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
-	Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
-	Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Specify the token to be used as a replacement for a credential file for temporary access")
-	Cmd.Flags().StringVar(&profile, "profile", "", "[gen3] Specify the gen3 profile to use")
-	Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
-	Cmd.Flags().StringVar(&terraProject, "terraProject", "", "[AnVIL] Specify the Terra project ID")
-}
-
-func Init(server string, apiEndpoint string, bucket string, credFile string, fenceToken string, profile string, project string, terraProject string) error {
-	// validate server
-
-	// setup logging
-	logg, err := log.NewLogger("", true)
-	if err != nil {
-		return err
-	}
-	defer logg.Close()
-
-	// check if .git dir exists to ensure you're in a git repository
-	_, err = utils.GitTopLevel()
-	if err != nil {
-		return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
-	}
-
-	// create config file if it doesn't exist
-	err = config.CreateEmptyConfig()
-	if err != nil {
-		return fmt.Errorf("Error: unable to create config file: %v\n", err)
-	}
-
-	// load the config
-	_, err = config.LoadConfig()
-	if err != nil {
-		logg.Logf("We should probably fix this: %v", err)
-		return fmt.Errorf("Error: unable to load config file: %v\n", err)
-	}
-
-	// if anvilMode is not set, ensure all other flags are provided
-	switch server {
-	case string(config.Gen3ServerType):
-		// make sure at least one of the credentials params is provided
-		if credFile == "" && fenceToken == "" && profile == "" {
-			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
-		}
-
-		err = gen3Init(profile, credFile, fenceToken, project, bucket, logg)
-		if err != nil {
-			return fmt.Errorf("Error configuring gen3 server: %v", err)
-		}
-	case string(config.AnvilServerType):
-		// ensure either terraProject is provided or already in config
-		if terraProject == "" {
-			return fmt.Errorf("Error: --terraProject is required for anvil mode. See 'git drs init --help' for details.\n")
-		}
-
-		err = anvilInit(terraProject, logg)
-		if err != nil {
-			return fmt.Errorf("Error configuring anvil server: %v", err)
-		}
-	}
-
-	// add some patterns to the .gitignore if not already present
-	configStr := "!" + filepath.Join(projectdir.DRS_DIR, projectdir.CONFIG_YAML)
-	drsDirStr := fmt.Sprintf("%s/**", projectdir.DRS_DIR)
-
-	gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
-	for _, pattern := range gitignorePatterns {
-		if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
-			return fmt.Errorf("Init Error: %v\n", err)
-		}
-	}
-
-	// log message based on if .gitignore is untracked or modified (i.e. if we actually made changes something)
-	statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
-	output, err := statusCmd.Output()
-	if err != nil {
-		return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
-	}
-	if len(output) > 0 {
-		logg.Log(".gitignore has been updated and staged")
-	} else {
-		logg.Log(".gitignore already up to date")
-	}
-
-	// git add .gitignore
-	cmd := exec.Command("git", "add", ".gitignore")
-	if cmdOut, err := cmd.Output(); err != nil {
-		return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
-	}
-
-	// final logs
-	logg.Log("Git DRS configuration added to git.")
-	logg.Log("Git DRS initialized successfully!")
-	return nil
-}
-
-func gen3Init(profile string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
-	// double check that one of the credentials params is provided
-
-	var err error
-	// TODO: fix this part
-	/*
-		var cfg *jwt.Config
-		if fenceToken == "" {
-			cred := jwt.Configure{}
-			if credFile == "" {
-				cfg, err = cred.ParseConfig(profile)
-				fenceToken = cfg.AccessToken
-			} else {
-				optCredential, err := cred.ReadCredentials(credFile, "")
-				if err != nil {
-					return err
-				}
-				client.ProfileConfig = *optCredential
-				fenceToken = optCredential.AccessToken
-			}
-			apiEndpoint, err = utils.ParseAPIEndpointFromToken(client.ProfileConfig.APIKey)
-			if err != nil {
-				return err
-			}
-		}
-	*/
-	if apiEndpoint == "" {
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
-		if err != nil {
-			return err
-		}
-	}
-
-	if credFile == "" && fenceToken == "" {
-		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
-	}
-
-	if fenceToken == "" {
-		cred := jwt.Configure{}
-		credential, err := cred.ReadCredentials(credFile, "")
-		if err != nil {
-			return err
-		}
-		fenceToken = credential.AccessToken
-	}
-	if apiEndpoint == "" {
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
-	}
-
-	// if all of the necessary params are filled, then configure the gen3 server
-	firstTimeSetup := apiEndpoint != "" && project != "" && bucket != "" && profile != ""
-	if firstTimeSetup {
-		// update config file with gen3 server info
-		remoteGen3 := config.RemoteSelect{
-			Gen3: &indexd_client.Gen3Remote{
-				Endpoint: apiEndpoint,
-				Auth: indexd_client.Gen3Auth{
-					Profile:   profile,
-					ProjectID: project,
-					Bucket:    bucket,
-				},
-			},
-		}
-		_, err := config.UpdateRemote(config.ORIGIN, remoteGen3)
-		if err != nil {
-			return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
-		}
-	}
-
-	_, err = config.UpdateCurrentRemote(config.ORIGIN)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to gen3: %v\n", err)
-	}
-	// TODO: Get Better logging here
-	log.Logf("Current server set to %s\n", config.ORIGIN)
-
-	// init git config
-	err = initGitConfig(config.Gen3ServerType)
-	if err != nil {
-		return err
-	}
-
-	// Create .git/hooks/pre-commit file
-	hooksDir := filepath.Join(".git", "hooks")
-	preCommitPath := filepath.Join(hooksDir, "pre-commit")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
-	}
-	hookContent := "#!/bin/sh\ngit drs precommit\n"
-	if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
-		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
-	}
-
-	// authenticate with gen3
-	// if no credFile is specified, don't go for the update
-	if credFile != "" {
-		cred := &jwt.Credential{
-			Profile:            profile,
-			APIEndpoint:        apiEndpoint,
-			AccessToken:        fenceToken,
-			UseShepherd:        "false",
-			MinShepherdVersion: "",
-			// TODO: Don't store profile specific credentials in a global variable
-			//KeyId:              client.ProfileConfig.KeyId,
-			//APIKey:             client.ProfileConfig.APIKey,
-		}
-		err = jwt.UpdateConfig(cred)
-		if err != nil {
-			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
-			if strings.Contains(errStr, "apiendpoint") {
-				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
-			}
-			return fmt.Errorf("%s", errStr)
-		}
-	}
-
-	return nil
-
-}
-
-func anvilInit(terraProject string, logger *log.Logger) error {
-	// make sure terra project is provided
-	if terraProject != "" {
-		// populate anvil config
-		remoteAnvil := config.RemoteSelect{
-			Anvil: &anvil_client.AnvilRemote{
-				Endpoint: anvil_client.ANVIL_ENDPOINT,
-				Auth: anvil_client.AnvilAuth{
-					TerraProject: terraProject,
-				},
-			},
-		}
-		_, err := config.UpdateRemote(config.ORIGIN, remoteAnvil)
-		if err != nil {
-			return fmt.Errorf("Error: unable to update config file: %v\n", err)
-		}
-	}
-
-	// update current server in config
-	cfg, err := config.UpdateCurrentRemote(config.ORIGIN)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
-	}
-	logger.Logf("Current server set to %s\n", cfg.GetCurrentRemote().GetEndpoint())
-
-	// init git config for anvil
-	err = initGitConfig(config.AnvilServerType)
-	if err != nil {
-		return err
-	}
-
-	// remove the pre-commit hook if it exists
-	hooksDir := filepath.Join(".git", "hooks")
-	preCommitPath := filepath.Join(hooksDir, "pre-commit")
-	if _, err := os.Stat(preCommitPath); err == nil {
-		if err := os.Remove(preCommitPath); err != nil {
-			logger.Log("[ERROR] unable to remove pre-commit hook:", err)
-			return err
-		}
-	}
-
-	return nil
 }
 
 func initGitConfig(mode config.RemoteType) error {

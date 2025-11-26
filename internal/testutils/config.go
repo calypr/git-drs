@@ -74,7 +74,7 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 	testConfig := &config.Config{
 		CurrentRemote: "origin",
 		Remotes: map[string]config.RemoteSelect{
-			"origin": config.RemoteSelect{
+			"origin": {
 				Gen3: &indexd_client.Gen3Remote{
 					Endpoint: "https://test.gen3.org",
 					Auth: indexd_client.Gen3Auth{

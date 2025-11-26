@@ -422,7 +422,7 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 
 	// Create update info with new URL
 	updateInfo := &drs.DRSObject{
-		AccessMethods: []drs.AccessMethod{drs.AccessMethod{AccessURL: drs.AccessURL{URL: "s3://new-bucket/file-v2.bam"}}},
+		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: "s3://new-bucket/file-v2.bam"}}},
 		//URLs: []string{"s3://new-bucket/file-v2.bam"},
 	}
 

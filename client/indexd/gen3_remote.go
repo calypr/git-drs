@@ -1,8 +1,9 @@
 package indexd_client
 
 import (
+	"log"
+
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/log"
 )
 
 // Gen3Auth holds authentication info for Gen3

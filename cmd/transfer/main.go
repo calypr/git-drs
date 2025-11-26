@@ -8,9 +8,9 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
@@ -27,28 +27,22 @@ var Cmd = &cobra.Command{
 	Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
 	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		//setup logging to file for debugging
+		myLogger := drslog.GetLogger()
 
-		myLogger, err := log.NewLogger("", false)
-		if err != nil {
-			return err
-		}
-
-		defer myLogger.Close()
-		myLogger.Log("~~~~~~~~~~~~~ START: custom transfer ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ START: custom transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			myLogger.Logf("Error loading config: %v", err)
+			myLogger.Printf("Error loading config: %v", err)
 			return err
 		}
 
 		drsClient, err = cfg.GetCurrentRemoteClient(myLogger)
 		if err != nil {
-			myLogger.Logf("Error creating indexd client: %s", err)
+			myLogger.Printf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())
 			return err
 		}
@@ -57,7 +51,7 @@ var Cmd = &cobra.Command{
 			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
-				myLogger.Logf("error decoding JSON: %s", err)
+				myLogger.Printf("error decoding JSON: %s", err)
 				continue
 			}
 
@@ -66,32 +60,32 @@ var Cmd = &cobra.Command{
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
-				myLogger.Log("Initializing connection")
+				myLogger.Print("Initializing connection")
 
 			} else if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
-				myLogger.Logf("Download requested")
+				myLogger.Printf("Download requested")
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
-				myLogger.Logf("Downloading file OID %s", downloadMsg.Oid)
+				myLogger.Printf("Downloading file OID %s", downloadMsg.Oid)
 
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
 
@@ -99,19 +93,19 @@ var Cmd = &cobra.Command{
 				dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
 				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 				}
 
 				// send success message back
-				myLogger.Log(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				myLogger.Print(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 				completeMsg := lfs.CompleteMessage{
 					Event: "complete",
 					Oid:   downloadMsg.Oid,
@@ -121,44 +115,44 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				myLogger.Log(fmt.Sprintf("Upload requested"))
+				myLogger.Print(fmt.Sprintf("Upload requested"))
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
-				myLogger.Log(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+				myLogger.Print(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 
 				//TODO: write code to take Oid and generate DRSRecord
 				// otherwise, register the file (create indexd record and upload file)
-				myLogger.Log("Uploading files is not yet implemented")
+				myLogger.Print("Uploading files is not yet implemented")
 				//TODO: re-implement this with new DRSClient methods
 				/*
 					drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 					if err != nil {
 						errMsg := fmt.Sprintln("Error registering file: " + err.Error())
-						myLogger.Log(errMsg)
+						myLogger.Print(errMsg)
 						lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 					}
 					// send success message back
 					lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
-					myLogger.Logf("Upload for OID %s complete", uploadMsg.Oid)
+					myLogger.Printf("Upload for OID %s complete", uploadMsg.Oid)
 				*/
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
-				myLogger.Log(fmt.Sprintf("LFS transfer complete"))
+				myLogger.Print(fmt.Sprintf("LFS transfer complete"))
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			myLogger.Log(fmt.Sprintf("stdin error: %s", err))
+			myLogger.Print(fmt.Sprintf("stdin error: %s", err))
 		}
 
-		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
 		return nil
 	},
 }

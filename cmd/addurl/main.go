@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
@@ -25,13 +25,7 @@ var AddURLCmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// set up logger
-		myLogger, err := log.NewLogger("", true) // Log to both file and stdout
-		if err != nil {
-			fmt.Printf("Failed to open log file: %v", err)
-			return err
-		}
-		defer myLogger.Close()
+		myLogger := drslog.GetLogger()
 
 		// set git config lfs.allowincompletepush = true
 		configCmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
@@ -54,7 +48,7 @@ var AddURLCmd = &cobra.Command{
 
 		// if none provided, use default AWS configuration on file
 		if awsAccessKey == "" && awsSecretKey == "" {
-			myLogger.Log("No AWS credentials provided. Using default AWS configuration from file.")
+			myLogger.Print("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
 		cfg, err := config.LoadConfig()
@@ -81,7 +75,7 @@ var AddURLCmd = &cobra.Command{
 		if err := generatePointerFile(relFilePath, sha256, meta.Size); err != nil {
 			return fmt.Errorf("failed to generate pointer file: %w", err)
 		}
-		myLogger.Log("S3 URL successfully added to Git DRS repo.")
+		myLogger.Print("S3 URL successfully added to Git DRS repo.")
 		return nil
 	},
 }

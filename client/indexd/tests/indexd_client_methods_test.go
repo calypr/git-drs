@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"log"
+
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -319,7 +320,7 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 		Profile:     "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		Logger:      &log.NoOpLogger{},
+		Logger:      log.Default(),
 		AuthHandler: &indexd_client.RealAuthHandler{},
 	}
 }
@@ -333,7 +334,7 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 		Profile:     "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		Logger:      &log.NoOpLogger{},
+		Logger:      log.Default(),
 		AuthHandler: &MockAuthHandler{},
 	}
 }

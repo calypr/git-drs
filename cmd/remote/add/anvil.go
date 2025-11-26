@@ -3,9 +3,10 @@ package add
 import (
 	"fmt"
 
+	"log"
+
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/log"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +41,7 @@ func anvilInit(terraProject string, logger *log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
 	}
-	logger.Logf("Current server set to %s\n", cfg.GetCurrentRemote().GetEndpoint())
+	logger.Printf("Current server set to %s\n", cfg.GetCurrentRemote().GetEndpoint())
 
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -17,7 +18,6 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
@@ -35,11 +35,7 @@ func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, ht
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger log.LoggerInterface) (int64, string, error) {
-	// Use NoOpLogger if no logger provided
-	if logger == nil {
-		logger = &log.NoOpLogger{}
-	}
+func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -49,7 +45,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 	// region + endpoint must be supplied if bucket not registered in gen3
 	if bucketDetails.EndpointURL == "" || bucketDetails.Region == "" {
-		logger.Log("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
+		logger.Print("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
 	}
 
 	// Create s3 client if not passed as param
@@ -139,7 +135,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 		// Check endpoint, ok if missing
 		if finalEndpoint == "" {
-			logger.Log("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
+			logger.Print("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
 		}
 
 		// Note: We don't validate endpoint here because:
@@ -191,11 +187,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 // fetchS3Metadata fetches S3 metadata (size, modified date) for a given S3 URL.
 // This is the production version that fetches bucket details from Gen3.
-func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger log.LoggerInterface) (int64, string, error) {
-	// Use NoOpLogger if no logger provided
-	if logger == nil {
-		logger = &log.NoOpLogger{}
-	}
+func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger *log.Logger) (int64, string, error) {
 
 	// Fetch AWS bucket region and endpoint from /data/buckets (fence in gen3)
 	bucket, _, err := utils.ParseS3URL(s3URL)
@@ -224,11 +216,7 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 //   - fileSize: the size of the file in bytes
 //   - modifiedDate: the modification date of the file
 //   - logger: the logger interface for output
-func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger log.LoggerInterface) error {
-	// Use NoOpLogger if no logger provided
-	if logger == nil {
-		logger = &log.NoOpLogger{}
-	}
+func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
 
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
@@ -246,13 +234,13 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	if matchingRecord != nil && matchingRecord.Id == uuid {
 		// if record exists and contains requested url, nothing to do
 		if slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
-			logger.Log("Nothing to do: file already registered")
+			logger.Print("Nothing to do: file already registered")
 			return nil
 		}
 
 		// if record exists with different url, update via index/{guid}
 		if matchingRecord.Id == uuid && !slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
-			logger.Log("updating existing record with new url")
+			logger.Print("updating existing record with new url")
 
 			//updateInfo := UpdateInputInfo{
 			//	URLs: []string{url},
@@ -269,7 +257,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	}
 
 	// If no record exists, create indexd record
-	logger.Log("creating new record")
+	logger.Print("creating new record")
 	authzStr, err := utils.ProjectToResource(projectId)
 	if err != nil {
 		return err
@@ -298,11 +286,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 }
 
 // upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger log.LoggerInterface) error {
-	// Use NoOpLogger if no logger provided
-	if logger == nil {
-		logger = &log.NoOpLogger{}
-	}
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
 	return UpsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
@@ -345,7 +329,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 	}
 
 	// Fetch S3 metadata (size, modified date)
-	inc.Logger.Log("Fetching S3 metadata...")
+	inc.Logger.Print("Fetching S3 metadata...")
 	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, cfg.Logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
@@ -354,16 +338,16 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 		}
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
-	inc.Logger.Log("Fetched S3 metadata successfully:")
-	inc.Logger.Logf(" - File Size: %d bytes", fileSize)
-	inc.Logger.Logf(" - Last Modified: %s", modifiedDate)
+	inc.Logger.Print("Fetched S3 metadata successfully:")
+	inc.Logger.Printf(" - File Size: %d bytes", fileSize)
+	inc.Logger.Printf(" - Last Modified: %s", modifiedDate)
 
 	// Create indexd record
-	inc.Logger.Log("Processing indexd record...")
+	inc.Logger.Print("Processing indexd record...")
 	if err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, inc.Logger); err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
-	inc.Logger.Log("Indexd updated")
+	inc.Logger.Print("Indexd updated")
 
 	return s3_utils.S3Meta{
 		Size:         fileSize,

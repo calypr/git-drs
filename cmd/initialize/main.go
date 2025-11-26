@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"log"
+
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
@@ -29,15 +31,10 @@ var Cmd = &cobra.Command{
 		"\n   ~ See below for the flag requirements for each server",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// setup logging
-		logg, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logg.Close()
+		logg := drslog.GetLogger()
 
 		// check if .git dir exists to ensure you're in a git repository
-		_, err = utils.GitTopLevel()
+		_, err := utils.GitTopLevel()
 		if err != nil {
 			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
 		}
@@ -51,7 +48,7 @@ var Cmd = &cobra.Command{
 		// load the config
 		_, err = config.LoadConfig()
 		if err != nil {
-			logg.Logf("We should probably fix this: %v", err)
+			logg.Printf("We should probably fix this: %v", err)
 			return fmt.Errorf("Error: unable to load config file: %v\n", err)
 		}
 
@@ -73,9 +70,9 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
 		}
 		if len(output) > 0 {
-			logg.Log(".gitignore has been updated and staged")
+			logg.Print(".gitignore has been updated and staged")
 		} else {
-			logg.Log(".gitignore already up to date")
+			logg.Print(".gitignore already up to date")
 		}
 
 		// git add .gitignore
@@ -85,7 +82,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// final logs
-		logg.Log("Git DRS initialized")
+		logg.Print("Git DRS initialized")
 		return nil
 	},
 }

@@ -8,7 +8,7 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -48,16 +48,11 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		logger, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
-		var f *os.File
 		var outWriter io.Writer
 		if listOutFile != "" {
-			f, err = os.Create(listOutFile)
+			f, err := os.Create(listOutFile)
 			if err != nil {
 				return err
 			}
@@ -73,6 +68,7 @@ var Cmd = &cobra.Command{
 		}
 		client, err := conf.GetCurrentRemoteClient(logger)
 		if err != nil {
+			logger.Printf("Client failed")
 			return err
 		}
 		objChan, err := client.ListObjects()
@@ -107,11 +103,7 @@ var ListProjectCmd = &cobra.Command{
 	Short: "List DRS entities from server",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		logger, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
 		conf, err := config.LoadConfig()
 		if err != nil {

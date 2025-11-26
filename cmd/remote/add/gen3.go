@@ -2,12 +2,13 @@ package add
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/calypr/data-client/client/jwt"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
@@ -16,12 +17,7 @@ var Gen3Cmd = &cobra.Command{
 	Use:  "gen3",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// setup logging
-		logg, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logg.Close()
+		logg := drslog.GetLogger()
 
 		// make sure at least one of the credentials params is provided
 		if credFile == "" && fenceToken == "" && profile == "" {
@@ -33,7 +29,7 @@ var Gen3Cmd = &cobra.Command{
 			remoteName = args[0]
 		}
 
-		err = gen3Init(remoteName, profile, credFile, fenceToken, project, bucket, logg)
+		err := gen3Init(remoteName, profile, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
@@ -56,7 +52,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 			}
 			fenceToken = cfg.AccessToken
 		} else {
-			log.Logf("Reading credential file: %s", credFile)
+			log.Printf("Reading credential file: %s", credFile)
 			optCredential, err := cred.ReadCredentials(credFile, "")
 			if err != nil {
 				return err
@@ -66,7 +62,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 		}
 		apiEndpoint, err = utils.ParseAPIEndpointFromToken(cfg.APIKey)
 		if err != nil {
-			log.Logf("Error parsing APIEndpoint: %s", err)
+			log.Printf("Error parsing APIEndpoint: %s", err)
 			return err
 		}
 	}
@@ -109,7 +105,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 		},
 	}
 
-	log.Logf("Remote Added: %s", remoteName)
+	log.Printf("Remote Added: %s", remoteName)
 	_, err = config.UpdateRemote(remoteName, remoteGen3)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)

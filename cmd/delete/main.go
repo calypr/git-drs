@@ -5,8 +5,8 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/log"
 	"github.com/spf13/cobra"
 )
 
@@ -32,11 +32,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("invalid hash type: %s", hashType)
 		}
 
-		logger, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
 		config, err := config.LoadConfig()
 		if err != nil {
@@ -45,7 +41,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := config.GetCurrentRemoteClient(logger)
 		if err != nil {
-			logger.Logf("error creating indexd client: %s", err)
+			logger.Printf("error creating indexd client: %s", err)
 			return err
 		}
 		// get records by hash

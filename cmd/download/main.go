@@ -5,8 +5,8 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
@@ -26,13 +26,9 @@ var Cmd = &cobra.Command{
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		logger := drslog.GetLogger()
 
 		oid := args[0]
-		logger, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -41,7 +37,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetCurrentRemoteClient(logger)
 		if err != nil {
-			logger.Logf("\nerror creating DRS client: %s", err)
+			logger.Printf("\nerror creating DRS client: %s", err)
 			return err
 		}
 
@@ -70,7 +66,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("\nerror downloading file object ID %s: %s", oid, err)
 		}
 
-		logger.Log("file downloaded")
+		logger.Print("file downloaded")
 
 		return nil
 	},

@@ -1,4 +1,4 @@
-package log
+package drslog
 
 import (
 	"io"
@@ -9,14 +9,11 @@ import (
 	"github.com/calypr/git-drs/projectdir"
 )
 
-// Logger wraps a log.Logger and the file it writes to.
-type Logger struct {
-	file   *os.File
-	logger *log.Logger
-}
+var log_file io.Closer
+var global_logger *log.Logger
 
 // NewLogger opens the log file and returns a Logger.
-func NewLogger(filename string, logToStdout bool) (*Logger, error) {
+func NewLogger(filename string, logToStdout bool) (*log.Logger, error) {
 	var writers []io.Writer
 
 	if filename == "" {
@@ -42,21 +39,20 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	//TODO: make Lshortfile optional via config
 	logger := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile) // Standard log flags
 
-	return &Logger{file: file, logger: logger}, nil
+	log_file = file
+	global_logger = logger
+	return logger, nil
 }
 
-// Log writes a formatted message to the log file.
-func (l *Logger) Log(args ...any) {
-	l.logger.Println(args...)
+func GetLogger() *log.Logger {
+	return global_logger
 }
 
-func (l *Logger) Logf(format string, args ...any) {
-	l.logger.Printf(format, args...)
-}
-
-// Close closes the log file, flushing all writes.
-func (l *Logger) Close() error {
-	return l.file.Close()
+func Close() {
+	if log_file != nil {
+		log_file.Close()
+		log_file = nil
+	}
 }
 
 type NoOpLogger struct{}

@@ -12,9 +12,9 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cmd/addref"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
@@ -31,13 +31,9 @@ var Cmd = &cobra.Command{
 	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to pull LFS files during git lfs pull. Does nothing on push.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
-		myLogger, err := log.NewLogger(projectdir.DRS_LOG_FILE, false)
-		if err != nil {
-			return fmt.Errorf("Failed to open log file: %v", err)
-		}
-		defer myLogger.Close()
+		myLogger := drslog.GetLogger()
 
-		myLogger.Log("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
@@ -46,28 +42,28 @@ var Cmd = &cobra.Command{
 			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
-				myLogger.Log(fmt.Sprintf("error decoding JSON: %s", err))
+				myLogger.Print(fmt.Sprintf("error decoding JSON: %s", err))
 				continue
 			}
-			myLogger.Log(fmt.Sprintf("Received message: %s", msg))
+			myLogger.Print(fmt.Sprintf("Received message: %s", msg))
 
 			// Example: handle only "init" event
 			if evt, ok := msg["event"]; ok && evt == "init" {
 				// Log for debugging
-				myLogger.Log(fmt.Sprintf("Handling init: %s", msg))
+				myLogger.Print(fmt.Sprintf("Handling init: %s", msg))
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
-				myLogger.Log("Responding to init with empty object")
+				myLogger.Print("Responding to init with empty object")
 			} else if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
-				myLogger.Log(fmt.Sprintf("Handling download event: %s", msg))
+				myLogger.Print(fmt.Sprintf("Handling download event: %s", msg))
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
@@ -76,15 +72,15 @@ var Cmd = &cobra.Command{
 				dstPath, err := downloadFile(downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
 					continue
 				}
 
-				myLogger.Log(fmt.Sprintf("Downloaded file for OID %s", downloadMsg.Oid))
+				myLogger.Print(fmt.Sprintf("Downloaded file for OID %s", downloadMsg.Oid))
 
 				// send success message back
-				myLogger.Log(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				myLogger.Print(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 				completeMsg := lfs.CompleteMessage{
 					Event: "complete",
 					Oid:   downloadMsg.Oid,
@@ -93,49 +89,45 @@ var Cmd = &cobra.Command{
 				encoder.Encode(completeMsg)
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				myLogger.Log(fmt.Sprintf("Handling upload event: %s", msg))
-				myLogger.Log(fmt.Sprintf("skipping upload, just registering existing DRS object"))
+				myLogger.Print(fmt.Sprintf("Handling upload event: %s", msg))
+				myLogger.Print(fmt.Sprintf("skipping upload, just registering existing DRS object"))
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
-					myLogger.Log(errMsg)
+					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
-				myLogger.Log(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
+				myLogger.Print(fmt.Sprintf("Got UploadMessage: %+v\n", uploadMsg))
 
 				// send success message back
 				completeMsg := lfs.CompleteMessage{
 					Event: "complete",
 					Oid:   uploadMsg.Oid,
 				}
-				myLogger.Log(fmt.Sprintf("Complete message: %+v", completeMsg))
+				myLogger.Print(fmt.Sprintf("Complete message: %+v", completeMsg))
 				encoder.Encode(completeMsg)
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
-				myLogger.Log(fmt.Sprintf("terminate event received: %s", msg))
+				myLogger.Print(fmt.Sprintf("terminate event received: %s", msg))
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			myLogger.Log(fmt.Sprintf("stdin error: %s", err))
+			myLogger.Print(fmt.Sprintf("stdin error: %s", err))
 		}
 
-		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
 
 		return nil
 	},
 }
 
 func downloadFile(sha string) (string, error) {
-	//setup logging to file for debugging
-	myLogger, err := log.NewLogger(projectdir.DRS_LOG_FILE, false)
-	if err != nil {
-		return "", fmt.Errorf("Failed to open log file: %v", err)
-	}
-	defer myLogger.Close()
-	myLogger.Log(fmt.Sprintf("Downloading file for sha %s", sha))
+	myLogger := drslog.GetLogger()
+
+	myLogger.Print(fmt.Sprintf("Downloading file for sha %s", sha))
 
 	// get terra project
 	cfg, err := config.LoadConfig() // should this be handled only via indexd client?
@@ -158,7 +150,7 @@ func downloadFile(sha string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error getting object path for sha %s: %v", sha, err)
 	}
-	myLogger.Log(fmt.Sprintf("File path for sha %s: %s", sha, filePath))
+	myLogger.Print(fmt.Sprintf("File path for sha %s: %s", sha, filePath))
 
 	// get DRS URI in the second line of the file
 	file, err := os.Open(filePath)
@@ -166,7 +158,7 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error opening file %s: %v", filePath, err)
 	}
 	defer file.Close()
-	myLogger.Log(fmt.Sprintf("Opened file %s for reading", filePath))
+	myLogger.Print(fmt.Sprintf("Opened file %s for reading", filePath))
 
 	scanner := bufio.NewScanner(file)
 	var drsUri string
@@ -174,16 +166,16 @@ func downloadFile(sha string) (string, error) {
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		myLogger.Log(fmt.Sprintf("Reading line %d: %s", lineNum, line))
+		myLogger.Print(fmt.Sprintf("Reading line %d: %s", lineNum, line))
 		if lineNum == 2 {
 			// second line should be the DRS URI
 			drsUri = strings.TrimSpace(line)
-			myLogger.Log(fmt.Sprintf("DRS URI found: %s", drsUri))
+			myLogger.Print(fmt.Sprintf("DRS URI found: %s", drsUri))
 			break
 		}
 	}
 
-	myLogger.Log(fmt.Sprintf("DRS URI found: %s", drsUri))
+	myLogger.Print(fmt.Sprintf("DRS URI found: %s", drsUri))
 	if drsUri == "" {
 		return "", fmt.Errorf("error: file %s does not contain a valid DRS URI in the second line", filePath)
 	}
@@ -195,7 +187,7 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("no DRS object found for URI %s", drsUri)
 	}
 
-	myLogger.Log(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
+	myLogger.Print(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
 
 	// call DRS downloader as a binary, redirect output to log file
 	logFile, err := os.OpenFile(projectdir.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

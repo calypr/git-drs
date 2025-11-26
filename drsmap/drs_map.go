@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/google/uuid"
 )
@@ -36,7 +36,7 @@ type LfsFileInfo struct {
 
 func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 
-	logger.Log("Update to DRS objects started")
+	logger.Print("Update to DRS objects started")
 
 	// get the name of repository
 	repoName, err := GetRepoNameFromGit()
@@ -55,7 +55,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("error getting staged files: %v", err)
 	}
-	logger.Log("staged files: ", stagedFiles)
+	logger.Print("staged files: ", stagedFiles)
 
 	// create list of lfsStagedFiles from the lfsFiles
 	lfsStagedFiles := make([]LfsFileInfo, 0)
@@ -64,7 +64,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			lfsStagedFiles = append(lfsStagedFiles, lfsFileInfo)
 		}
 	}
-	logger.Logf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
+	logger.Printf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
 
 	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
@@ -88,7 +88,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 
 		// skip if matching record exists
 		if matchingRecord != nil {
-			logger.Logf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+			logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
 			continue
 		}
 
@@ -98,7 +98,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Logf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+			logger.Printf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 
@@ -111,7 +111,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 		drsId := DrsUUID(repoName, file.Oid)
-		logger.Logf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
+		logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
 		path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
@@ -122,7 +122,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
 
-		logger.Logf("Error, hit broken code block DRS object for staged file %s with OID %s", file.Name, file.Oid)
+		logger.Printf("Error, hit broken code block DRS object for staged file %s with OID %s", file.Name, file.Oid)
 		// TODO: why is this here and not in the DRSClient implementation?
 		/*
 			bucket := drsClient.GetDefaultBucketName()

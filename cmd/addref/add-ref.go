@@ -15,8 +15,8 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/log"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2/google"
@@ -30,14 +30,10 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		drsUri := args[0]
 
+		logger := drslog.GetLogger()
+
 		fmt.Printf("Adding reference to DRS object %s\n", drsUri)
 		// setup logging to file for debugging
-		logger, err := log.NewLogger(projectdir.DRS_LOG_FILE, true)
-		if err != nil {
-			return fmt.Errorf("Failed to open log file: %v", err)
-		}
-		defer logger.Close()
-		logger.Log("~~~~~~~~~~~~~ START: add-ref ~~~~~~~~~~~~~")
 
 		// ping AnVIL for the DRS object using a hardcoded endpoint
 		drsObj, err := GetObject(drsUri)
@@ -47,7 +43,7 @@ var Cmd = &cobra.Command{
 		if drsObj == nil {
 			return errors.New("no DRS object found")
 		}
-		logger.Logf("Fetched DRS object: %+v", drsObj)
+		logger.Printf("Fetched DRS object: %+v", drsObj)
 
 		// get sha256 for the drs ID from the cache
 		shaPath, err := drsmap.CreateCustomPath(projectdir.DRS_REF_DIR, drsObj.Id)
@@ -72,7 +68,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logger.Logf("Created LFS pointer file at %s", drsObj.Name)
+		logger.Printf("Created LFS pointer file at %s", drsObj.Name)
 
 		// add filename for lfs tracking
 		err = exec.Command("git", "lfs", "track", drsObj.Name).Run()
@@ -84,14 +80,14 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error running git add .gitattributes: %v", err)
 		}
-		logger.Logf("Tracked %s with git lfs", drsObj.Name)
+		logger.Printf("Tracked %s with git lfs", drsObj.Name)
 
 		// git add the pointer file
 		err = exec.Command("git", "add", drsObj.Name).Run()
 		if err != nil {
 			return fmt.Errorf("error running git add: %v", err)
 		}
-		logger.Logf("Added %s to git", drsObj.Name)
+		logger.Printf("Added %s to git", drsObj.Name)
 
 		fmt.Printf("Successfully added reference to DRS object %s as file %s\n", drsObj.Id, drsObj.Name)
 		return nil

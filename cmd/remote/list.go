@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/log"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -13,16 +13,10 @@ var ListCmd = &cobra.Command{
 	Short: "List DRS repos",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// setup logging
-		logg, err := log.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logg.Close()
-
+		logg := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			logg.Logf("Error loading config: %s", err)
+			logg.Printf("Error loading config: %s", err)
 			return err
 		}
 

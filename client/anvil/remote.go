@@ -3,8 +3,9 @@ package anvil_client
 import (
 	"fmt"
 
+	"log"
+
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/log"
 )
 
 // AnvilAuth holds authentication info for Anvil

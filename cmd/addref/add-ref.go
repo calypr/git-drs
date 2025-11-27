@@ -2,6 +2,8 @@ package addref
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
@@ -46,7 +48,14 @@ var Cmd = &cobra.Command{
 		if objSha == "" {
 			return fmt.Errorf("object %s sha256 not avalible", drsUri)
 		}
-		drsmap.CreateLfsPointer(obj, dstPath)
-		return nil
+		dirPath := filepath.Dir(dstPath)
+		_, err = os.Stat(dirPath)
+		if os.IsNotExist(err) {
+			// The directory does not exist
+			os.MkdirAll(dirPath, os.ModePerm)
+		}
+
+		err = drsmap.CreateLfsPointer(obj, dstPath)
+		return err
 	},
 }

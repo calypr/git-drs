@@ -6,12 +6,11 @@ import (
 
 	"github.com/calypr/git-drs/cmd"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/projectdir"
 )
 
 func main() {
 
-	_, err := drslog.NewLogger(projectdir.DRS_LOG_FILE, true)
+	_, err := drslog.NewLogger("", true)
 	if err != nil {
 		fmt.Printf("Failed to open log file: %v", err)
 		os.Exit(1)

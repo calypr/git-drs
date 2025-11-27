@@ -77,7 +77,10 @@ func (c Config) GetCurrentRemoteClient(logger *log.Logger) (client.DRSClient, er
 		return nil, fmt.Errorf("no remote configuration found for current remote: %s", c.CurrentRemote)
 	}
 	if x.Gen3 != nil {
-		return x.Gen3.GetClient(nil, logger)
+		configText, _ := yaml.Marshal(x.Gen3)
+		configParams := make(map[string]string)
+		yaml.Unmarshal(configText, configParams)
+		return x.Gen3.GetClient(configParams, logger)
 	} else if x.Anvil != nil {
 		return x.Anvil.GetClient(nil, logger)
 	}

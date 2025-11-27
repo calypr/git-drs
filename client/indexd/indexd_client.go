@@ -21,15 +21,8 @@ import (
 	"github.com/calypr/git-drs/utils"
 )
 
-var conf jwt.Configure
-var ProfileConfig jwt.Credential
-
-// RealAuthHandler uses actual Gen3 authentication
-type RealAuthHandler struct{}
-
-func (r *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	return addGen3AuthHeader(req, profile)
-}
+//var conf jwt.Configure
+//var ProfileConfig jwt.Credential
 
 type IndexDClient struct {
 	Base        *url.URL
@@ -45,9 +38,9 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
 
-	baseUrl, err := url.Parse(ProfileConfig.APIEndpoint)
+	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 
 	// get the gen3Project and gen3Bucket from the config
 	projectId := remote.GetProjectId()
@@ -67,7 +60,7 @@ func NewIndexDClient(remote Gen3Remote, logger *log.Logger) (client.DRSClient, e
 		ProjectId:   projectId,
 		BucketName:  bucketName,
 		Logger:      logger,
-		AuthHandler: &RealAuthHandler{}, // Use real auth in production
+		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
 	}, err
 }
 
@@ -325,7 +318,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 			err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
+				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}

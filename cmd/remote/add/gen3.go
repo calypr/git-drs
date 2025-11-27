@@ -101,6 +101,8 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 				Profile:   profile,
 				ProjectID: project,
 				Bucket:    bucket,
+				APIKey:    cfg.APIKey,
+				KeyID:     cfg.KeyId,
 			},
 		},
 	}

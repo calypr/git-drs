@@ -11,6 +11,8 @@ type Gen3Auth struct {
 	Profile   string `yaml:"profile"`
 	ProjectID string `yaml:"project_id"`
 	Bucket    string `yaml:"bucket"`
+	APIKey    string `yaml:"api_key"`
+	KeyID     string `yaml:"key_id"`
 }
 
 // Gen3Server holds Gen3 server config
@@ -32,5 +34,9 @@ func (s Gen3Remote) GetBucketName() string {
 }
 
 func (s Gen3Remote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
-	return NewIndexDClient(s, logger)
+	cred, err := GetJWTCredendial(params)
+	if err != nil {
+		return nil, err
+	}
+	return NewIndexDClient(cred, s, logger)
 }

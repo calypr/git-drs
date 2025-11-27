@@ -6,12 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
-	token "github.com/bmeg/grip-graphql/middleware"
-	"github.com/calypr/data-client/client/commonUtils"
-	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
@@ -66,45 +61,4 @@ func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, p
 	}
 
 	return s3_utils.S3Bucket{}, nil
-}
-
-func addGen3AuthHeader(req *http.Request, profile string) error {
-	// extract accessToken from gen3 profile and insert into header of request
-	var err error
-	if ProfileConfig.AccessToken == "" {
-		ProfileConfig, err = conf.ParseConfig(profile)
-		if err != nil {
-			if errors.Is(err, jwt.ErrProfileNotFound) {
-				return fmt.Errorf("Profile not in config file. Need to run 'git drs init' for gen3 first, see git drs init --help\n")
-			}
-			return fmt.Errorf("error parsing gen3 config: %s", err)
-		}
-	}
-	if ProfileConfig.AccessToken == "" {
-		return fmt.Errorf("access token not found in profile config")
-	}
-	expiration, err := token.GetExpiration(ProfileConfig.AccessToken)
-	if err != nil {
-		return err
-	}
-	// Update AccessToken if token is old
-	if expiration.Before(time.Now()) {
-		r := jwt.Request{}
-		err = r.RequestNewAccessToken(ProfileConfig.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &ProfileConfig)
-		if err != nil {
-			// load config and see if the endpoint is printed
-			errStr := fmt.Sprintf("error refreshing access token: %v", err)
-			if strings.Contains(errStr, "no such host") {
-				errStr += ". If you are accessing an internal website, make sure you are connected to the internal network."
-			}
-
-			return errors.New(errStr)
-		}
-	}
-
-	// Add headers to the request
-	authStr := "Bearer " + ProfileConfig.AccessToken
-	req.Header.Set("Authorization", authStr)
-
-	return nil
 }

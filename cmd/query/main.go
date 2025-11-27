@@ -3,7 +3,8 @@ package query
 import (
 	"encoding/json"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -14,11 +15,13 @@ var Cmd = &cobra.Command{
 	Long:  "Query DRS server by DRS ID",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		logger, err := client.NewLogger("", true)
+		logger := drslog.GetLogger()
+
+		config, err := config.LoadConfig()
 		if err != nil {
 			return err
 		}
-		client, err := client.NewIndexDClient(logger)
+		client, err := config.GetCurrentRemoteClient(logger)
 		if err != nil {
 			return err
 		}
@@ -31,7 +34,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		logger.Logf("%s\n", string(out))
+		logger.Printf("%s\n", string(out))
 		return nil
 	},
 }

@@ -1,4 +1,4 @@
-package client
+package indexd_tests
 
 import (
 	"testing"

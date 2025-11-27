@@ -25,11 +25,11 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "transfer",
 	Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
-	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
+	Long:  "[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
 
-		myLogger.Print("~~~~~~~~~~~~~ START: custom transfer ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)

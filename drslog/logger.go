@@ -13,7 +13,7 @@ var log_file io.Closer
 var global_logger *log.Logger
 
 // NewLogger opens the log file and returns a Logger.
-func NewLogger(filename string, logToStdout bool) (*log.Logger, error) {
+func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 	var writers []io.Writer
 
 	if filename == "" {
@@ -31,8 +31,8 @@ func NewLogger(filename string, logToStdout bool) (*log.Logger, error) {
 	}
 	writers = append(writers, file)
 
-	if logToStdout {
-		writers = append(writers, os.Stdout)
+	if logToStderr {
+		writers = append(writers, os.Stderr)
 	}
 
 	multiWriter := io.MultiWriter(writers...)

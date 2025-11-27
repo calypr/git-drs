@@ -22,13 +22,7 @@ var Cmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize repo and server access for git-drs",
 	Long: "Description:" +
-		"\n  Initialize repo and server access for git-drs with a gen3 or AnVIL server, gen3 as default" +
-		"\n  How to Use:" +
-		"\n   ~ gen3 first init: provide a --url, --bucket, --profile, --project, and either a --cred or --token flag" +
-		"\n   ~ general gen3 inits: just pass in a --cred or --token flag" +
-		"\n   ~ AnVIL first init: set --server as anvil and provide a --terraProject" +
-		"\n   ~ general AnVIL inits: set --server as anvil" +
-		"\n   ~ See below for the flag requirements for each server",
+		"\n  Initialize repo and server access for git-drs",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
@@ -88,23 +82,13 @@ var Cmd = &cobra.Command{
 }
 
 func initGitConfig(mode config.RemoteType) error {
-	var cmdName string
-	var allowIncompletePush string
-	switch mode {
-	case config.Gen3ServerType:
-		cmdName = "transfer"
-		allowIncompletePush = "false"
-	case config.AnvilServerType:
-		cmdName = "transfer-ref"
-		allowIncompletePush = "true"
-	}
 
 	configs := [][]string{
-		{"lfs.standalonetransferagent", "gen3"},
-		{"lfs.customtransfer.gen3.path", "git-drs"},
-		{"lfs.customtransfer.gen3.concurrent", "false"},
-		{"lfs.customtransfer.gen3.args", cmdName},
-		{"lfs.allowincompletepush", allowIncompletePush},
+		{"lfs.standalonetransferagent", "drs"},
+		{"lfs.customtransfer.drs.path", "git-drs"},
+		{"lfs.customtransfer.drs.concurrent", "false"},
+		{"lfs.customtransfer.drs.args", "transfer"},
+		{"lfs.allowincompletepush", "false"},
 	}
 
 	for _, args := range configs {

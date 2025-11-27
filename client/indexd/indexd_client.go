@@ -280,6 +280,10 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	}
 	defer response.Body.Close()
 
+	if response.Status == "404" {
+		return nil, fmt.Errorf("%s not found", id)
+	}
+
 	out := drs.DRSObject{}
 	if err := json.NewDecoder(response.Body).Decode(&out); err != nil {
 		return nil, err

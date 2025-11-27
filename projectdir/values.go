@@ -8,5 +8,5 @@ const (
 	CONFIG_YAML   = "config.yaml"
 
 	DRS_REF_DIR  string = ".git/drs/objects"
-	DRS_LOG_FILE string = ".drs/anvil.log"
+	DRS_LOG_FILE string = ".drs/drs.log"
 )

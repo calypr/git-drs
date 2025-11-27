@@ -11,7 +11,7 @@ import (
 
 func main() {
 
-	_, err := drslog.NewLogger(projectdir.DRS_LOG_FILE, true)
+	_, err := drslog.NewLogger(projectdir.DRS_LOG_FILE, false)
 	if err != nil {
 		fmt.Printf("Failed to open log file: %v", err)
 		os.Exit(1)

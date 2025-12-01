@@ -30,7 +30,7 @@ func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, ht
 	baseURL := inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
-	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Profile, &RealAuthHandler{}, httpClient)
+	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, &RealAuthHandler{}, httpClient)
 }
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.

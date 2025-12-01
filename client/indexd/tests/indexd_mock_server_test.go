@@ -398,15 +398,15 @@ func NewMockGen3Server(t *testing.T, s3Endpoint string) *MockGen3Server {
 			return
 		}
 
-		response := map[string]interface{}{
-			"S3_BUCKETS": map[string]interface{}{
-				"test-bucket": map[string]interface{}{
+		response := map[string]any{
+			"S3_BUCKETS": map[string]any{
+				"test-bucket": map[string]any{
 					"region":       "us-west-2",
 					"endpoint_url": mgs.s3Endpoint,
 					"programs":     []string{"test-program"},
 				},
 			},
-			"GS_BUCKETS": map[string]interface{}{},
+			"GS_BUCKETS": map[string]any{},
 		}
 
 		w.Header().Set("Content-Type", "application/json")

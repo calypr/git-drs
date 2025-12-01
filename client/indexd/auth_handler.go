@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	token "github.com/bmeg/grip-graphql/middleware" //TODO: why this dependency?
-
 	"github.com/calypr/data-client/client/commonUtils"
 	"github.com/calypr/data-client/client/jwt"
+	GoJwt "github.com/golang-jwt/jwt/v5"
 )
 
 // RealAuthHandler uses actual Gen3 authentication
@@ -50,8 +49,28 @@ func (rh *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) erro
 	return rh.addGen3AuthHeader(req, profile)
 }
 
+// Moved this function out of bmeg/grip-graphql/middleware into this repo to simplify deps.
+func GetExpiration(tokenString string) (time.Time, error) {
+	// Also consider trimming the 'Bearer ' prefix too
+	tokenString = strings.TrimPrefix(tokenString, "bearer ")
+	token, _, err := new(GoJwt.Parser).ParseUnverified(tokenString, GoJwt.MapClaims{})
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	// Parse and convert from float64 epoch time to time.Time
+	if claims, ok := token.Claims.(GoJwt.MapClaims); ok {
+		if exp, ok := claims["exp"].(float64); ok {
+			temp := int64(exp)
+			exp := time.Unix(temp, 0)
+			return exp, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("Expiration field 'exp' type float64 not found in token %v", token)
+}
+
 func RefreshToken(cred *jwt.Credential) error {
-	expiration, err := token.GetExpiration(cred.AccessToken)
+	expiration, err := GetExpiration(cred.AccessToken)
 	if err != nil {
 		return err
 	}

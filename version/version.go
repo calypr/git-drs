@@ -24,8 +24,8 @@ func String() string {
 }
 
 // LogFields logs build and version information to the given logger.
-func LogFields() []interface{} {
-	return []interface{}{
+func LogFields() []any {
+	return []any{
 		"GitCommit", GitCommit,
 		"GitBranch", GitBranch,
 		"GitUpstream", GitUpstream,

@@ -167,7 +167,7 @@ else
     touch .gitattributes
     git add .gitattributes
     git commit -m "Add .gitattributes"
-    git push -f origin main
+    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main
   fi
 fi
 

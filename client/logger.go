@@ -39,7 +39,7 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	}
 
 	multiWriter := io.MultiWriter(writers...)
-	logger := log.New(multiWriter, "", log.LstdFlags) // Standard log flags
+	logger := log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds) // Standard log flags
 
 	return &Logger{file: file, logger: logger}, nil
 }

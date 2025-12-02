@@ -7,6 +7,7 @@ CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
 PROFILE_DEFAULT="calypr-dev"
 PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
+CLEAN_DEFAULT="false"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -43,8 +44,16 @@ while [ $# -gt 0 ]; do
       GIT_REMOTE="$2"
       shift 2
       ;;
+    --clean=*)
+      CLEAN="${1#*=}"
+      shift
+      ;;
+    --clean)
+      CLEAN="true"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] --git-remote NAME" >&2
+      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] --git-remote NAME" >&2
       exit 0
       ;;
     *)
@@ -58,6 +67,8 @@ CREDENTIALS_PATH="${CREDENTIALS_PATH:-$CREDENTIALS_PATH_DEFAULT}"
 PROFILE="${PROFILE:-$PROFILE_DEFAULT}"
 PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
 GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
+CLEAN="${CLEAN:-$CLEAN_DEFAULT}"
+
 
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
@@ -72,13 +83,12 @@ echo "Using PROFILE=$PROFILE" >&2
 echo "Using PROGRAM=$PROGRAM" >&2
 echo "Using PROJECT=$PROJECT" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
+echo "Using CLEAN=$CLEAN" >&2
 
 if [ "$(basename "$PWD")" != "monorepos" ] || [ "$(basename "$(dirname "$PWD")")" != "tests" ]; then
   echo 'error: must run from tests/monorepos directory' >&2
   exit 1
 fi
-
-
 
 # Create fixtures (Makefile target does this too)
 if [ ! -d "fixtures" ]; then
@@ -132,6 +142,7 @@ echo "Using git-drs from: $(which git-drs)" >&2
 # set -x
 
 # ensure a gen3 project exists
+# TODO - update to calypr_admin
 g3t --profile "$PROFILE" projects ls | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
   echo "error: /programs/$PROGRAM/projects/$PROJECT does not exist; please create it first" >&2
   exit 1
@@ -141,7 +152,12 @@ g3t --profile "$PROFILE" projects ls | grep "/programs/$PROGRAM/projects/$PROJEC
 cd fixtures
 
 # to reset git state
-# rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log
+if [ "$CLEAN" = "true" ]; then
+  echo "Cleaning existing git state" >&2
+  rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
+else
+  echo "CLEAN flag not set to true; skipping git state cleanup" >&2
+fi
 
 # init git repo if not already a git repo
 if [ -d .git ]; then
@@ -194,7 +210,8 @@ for dir in */ ; do
     # $dir has trailing slash; don't need trailing slash in track
     git lfs track "$dir**"
     git add "$dir"
-    git commit -am "Add $dir"
+    git commit -am "Add $dir" 2>&1 | tee commit.log
+    cat commit.log >> commit-aggregate.log
     GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
@@ -212,5 +229,6 @@ for dir in */ ; do
     git lfs push --dry-run origin main | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
+    # break  # uncomment for one directory at a time testing
   fi
 done

@@ -1,4 +1,4 @@
-// go
+
 // File: `./tests/monorepos/integration_test.go`
 //go:build integration
 
@@ -54,7 +54,7 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestRoot(t *testing.T) {
+func TestGitDrsShowsHelp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

@@ -80,7 +80,7 @@ echo "Using PROJECT=$PROJECT" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
 
 if [ "$(basename "$PWD")" != "monorepos" ] || [ "$(basename "$(dirname "$PWD")")" != "tests" ]; then
-  echo "error: must run from `tests/monorepos` directory" >&2
+  echo 'error: must run from tests/monorepos directory' >&2
   exit 1
 fi
 
@@ -117,7 +117,7 @@ ABS_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 
 GIT_DRS_EXE=$ABS_PATH/git-drs
 if [ ! -f "$GIT_DRS_EXE" ]; then
-  echo "warning: git-drs executable not found at $GIT_DRS_EXE" >&2
+  echo "error: git-drs executable not found at $GIT_DRS_EXE" >&2
   exit 1
 fi
 export PATH="$ABS_PATH:$PATH"
@@ -142,7 +142,7 @@ else
   echo "Initializing new git repository" >&2
 
   git init -b main # use 'main' as default branch name
-  # git remote set-url origin "$GIT_REMOTE"
+
   git remote add origin "$GIT_REMOTE"
 
   # Initialize drs configuration for this repo
@@ -154,7 +154,7 @@ else
   fi
 
   # Create an empty .gitattributes file
-  # if .gitattributes does not already exists initialize it
+  # if .gitattributes does not already exist initialize it
   if [ -f .gitattributes ]; then
     echo ".gitattributes already exists; skipping creation" >&2
   else

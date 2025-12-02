@@ -6,7 +6,7 @@ A monorepo on GitHub refers to a single Git repository that contains the source 
 
 # Generate Fixtures
 
-Creates directory fixtures from a list of names on stdin. For each input line the program creates one top-level directory containing 3 subdirectories, each with 100 files (see below for how to adjust) Progress and errors are printed to `stderr`.
+Creates directory fixtures from a list of names on stdin. For each input line, the program creates one top-level directory containing 1-6 subdirectories (or a fixed number if specified via flags), each with 100-1000 files (or a fixed number if specified via flags). Progress and errors are printed to `stderr`.
 
 This tool is useful for generating large, deterministic-looking file trees for testing monorepo workflows, Git performance, LFS, CI, etc.
 
@@ -78,4 +78,3 @@ The program will create `monorepo/`, `service-a/`, `service-b/` with subdirector
 
 - Intended for local/test environments only; be mindful of disk usage when generating many files.
 - Adjust behavior by editing the constants at the top of `tests/monorepos/generate-fixtures.go` and rebuilding.
-```

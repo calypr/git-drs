@@ -51,7 +51,7 @@ Remote repository URL for git remote add origin. No default; the script exits if
   * runs git drs init --cred ... --profile ... --bucket calypr --project "$PROGRAM-$PROJECT" ...,
   * ensures .drs/config.yaml exists,
   * creates .gitattributes (if missing), commits and pushes,
-  * tracks and pushes each top-level fixture subfolder with git
+  * tracks and pushes each top-level fixture subfolder with git LFS
 
 ## Troubleshooting
 

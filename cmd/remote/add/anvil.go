@@ -33,7 +33,7 @@ func anvilInit(terraProject string, logger *log.Logger) error {
 			},
 		}
 		// TODO: different than ORIGIN?
-		remoteName := config.ORIGIN
+		remoteName := config.Remote(config.AnvilServerType)
 		_, err := config.UpdateRemote(remoteName, remoteAnvil)
 		if err != nil {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)

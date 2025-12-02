@@ -107,14 +107,15 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 		},
 	}
 
-	log.Printf("Remote Added: %s", remoteName)
-	_, err = config.UpdateRemote(config.Remote(remoteName), remoteGen3)
+	remote := config.Remote(remoteName)
+	_, err = config.UpdateRemote(remote, remoteGen3)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
 	}
+	log.Printf("Remote Added: %s", remoteName)
 
 	// update current server in config
-	c, err := config.UpdateCurrentRemote(remoteName)
+	c, err := config.UpdateCurrentRemote(remote)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
 	}

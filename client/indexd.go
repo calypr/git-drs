@@ -323,6 +323,9 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	drsPath, err := GetObjectPath(config.DRS_OBJS_PATH, oid)
 	if err == nil {
 		_ = os.Remove(drsPath)
+		cl.logger.Logf("removed DRS object: %s path %s: ", oid, drsPath)
+	} else {
+		cl.logger.Logf("error getting DRS object path to remove temp file for oid %s: %s", oid, err)
 	}
 
 	// return drsObject

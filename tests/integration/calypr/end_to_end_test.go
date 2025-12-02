@@ -32,9 +32,9 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatal("GH_PAT environment variable not set")
 	}
 
-	profile := os.Getenv("GIT_DRS_PROFILE")
-	if profile == "" {
-		t.Fatal("GIT_DRS_PROFILE environment variable not set")
+	remote := os.Getenv("GIT_DRS_REMOTE")
+	if remote == "" {
+		t.Fatal("GIT_DRS_REMOTE environment variable not set")
 	}
 
 	var err error
@@ -93,7 +93,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	cof := dcJWT.Configure{}
-	cred, err := cof.ParseConfig(profile)
+	cred, err := cof.ParseConfig(remote)
 	if err != nil {
 		t.Fatalf("Parse config: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		"--project_id",
 		repoName,
 		"--profile",
-		profile,
+		remote,
 		"-w",
 		"-a")
 
@@ -124,7 +124,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		"--project_id",
 		repoName,
 		"--profile",
-		profile,
+		remote,
 		"-w",
 		"-a",
 	)
@@ -148,7 +148,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("git-drs add remote output: %s", output)
 
-	cmd = exec.Command("git-drs", "remote", "add", "gen3", profile, "--project", repoName, "--bucket", DEFAULT_BUCKET)
+	cmd = exec.Command("git-drs", "remote", "add", "gen3", remote, "--project", repoName, "--bucket", DEFAULT_BUCKET)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("git-drs add remote output: %s", output)
@@ -364,7 +364,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("git-drs init (clone) output: %s", output)
 
-	cmd = exec.Command("git-drs", "remote", "add", "gen3", profile, "--project", repoName, "--bucket", DEFAULT_BUCKET)
+	cmd = exec.Command("git-drs", "remote", "add", "gen3", remote, "--project", repoName, "--bucket", DEFAULT_BUCKET)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("git-drs add remote output: %s", output)

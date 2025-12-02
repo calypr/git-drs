@@ -161,32 +161,66 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	// get signed url
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
+	targetURL := a.String()
 
-	req, err := http.NewRequest("GET", a.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	err = cl.authHandler.AddAuthHeader(req, cl.Profile)
-	if err != nil {
-		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
-	}
+	// retry logic parameters
+	const maxAttempts = 5
+	baseBackoff := 2000 * time.Millisecond
 
 	client := &http.Client{}
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error getting signed URL: %v", err)
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		// create request per-attempt (ensures fresh headers if auth refresh occurs)
+		req, err := http.NewRequest("GET", targetURL, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		err = cl.authHandler.AddAuthHeader(req, cl.Profile)
+		if err != nil {
+			return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+		}
+
+		response, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("error getting signed URL: %v", err)
+		}
+
+		// If OK, decode and return
+		if response.StatusCode == http.StatusOK {
+			accessUrl := drs.AccessURL{}
+			if err := json.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
+				response.Body.Close()
+				return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
+			}
+			response.Body.Close()
+			cl.logger.Log("signed url retrieved: ", response.Status)
+			return &accessUrl, nil
+		}
+
+		// Read body for logging/error messages
+		bodyBytes, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+
+		// If transient gateway errors, retry with exponential backoff + jitter
+		if response.StatusCode == http.StatusBadGateway || response.StatusCode == http.StatusGatewayTimeout {
+			if attempt < maxAttempts-1 {
+				// exponential backoff with simple jitter based on nanotime (avoids extra import)
+				backoff := baseBackoff * (1 << attempt)
+				jitter := time.Duration(time.Now().UnixNano() % int64(baseBackoff))
+				sleep := backoff + jitter
+				cl.logger.Logf("received %d from server, retrying in %s (attempt %d/%d). message: %s", response.StatusCode, sleep, attempt+1, maxAttempts, string(bodyBytes))
+				time.Sleep(sleep)
+				continue
+			}
+			return nil, fmt.Errorf("failed to get signed URL for DRS ID %s after %d attempts: %s, returned %s", drsObj.Id, maxAttempts, string(bodyBytes), response.Status)
+		}
+
+		// Non-retryable error
+		return nil, fmt.Errorf("failed to get signed URL for DRS ID %s: %s, returned %s", drsObj.Id, string(bodyBytes), response.Status)
 	}
-	defer response.Body.Close()
 
-	accessUrl := drs.AccessURL{}
-	if err := json.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
-		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
-	}
-
-	cl.logger.Log("signed url retrieved: %s", response.Status)
-
-	return &accessUrl, nil
+	return nil, fmt.Errorf("unreachable: exhausted retries for DRS ID %s", drsObj.Id)
 }
 
 // RegisterFile implements ObjectStoreClient.

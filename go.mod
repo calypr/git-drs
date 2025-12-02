@@ -12,8 +12,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-// for testing purposes
-// replace github.com/calypr/data-client => ../data-client
+// for testing purposes uncomment this line
+replace github.com/calypr/data-client => ../data-client
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect

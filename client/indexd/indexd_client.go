@@ -75,7 +75,7 @@ func (cl *IndexDClient) RegisterRecord(record *drs.DRSObject) (*drs.DRSObject, e
 	return nil, fmt.Errorf("RegisterRecord not implemented for IndexDClient")
 }
 
-// GetDownloadURL implements ObjectStoreClient
+// GetDownloadURL implements DRSClient
 func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	cl.Logger.Printf("Try to get download url for file OID %s", oid)
@@ -146,12 +146,12 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
 	}
 
-	cl.Logger.Print("signed url retrieved: %s", response.Status)
+	cl.Logger.Printf("signed url retrieved: %s", response.Status)
 
 	return &accessUrl, nil
 }
 
-// RegisterFile implements ObjectStoreClient.
+// RegisterFile implements DRSClient.
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
 // DRS will use any matching indexd record / file that already exists
@@ -165,24 +165,21 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	}
 
 	// use any indexd record from the same project if it exists
-
+	//  * addresses edge case where user X registering in project A has access to record in project B
+	//  * but still needs create a new record to so user Y reading the file in project A can access it
+	//  * even if they don't have access to project B
 	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.ProjectId)
 	if err != nil {
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
 	}
 
-	drsObj := &drs.DRSObject{}
-	if matchingRecord != nil {
-		drsObj, err = cl.GetObject(matchingRecord.Id)
-		if err != nil {
-			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Id, err)
-		}
-	} else {
+	drsObj := matchingRecord
+	if matchingRecord == nil {
 		// otherwise, create indexd record
 		cl.Logger.Print("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		drsObj, err := drsmap.DrsInfoFromOid(oid)
+		drsObj, err = drsmap.DrsInfoFromOid(oid)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
@@ -191,6 +188,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 		// register the record
 		drsObj, err = cl.RegisterIndexdRecord(indexdObj)
+
 		if err != nil {
 			cl.Logger.Printf("error registering indexd record: %s", err)
 			return nil, fmt.Errorf("error registering indexd record: %v", err)
@@ -229,9 +227,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// if file is not downloadable, then upload it to bucket
 	if !isDownloadable {
-		cl.Logger.Printf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
+		cl.Logger.Printf("file with oid %s not downloadable from bucket, proceeding to upload", oid)
 
-		// modified from gen3-client/g3cmd/upload-single.go
 		filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
 		if err != nil {
 			cl.Logger.Printf("error getting object path for oid %s: %s", oid, err)
@@ -728,7 +725,7 @@ func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64
 		Name: fileName,
 		// TODO: ensure that we can retrieve the access method during submission (happens in transfer)
 		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: fileURL}, Authorizations: &authorizations}},
-		Checksums:     []drs.Checksum{drs.Checksum{Checksum: checksum, Type: drs.ChecksumTypeSHA256}},
+		Checksums:     []drs.Checksum{{Checksum: checksum, Type: drs.ChecksumTypeSHA256}},
 		Size:          size,
 	}
 

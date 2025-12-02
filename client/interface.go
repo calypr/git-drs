@@ -41,6 +41,9 @@ type DRSClient interface {
 	// Register a DRS object directly in indexd
 	RegisterRecord(indexdObject *drs.DRSObject) (*drs.DRSObject, error)
 
+	// Put file into object storage and obtain a DRS record pointing to it
+	RegisterFile(oid string) (*drs.DRSObject, error)
+
 	// Update an indexd record by appending a file URL and return the updated record
 	UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error)
 
@@ -49,8 +52,4 @@ type DRSClient interface {
 
 	// Add an S3 URL to an existing indexd record
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error)
-
-	// Put file into object storage and obtain a DRS record pointing to it
-	// no DRS write endpoint exists, so this is custom code
-	// RegisterFile(oid string) (*drs.DRSObject, error)
 }

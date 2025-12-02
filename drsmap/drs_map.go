@@ -15,6 +15,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
@@ -321,21 +322,18 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Convert project ID to resource path format for comparison
-	// expectedAuthz, err := utils.ProjectToResource(projectId)
-	// if err != nil {
-	//	return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
-	// }
+	expectedAuthz, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	}
 
-	//TODO: determine what filtering logic should be here
 	// Get the first record with matching authz if exists
 	for _, record := range records {
-		//for _, access := range record.AccessMethods {
-		//for _, authz := range access.Authorizations.Value {
-		//if authz == expectedAuthz {
-		return &record, nil
-		//}
-		//	}
-		//}
+		for _, access := range record.AccessMethods {
+			if access.Authorizations.Value == expectedAuthz {
+				return &record, nil
+			}
+		}
 	}
 
 	return nil, nil

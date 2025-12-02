@@ -128,19 +128,16 @@ var Cmd = &cobra.Command{
 
 				//TODO: write code to take Oid and generate DRSRecord
 				// otherwise, register the file (create indexd record and upload file)
-				myLogger.Print("Uploading files is not yet implemented")
 				//TODO: re-implement this with new DRSClient methods
-				/*
-					drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
-					if err != nil {
-						errMsg := fmt.Sprintln("Error registering file: " + err.Error())
-						myLogger.Print(errMsg)
-						lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
-					}
-					// send success message back
-					lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
-					myLogger.Printf("Upload for OID %s complete", uploadMsg.Oid)
-				*/
+				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+				if err != nil {
+					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
+					myLogger.Print(errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+				}
+				// send success message back
+				lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)
+				myLogger.Printf("Upload for OID %s complete", uploadMsg.Oid)
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event

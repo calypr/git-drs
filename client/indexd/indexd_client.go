@@ -67,8 +67,67 @@ func (cl *IndexDClient) GetProjectId() string {
 	return cl.ProjectId
 }
 
-func (cl *IndexDClient) DeleteRecord(id string) error {
-	return fmt.Errorf("DeleteObject not implemented for IndexDClient")
+func (cl *IndexDClient) DeleteRecord(oid string) error {
+	// get records by hash
+	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+	if err != nil {
+		return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("No records found for OID %s", oid)
+	}
+
+	// Find a record that matches the project ID
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetProjectId())
+	if err != nil {
+		return fmt.Errorf("Error finding matching record for project %s: %v", cl.GetProjectId(), err)
+	}
+	if matchingRecord == nil {
+		return fmt.Errorf("No matching record found for project %s", cl.GetProjectId())
+	}
+
+	// call helper to do the delete for a gen3 GUID
+	return cl.deleteIndexdRecord(matchingRecord.Id)
+}
+
+func (cl *IndexDClient) deleteIndexdRecord(did string) error {
+	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
+	record, err := cl.getIndexdRecordByDID(did)
+	if err != nil {
+		return fmt.Errorf("could not query index record for did %s: %v", did, err)
+	}
+
+	// delete indexd record using did and rev
+	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
+	delReq, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Remote)
+	if err != nil {
+		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
+	}
+	// set Content-Type header for JSON
+	delReq.Header.Set("accept", "application/json")
+
+	client := &http.Client{}
+	delResp, err := client.Do(delReq)
+	if err != nil {
+		return err
+	}
+	defer delResp.Body.Close()
+
+	// response error handling
+	if delResp.StatusCode >= 400 {
+		bodyBytes, readErr := io.ReadAll(delResp.Body)
+		if readErr != nil {
+			return fmt.Errorf("delete failed with status %s: could not read response body: %v", delResp.Status, readErr)
+		}
+		bodyString := string(bodyBytes)
+		return fmt.Errorf("delete failed with status %s. Response body: %s", delResp.Status, bodyString)
+	}
+	return nil
 }
 
 func (cl *IndexDClient) RegisterRecord(record *drs.DRSObject) (*drs.DRSObject, error) {
@@ -159,7 +218,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
 	// get all existing hashes
-	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), oid)
+	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
 	}
@@ -730,4 +789,39 @@ func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64
 	}
 
 	return &DrsObj, nil
+}
+
+// Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)
+func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
+	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+	req.Header.Set("accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get record: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	record := &OutputInfo{}
+	if err := json.NewDecoder(resp.Body).Decode(record); err != nil {
+		return nil, fmt.Errorf("error decoding response body: %v", err)
+	}
+
+	return record, nil
 }

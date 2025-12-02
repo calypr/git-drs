@@ -4,7 +4,6 @@ package drsmap
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -186,7 +185,7 @@ func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 func GetObjectPath(basePath string, oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
-		return "", errors.New(fmt.Sprintf("Error: %s is not a valid sha256 hash", oid))
+		return "", fmt.Errorf("Error: %s is not a valid sha256 hash", oid)
 	}
 
 	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil

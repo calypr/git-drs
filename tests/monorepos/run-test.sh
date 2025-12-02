@@ -185,6 +185,6 @@ for dir in */ ; do
     git lfs track "$dir**"
     git add "$dir"
     git commit -am "Add $dir"
-    git push origin main
+    GIT_TRACE=1 git push origin main
   fi
 done

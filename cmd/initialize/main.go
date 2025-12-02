@@ -328,7 +328,7 @@ func initGitConfig(mode config.ServerType) error {
 	configs := [][]string{
 		{"lfs.standalonetransferagent", "gen3"},
 		{"lfs.customtransfer.gen3.path", "git-drs"},
-		{"lfs.customtransfer.gen3.concurrent", "true"},
+		{"lfs.customtransfer.gen3.concurrent", "false"},
 		{"lfs.customtransfer.gen3.args", cmdName},
 		{"lfs.allowincompletepush", allowIncompletePush},
 	}

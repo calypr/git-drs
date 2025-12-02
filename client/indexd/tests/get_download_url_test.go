@@ -256,6 +256,8 @@ func TestIndexdClient_GetDownloadURL_PanicScenarios(t *testing.T) {
 		defer mockServer.Close()
 
 		// Add record with no URLs (which creates DRS object with no access methods)
+		// Note: A record with no URLs can't be matched by project because FindMatchingRecord
+		// requires access methods with authorizations. So this will fail at the matching stage.
 		record := &MockIndexdRecord{
 			Did:      "test-did-no-access",
 			FileName: "no-access.bam",
@@ -273,13 +275,14 @@ func TestIndexdClient_GetDownloadURL_PanicScenarios(t *testing.T) {
 
 		client := testIndexdClientWithMockAuth(mockServer.URL())
 
-		// This should return an error
+		// This should return an error about no matching record
+		// (because records without access methods can't be matched by project)
 		result, err := client.GetDownloadURL("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
 
 		// Verify proper error handling
 		require.Error(t, err)
 		require.Nil(t, result)
-		require.Contains(t, err.Error(), "no access methods available for DRS object")
+		require.Contains(t, err.Error(), "no matching record found for project")
 	})
 }
 

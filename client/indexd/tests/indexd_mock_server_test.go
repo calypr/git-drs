@@ -577,6 +577,14 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)
 	for i, url := range record.URLs {
+		// Get the first authz as the authorization for this access method
+		var authzPtr *drs.Authorizations
+		if len(record.Authz) > 0 {
+			authzPtr = &drs.Authorizations{
+				Value: record.Authz[0],
+			}
+		}
+
 		accessMethods = append(accessMethods, drs.AccessMethod{
 			Type:     "https",
 			AccessID: fmt.Sprintf("access-method-%d", i),
@@ -584,6 +592,7 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 				URL:     url,
 				Headers: []string{},
 			},
+			Authorizations: authzPtr,
 		})
 	}
 

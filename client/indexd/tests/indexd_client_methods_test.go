@@ -146,8 +146,8 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	require.Equal(t, sha256, record.Checksums[0].Checksum)
 	require.Equal(t, drs.ChecksumTypeSHA256, record.Checksums[0].Type)
 
-	require.Equal(t, []string{"s3://test-bucket/file.bam"}, record.AccessMethods[0].AccessURL)
-	require.Equal(t, []string{"/workspace/demo"}, record.AccessMethods[0].Authorizations.Value)
+	require.Equal(t, "s3://test-bucket/file.bam", record.AccessMethods[0].AccessURL.URL)
+	require.Equal(t, "/workspace/demo", record.AccessMethods[0].Authorizations.Value)
 
 	// Test: Query with non-existent hash
 	emptyResults, err := client.GetObjectsByHash("sha256", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")

@@ -674,8 +674,13 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	for _, a := range updateInfo.AccessMethods {
 		record.URLs = append(record.URLs, a.AccessURL.URL)
 	}
-	// marshal update info
-	jsonBytes, err := json.Marshal(updateInfo)
+	// marshal update info - send the record (with URLs field) not the DRSObject
+	updatePayload := struct {
+		URLs []string `json:"urls"`
+	}{
+		URLs: record.URLs,
+	}
+	jsonBytes, err := json.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
 	}

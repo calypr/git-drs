@@ -56,7 +56,8 @@ var Cmd = &cobra.Command{
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
-				myLogger.Log("Initializing connection")
+				pid := os.Getpid()
+				myLogger.Log(fmt.Sprintf("Initializing connection [git-drs pid=%d] ", pid))
 
 			} else if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event

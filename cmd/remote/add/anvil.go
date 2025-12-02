@@ -14,6 +14,8 @@ var AnvilCmd = &cobra.Command{
 	Use:  "anvil",
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// TODO: actuallly implement
+		fmt.Printf("NOT IMPLEMENTED")
 		return nil
 	},
 }
@@ -30,18 +32,20 @@ func anvilInit(terraProject string, logger *log.Logger) error {
 				},
 			},
 		}
-		_, err := config.UpdateRemote(config.ORIGIN, remoteAnvil)
+		// TODO: different than ORIGIN?
+		remoteName := config.ORIGIN
+		_, err := config.UpdateRemote(remoteName, remoteAnvil)
 		if err != nil {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
-	}
 
-	// update current server in config
-	cfg, err := config.UpdateCurrentRemote(config.ORIGIN)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
+		// update current server in config
+		cfg, err := config.UpdateCurrentRemote(remoteName)
+		if err != nil {
+			return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
+		}
+		logger.Printf("Current server: %s\n", cfg.GetCurrentRemote().GetEndpoint())
 	}
-	logger.Printf("Current server set to %s\n", cfg.GetCurrentRemote().GetEndpoint())
 
 	return nil
 }

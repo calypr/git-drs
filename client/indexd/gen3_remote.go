@@ -36,7 +36,7 @@ func (s Gen3Remote) GetKeyId() string {
 }
 
 func (s Gen3Remote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
-	cred, err := GetJWTCredendial(params)
+	cred, err := GetJWTCredential(params)
 	if err != nil {
 		return nil, err
 	}

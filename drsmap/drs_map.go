@@ -35,7 +35,6 @@ type LfsFileInfo struct {
 }
 
 func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
-
 	logger.Print("Update to DRS objects started")
 
 	// get the name of repository
@@ -121,47 +120,25 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
 
-		logger.Printf("Error, hit broken code block DRS object for staged file %s with OID %s", file.Name, file.Oid)
-		// TODO: why is this here and not in the DRSClient implementation?
-		/*
-			bucket := drsClient.GetDefaultBucketName()
-			if bucket == "" {
-				return fmt.Errorf("error: bucket name is empty in config file")
-			}
-			fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, file.Oid))
+		drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
+		if err != nil {
+			return fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
+		}
 
-			authzStr, err := utils.ProjectToResource(drsClient.GetProjectId())
-			if err != nil {
-				return err
-			}
-
-			// create IndexdRecord
-			indexdObj := drs.DRSObject{
-				Id:            drsId,
-				Name:          file.Name,
-				AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: fileURL}}},
-				//URLs:          []string{fileURL},
-				//Hashes:    HashInfo{SHA256: file.Oid},
-				Checksums: []drs.Checksum{drs.Checksum{Checksum: file.Oid, Type: drs.ChecksumTypeSHA256}},
-				Size:      file.Size,
-				Authz:     []string{authzStr},
-			}
-
-			// write drs objects to DRS_OBJS_PATH
-			err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
-			if err != nil {
-				return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
-			}
-			logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Id)
-		*/
+		// write drs objects to DRS_OBJS_PATH
+		err = writeDrsObj(drsObj, file.Oid, drsObjPath)
+		if err != nil {
+			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
+		}
+		logger.Printf("Prepared %s with DRS ID %s for commit", file.Name, drsObj.Id)
 	}
 
 	return nil
 }
 
-func writeDrsObj(indexdObj drs.DRSObject, oid string, drsObjPath string) error {
+func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	// get object bytes
-	indexdObjBytes, err := json.Marshal(indexdObj)
+	indexdObjBytes, err := json.Marshal(drsObj)
 	if err != nil {
 		return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
 	}

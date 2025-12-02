@@ -44,7 +44,6 @@ var Gen3Cmd = &cobra.Command{
 
 func gen3Init(remoteName string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
 	// double check that one of the credentials params is provided
-
 	var err error
 	var cfg jwt.Credential
 	if fenceToken == "" {
@@ -114,6 +113,13 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 		return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
 	}
 
+	// update current server in config
+	c, err := config.UpdateCurrentRemote(remoteName)
+	if err != nil {
+		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
+	}
+	log.Printf("Current server: %s\n", c.GetCurrentRemote().GetEndpoint())
+
 	// authenticate with gen3
 	// if no credFile is specified, don't go for the update
 	if credFile != "" {
@@ -135,8 +141,8 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 			}
 			return fmt.Errorf("%s", errStr)
 		}
+
 	}
 
 	return nil
-
 }

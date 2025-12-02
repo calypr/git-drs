@@ -6,7 +6,7 @@ set -euo pipefail
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
 PROFILE_DEFAULT="calypr-dev"
 PROJECT_DEFAULT="cbds-monorepos"
-GIT_REMOTE="https://github.com/calypr/monorepo.git"
+GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -57,7 +57,7 @@ done
 CREDENTIALS_PATH="${CREDENTIALS_PATH:-$CREDENTIALS_PATH_DEFAULT}"
 PROFILE="${PROFILE:-$PROFILE_DEFAULT}"
 PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
-GIT_REMOTE="${GIT_REMOTE:-}"
+GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 
 
 if [ -z "$GIT_REMOTE" ]; then
@@ -99,9 +99,20 @@ if ! command -v git-lfs >/dev/null 2>&1; then
   echo "error: git-lfs is not installed; please install it to proceed" >&2
   # Example install command:
   if [ "$(uname -s)" = "Darwin" ]; then
-    echo "installing macOS" >&2
-    brew install git-lfs
-    git lfs install --skip-smudge
+    if ! command -v brew >/dev/null 2>&1; then
+      echo "error: Homebrew is not installed. Please install Homebrew first:" >&2
+      echo "  https://brew.sh" >&2
+      exit 1
+    fi
+    echo "installing git-lfs via Homebrew on macOS" >&2
+    if ! brew install git-lfs; then
+      echo "error: failed to install git-lfs via Homebrew" >&2
+      exit 1
+    fi
+    if ! git lfs install --skip-smudge; then
+      echo "error: failed to initialize git-lfs" >&2
+      exit 1
+    fi
   else
     echo "See installation instructions for your platform:" >&2
     echo "  https://github.com/git-lfs/git-lfs/wiki/Installation" >&2

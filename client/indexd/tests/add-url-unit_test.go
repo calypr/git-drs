@@ -13,7 +13,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	indexd_client "github.com/calypr/git-drs/client/indexd_client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/s3_utils"

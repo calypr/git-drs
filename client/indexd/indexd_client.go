@@ -26,7 +26,7 @@ import (
 
 type IndexDClient struct {
 	Base        *url.URL
-	Profile     string
+	Remote      string
 	ProjectId   string
 	BucketName  string
 	Logger      *log.Logger
@@ -38,10 +38,9 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, remoteName string, logger *log.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
-
 	// get the gen3Project and gen3Bucket from the config
 	projectId := remote.GetProjectId()
 	if projectId == "" {
@@ -55,8 +54,8 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *lo
 	//}
 
 	return &IndexDClient{
+		Remote:      remoteName,
 		Base:        baseUrl,
-		Profile:     remote.Auth.Profile,
 		ProjectId:   projectId,
 		BucketName:  bucketName,
 		Logger:      logger,
@@ -130,7 +129,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -239,7 +238,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		err = g3cmd.UploadSingleMultipart(cl.Profile, filePath, cl.BucketName, drsObj.Id, false)
+		err = g3cmd.UploadSingleMultipart(cl.Remote, filePath, cl.BucketName, drsObj.Id, false)
 		if err != nil {
 			cl.Logger.Printf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -268,7 +267,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -320,7 +319,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+			err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 			if err != nil {
 				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -396,7 +395,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -442,7 +441,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 		return err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Remote)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -479,7 +478,7 @@ func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]drs.DR
 	}
 	cl.Logger.Printf("Looking for files with hash %s:%s", hashType, hash)
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", hashType, hash, err)
 	}
@@ -554,7 +553,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+			err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -639,7 +638,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -681,7 +680,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}

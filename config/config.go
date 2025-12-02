@@ -18,6 +18,7 @@ import (
 
 // RemoteType represents the type of server being initialized
 type RemoteType string
+type Remote string
 
 const (
 	ORIGIN = "origin"
@@ -60,11 +61,11 @@ type RemoteSelect struct {
 
 // Config holds the overall config structure
 type Config struct {
-	CurrentRemote string                  `yaml:"current_remote"`
-	Remotes       map[string]RemoteSelect `yaml:"remotes"`
+	CurrentRemote Remote                  `yaml:"current_remote"`
+	Remotes       map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
-func (c Config) GetCurrentRemoteName() string {
+func (c Config) GetCurrentRemoteName() Remote {
 	return c.CurrentRemote
 }
 
@@ -80,6 +81,7 @@ func (c Config) GetCurrentRemoteClient(logger *log.Logger) (client.DRSClient, er
 		configText, _ := yaml.Marshal(x.Gen3)
 		configParams := make(map[string]string)
 		yaml.Unmarshal(configText, configParams)
+		configParams["remote_name"] = string(c.CurrentRemote)
 		return x.Gen3.GetClient(configParams, logger)
 	} else if x.Anvil != nil {
 		return x.Anvil.GetClient(nil, logger)
@@ -118,7 +120,7 @@ func getConfigPath() (string, error) {
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
-func UpdateRemote(name string, remote RemoteSelect) (*Config, error) {
+func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	configPath, err := getConfigPath()
 	if err != nil {
 		return nil, err
@@ -143,8 +145,12 @@ func UpdateRemote(name string, remote RemoteSelect) (*Config, error) {
 	if err := yaml.NewDecoder(file).Decode(&cfg); err != nil {
 		// if the file is empty, we can just create a new config
 		cfg = Config{
-			Remotes: map[string]RemoteSelect{},
+			Remotes: map[Remote]RemoteSelect{},
 		}
+	}
+
+	if cfg.Remotes == nil {
+		cfg.Remotes = make(map[Remote]RemoteSelect)
 	}
 
 	cfg.Remotes[name] = remote
@@ -166,7 +172,7 @@ func UpdateRemote(name string, remote RemoteSelect) (*Config, error) {
 	return &cfg, nil
 }
 
-func UpdateCurrentRemote(remoteName string) (*Config, error) {
+func UpdateCurrentRemote(remoteName Remote) (*Config, error) {
 	// load existing config
 	cfg, err := LoadConfig()
 	if err != nil {

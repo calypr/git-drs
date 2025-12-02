@@ -178,7 +178,7 @@ func TestIndexdClient_UpdateRecord(t *testing.T) {
 
 	// Make direct HTTP request to verify mock server handles updates
 	httpClient := &http.Client{}
-	updatePayload := map[string]interface{}{
+	updatePayload := map[string]any{
 		"urls": []string{"s3://bucket1/file.bam", "s3://bucket2/file-v2.bam"},
 	}
 	body, err := json.Marshal(updatePayload)
@@ -276,7 +276,7 @@ func TestIndexdClient_UpdateIndexdRecord_Idempotent(t *testing.T) {
 
 	// Act: Update with same URL (should be idempotent - no duplicate)
 	httpClient := &http.Client{}
-	updatePayload := map[string]interface{}{
+	updatePayload := map[string]any{
 		"urls": []string{"s3://bucket1/file.bam"},
 	}
 	body, err := json.Marshal(updatePayload)
@@ -317,7 +317,7 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
 	return &indexd_client.IndexDClient{
 		Base:        url,
-		Profile:     "test-profile",
+		Remote:      "test-remote",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
 		Logger:      log.Default(),
@@ -331,7 +331,7 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
 	return &indexd_client.IndexDClient{
 		Base:        url,
-		Profile:     "test-profile",
+		Remote:      "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
 		Logger:      log.Default(),

@@ -122,10 +122,10 @@ type UpdateInputInfo struct {
 	FileName string `json:"file_name,omitempty"`
 
 	// Additional metadata as key-value pairs
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 
 	// URL-specific metadata as key-value pairs
-	URLsMetadata map[string]interface{} `json:"urls_metadata,omitempty"`
+	URLsMetadata map[string]any `json:"urls_metadata,omitempty"`
 
 	// Version of the record
 	Version string `json:"version,omitempty"`

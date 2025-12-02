@@ -20,8 +20,13 @@ var Gen3Cmd = &cobra.Command{
 		logg := drslog.GetLogger()
 
 		// make sure at least one of the credentials params is provided
-		if credFile == "" && fenceToken == "" && profile == "" {
+		if credFile == "" && fenceToken == "" && len(args) == 0 {
 			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+		}
+
+		// When adding a new remote, bucket field is required.
+		if bucket == "" {
+			return fmt.Errorf("Error: Gen3 requires a bucket name to be specified when adding a new remote specify a bucket with --bucket flag. See 'git drs init --help' for more details")
 		}
 
 		remoteName := config.ORIGIN
@@ -29,16 +34,15 @@ var Gen3Cmd = &cobra.Command{
 			remoteName = args[0]
 		}
 
-		err := gen3Init(remoteName, profile, credFile, fenceToken, project, bucket, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("Error configuring gen3 server: %v", err)
 		}
-
 		return nil
 	},
 }
 
-func gen3Init(remoteName string, profile string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
+func gen3Init(remoteName string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
 	// double check that one of the credentials params is provided
 
 	var err error
@@ -46,7 +50,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 	if fenceToken == "" {
 		cred := jwt.Configure{}
 		if credFile == "" {
-			cfg, err = cred.ParseConfig(profile)
+			cfg, err = cred.ParseConfig(remoteName)
 			if err != nil {
 				return err
 			}
@@ -96,19 +100,16 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 	// update config file with gen3 server info
 	remoteGen3 := config.RemoteSelect{
 		Gen3: &indexd_client.Gen3Remote{
-			Endpoint: apiEndpoint,
-			Auth: indexd_client.Gen3Auth{
-				Profile:   profile,
-				ProjectID: project,
-				Bucket:    bucket,
-				APIKey:    cfg.APIKey,
-				KeyID:     cfg.KeyId,
-			},
+			Endpoint:  apiEndpoint,
+			ProjectID: project,
+			Bucket:    bucket,
+			APIKey:    cfg.APIKey,
+			KeyID:     cfg.KeyId,
 		},
 	}
 
 	log.Printf("Remote Added: %s", remoteName)
-	_, err = config.UpdateRemote(remoteName, remoteGen3)
+	_, err = config.UpdateRemote(config.Remote(remoteName), remoteGen3)
 	if err != nil {
 		return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
 	}
@@ -117,7 +118,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 	// if no credFile is specified, don't go for the update
 	if credFile != "" {
 		cred := &jwt.Credential{
-			Profile:            profile,
+			Profile:            remoteName,
 			APIEndpoint:        apiEndpoint,
 			AccessToken:        fenceToken,
 			UseShepherd:        "false",
@@ -128,7 +129,7 @@ func gen3Init(remoteName string, profile string, credFile string, fenceToken str
 		}
 		err = jwt.UpdateConfig(cred)
 		if err != nil {
-			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 profile: %v", err)
+			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 remote: %v", err)
 			if strings.Contains(errStr, "apiendpoint") {
 				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
 			}

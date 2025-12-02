@@ -149,6 +149,10 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		}
 	}
 
+	if cfg.Remotes == nil {
+		cfg.Remotes = make(map[Remote]RemoteSelect)
+	}
+
 	cfg.Remotes[name] = remote
 
 	// overwrite the file using config

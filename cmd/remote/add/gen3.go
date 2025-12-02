@@ -24,6 +24,11 @@ var Gen3Cmd = &cobra.Command{
 			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
 		}
 
+		// When adding a new remote, bucket field is required.
+		if bucket == "" {
+			return fmt.Errorf("Error: Gen3 requires a bucket name to be specified when adding a new remote specify a bucket with --bucket flag. See 'git drs init --help' for more details")
+		}
+
 		remoteName := config.ORIGIN
 		if len(args) > 0 {
 			remoteName = args[0]

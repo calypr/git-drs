@@ -69,7 +69,6 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
-
 		// check hash to see if record already exists in indexd (source of truth)
 		records, err := drsClient.GetObjectsByHash(file.OidType, file.Oid)
 		if err != nil {

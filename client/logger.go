@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -39,7 +40,8 @@ func NewLogger(filename string, logToStdout bool) (*Logger, error) {
 	}
 
 	multiWriter := io.MultiWriter(writers...)
-	logger := log.New(multiWriter, "", log.LstdFlags|log.Lmicroseconds) // Standard log flags
+	// create log with pid prefix
+	logger := log.New(multiWriter, fmt.Sprintf("%d ", os.Getpid()), log.LstdFlags|log.Lmicroseconds)
 
 	return &Logger{file: file, logger: logger}, nil
 }

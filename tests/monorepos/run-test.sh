@@ -59,12 +59,6 @@ PROFILE="${PROFILE:-$PROFILE_DEFAULT}"
 PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
 GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 
-
-if [ -z "$GIT_REMOTE" ]; then
-  echo "error: GIT_REMOTE must be set via --git-remote or GIT_REMOTE environment variable" >&2
-  exit 1
-fi
-
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
 export CREDENTIALS_PATH

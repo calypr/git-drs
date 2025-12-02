@@ -6,7 +6,7 @@ A monorepo on GitHub refers to a single Git repository that contains the source 
 
 # Generate Fixtures
 
-Creates directory fixtures from a list of names on stdin. For each input line the program creates one top-level directory containing between 1 and 6 `sub-directory-N` subdirectories. Each subdirectory receives between 100 and 1000 files of exactly 1024 bytes filled with random printable characters. Progress and errors are printed to `stderr`.
+Creates directory fixtures from a list of names on stdin. For each input line the program creates one top-level directory containing 3 subdirectories, each with 100 files (see below for how to adjust) Progress and errors are printed to `stderr`.
 
 This tool is useful for generating large, deterministic-looking file trees for testing monorepo workflows, Git performance, LFS, CI, etc.
 
@@ -17,13 +17,21 @@ This tool is useful for generating large, deterministic-looking file trees for t
 
 ## Defaults
 
-- Minimum subdirectories: `1`  
-- Maximum subdirectories: `6`  
-- Minimum files per subdirectory: `100`  
-- Maximum files per subdirectory: `1000`  
-- File size: `1024` bytes (1 KiB)  
-- ~~Random content: alphanumeric characters~~
-- Predictable content: file content == relative path
+- By default, will generate random file counts based on:
+  - Minimum subdirectories: `1`  
+  - Maximum subdirectories: `6`  
+  - Minimum files per subdirectory: `100`  
+  - Maximum files per subdirectory: `1000` 
+
+  However, these constants can be adjusted providing parameters:
+  ```--number-of-subdirectories=3 --number-of-files=100```
+  See Makefile for example usage.
+
+- File content:
+  - Predictable content: file content == relative path
+  - Deprecated code will generate random alphanumeric content instead.
+  - ~~File size: `1024` bytes (1 KiB)~~  
+  - ~~Random content: alphanumeric characters~~
 
 ## Safety
 

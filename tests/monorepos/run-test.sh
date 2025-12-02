@@ -140,15 +140,24 @@ g3t --profile "$PROFILE" projects ls | grep "/programs/$PROGRAM/projects/$PROJEC
 # Initialize a git repo for the generated fixtures
 cd fixtures
 
+# to reset git state
+# rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log
+
 # init git repo if not already a git repo
 if [ -d .git ]; then
   echo "Git repository already initialized; skipping git init" >&2
 else
   echo "Initializing new git repository" >&2
 
-  git init -b main # use 'main' as default branch name
+  # use 'main' as default branch name
+  git init -b main
 
+  # Add remote origin
   git remote add origin "$GIT_REMOTE"
+
+  # Configure git lfs for this repo, more concurrent transfers
+  git config lfs.concurrenttransfers 16
+  git config lfs.customtransfer.gen3.concurrent true
 
   # Initialize drs configuration for this repo
   git drs init --cred "$CREDENTIALS_PATH" --profile "$PROFILE" --bucket calypr --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
@@ -157,6 +166,7 @@ else
     echo "error: .drs/config.yaml not found after git drs init" >&2
     exit 1
   fi
+  git commit -m "Add .drs" .drs
 
   # Create an empty .gitattributes file
   # if .gitattributes does not already exist initialize it
@@ -166,8 +176,8 @@ else
     echo "Creating empty .gitattributes file" >&2
     touch .gitattributes
     git add .gitattributes
-    git commit -m "Add .gitattributes"
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main
+    git commit -m "Add .gitattributes" .gitattributes
+    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main 2>&1 | tee lfs-console.log
   fi
 fi
 
@@ -185,6 +195,22 @@ for dir in */ ; do
     git lfs track "$dir**"
     git add "$dir"
     git commit -am "Add $dir"
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main
+    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main 2>&1 | tee lfs-console.log
+    echo "##########################################" >> lfs-console.log
+    echo "# finished pushing $dir to remote." >> lfs-console.log
+    # if .drs/lfs/objects exists, log last 3 lines of tree
+    if [ ! -d ".drs/lfs/objects" ]; then
+      echo "# .drs/lfs/objects does not exist." >> lfs-console.log
+      echo "##########################################" >> lfs-console.log
+    else
+      echo "# Last 3 lines of .drs/lfs/objects tree:" >> lfs-console.log
+      tree .drs/lfs/objects | tail -3 >> lfs-console.log
+    fi
+    echo "# git lfs status:" >> lfs-console.log
+    git lfs status >> lfs-console.log
+    echo "# Number of LFS files to be pushed in dry-run:" >> lfs-console.log
+    git lfs push --dry-run origin main | wc -l >> lfs-console.log
+    echo "##########################################" >> lfs-console.log
+    cat lfs-console.log >> lfs-console-aggregate.log
   fi
 done

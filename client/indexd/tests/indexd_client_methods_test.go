@@ -1,10 +1,8 @@
 package indexd_tests
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/url"
-	"strings"
 	"testing"
 
 	"log"
@@ -19,46 +17,6 @@ import (
 // TESTS        //
 ///////////////////
 
-// TestIndexdClient_GetRecord_WithMockClient wraps HTTP request to avoid auth
-func TestIndexdClient_GetRecord_WithDirectHTTP(t *testing.T) {
-	// Create mock Indexd server
-	mockServer := NewMockIndexdServer(t)
-	defer mockServer.Close()
-
-	// Pre-populate mock with test record
-	testRecord := &MockIndexdRecord{
-		Did:      "uuid-test-123",
-		FileName: "test.bam",
-		Size:     1024,
-		Hashes: map[string]string{
-			"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		},
-		URLs:  []string{"s3://test-bucket/test.bam"},
-		Authz: []string{"/programs/test/projects/test-project"},
-	}
-	mockServer.recordMutex.Lock()
-	mockServer.records[testRecord.Did] = testRecord
-	mockServer.recordMutex.Unlock()
-
-	// Make direct HTTP request to mock server (bypassing auth)
-	httpClient := &http.Client{}
-	req, err := http.NewRequest("GET", mockServer.URL()+"/index/uuid-test-123", nil)
-	require.NoError(t, err)
-
-	resp, err := httpClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	// Decode response
-	var record MockIndexdRecord
-	err = json.NewDecoder(resp.Body).Decode(&record)
-	require.NoError(t, err)
-	require.Equal(t, "uuid-test-123", record.Did)
-	require.Equal(t, int64(1024), record.Size)
-}
-
 // TestIndexdClient_GetRecord tests retrieving a record via the client method with mocked auth
 func TestIndexdClient_GetRecord(t *testing.T) {
 	// Arrange: Start mock server
@@ -66,30 +24,19 @@ func TestIndexdClient_GetRecord(t *testing.T) {
 	defer mockServer.Close()
 
 	// Pre-populate mock with test record
-	testRecord := &MockIndexdRecord{
-		Did:      "uuid-test-123",
-		FileName: "test.bam",
-		Size:     1024,
-		Hashes: map[string]string{
-			"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		},
-		URLs:  []string{"s3://test-bucket/test.bam"},
-		Authz: []string{"/programs/test/projects/test-project"},
-	}
-	mockServer.recordMutex.Lock()
-	mockServer.records[testRecord.Did] = testRecord
-	mockServer.recordMutex.Unlock()
+	testRecord := newTestRecord("uuid-test-123")
+	addRecordToMockServer(mockServer, testRecord)
 
 	// Act: Use client method with mocked auth (tests actual client logic)
 	client := testIndexdClientWithMockAuth(mockServer.URL())
-	record, err := client.GetIndexdRecordByDID("uuid-test-123")
+	record, err := client.GetIndexdRecordByDID(testRecord.Did)
 
-	// Assert: Test actual client logic, not just HTTP endpoint
+	// Assert: Test actual client logic
 	require.NoError(t, err)
 	require.NotNil(t, record)
-	require.Equal(t, "uuid-test-123", record.Did)
-	require.Equal(t, int64(1024), record.Size)
-	require.Equal(t, "test.bam", record.FileName)
+	require.Equal(t, testRecord.Did, record.Did)
+	require.Equal(t, testRecord.Size, record.Size)
+	require.Equal(t, testRecord.FileName, record.FileName)
 }
 
 // TestIndexdClient_GetRecord_NotFound tests error handling for non-existent records
@@ -114,20 +61,9 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
 
-	sha256 := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	testRecord := &MockIndexdRecord{
-		Did:    "uuid-test-456",
-		Size:   2048,
-		Hashes: map[string]string{"sha256": sha256},
-		URLs:   []string{"s3://test-bucket/file.bam"},
-		Authz:  []string{"/workspace/demo"},
-	}
-
-	mockServer.recordMutex.Lock()
-	mockServer.records[testRecord.Did] = testRecord
-	key := "sha256:" + sha256
-	mockServer.hashIndex[key] = []string{testRecord.Did}
-	mockServer.recordMutex.Unlock()
+	testRecord := newTestRecord("uuid-test-456", withTestRecordSize(2048))
+	sha256 := testRecord.Hashes["sha256"]
+	addRecordWithHashIndex(mockServer, testRecord, "sha256", sha256)
 
 	// Create client with mocked auth
 	client := testIndexdClientWithMockAuth(mockServer.URL())
@@ -141,13 +77,13 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 
 	// Verify correct record was returned
 	record := results[0]
-	require.Equal(t, "uuid-test-456", record.Id)
-	require.Equal(t, int64(2048), record.Size)
+	require.Equal(t, testRecord.Did, record.Id)
+	require.Equal(t, testRecord.Size, record.Size)
 	require.Equal(t, sha256, record.Checksums[0].Checksum)
 	require.Equal(t, drs.ChecksumTypeSHA256, record.Checksums[0].Type)
 
-	require.Equal(t, "s3://test-bucket/file.bam", record.AccessMethods[0].AccessURL.URL)
-	require.Equal(t, "/workspace/demo", record.AccessMethods[0].Authorizations.Value)
+	require.Equal(t, testRecord.URLs[0], record.AccessMethods[0].AccessURL.URL)
+	require.Equal(t, testRecord.Authz[0], record.AccessMethods[0].Authorizations.Value)
 
 	// Test: Query with non-existent hash
 	emptyResults, err := client.GetObjectsByHash("sha256", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -155,153 +91,133 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	require.Len(t, emptyResults, 0)
 }
 
-// TestIndexdClient_UpdateRecord tests updating record via client method with mocked auth
-func TestIndexdClient_UpdateRecord(t *testing.T) {
-	// Arrange
-	mockServer := NewMockIndexdServer(t)
-	defer mockServer.Close()
-
-	did := "uuid-test-789"
-	originalRecord := &MockIndexdRecord{
-		Did:    did,
-		URLs:   []string{"s3://bucket1/file.bam"},
-		Size:   1024,
-		Hashes: map[string]string{"sha256": "aaaa..."},
-	}
-
-	mockServer.recordMutex.Lock()
-	mockServer.records[did] = originalRecord
-	mockServer.recordMutex.Unlock()
-
-	// Act: Test that the client can make PUT requests with mocked auth
-	client := testIndexdClientWithMockAuth(mockServer.URL())
-
-	// Make direct HTTP request to verify mock server handles updates
-	httpClient := &http.Client{}
-	updatePayload := map[string]any{
-		"urls": []string{"s3://bucket1/file.bam", "s3://bucket2/file-v2.bam"},
-	}
-	body, err := json.Marshal(updatePayload)
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("PUT", mockServer.URL()+"/index/"+did, strings.NewReader(string(body)))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	// Assert: Record should be updated
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
-	var updated MockIndexdRecord
-	err = json.NewDecoder(resp.Body).Decode(&updated)
-	require.NoError(t, err)
-	require.Equal(t, 2, len(updated.URLs))
-	require.Contains(t, updated.URLs, "s3://bucket1/file.bam")
-	require.Contains(t, updated.URLs, "s3://bucket2/file-v2.bam")
-
-	// Verify client method receives the mocked auth correctly
-	// by checking that the client can be created with MockAuthHandler
-	require.NotNil(t, client)
-	require.NotNil(t, client.AuthHandler)
-}
-
-// TestIndexdClient_RegisterIndexdRecord_Creates tests record creation via client method
-func TestIndexdClient_RegisterIndexdRecord_Creates(t *testing.T) {
-	mockServer := NewMockIndexdServer(t)
-	defer mockServer.Close()
-
-	// Test that MockAuthHandler is properly initialized and can add headers
-	client := testIndexdClientWithMockAuth(mockServer.URL())
-	require.NotNil(t, client)
-	require.NotNil(t, client.AuthHandler)
-
-	// Create a test request and verify MockAuthHandler adds the header
-	req, err := http.NewRequest("POST", "http://test.com", nil)
-	require.NoError(t, err)
-
-	err = client.AuthHandler.AddAuthHeader(req, "test-profile")
-	require.NoError(t, err)
-
-	// Verify the header was set
-	require.Equal(t, "Bearer mock-test-token-test-profile", req.Header.Get("Authorization"))
-}
-
 // TestIndexdClient_DeleteIndexdRecord_Removes tests record deletion via client method
 func TestIndexdClient_DeleteIndexdRecord_Removes(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
 
-	did := "uuid-delete-test"
-	testRecord := &MockIndexdRecord{
-		Did:  did,
-		URLs: []string{"s3://bucket/file.bam"},
-		Size: 1024,
-	}
-
-	mockServer.recordMutex.Lock()
-	mockServer.records[did] = testRecord
-	mockServer.recordMutex.Unlock()
+	testRecord := newTestRecord("uuid-delete-test", withTestRecordURLs("s3://bucket/file.bam"))
+	addRecordToMockServer(mockServer, testRecord)
 
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Delete record via client method
-	err := client.DeleteIndexdRecord(did)
+	err := client.DeleteIndexdRecord(testRecord.Did)
 
 	require.NoError(t, err)
 
 	// Verify it's gone
-	deletedRecord := mockServer.GetRecord(did)
+	deletedRecord := mockServer.GetRecord(testRecord.Did)
 	require.Nil(t, deletedRecord)
 }
 
-// TestIndexdClient_UpdateIndexdRecord_Idempotent tests URL appending idempotency via mock server
+// TestIndexdClient_UpdateIndexdRecord_Idempotent tests URL appending idempotency via client method
 func TestIndexdClient_UpdateIndexdRecord_Idempotent(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
 
-	did := "uuid-update-idempotent"
-	originalRecord := &MockIndexdRecord{
-		Did:    did,
-		URLs:   []string{"s3://bucket1/file.bam"},
-		Size:   1024,
-		Hashes: map[string]string{"sha256": "aaaa..."},
+	originalRecord := newTestRecord("uuid-update-idempotent",
+		withTestRecordURLs("s3://bucket1/file.bam"),
+		withTestRecordHash("sha256", "aaaa..."))
+	addRecordToMockServer(mockServer, originalRecord)
+
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Create update info with same URL (should be idempotent)
+	updateInfo := &drs.DRSObject{
+		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: originalRecord.URLs[0]}}},
 	}
 
-	mockServer.recordMutex.Lock()
-	mockServer.records[did] = originalRecord
-	mockServer.recordMutex.Unlock()
-
-	// Act: Update with same URL (should be idempotent - no duplicate)
-	httpClient := &http.Client{}
-	updatePayload := map[string]any{
-		"urls": []string{"s3://bucket1/file.bam"},
-	}
-	body, err := json.Marshal(updatePayload)
+	// call the UpdateRecord client method
+	drsObj, err := client.UpdateRecord(updateInfo, originalRecord.Did)
 	require.NoError(t, err)
-
-	req, err := http.NewRequest("PUT", mockServer.URL()+"/index/"+did, strings.NewReader(string(body)))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Verify URL wasn't duplicated
-	updated := mockServer.GetRecord(did)
+	updated := mockServer.GetRecord(drsObj.Id)
 	require.NotNil(t, updated)
 	require.Equal(t, 1, len(updated.URLs))
-	require.Equal(t, "s3://bucket1/file.bam", updated.URLs[0])
+	require.Equal(t, originalRecord.URLs[0], updated.URLs[0])
 }
 
 //////////////////////////
 // TEST HELPERS & SETUP //
 //////////////////////////
+
+// Test data constants
+const (
+	testSHA256Hash    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testDefaultBucket = "test-bucket"
+	testDefaultAuthz  = "/programs/test/projects/project"
+)
+
+// newTestRecord creates a standard test record with sensible defaults
+// Use withTestRecord* options to customize specific fields
+func newTestRecord(did string, opts ...func(*MockIndexdRecord)) *MockIndexdRecord {
+	record := &MockIndexdRecord{
+		Did:      did,
+		FileName: "test.bam",
+		Size:     1024,
+		Hashes: map[string]string{
+			"sha256": testSHA256Hash,
+		},
+		URLs:  []string{"s3://" + testDefaultBucket + "/test.bam"},
+		Authz: []string{testDefaultAuthz},
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(record)
+	}
+
+	return record
+}
+
+// withTestRecordSize sets a custom size for a test record
+func withTestRecordSize(size int64) func(*MockIndexdRecord) {
+	return func(r *MockIndexdRecord) {
+		r.Size = size
+	}
+}
+
+// withTestRecordFileName sets a custom file name for a test record
+func withTestRecordFileName(fileName string) func(*MockIndexdRecord) {
+	return func(r *MockIndexdRecord) {
+		r.FileName = fileName
+	}
+}
+
+// withTestRecordURLs sets custom URLs for a test record
+func withTestRecordURLs(urls ...string) func(*MockIndexdRecord) {
+	return func(r *MockIndexdRecord) {
+		r.URLs = urls
+	}
+}
+
+// withTestRecordHash sets a custom hash for a test record
+func withTestRecordHash(hashType, hash string) func(*MockIndexdRecord) {
+	return func(r *MockIndexdRecord) {
+		if r.Hashes == nil {
+			r.Hashes = make(map[string]string)
+		}
+		r.Hashes[hashType] = hash
+	}
+}
+
+// addRecordToMockServer is a helper to add a record to the mock server with proper locking
+func addRecordToMockServer(mockServer *MockIndexdServer, record *MockIndexdRecord) {
+	mockServer.recordMutex.Lock()
+	mockServer.records[record.Did] = record
+	mockServer.recordMutex.Unlock()
+}
+
+// addRecordWithHashIndex adds a record to the mock server and indexes it by hash
+func addRecordWithHashIndex(mockServer *MockIndexdServer, record *MockIndexdRecord, hashType, hash string) {
+	mockServer.recordMutex.Lock()
+	mockServer.records[record.Did] = record
+	key := hashType + ":" + hash
+	mockServer.hashIndex[key] = []string{record.Did}
+	mockServer.recordMutex.Unlock()
+}
 
 // MockAuthHandler implements AuthHandler for testing without Gen3 credentials
 // It simply sets a Bearer token header without making any external calls
@@ -377,23 +293,23 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 	require.NoError(t, err, "RegisterIndexdRecord should succeed")
 	require.NotNil(t, drsObj, "Should return a valid DRSObject")
 
-	// Verify the stored record
-	storedRecord := mockServer.GetRecord("uuid-register-test")
+	// Verify the stored record matches input
+	storedRecord := mockServer.GetRecord(newRecord.Did)
 	require.NotNil(t, storedRecord, "Record should be stored in mock server after POST")
-	require.Equal(t, "new-file.bam", storedRecord.FileName)
-	require.Equal(t, int64(5000), storedRecord.Size)
-	require.Equal(t, []string{"s3://bucket/new-file.bam"}, storedRecord.URLs)
-	require.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", storedRecord.Hashes["sha256"])
+	require.Equal(t, newRecord.FileName, storedRecord.FileName)
+	require.Equal(t, newRecord.Size, storedRecord.Size)
+	require.Equal(t, newRecord.URLs, storedRecord.URLs)
+	require.Equal(t, newRecord.Hashes.SHA256, storedRecord.Hashes["sha256"])
 
-	// Verify the returned DRS object
-	require.Equal(t, "uuid-register-test", drsObj.Id, "DRS object ID should match DID")
-	require.Equal(t, "new-file.bam", drsObj.Name, "DRS object name should match FileName")
-	require.Equal(t, int64(5000), drsObj.Size, "DRS object size should match")
+	// Verify the returned DRS object matches input
+	require.Equal(t, newRecord.Did, drsObj.Id, "DRS object ID should match DID")
+	require.Equal(t, newRecord.FileName, drsObj.Name, "DRS object name should match FileName")
+	require.Equal(t, newRecord.Size, drsObj.Size, "DRS object size should match")
 	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
 	require.Equal(t, "sha256", string(drsObj.Checksums[0].Type), "Checksum type should be sha256")
-	require.Equal(t, "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", drsObj.Checksums[0].Checksum)
+	require.Equal(t, newRecord.Hashes.SHA256, drsObj.Checksums[0].Checksum)
 	require.Len(t, drsObj.AccessMethods, 1, "Should have one access method")
-	require.Equal(t, "s3://bucket/new-file.bam", drsObj.AccessMethods[0].AccessURL.URL)
+	require.Equal(t, newRecord.URLs[0], drsObj.AccessMethods[0].AccessURL.URL)
 }
 
 // TestIndexdClient_UpdateIndexdRecord_AppendsURLs tests updating record via client method
@@ -402,32 +318,22 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
 
-	did := "uuid-update-test"
-	originalRecord := &MockIndexdRecord{
-		Did:      did,
-		FileName: "file.bam",
-		Size:     2048,
-		URLs:     []string{"s3://original-bucket/file.bam"},
-		Authz:    []string{"/workspace/test"},
-		Hashes: map[string]string{
-			"sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-		},
-	}
-
-	// Pre-populate mock with original record
-	mockServer.recordMutex.Lock()
-	mockServer.records[did] = originalRecord
-	mockServer.recordMutex.Unlock()
+	originalRecord := newTestRecord("uuid-update-test",
+		withTestRecordFileName("file.bam"),
+		withTestRecordSize(2048),
+		withTestRecordURLs("s3://original-bucket/file.bam"),
+		withTestRecordHash("sha256", "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"))
+	addRecordToMockServer(mockServer, originalRecord)
 
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Create update info with new URL
+	newURL := "s3://new-bucket/file-v2.bam"
 	updateInfo := &drs.DRSObject{
-		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: "s3://new-bucket/file-v2.bam"}}},
-		//URLs: []string{"s3://new-bucket/file-v2.bam"},
+		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: newURL}}},
 	}
 
-	// Act: Call the UpdateIndexdRecord client method
+	// Act: Call the UpdateRecord client method
 	// This tests:
 	// 1. Getting the existing record via GET /index/{did}
 	// 2. Appending new URLs to existing URLs
@@ -438,28 +344,28 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	// 7. Handling 200 OK response
 	// 8. Querying the updated record via GET /ga4gh/drs/v1/objects/{did}
 	// 9. Returning a valid DRSObject
-	drsObj, err := client.UpdateRecord(updateInfo, did)
+	drsObj, err := client.UpdateRecord(updateInfo, originalRecord.Did)
 
 	// Assert: Verify the client method executed successfully
 	require.NoError(t, err, "UpdateIndexdRecord should succeed")
 	require.NotNil(t, drsObj, "Should return a valid DRSObject")
 
 	// Verify the URLs were appended correctly
-	updatedRecord := mockServer.GetRecord(did)
+	updatedRecord := mockServer.GetRecord(originalRecord.Did)
 	require.NotNil(t, updatedRecord)
 	require.Equal(t, 2, len(updatedRecord.URLs), "Should have appended new URL to existing")
-	require.Contains(t, updatedRecord.URLs, "s3://original-bucket/file.bam")
-	require.Contains(t, updatedRecord.URLs, "s3://new-bucket/file-v2.bam")
+	require.Contains(t, updatedRecord.URLs, originalRecord.URLs[0])
+	require.Contains(t, updatedRecord.URLs, newURL)
 
 	// Verify the returned DRS object
-	require.Equal(t, did, drsObj.Id, "DRS object ID should match DID")
-	require.Equal(t, "file.bam", drsObj.Name, "DRS object name should match FileName")
-	require.Equal(t, int64(2048), drsObj.Size, "DRS object size should match")
+	require.Equal(t, originalRecord.Did, drsObj.Id, "DRS object ID should match DID")
+	require.Equal(t, originalRecord.FileName, drsObj.Name, "DRS object name should match FileName")
+	require.Equal(t, originalRecord.Size, drsObj.Size, "DRS object size should match")
 	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
 	require.Equal(t, "sha256", string(drsObj.Checksums[0].Type), "Checksum type should be sha256")
-	require.Equal(t, "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", drsObj.Checksums[0].Checksum)
+	require.Equal(t, originalRecord.Hashes["sha256"], drsObj.Checksums[0].Checksum)
 	require.Len(t, drsObj.AccessMethods, 2, "Should have two access methods (URLs)")
 	urls := []string{drsObj.AccessMethods[0].AccessURL.URL, drsObj.AccessMethods[1].AccessURL.URL}
-	require.Contains(t, urls, "s3://original-bucket/file.bam")
-	require.Contains(t, urls, "s3://new-bucket/file-v2.bam")
+	require.Contains(t, urls, originalRecord.URLs[0])
+	require.Contains(t, urls, newURL)
 }

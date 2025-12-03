@@ -15,7 +15,7 @@ import (
 func TestListConfigCommand(t *testing.T) {
 	t.Run("displays valid config in YAML format", func(t *testing.T) {
 		tmpDir := testutils.SetupTestGitRepo(t)
-		_ = testutils.CreateDefaultTestConfig(t, tmpDir)
+		testConfig := testutils.CreateDefaultTestConfig(t, tmpDir)
 
 		cmd := &cobra.Command{
 			Use:   "list-config",
@@ -30,23 +30,17 @@ func TestListConfigCommand(t *testing.T) {
 			require.NoError(t, err)
 		})
 
-		assert.Contains(t, output, "current_server:")
-		assert.Contains(t, output, "gen3")
-		assert.Contains(t, output, "https://test.gen3.org")
-
 		var parsedConfig config.Config
 		err := yaml.Unmarshal([]byte(output), &parsedConfig)
 		require.NoError(t, err)
 
-		//TODO: update tests to match interface
-		assert.Equal(t, config.Gen3ServerType, parsedConfig.GetCurrentRemoteName())
-		//assert.NotNil(t, parsedConfig.Servers.Gen3)
-		//assert.Equal(t, "https://test.gen3.org", parsedConfig.Servers.Gen3.Endpoint)
+		// ensure config used to set is same as parsed config from stdout
+		verifyParsedConfig(t, parsedConfig, testConfig)
 	})
 
 	t.Run("displays valid config in JSON format", func(t *testing.T) {
-		//tmpDir := testutils.SetupTestGitRepo(t)
-		//testConfig := testutils.CreateDefaultTestConfig(t, tmpDir)
+		tmpDir := testutils.SetupTestGitRepo(t)
+		testConfig := testutils.CreateDefaultTestConfig(t, tmpDir)
 
 		cmd := &cobra.Command{
 			Use:   "list-config",
@@ -69,14 +63,8 @@ func TestListConfigCommand(t *testing.T) {
 		err := json.Unmarshal([]byte(output), &parsedConfig)
 		require.NoError(t, err)
 
-		//TODO: update tests to match new interface
 		// Verify the content matches expected values
-		// assert.Equal(t, config.Gen3ServerType, parsedConfig.CurrentServer)
-		// assert.NotNil(t, parsedConfig.Servers.Gen3)
-		// assert.Equal(t, testConfig.Servers.Gen3.Endpoint, parsedConfig.Servers.Gen3.Endpoint)
-		// assert.Equal(t, testConfig.Servers.Gen3.Auth.Profile, parsedConfig.Servers.Gen3.Auth.Profile)
-		// assert.Equal(t, testConfig.Servers.Gen3.Auth.ProjectID, parsedConfig.Servers.Gen3.Auth.ProjectID)
-		// assert.Equal(t, testConfig.Servers.Gen3.Auth.Bucket, parsedConfig.Servers.Gen3.Auth.Bucket)
+		verifyParsedConfig(t, parsedConfig, testConfig)
 	})
 
 	t.Run("returns error when config file does not exist", func(t *testing.T) {
@@ -94,4 +82,13 @@ func TestListConfigCommand(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "config file does not exist")
 	})
+}
+
+// helper method
+func verifyParsedConfig(t *testing.T, parsedConfig config.Config, testConfig *config.Config) {
+	assert.Equal(t, testConfig.GetCurrentRemoteName(), parsedConfig.GetCurrentRemoteName())
+	assert.Equal(t, testConfig.GetCurrentRemote().GetEndpoint(), parsedConfig.GetCurrentRemote().GetEndpoint())
+	assert.Equal(t, testConfig.GetCurrentRemote().GetProjectId(), parsedConfig.GetCurrentRemote().GetProjectId())
+	assert.Equal(t, testConfig.GetCurrentRemote().GetBucketName(), parsedConfig.GetCurrentRemote().GetBucketName())
+	assert.Equal(t, testConfig.GetCurrentRemote().GetEndpoint(), parsedConfig.GetCurrentRemote().GetEndpoint())
 }

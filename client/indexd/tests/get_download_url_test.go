@@ -31,115 +31,80 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 	tests := []struct {
 		name              string
 		oid               string
-		setupMockData     func(*MockIndexdServer)
+		setupMockData     func(*MockIndexdServer) *MockIndexdRecord // Return record for validation
 		expectError       string
-		validateAccessURL func(*testing.T, *drs.AccessURL)
+		validateAccessURL func(*testing.T, *drs.AccessURL, *MockIndexdRecord)
 	}{
 		{
 			name: "successful download URL retrieval",
-			oid:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			setupMockData: func(server *MockIndexdServer) {
+			oid:  testSHA256Hash,
+			setupMockData: func(server *MockIndexdServer) *MockIndexdRecord {
 				// Add a record that matches the test project
-				record := &MockIndexdRecord{
-					Did:      "test-did-123",
-					FileName: "test.bam",
-					Size:     1024,
-					Hashes:   map[string]string{"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-					URLs:     []string{"s3://test-bucket/test.bam"},
-					Authz:    []string{"/programs/test/projects/project"},
-				}
-
-				server.recordMutex.Lock()
-				server.records[record.Did] = record
-				hashKey := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-				server.hashIndex[hashKey] = []string{record.Did}
-				server.recordMutex.Unlock()
+				record := newTestRecord("test-did-123")
+				addRecordWithHashIndex(server, record, "sha256", testSHA256Hash)
+				return record
 			},
-			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL) {
+			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL, record *MockIndexdRecord) {
 				require.NotNil(t, accessURL)
 				require.NotEmpty(t, accessURL.URL)
 				// The mock server creates signed URLs in the format: https://signed-url.example.com/{did}/{accessId}
-				require.Contains(t, accessURL.URL, "https://signed-url.example.com/test-did-123/")
+				require.Contains(t, accessURL.URL, "https://signed-url.example.com/"+record.Did+"/")
 			},
 		},
 		{
 			name: "no records found for hash",
 			oid:  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-			setupMockData: func(server *MockIndexdServer) {
+			setupMockData: func(server *MockIndexdServer) *MockIndexdRecord {
 				// No records added - will return empty response
+				return nil
 			},
 			expectError: "no DRS object found for OID bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		},
 		{
 			name: "successful download with matching project",
 			oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-			setupMockData: func(server *MockIndexdServer) {
+			setupMockData: func(server *MockIndexdServer) *MockIndexdRecord {
 				// Add record with matching project authorization
-				record := &MockIndexdRecord{
-					Did:      "test-did-456",
-					FileName: "matching.bam",
-					Size:     2048,
-					Hashes:   map[string]string{"sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},
-					URLs:     []string{"s3://test-bucket/matching.bam"},
-					Authz:    []string{"/programs/test/projects/project"}, // Same project as client
-				}
-
-				server.recordMutex.Lock()
-				server.records[record.Did] = record
-				hashKey := "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-				server.hashIndex[hashKey] = []string{record.Did}
-				server.recordMutex.Unlock()
+				record := newTestRecord("test-did-456",
+					withTestRecordFileName("matching.bam"),
+					withTestRecordSize(2048),
+					withTestRecordHash("sha256", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"))
+				addRecordWithHashIndex(server, record, "sha256", record.Hashes["sha256"])
+				return record
 			},
-			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL) {
+			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL, record *MockIndexdRecord) {
 				require.NotNil(t, accessURL)
 				require.NotEmpty(t, accessURL.URL)
-				require.Contains(t, accessURL.URL, "https://signed-url.example.com/test-did-456/")
+				require.Contains(t, accessURL.URL, "https://signed-url.example.com/"+record.Did+"/")
 			},
 		},
 		{
 			name: "successful second download URL with different hash",
 			oid:  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-			setupMockData: func(server *MockIndexdServer) {
+			setupMockData: func(server *MockIndexdServer) *MockIndexdRecord {
 				// Add another valid record with different hash
-				record := &MockIndexdRecord{
-					Did:      "test-did-789",
-					FileName: "second.bam",
-					Size:     512,
-					Hashes:   map[string]string{"sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
-					URLs:     []string{"s3://test-bucket/second.bam"},
-					Authz:    []string{"/programs/test/projects/project"},
-				}
-
-				server.recordMutex.Lock()
-				server.records[record.Did] = record
-				hashKey := "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-				server.hashIndex[hashKey] = []string{record.Did}
-				server.recordMutex.Unlock()
+				record := newTestRecord("test-did-789",
+					withTestRecordFileName("second.bam"),
+					withTestRecordSize(512),
+					withTestRecordHash("sha256", "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"))
+				addRecordWithHashIndex(server, record, "sha256", record.Hashes["sha256"])
+				return record
 			},
-			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL) {
+			validateAccessURL: func(t *testing.T, accessURL *drs.AccessURL, record *MockIndexdRecord) {
 				require.NotNil(t, accessURL)
 				require.NotEmpty(t, accessURL.URL)
-				require.Contains(t, accessURL.URL, "https://signed-url.example.com/test-did-789/")
+				require.Contains(t, accessURL.URL, "https://signed-url.example.com/"+record.Did+"/")
 			},
 		},
 		{
 			name: "auth handler returns error",
 			oid:  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-			setupMockData: func(server *MockIndexdServer) {
-				record := &MockIndexdRecord{
-					Did:      "test-did-auth-error",
-					FileName: "auth-error.bam",
-					Size:     1024,
-					Hashes:   map[string]string{"sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
-					URLs:     []string{"s3://test-bucket/auth-error.bam"},
-					Authz:    []string{"/programs/test/projects/project"},
-				}
-
-				server.recordMutex.Lock()
-				server.records[record.Did] = record
-				hashKey := "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-				server.hashIndex[hashKey] = []string{record.Did}
-				server.recordMutex.Unlock()
+			setupMockData: func(server *MockIndexdServer) *MockIndexdRecord {
+				record := newTestRecord("test-did-auth-error",
+					withTestRecordFileName("auth-error.bam"),
+					withTestRecordHash("sha256", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"))
+				addRecordWithHashIndex(server, record, "sha256", record.Hashes["sha256"])
+				return record
 			},
 			expectError: "error getting DRS object for OID eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
 		},
@@ -150,7 +115,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 			// Setup mock server
 			mockServer := NewMockIndexdServer(t)
 			defer mockServer.Close()
-			tt.setupMockData(mockServer)
+			record := tt.setupMockData(mockServer)
 
 			// Create client with appropriate auth handler
 			var authHandler s3_utils.AuthHandler = &MockAuthHandler{}
@@ -179,7 +144,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, result)
 				if tt.validateAccessURL != nil {
-					tt.validateAccessURL(t, result)
+					tt.validateAccessURL(t, result, record)
 				}
 			}
 		})
@@ -225,25 +190,20 @@ func TestIndexdClient_GetDownloadURL_PanicScenarios(t *testing.T) {
 		defer mockServer.Close()
 
 		// Add record with different project authorization that won't match
-		record := &MockIndexdRecord{
-			Did:      "test-did-different-project",
-			FileName: "other.bam",
-			Size:     2048,
-			Hashes:   map[string]string{"sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
-			URLs:     []string{"s3://other-bucket/other.bam"},
-			Authz:    []string{"/programs/other/projects/other-project"}, // Different project
-		}
-
-		mockServer.recordMutex.Lock()
-		mockServer.records[record.Did] = record
-		hashKey := "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-		mockServer.hashIndex[hashKey] = []string{record.Did}
-		mockServer.recordMutex.Unlock()
+		differentProjectAuthz := "/programs/other/projects/other-project"
+		testHash := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+		record := newTestRecord("test-did-different-project",
+			withTestRecordFileName("other.bam"),
+			withTestRecordSize(2048),
+			withTestRecordURLs("s3://other-bucket/other.bam"),
+			withTestRecordHash("sha256", testHash))
+		record.Authz = []string{differentProjectAuthz} // Override with different project
+		addRecordWithHashIndex(mockServer, record, "sha256", testHash)
 
 		client := testIndexdClientWithMockAuth(mockServer.URL())
 
 		// This should return error
-		result, err := client.GetDownloadURL("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+		result, err := client.GetDownloadURL(testHash)
 
 		// Verify proper error handling
 		require.Error(t, err)
@@ -258,26 +218,19 @@ func TestIndexdClient_GetDownloadURL_PanicScenarios(t *testing.T) {
 		// Add record with no URLs (which creates DRS object with no access methods)
 		// Note: A record with no URLs can't be matched by project because FindMatchingRecord
 		// requires access methods with authorizations. So this will fail at the matching stage.
-		record := &MockIndexdRecord{
-			Did:      "test-did-no-access",
-			FileName: "no-access.bam",
-			Size:     512,
-			Hashes:   map[string]string{"sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
-			URLs:     []string{}, // Empty URLs means no access methods
-			Authz:    []string{"/programs/test/projects/project"},
-		}
-
-		mockServer.recordMutex.Lock()
-		mockServer.records[record.Did] = record
-		hashKey := "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-		mockServer.hashIndex[hashKey] = []string{record.Did}
-		mockServer.recordMutex.Unlock()
+		testHash := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		record := newTestRecord("test-did-no-access",
+			withTestRecordFileName("no-access.bam"),
+			withTestRecordSize(512),
+			withTestRecordURLs(), // Empty URLs means no access methods
+			withTestRecordHash("sha256", testHash))
+		addRecordWithHashIndex(mockServer, record, "sha256", testHash)
 
 		client := testIndexdClientWithMockAuth(mockServer.URL())
 
 		// This should return an error about no matching record
 		// (because records without access methods can't be matched by project)
-		result, err := client.GetDownloadURL("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+		result, err := client.GetDownloadURL(testHash)
 
 		// Verify proper error handling
 		require.Error(t, err)

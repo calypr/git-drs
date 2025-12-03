@@ -77,8 +77,8 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 			config.Remote("origin"): {
 				Gen3: &indexd_client.Gen3Remote{
 					Endpoint:  "https://test.gen3.org",
-					ProjectID: "test-program-test-project",
-					Bucket:    "test-bucket",
+					ProjectID: "test-project",
+					Bucket:    "test",
 				},
 			},
 		},

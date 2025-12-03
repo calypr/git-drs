@@ -2,11 +2,8 @@ package indexd_tests
 
 import (
 	"fmt"
-	"net/http"
-	"net/url"
-	"testing"
-
 	"log"
+	"testing"
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
@@ -14,19 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIndexdClient_GetDownloadURL tests the complete GetDownloadURL flow with various scenarios.
-// This test covers the main success paths and error conditions, while panic scenarios
-// are tested separately in TestIndexdClient_GetDownloadURL_PanicScenarios.
+///////////////////////
+// INTEGRATION TESTS //
+///////////////////////
 //
-// The method flow is:
+// Integration tests for GetDownloadURL verify the complete flow:
 // 1. GetObjectsByHash() - Query indexd for records matching the OID hash
 // 2. FindMatchingRecord() - Find a record matching the client's project ID
 // 3. GetObject() - Get the DRS object using the matching record's DID
 // 4. Extract AccessID from AccessMethods[0]
 // 5. HTTP GET to /ga4gh/drs/v1/objects/{id}/access/{accessId} for signed URL
 //
-// Note: FindMatchingRecord is already tested in add-url-unit_test.go, so we use
-// real data that matches the expected authorization format.
+// Note: FindMatchingRecord is already tested in add-url-unit_test.go
+
 func TestIndexdClient_GetDownloadURL(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -237,19 +234,4 @@ func TestIndexdClient_GetDownloadURL_PanicScenarios(t *testing.T) {
 		require.Nil(t, result)
 		require.Contains(t, err.Error(), "no matching record found for project")
 	})
-}
-
-// testErrorAuthHandler is a test helper for testing auth errors
-type testErrorAuthHandler struct {
-	err error
-}
-
-func (e *testErrorAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	return e.err
-}
-
-// Helper function to parse URL
-func parseURL(rawURL string) *url.URL {
-	u, _ := url.Parse(rawURL)
-	return u
 }

@@ -1,4 +1,4 @@
-package client
+package indexd_client
 
 // Based on OpenAPI specification
 // https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
@@ -67,6 +67,7 @@ type ListRecordsResult struct {
 	Record *OutputInfo
 	Error  error
 }
+
 type ListRecords struct {
 	IDs      []string       `json:"ids"`
 	Records  []OutputInfo   `json:"records"`
@@ -101,16 +102,30 @@ type OutputInfo struct {
 	URLsMetadata map[string]any `json:"urls_metadata"`
 }
 
+func (outputInfo *OutputInfo) ToIndexdRecord() *IndexdRecord {
+	return &IndexdRecord{
+		Did:      outputInfo.Did,
+		Size:     outputInfo.Size,
+		FileName: outputInfo.FileName,
+		URLs:     outputInfo.URLs,
+		ACL:      outputInfo.ACL,
+		Authz:    outputInfo.Authz,
+		Hashes:   outputInfo.Hashes,
+		//Metadata: outputInfo.Metadata, //TODO: re-enable metadata. One is map[string]string, the other is map[string]interface{}
+		Version: outputInfo.Version,
+	}
+}
+
 // UpdateInputInfo is the put object for index records
 type UpdateInputInfo struct {
 	// Human-readable file name
 	FileName string `json:"file_name,omitempty"`
 
 	// Additional metadata as key-value pairs
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 
 	// URL-specific metadata as key-value pairs
-	URLsMetadata map[string]interface{} `json:"urls_metadata,omitempty"`
+	URLsMetadata map[string]any `json:"urls_metadata,omitempty"`
 
 	// Version of the record
 	Version string `json:"version,omitempty"`

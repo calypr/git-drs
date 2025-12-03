@@ -6,8 +6,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -47,16 +48,11 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
-		logger, err := client.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
-		var f *os.File
 		var outWriter io.Writer
 		if listOutFile != "" {
-			f, err = os.Create(listOutFile)
+			f, err := os.Create(listOutFile)
 			if err != nil {
 				return err
 			}
@@ -66,8 +62,13 @@ var Cmd = &cobra.Command{
 			outWriter = os.Stdout
 		}
 
-		client, err := client.NewIndexDClient(logger)
+		conf, err := config.LoadConfig()
 		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+		client, err := conf.GetCurrentRemoteClient(logger)
+		if err != nil {
+			logger.Printf("Client failed")
 			return err
 		}
 		objChan, err := client.ListObjects()
@@ -102,13 +103,14 @@ var ListProjectCmd = &cobra.Command{
 	Short: "List DRS entities from server",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		logger, err := client.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
-		client, err := client.NewIndexDClient(logger)
+		conf, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		client, err := conf.GetCurrentRemoteClient(logger)
 		if err != nil {
 			return err
 		}
@@ -133,7 +135,7 @@ var ListProjectCmd = &cobra.Command{
 			if objResult.Error != nil {
 				return objResult.Error
 			}
-			obj := objResult.Record
+			obj := objResult.Object
 			out, err := json.Marshal(*obj)
 			if err != nil {
 				return err

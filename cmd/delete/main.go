@@ -10,9 +10,7 @@ import (
 )
 
 var (
-	server  string
 	dstPath string
-	drsObj  *drs.DRSObject
 )
 
 // Cmd line declaration

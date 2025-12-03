@@ -67,6 +67,23 @@ func (cl *IndexDClient) GetProjectId() string {
 	return cl.ProjectId
 }
 
+func (cl *IndexDClient) DeleteRecordsByProject(projectId string) error {
+	recs, err := cl.ListObjectsByProject(projectId)
+	if err != nil {
+		return err
+	}
+	for rec := range recs {
+		for _, sum := range rec.Object.Checksums {
+			err := cl.DeleteRecord(sum.Checksum)
+			if err != nil {
+				fmt.Println("ERR: ", err)
+				continue
+			}
+		}
+	}
+	return nil
+}
+
 func (cl *IndexDClient) DeleteRecord(oid string) error {
 	// get records by hash
 	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)

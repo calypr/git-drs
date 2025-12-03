@@ -35,6 +35,9 @@ type DRSClient interface {
 	// DRS WRITE METHODS //
 	///////////////////////
 
+	// Delete all indexd records in a given project
+	DeleteRecordsByProject(project string) error
+
 	// Delete an indexd record given an oid string
 	DeleteRecord(oid string) error
 

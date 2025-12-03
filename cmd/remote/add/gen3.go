@@ -15,7 +15,7 @@ import (
 
 var Gen3Cmd = &cobra.Command{
 	Use:  "gen3",
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 

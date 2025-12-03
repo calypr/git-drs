@@ -24,7 +24,7 @@ var Cmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// set up logger
-		myLogger, err := client.NewLogger("", true)
+		myLogger, err := client.NewLogger("", false)
 		if err != nil {
 			myLogger.Logf("Failed to open log file: %v", err)
 			return err

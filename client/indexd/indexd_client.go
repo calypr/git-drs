@@ -131,7 +131,13 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 }
 
 func (cl *IndexDClient) RegisterRecord(record *drs.DRSObject) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("RegisterRecord not implemented for IndexDClient")
+	// prolly could do cleanup but use register record
+	indexdRecord, err := indexdRecordFromDrsObject(record)
+	if err != nil {
+		return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
+	}
+
+	return cl.RegisterIndexdRecord(indexdRecord)
 }
 
 // GetDownloadURL implements DRSClient

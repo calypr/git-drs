@@ -674,10 +674,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	for _, a := range updateInfo.AccessMethods {
 		record.URLs = append(record.URLs, a.AccessURL.URL)
 	}
-	// marshal update info - send the record (with URLs field) not the DRSObject
-	updatePayload := struct {
-		URLs []string `json:"urls"`
-	}{
+	updatePayload := UpdateInputInfo{
 		URLs: record.URLs,
 	}
 	jsonBytes, err := json.Marshal(updatePayload)
@@ -783,7 +780,7 @@ func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64
 		Value: authzStr,
 	}
 
-	// create IndexdRecord
+	// create DrsObj
 	DrsObj := drs.DRSObject{
 		Id:   drsId,
 		Name: fileName,

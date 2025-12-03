@@ -17,7 +17,7 @@ type RealAuthHandler struct {
 	Cred jwt.Credential
 }
 
-func GetJWTCredendial(config map[string]string) (jwt.Credential, error) {
+func GetJWTCredential(config map[string]string) (jwt.Credential, error) {
 	if api_key, ok := config["api_key"]; ok {
 		if key_id, ok := config["key_id"]; ok {
 			if endpoint, ok := config["endpoint"]; ok {
@@ -41,7 +41,7 @@ func GetJWTCredendial(config map[string]string) (jwt.Credential, error) {
 }
 
 func NewAuthHandler(config map[string]string) (*RealAuthHandler, error) {
-	cred, err := GetJWTCredendial(config)
+	cred, err := GetJWTCredential(config)
 	return &RealAuthHandler{Cred: cred}, err
 }
 

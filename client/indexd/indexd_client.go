@@ -67,15 +67,80 @@ func (cl *IndexDClient) GetProjectId() string {
 	return cl.ProjectId
 }
 
-func (cl *IndexDClient) DeleteRecord(id string) error {
-	return fmt.Errorf("DeleteObject not implemented for IndexDClient")
+func (cl *IndexDClient) DeleteRecord(oid string) error {
+	// get records by hash
+	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+	if err != nil {
+		return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("No records found for OID %s", oid)
+	}
+
+	// Find a record that matches the project ID
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetProjectId())
+	if err != nil {
+		return fmt.Errorf("Error finding matching record for project %s: %v", cl.GetProjectId(), err)
+	}
+	if matchingRecord == nil {
+		return fmt.Errorf("No matching record found for project %s", cl.GetProjectId())
+	}
+
+	// call helper to do the delete for a gen3 GUID
+	return cl.deleteIndexdRecord(matchingRecord.Id)
+}
+
+func (cl *IndexDClient) deleteIndexdRecord(did string) error {
+	// get the indexd record, can't use GetObject cause the DRS object doesn't contain the rev
+	record, err := cl.getIndexdRecordByDID(did)
+	if err != nil {
+		return fmt.Errorf("could not query index record for did %s: %v", did, err)
+	}
+
+	// delete indexd record using did and rev
+	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
+	delReq, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Remote)
+	if err != nil {
+		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
+	}
+	// set Content-Type header for JSON
+	delReq.Header.Set("accept", "application/json")
+
+	client := &http.Client{}
+	delResp, err := client.Do(delReq)
+	if err != nil {
+		return err
+	}
+	defer delResp.Body.Close()
+
+	// response error handling
+	if delResp.StatusCode >= 400 {
+		bodyBytes, readErr := io.ReadAll(delResp.Body)
+		if readErr != nil {
+			return fmt.Errorf("delete failed with status %s: could not read response body: %v", delResp.Status, readErr)
+		}
+		bodyString := string(bodyBytes)
+		return fmt.Errorf("delete failed with status %s. Response body: %s", delResp.Status, bodyString)
+	}
+	return nil
 }
 
 func (cl *IndexDClient) RegisterRecord(record *drs.DRSObject) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("RegisterRecord not implemented for IndexDClient")
+	// prolly could do cleanup but use register record
+	indexdRecord, err := indexdRecordFromDrsObject(record)
+	if err != nil {
+		return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
+	}
+
+	return cl.RegisterIndexdRecord(indexdRecord)
 }
 
-// GetDownloadURL implements ObjectStoreClient
+// GetDownloadURL implements DRSClient
 func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	cl.Logger.Printf("Try to get download url for file OID %s", oid)
@@ -146,12 +211,12 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
 	}
 
-	cl.Logger.Print("signed url retrieved: %s", response.Status)
+	cl.Logger.Printf("signed url retrieved: %s", response.Status)
 
 	return &accessUrl, nil
 }
 
-// RegisterFile implements ObjectStoreClient.
+// RegisterFile implements DRSClient.
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
 // DRS will use any matching indexd record / file that already exists
@@ -159,30 +224,27 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
 	// get all existing hashes
-	records, err := cl.GetObjectsByHash(string(drs.ChecksumTypeSHA256), oid)
+	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
 	if err != nil {
 		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
 	}
 
 	// use any indexd record from the same project if it exists
-
+	//  * addresses edge case where user X registering in project A has access to record in project B
+	//  * but still needs create a new record to so user Y reading the file in project A can access it
+	//  * even if they don't have access to project B
 	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.ProjectId)
 	if err != nil {
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
 	}
 
-	drsObj := &drs.DRSObject{}
-	if matchingRecord != nil {
-		drsObj, err = cl.GetObject(matchingRecord.Id)
-		if err != nil {
-			return nil, fmt.Errorf("Error getting DRS object for matching record %s: %v", matchingRecord.Id, err)
-		}
-	} else {
+	drsObj := matchingRecord
+	if matchingRecord == nil {
 		// otherwise, create indexd record
 		cl.Logger.Print("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		drsObj, err := drsmap.DrsInfoFromOid(oid)
+		drsObj, err = drsmap.DrsInfoFromOid(oid)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
@@ -191,6 +253,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 		// register the record
 		drsObj, err = cl.RegisterIndexdRecord(indexdObj)
+
 		if err != nil {
 			cl.Logger.Printf("error registering indexd record: %s", err)
 			return nil, fmt.Errorf("error registering indexd record: %v", err)
@@ -229,9 +292,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// if file is not downloadable, then upload it to bucket
 	if !isDownloadable {
-		cl.Logger.Printf("file with oid %s not downloadable from bucket, proceeding to upload. Reason: %s", oid, err)
+		cl.Logger.Printf("file with oid %s not downloadable from bucket, proceeding to upload", oid)
 
-		// modified from gen3-client/g3cmd/upload-single.go
 		filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
 		if err != nil {
 			cl.Logger.Printf("error getting object path for oid %s: %s", oid, err)
@@ -618,8 +680,10 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	for _, a := range updateInfo.AccessMethods {
 		record.URLs = append(record.URLs, a.AccessURL.URL)
 	}
-	// marshal update info
-	jsonBytes, err := json.Marshal(updateInfo)
+	updatePayload := UpdateInputInfo{
+		URLs: record.URLs,
+	}
+	jsonBytes, err := json.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
 	}
@@ -688,6 +752,70 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 
 	httpClient := &http.Client{}
 	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get record: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	record := &OutputInfo{}
+	if err := json.NewDecoder(resp.Body).Decode(record); err != nil {
+		return nil, fmt.Errorf("error decoding response body: %v", err)
+	}
+
+	return record, nil
+}
+
+func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
+	bucket := cl.BucketName
+	if bucket == "" {
+		return nil, fmt.Errorf("error: bucket name is empty in config file")
+	}
+
+	fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
+
+	authzStr, err := utils.ProjectToResource(cl.GetProjectId())
+	if err != nil {
+		return nil, err
+	}
+	authorizations := drs.Authorizations{
+		Value: authzStr,
+	}
+
+	// create DrsObj
+	DrsObj := drs.DRSObject{
+		Id:   drsId,
+		Name: fileName,
+		// TODO: ensure that we can retrieve the access method during submission (happens in transfer)
+		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: fileURL}, Authorizations: &authorizations}},
+		Checksums:     []drs.Checksum{{Checksum: checksum, Type: drs.ChecksumTypeSHA256}},
+		Size:          size,
+	}
+
+	return &DrsObj, nil
+}
+
+// Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)
+func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
+	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	if err != nil {
+		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+	}
+	req.Header.Set("accept", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

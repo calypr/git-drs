@@ -20,9 +20,9 @@ import (
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "init",
-	Short: "Initialize repo and server access for git-drs",
+	Short: "Initialize repo for git-drs",
 	Long: "Description:" +
-		"\n  Initialize repo and server access for git-drs",
+		"\n  Initialize repo for git-drs",
 	Args: cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
@@ -75,19 +75,46 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
 		}
 
+		// setup lfs custom transfer
+		// TODO: may need to generalize for anvil
+		err = initGitConfig()
+		if err != nil {
+			return fmt.Errorf("Error initializing custom transfer for DRS: %v\n", err)
+		}
+
+		// add pre-commit hook
+		err = addPreCommitHook()
+		if err != nil {
+			return fmt.Errorf("Error adding pre-commit hook: %v\n", err)
+		}
+
 		// final logs
 		logg.Print("Git DRS initialized")
 		return nil
 	},
 }
 
-func initGitConfig(mode config.RemoteType) error {
+func addPreCommitHook() error {
+	// Create .git/hooks/pre-commit file
+	hooksDir := filepath.Join(".git", "hooks")
+	preCommitPath := filepath.Join(hooksDir, "pre-commit")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
+	}
+	hookContent := "#!/bin/sh\ngit drs precommit\n"
+	if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
+		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
+	}
+	return nil
+}
 
+func initGitConfig() error {
 	configs := [][]string{
 		{"lfs.standalonetransferagent", "drs"},
 		{"lfs.customtransfer.drs.path", "git-drs"},
 		{"lfs.customtransfer.drs.concurrent", "false"},
 		{"lfs.customtransfer.drs.args", "transfer"},
+		// TODO: different for anvil / read-only?
 		{"lfs.allowincompletepush", "false"},
 	}
 

@@ -6,7 +6,6 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 )
 
@@ -27,43 +26,26 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hashType, oid := args[0], args[1]
 
-		// check hash type is valid Checksum type
-		if !drs.ChecksumType(hashType).IsValid() {
-			return fmt.Errorf("invalid hash type: %s", hashType)
+		// check hash type is valid Checksum type and sha256
+		if hashType != drs.ChecksumTypeSHA256.String() {
+			return fmt.Errorf("Only sha256 supported, you requested to remove: %s", hashType)
 		}
 
 		logger := drslog.GetLogger()
 
-		config, err := config.LoadConfig()
+		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := config.GetCurrentRemoteClient(logger)
+		drsClient, err := cfg.GetCurrentRemoteClient(logger)
 		if err != nil {
 			logger.Printf("error creating indexd client: %s", err)
 			return err
 		}
-		// get records by hash
-		records, err := drsClient.GetObjectsByHash(hashType, oid)
-		if err != nil {
-			return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
-		}
-		if len(records) == 0 {
-			return fmt.Errorf("No records found for OID %s", oid)
-		}
-
-		// Find a record that matches the project ID
-		matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
-		}
-		if matchingRecord == nil {
-			return fmt.Errorf("No matching record found for project %s", drsClient.GetProjectId())
-		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(matchingRecord.Id)
+		err = drsClient.DeleteRecord(oid)
 		if err != nil {
 			return fmt.Errorf("Error deleting file for OID %s: %v", oid, err)
 		}

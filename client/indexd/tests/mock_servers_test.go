@@ -446,12 +446,6 @@ type MockS3Server struct {
 	objMutex   sync.RWMutex
 }
 
-// ignoreAWSConfigFiles is a helper function to prevent reading from the real AWS config files
-func ignoreAWSConfigFiles(t *testing.T) {
-	t.Setenv("AWS_CONFIG_FILE", "/dev/null")
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
-}
-
 // NewMockS3Server creates and starts a mock S3 server
 func NewMockS3Server(t *testing.T) *MockS3Server {
 	mss := &MockS3Server{
@@ -577,6 +571,14 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)
 	for i, url := range record.URLs {
+		// Get the first authz as the authorization for this access method
+		var authzPtr *drs.Authorizations
+		if len(record.Authz) > 0 {
+			authzPtr = &drs.Authorizations{
+				Value: record.Authz[0],
+			}
+		}
+
 		accessMethods = append(accessMethods, drs.AccessMethod{
 			Type:     "https",
 			AccessID: fmt.Sprintf("access-method-%d", i),
@@ -584,6 +586,7 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 				URL:     url,
 				Headers: []string{},
 			},
+			Authorizations: authzPtr,
 		})
 	}
 

@@ -4,7 +4,6 @@ package drsmap
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +35,6 @@ type LfsFileInfo struct {
 }
 
 func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
-
 	logger.Print("Update to DRS objects started")
 
 	// get the name of repository
@@ -121,47 +120,25 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
 		}
 
-		logger.Printf("Error, hit broken code block DRS object for staged file %s with OID %s", file.Name, file.Oid)
-		// TODO: why is this here and not in the DRSClient implementation?
-		/*
-			bucket := drsClient.GetDefaultBucketName()
-			if bucket == "" {
-				return fmt.Errorf("error: bucket name is empty in config file")
-			}
-			fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, file.Oid))
+		drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
+		if err != nil {
+			return fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
+		}
 
-			authzStr, err := utils.ProjectToResource(drsClient.GetProjectId())
-			if err != nil {
-				return err
-			}
-
-			// create IndexdRecord
-			indexdObj := drs.DRSObject{
-				Id:            drsId,
-				Name:          file.Name,
-				AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: fileURL}}},
-				//URLs:          []string{fileURL},
-				//Hashes:    HashInfo{SHA256: file.Oid},
-				Checksums: []drs.Checksum{drs.Checksum{Checksum: file.Oid, Type: drs.ChecksumTypeSHA256}},
-				Size:      file.Size,
-				Authz:     []string{authzStr},
-			}
-
-			// write drs objects to DRS_OBJS_PATH
-			err = writeDrsObj(indexdObj, file.Oid, drsObjPath)
-			if err != nil {
-				return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
-			}
-			logger.Logf("Prepared %s with DRS ID %s for commit", file.Name, indexdObj.Id)
-		*/
+		// write drs objects to DRS_OBJS_PATH
+		err = writeDrsObj(drsObj, file.Oid, drsObjPath)
+		if err != nil {
+			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
+		}
+		logger.Printf("Prepared %s with DRS ID %s for commit", file.Name, drsObj.Id)
 	}
 
 	return nil
 }
 
-func writeDrsObj(indexdObj drs.DRSObject, oid string, drsObjPath string) error {
+func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	// get object bytes
-	indexdObjBytes, err := json.Marshal(indexdObj)
+	indexdObjBytes, err := json.Marshal(drsObj)
 	if err != nil {
 		return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
 	}
@@ -208,7 +185,7 @@ func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 func GetObjectPath(basePath string, oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
-		return "", errors.New(fmt.Sprintf("Error: %s is not a valid sha256 hash", oid))
+		return "", fmt.Errorf("Error: %s is not a valid sha256 hash", oid)
 	}
 
 	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil
@@ -344,21 +321,18 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Convert project ID to resource path format for comparison
-	// expectedAuthz, err := utils.ProjectToResource(projectId)
-	// if err != nil {
-	//	return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
-	// }
+	expectedAuthz, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	}
 
-	//TODO: determine what filtering logic should be here
 	// Get the first record with matching authz if exists
 	for _, record := range records {
-		//for _, access := range record.AccessMethods {
-		//for _, authz := range access.Authorizations.Value {
-		//if authz == expectedAuthz {
-		return &record, nil
-		//}
-		//	}
-		//}
+		for _, access := range record.AccessMethods {
+			if access.Authorizations.Value == expectedAuthz {
+				return &record, nil
+			}
+		}
 	}
 
 	return nil, nil

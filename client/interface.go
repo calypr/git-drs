@@ -6,6 +6,9 @@ import (
 )
 
 type DRSClient interface {
+	///////////////////////
+	// DRS READ METHODS //
+	///////////////////////
 
 	//If the client has a notion of a current project, return its ID
 	GetProjectId() string
@@ -20,10 +23,6 @@ type DRSClient interface {
 	// Given a projectId, list all of the records associated with it
 	ListObjectsByProject(project string) (chan drs.DRSObjectResult, error)
 
-	// Put file into object storage and obtain a DRS record pointing to it
-	// no DRS write endpoint exists, so this is custom code
-	// RegisterFile(oid string) (*drs.DRSObject, error)
-
 	// Get a signed url given a DRS ID
 	// corresponds to /ga4gh/drs/v1/objects/{object_id}/access/{access_id}
 	GetDownloadURL(oid string) (*drs.AccessURL, error)
@@ -32,14 +31,24 @@ type DRSClient interface {
 	// no corresponding DRS endpoint exists, so this is custom code
 	GetObjectsByHash(hashType string, hash string) ([]drs.DRSObject, error)
 
+	///////////////////////
+	// DRS WRITE METHODS //
+	///////////////////////
+
 	// Delete an indexd record given an oid string
 	DeleteRecord(oid string) error
 
 	// Register a DRS object directly in indexd
 	RegisterRecord(indexdObject *drs.DRSObject) (*drs.DRSObject, error)
 
+	// Put file into object storage and obtain a DRS record pointing to it
+	RegisterFile(oid string) (*drs.DRSObject, error)
+
 	// Update an indexd record by appending a file URL and return the updated record
 	UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error)
+
+	// Create a DRS object given file info
+	BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error)
 
 	// Add an S3 URL to an existing indexd record
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error)

@@ -29,7 +29,7 @@ type DRSClient interface {
 
 	// given a hash, get the objects describing it
 	// no corresponding DRS endpoint exists, so this is custom code
-	GetObjectsByHash(hashType string, hash string) ([]drs.DRSObject, error)
+	GetObjectsByHash(hash ...*drs.Checksum) ([][]drs.DRSObject, error)
 
 	///////////////////////
 	// DRS WRITE METHODS //

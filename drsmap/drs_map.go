@@ -69,7 +69,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
 		// check hash to see if record already exists in indexd (source of truth)
-		records, err := drsClient.GetObjectsByHash(file.OidType, file.Oid)
+		records, err := drsClient.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumType(file.OidType), Checksum: file.Oid})
 		if err != nil {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
@@ -79,7 +79,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		if projectId == "" {
 			return fmt.Errorf("Error getting project ID")
 		}
-		matchingRecord, err := FindMatchingRecord(records, projectId)
+		matchingRecord, err := FindMatchingRecord(records[0], projectId)
 		if err != nil {
 			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 		}

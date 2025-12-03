@@ -105,7 +105,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// send success message back
-				myLogger.Print(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				myLogger.Printf("Download for OID %s complete", downloadMsg.Oid)
 				completeMsg := lfs.CompleteMessage{
 					Event: "complete",
 					Oid:   downloadMsg.Oid,
@@ -115,7 +115,7 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				myLogger.Print(fmt.Sprintf("Upload requested"))
+				myLogger.Printf("Upload requested")
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
@@ -124,7 +124,7 @@ var Cmd = &cobra.Command{
 					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
 				}
-				myLogger.Print(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+				myLogger.Printf("Uploading file OID %s", uploadMsg.Oid)
 
 				//TODO: write code to take Oid and generate DRSRecord
 				// otherwise, register the file (create indexd record and upload file)
@@ -141,12 +141,12 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
-				myLogger.Print(fmt.Sprintf("LFS transfer complete"))
+				myLogger.Printf("LFS transfer complete")
 			}
 		}
 
 		if err := scanner.Err(); err != nil {
-			myLogger.Print(fmt.Sprintf("stdin error: %s", err))
+			myLogger.Printf("stdin error: %s", err)
 		}
 
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")

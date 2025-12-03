@@ -76,7 +76,7 @@ func (cl *IndexDClient) DeleteRecordsByProject(projectId string) error {
 		for _, sum := range rec.Object.Checksums {
 			err := cl.DeleteRecord(sum.Checksum)
 			if err != nil {
-				fmt.Println("ERR: ", err)
+				cl.Logger.Println("DeleteRecordsByProject Error: ", err)
 				continue
 			}
 		}
@@ -86,7 +86,7 @@ func (cl *IndexDClient) DeleteRecordsByProject(projectId string) error {
 
 func (cl *IndexDClient) DeleteRecord(oid string) error {
 	// get records by hash
-	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+	records, err := cl.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
 	}
@@ -95,7 +95,7 @@ func (cl *IndexDClient) DeleteRecord(oid string) error {
 	}
 
 	// Find a record that matches the project ID
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetProjectId())
+	matchingRecord, err := drsmap.FindMatchingRecord(records[0], cl.GetProjectId())
 	if err != nil {
 		return fmt.Errorf("Error finding matching record for project %s: %v", cl.GetProjectId(), err)
 	}
@@ -164,7 +164,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// get the DRS object using the OID
 	// FIXME: how do we not hardcode sha256 here?
-	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+	records, err := cl.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		cl.Logger.Printf("error getting DRS object for OID %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for OID %s: %v", oid, err)
@@ -175,7 +175,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	}
 
 	// Find a record that matches the client's project ID
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.ProjectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records[0], cl.ProjectId)
 	if err != nil {
 		cl.Logger.Printf("error finding matching record for project %s: %s", cl.ProjectId, err)
 		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
@@ -241,7 +241,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
 	// get all existing hashes
-	records, err := cl.GetObjectsByHash(drs.ChecksumTypeSHA256.String(), oid)
+	records, err := cl.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
 	}
@@ -250,7 +250,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	//  * addresses edge case where user X registering in project A has access to record in project B
 	//  * but still needs create a new record to so user Y reading the file in project A can access it
 	//  * even if they don't have access to project B
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.ProjectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records[0], cl.ProjectId)
 	if err != nil {
 		return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
 	}
@@ -546,57 +546,59 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 }
 
 // implements /index/index?hash={hashType}:{hash} GET
-func (cl *IndexDClient) GetObjectsByHash(hashType string, hash string) ([]drs.DRSObject, error) {
+func (cl *IndexDClient) GetObjectsByHash(args ...*drs.Checksum) ([][]drs.DRSObject, error) {
 	// setup get request to indexd
-	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), hashType, hash)
-	cl.Logger.Printf("Querying indexd at %s", url)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		cl.Logger.Printf("http.NewRequest Error: %s", err)
-		return nil, err
+	outobjs := [][]drs.DRSObject{}
+	for _, sum := range args {
+		url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), sum.Type, sum.Checksum)
+		cl.Logger.Printf("Querying indexd at %s", url)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			cl.Logger.Printf("http.NewRequest Error: %s", err)
+			return nil, err
+		}
+		cl.Logger.Printf("Looking for files with hash %s:%s", sum.Type, sum.Checksum)
+
+		err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
+		}
+		req.Header.Set("accept", "application/json")
+
+		// run request and do checks
+		httpClient := &http.Client{}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", sum.Type, sum.Checksum, err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("failed to query indexd for %s:%s. Error: %s, %s", sum.Type, sum.Checksum, resp.Status, string(body))
+		}
+
+		// unmarshal response body
+		records := ListRecords{}
+		err = json.NewDecoder(resp.Body).Decode(&records)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
+		}
+		// log how many records were found
+		cl.Logger.Printf("Found %d indexd record(s) matching the hash", len(records.Records))
+
+		// if no records found, return empty slice
+		if len(records.Records) == 0 {
+			return [][]drs.DRSObject{}, nil
+		}
+		out := make([]drs.DRSObject, len(records.Records))
+		for i := range records.Records {
+			out[i] = *indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+		}
+		outobjs = append(outobjs, out)
 	}
-	cl.Logger.Printf("Looking for files with hash %s:%s", hashType, hash)
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", hashType, hash, err)
-	}
-	req.Header.Set("accept", "application/json")
-
-	// run request and do checks
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", hashType, hash, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to query indexd for %s:%s. Error: %s, %s", hashType, hash, resp.Status, string(body))
-	}
-
-	// unmarshal response body
-	records := ListRecords{}
-	err = json.NewDecoder(resp.Body).Decode(&records)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", hashType, hash, err)
-	}
-	// log how many records were found
-	cl.Logger.Printf("Found %d indexd record(s) matching the hash", len(records.Records))
-
-	// if no records found, return empty slice
-	if len(records.Records) == 0 {
-		return []drs.DRSObject{}, nil
-	}
-
-	out := make([]drs.DRSObject, len(records.Records))
-
-	for i := range records.Records {
-		out[i] = *indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
-	}
-
-	return out, nil
+	return outobjs, nil
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET

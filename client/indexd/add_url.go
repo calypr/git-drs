@@ -221,12 +221,12 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
+	records, err := indexdClient.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
-	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records[0], projectId)
 	if err != nil {
 		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}

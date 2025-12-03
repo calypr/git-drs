@@ -153,6 +153,8 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Create input record to register
+	// IndexdRecord used here is the client-side object
+	// We don't use the newTestRecord helper bc that's the [mock] server-side object
 	newRecord := &indexd_client.IndexdRecord{
 		Did:      "uuid-register-test",
 		FileName: "new-file.bam",

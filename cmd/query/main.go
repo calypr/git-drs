@@ -8,12 +8,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var remote string
+
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "query <remote> <drs_id>",
+	Use:   "query <drs_id>",
 	Short: "Query DRS server by DRS ID",
 	Long:  "Query DRS server by DRS ID",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 

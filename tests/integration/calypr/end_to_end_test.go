@@ -15,6 +15,7 @@ import (
 	"time"
 
 	dcJWT "github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
@@ -222,7 +223,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	remoteURL := fmt.Sprintf("%s/%s/%s.git", host, owner, repoName)
 	// Add remote
 	t.Log("Remote URL: ", remoteURL)
-	cmd = exec.Command("git", "remote", "add", "origin", remoteURL)
+	cmd = exec.Command("git", "remote", "add", config.ORIGIN, remoteURL)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
 	}
@@ -311,7 +312,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", projectdir.DRS_DIR)
 	}
 
-	cmd = exec.Command("git", "push", "--set-upstream", "origin", "main")
+	cmd = exec.Command("git", "push", "--set-upstream", config.ORIGIN, "main")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)

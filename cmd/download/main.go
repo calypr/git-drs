@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
@@ -13,22 +12,24 @@ import (
 )
 
 var (
-	server  string
 	dstPath string
-	drsObj  *drs.DRSObject
+	remote  string
 )
 
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download <remote> <oid>",
+	Use:   "download <oid>",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
-		remote, oid := args[0], args[1]
+		oid := args[0]
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -73,5 +74,6 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

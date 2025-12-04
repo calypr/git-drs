@@ -5,7 +5,6 @@ import (
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
 
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
@@ -13,20 +12,21 @@ import (
 )
 
 var (
-	server  string
-	dstPath string
-	drsObj  *drs.DRSObject
+	remote string
 )
 
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "precommit <remote>",
+	Use:   "precommit",
 	Short: "pre-commit hook to create DRS objects",
 	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		myLogger.Print("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
@@ -36,7 +36,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 
-		var remote config.Remote = config.Remote(args[0])
+		var remote config.Remote = config.Remote(remote)
 		cli, err := cfg.GetRemoteClient(remote, myLogger)
 
 		dc, ok := cli.(*indexd_client.IndexDClient)
@@ -56,4 +56,8 @@ var Cmd = &cobra.Command{
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")
 		return nil
 	},
+}
+
+func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

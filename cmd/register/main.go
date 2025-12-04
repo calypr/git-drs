@@ -16,17 +16,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var remote string
 var Cmd = &cobra.Command{
-	Use:   "<remote> register",
+	Use:   "register",
 	Short: "Register all pending DRS objects with indexd",
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
-	Args:  cobra.RangeArgs(0, 1),
+	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var remote config.Remote = "Origin"
-		if len(args) == 1 {
-			remote = config.Remote(args[0])
+		if remote == "" {
+			remote = config.ORIGIN
 		}
-
 		logger, err := drslog.NewLogger("", true)
 		if err != nil {
 			return err
@@ -37,7 +36,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		cli, err := cfg.GetRemoteClient(remote, logger)
+		cli, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
@@ -172,4 +171,8 @@ func getPendingObjects(logger *log.Logger) ([]PendingObject, error) {
 
 	logger.Printf("Found %d pending objects in %s", len(objects), objectsDir)
 	return objects, nil
+}
+
+func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

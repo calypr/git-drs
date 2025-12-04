@@ -12,9 +12,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var outJson = false
-var outFile string
-var listOutFile string
+var (
+	outJson     bool = false
+	outFile     string
+	listOutFile string
+	remote      string
+)
 
 var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
 
@@ -43,12 +46,13 @@ func getCheckSumStr(obj drs.DRSObject) string {
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "list <remote>",
+	Use:   "list",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-
 		logger := drslog.GetLogger()
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		var outWriter io.Writer
 		if listOutFile != "" {
@@ -66,7 +70,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		client, err := conf.GetRemoteClient(config.Remote(args[0]), logger)
+		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			logger.Printf("Client failed")
 			return err
@@ -99,18 +103,21 @@ var Cmd = &cobra.Command{
 	},
 }
 var ListProjectCmd = &cobra.Command{
-	Use:   "list-project <remote> <project-id>",
+	Use:   "list-project <project-id>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		conf, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		client, err := conf.GetRemoteClient(config.Remote(args[0]), logger)
+		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			return err
 		}
@@ -154,7 +161,9 @@ var ListProjectCmd = &cobra.Command{
 }
 
 func init() {
+	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 	Cmd.Flags().StringVarP(&listOutFile, "out", "o", listOutFile, "File path to save output to")
 	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

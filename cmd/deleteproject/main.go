@@ -8,24 +8,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var remote string
+
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "deleteproject <remote> <project_id>",
+	Use:    "delete-project <project_id>",
 	Short:  "Delete all indexd records for a given project",
 	Long:   "Delete all indexd records for a given project",
 	Hidden: true,
-	Args:   cobra.ExactArgs(2),
+	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		logger := drslog.GetLogger()
-
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(args[0]), logger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			logger.Printf("error creating indexd client: %s", err)
 			return err
@@ -42,4 +46,5 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

@@ -11,18 +11,22 @@ import (
 
 var (
 	dstPath string
+	remote  string
 )
 
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "delete <remote> <hash-type> <oid>",
+	Use:    "delete <hash-type> <oid>",
 	Short:  "Delete a file using hash and file object ID",
 	Long:   "Delete a file using file object ID. Use lfs ls-files to get oid",
 	Hidden: true,
 	Args:   cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		remote, hashType, oid := args[0], args[1], args[2]
+		hashType, oid := args[0], args[1]
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		// check hash type is valid Checksum type and sha256
 		if hashType != drs.ChecksumTypeSHA256.String() {
@@ -53,5 +57,6 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

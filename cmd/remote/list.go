@@ -30,11 +30,8 @@ var ListCmd = &cobra.Command{
 				tString = "anvil"
 				remote = v.Anvil
 			}
-			if k == cfg.CurrentRemote {
-				fmt.Printf("*%s\t%s\t%s\n", k, tString, remote.GetEndpoint())
-			} else {
-				fmt.Printf(" %s\t%s\t%s\n", k, tString, remote.GetEndpoint())
-			}
+			fmt.Printf(" %s\t%s\t%s\n", k, tString, remote.GetEndpoint())
+
 		}
 		return nil
 	},

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
@@ -17,10 +17,16 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:   "register",
+	Use:   "<remote> register",
 	Short: "Register all pending DRS objects with indexd",
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
+	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var remote config.Remote = "Origin"
+		if len(args) == 1 {
+			remote = config.Remote(args[0])
+		}
+
 		logger, err := drslog.NewLogger("", true)
 		if err != nil {
 			return err
@@ -31,11 +37,11 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		cli, err := cfg.GetCurrentRemoteClient(logger)
+		cli, err := cfg.GetRemoteClient(remote, logger)
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
-		icli, _ := cli.(*indexd_client.IndexDClient)
+		icli, _ := cli.(*indexdCl.IndexDClient)
 
 		// Get all pending objects
 		pendingObjects, err := getPendingObjects(logger)

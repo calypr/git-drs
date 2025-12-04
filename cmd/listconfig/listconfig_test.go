@@ -1,17 +1,6 @@
 package listconfig
 
-import (
-	"encoding/json"
-	"testing"
-
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/internal/testutils"
-	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
-)
-
+/* This test isn't really needed because there is no concept of a current remote anymore
 func TestListConfigCommand(t *testing.T) {
 	t.Run("displays valid config in YAML format", func(t *testing.T) {
 		tmpDir := testutils.SetupTestGitRepo(t)
@@ -92,3 +81,4 @@ func verifyParsedConfig(t *testing.T, parsedConfig config.Config, testConfig *co
 	assert.Equal(t, testConfig.GetCurrentRemote().GetBucketName(), parsedConfig.GetCurrentRemote().GetBucketName())
 	assert.Equal(t, testConfig.GetCurrentRemote().GetEndpoint(), parsedConfig.GetCurrentRemote().GetEndpoint())
 }
+*/

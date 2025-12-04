@@ -13,13 +13,13 @@ import (
 )
 
 var Cmd = &cobra.Command{
-	Use:   "add-ref <drs_uri> <dst path>",
+	Use:   "add-ref <remote> <drs_uri> <dst path>",
 	Short: "Add a reference to an existing DRS object via URI",
 	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Requires that the sha256 of the file is already in the cache",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		drsUri := args[0]
-		dstPath := args[1]
+		drsUri := args[1]
+		dstPath := args[2]
 
 		logger := drslog.GetLogger()
 
@@ -30,7 +30,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		client, err := cfg.GetCurrentRemoteClient(logger)
+		client, err := cfg.GetRemoteClient(config.Remote(args[0]), logger)
 		if err != nil {
 			return err
 		}

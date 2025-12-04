@@ -16,13 +16,13 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "delete <hash-type> <oid>",
+	Use:    "delete <remote> <hash-type> <oid>",
 	Short:  "Delete a file using hash and file object ID",
 	Long:   "Delete a file using file object ID. Use lfs ls-files to get oid",
 	Hidden: true,
 	Args:   cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		hashType, oid := args[0], args[1]
+		remote, hashType, oid := args[0], args[1], args[2]
 
 		// check hash type is valid Checksum type and sha256
 		if hashType != drs.ChecksumTypeSHA256.String() {
@@ -36,7 +36,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetCurrentRemoteClient(logger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			logger.Printf("error creating indexd client: %s", err)
 			return err

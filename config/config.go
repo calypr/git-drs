@@ -61,39 +61,28 @@ type RemoteSelect struct {
 
 // Config holds the overall config structure
 type Config struct {
-	CurrentRemote Remote                  `yaml:"current_remote"`
-	Remotes       map[Remote]RemoteSelect `yaml:"remotes"`
+	Remotes map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
-func (c Config) GetCurrentRemoteName() Remote {
-	return c.CurrentRemote
-}
-
-func (c Config) GetCurrentRemoteClient(logger *log.Logger) (client.DRSClient, error) {
-	if c.CurrentRemote == "" {
-		return nil, fmt.Errorf("no current remote set in config")
-	}
-	x, ok := c.Remotes[c.CurrentRemote]
+func (c Config) GetRemoteClient(remote Remote, logger *log.Logger) (client.DRSClient, error) {
+	x, ok := c.Remotes[remote]
 	if !ok {
-		return nil, fmt.Errorf("no remote configuration found for current remote: %s", c.CurrentRemote)
+		return nil, fmt.Errorf("no remote configuration found for current remote: %s", remote)
 	}
 	if x.Gen3 != nil {
 		configText, _ := yaml.Marshal(x.Gen3)
 		configParams := make(map[string]string)
 		yaml.Unmarshal(configText, configParams)
-		configParams["remote_name"] = string(c.CurrentRemote)
+		configParams["remote_name"] = string(remote)
 		return x.Gen3.GetClient(configParams, logger)
 	} else if x.Anvil != nil {
 		return x.Anvil.GetClient(nil, logger)
 	}
-	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", c.CurrentRemote)
+	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }
 
-func (c Config) GetCurrentRemote() DRSRemote {
-	if c.CurrentRemote == "" {
-		return nil
-	}
-	x, ok := c.Remotes[c.CurrentRemote]
+func (c Config) GetRemote(remote Remote) DRSRemote {
+	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil
 	}
@@ -172,37 +161,6 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	return &cfg, nil
 }
 
-func UpdateCurrentRemote(remoteName Remote) (*Config, error) {
-	// load existing config
-	cfg, err := LoadConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	// set current remote
-	cfg.CurrentRemote = remoteName
-
-	// overwrite the existing config file
-	configPath, err := getConfigPath()
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	file.Seek(0, 0)
-	file.Truncate(0)
-	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
-		return nil, fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return cfg, nil
-}
-
 // load an existing config
 func LoadConfig() (*Config, error) {
 	configPath, err := getConfigPath()
@@ -255,14 +213,14 @@ func CreateEmptyConfig() error {
 	return nil
 }
 
-func GetProjectId() (string, error) {
+func GetProjectId(remote Remote) (string, error) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		return "", fmt.Errorf("error loading config: %v", err)
 	}
-	rmt := cfg.GetCurrentRemote()
+	rmt := cfg.GetRemote(remote)
 	if rmt == nil {
-		return "", fmt.Errorf("no remote configuration found for current remote: %s", cfg.CurrentRemote)
+		return "", fmt.Errorf("no remote configuration found for current remote: %s", remote)
 	}
 	return rmt.GetProjectId(), nil
 }

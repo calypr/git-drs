@@ -25,9 +25,10 @@ var (
 )
 
 var Cmd = &cobra.Command{
-	Use:   "transfer-ref",
+	Use:   "transfer-ref [remote]",
 	Short: "[RUN VIA GIT LFS] handle transfers of existing DRS object into git during git push",
 	Long:  "[RUN VIA GIT LFS] custom transfer mechanism to pull LFS files during git lfs pull. Does nothing on push.",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//setup logging to file for debugging
 		myLogger := drslog.GetLogger()
@@ -36,6 +37,8 @@ var Cmd = &cobra.Command{
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
+
+		remote := config.Remote(args[0])
 
 		for scanner.Scan() {
 			var msg map[string]any
@@ -68,7 +71,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// call DRS Downloader via downloadFile
-				dstPath, err := downloadFile(downloadMsg.Oid)
+				dstPath, err := downloadFile(remote, downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
@@ -123,7 +126,7 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func downloadFile(sha string) (string, error) {
+func downloadFile(remote config.Remote, sha string) (string, error) {
 	myLogger := drslog.GetLogger()
 
 	myLogger.Printf("Downloading file for sha %s", sha)
@@ -134,17 +137,12 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error loading config: %v", err)
 	}
 
-	remote := cfg.GetCurrentRemote()
-	if remote == nil {
-		return "", fmt.Errorf("no current remote set in config")
-	}
-	terraProject := remote.GetProjectId()
-
-	drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
-	//drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
+	cli, err := cfg.GetRemoteClient(remote, myLogger)
 	if err != nil {
-		return "", fmt.Errorf("error creating DRS client: %v", err)
+		return "", err
 	}
+
+	terraProject := cli.GetProjectId()
 
 	filePath, err := drsmap.GetObjectPath(projectdir.DRS_REF_DIR, sha)
 	if err != nil {

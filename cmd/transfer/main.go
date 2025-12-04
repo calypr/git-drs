@@ -17,15 +17,14 @@ import (
 )
 
 var (
-	req       lfs.InitMessage
 	drsClient client.DRSClient
-	operation string // "upload" or "download", set by the init message
 )
 
 var Cmd = &cobra.Command{
 	Use:   "transfer",
 	Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
 	Long:  "[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
 
@@ -40,7 +39,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		drsClient, err = cfg.GetCurrentRemoteClient(myLogger)
+		drsClient, err = cfg.GetRemoteClient(config.Remote(args[0]), myLogger)
 		if err != nil {
 			myLogger.Printf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())

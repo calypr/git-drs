@@ -21,21 +21,21 @@ var (
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "download <oid>",
+	Use:   "download <remote> <oid>",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
-		oid := args[0]
+		remote, oid := args[0], args[1]
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetCurrentRemoteClient(logger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			logger.Printf("\nerror creating DRS client: %s", err)
 			return err

@@ -43,9 +43,9 @@ func getCheckSumStr(obj drs.DRSObject) string {
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list <remote>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		logger := drslog.GetLogger()
@@ -66,7 +66,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		client, err := conf.GetCurrentRemoteClient(logger)
+		client, err := conf.GetRemoteClient(config.Remote(args[0]), logger)
 		if err != nil {
 			logger.Printf("Client failed")
 			return err
@@ -99,9 +99,9 @@ var Cmd = &cobra.Command{
 	},
 }
 var ListProjectCmd = &cobra.Command{
-	Use:   "list-project <project-id>",
+	Use:   "list-project <remote> <project-id>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
@@ -110,11 +110,11 @@ var ListProjectCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		client, err := conf.GetCurrentRemoteClient(logger)
+		client, err := conf.GetRemoteClient(config.Remote(args[0]), logger)
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListObjectsByProject(args[0])
+		objChan, err := client.ListObjectsByProject(args[1])
 		if err != nil {
 			return err
 		}

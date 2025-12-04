@@ -114,13 +114,6 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 	}
 	log.Printf("Remote Added: %s", remoteName)
 
-	// update current server in config
-	c, err := config.UpdateCurrentRemote(remote)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
-	}
-	log.Printf("Current server: %s\n", c.GetCurrentRemote().GetEndpoint())
-
 	// authenticate with gen3
 	// if no credFile is specified, don't go for the update
 	if credFile != "" {

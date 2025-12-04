@@ -131,8 +131,8 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 			UseShepherd:        "false",
 			MinShepherdVersion: "",
 			// TODO: Don't store profile specific credentials in a global variable
-			//KeyId:              client.ProfileConfig.KeyId,
-			//APIKey:             client.ProfileConfig.APIKey,
+			KeyId:  cfg.KeyId,
+			APIKey: cfg.APIKey,
 		}
 		err = jwt.UpdateConfig(cred)
 		if err != nil {

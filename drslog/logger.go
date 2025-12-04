@@ -55,21 +55,8 @@ func Close() {
 	}
 }
 
-type NoOpLogger struct{}
-
-// Logf implements the Logf method for NoOpLogger, doing nothing.
-func (n *NoOpLogger) Logf(format string, v ...any) {
-}
-func (n *NoOpLogger) Log(args ...any) {
-}
-
-// Close implements the Close method for NoOpLogger, doing nothing.
-func (n *NoOpLogger) Close() error {
-	return nil
-}
-
-type LoggerInterface interface {
-	Logf(format string, v ...any)
-	Log(args ...any)
-	Close() error // If close is part of the interface
+// NewNoOpLogger creates a logger that discards all output.
+// Returns a *log.Logger that writes to io.Discard.
+func NewNoOpLogger() *log.Logger {
+	return log.New(io.Discard, "", 0)
 }

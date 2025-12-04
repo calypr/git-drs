@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
@@ -27,15 +28,19 @@ import (
 // This is the production version that includes all config/auth dependencies.
 func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (s3_utils.S3Bucket, error) {
 	// get all buckets
-	baseURL := inc.Base
+	baseURL := *inc.Base // Create a copy to avoid mutating inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
-	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, &RealAuthHandler{}, httpClient)
+	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, inc.AuthHandler, httpClient)
 }
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
 func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
+	// setup logger if nil
+	if logger == nil {
+		logger = drslog.NewNoOpLogger()
+	}
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -304,8 +309,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Use NoOpLogger if no logger provided
 	if inc.Logger == nil {
-		//TODO: re-enable logging
-		//cfg.logger = &log.NoOpLogger{}
+		inc.Logger = drslog.NewNoOpLogger()
 	}
 
 	// Validate inputs
@@ -330,7 +334,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Fetch S3 metadata (size, modified date)
 	inc.Logger.Print("Fetching S3 metadata...")
-	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, cfg.Logger)
+	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, inc.Logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {

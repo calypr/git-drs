@@ -17,8 +17,8 @@ type RealAuthHandler struct {
 	Cred jwt.Credential
 }
 
-func (rh *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	return rh.addGen3AuthHeader(req, profile)
+func (rh *RealAuthHandler) AddAuthHeader(req *http.Request) error {
+	return rh.addGen3AuthHeader(req)
 }
 
 // Moved this function out of bmeg/grip-graphql/middleware into this repo to simplify deps.
@@ -66,7 +66,7 @@ func (rh *RealAuthHandler) refreshToken() error {
 	return RefreshToken(&rh.Cred)
 }
 
-func (rh *RealAuthHandler) addGen3AuthHeader(req *http.Request, profile string) error {
+func (rh *RealAuthHandler) addGen3AuthHeader(req *http.Request) error {
 	err := rh.refreshToken()
 	if err != nil {
 		return err

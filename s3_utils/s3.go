@@ -43,7 +43,7 @@ const (
 // AuthHandler is an interface for adding authentication headers
 // This allows us to inject different auth implementations for testing vs production
 type AuthHandler interface {
-	AddAuthHeader(req *http.Request, profile string) error
+	AddAuthHeader(req *http.Request) error
 }
 
 func (r *CustomEndpointResolver) ResolveEndpoint(service, region string) (aws.Endpoint, error) {

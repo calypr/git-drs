@@ -65,6 +65,15 @@ func (cl *IndexDClient) GetProjectId() string {
 	return cl.ProjectId
 }
 
+// GetProfile extracts the profile from the auth handler if available
+// This is only needed for external APIs like g3cmd that require it
+func (cl *IndexDClient) GetProfile() (string, error) {
+	if rh, ok := cl.AuthHandler.(*RealAuthHandler); ok {
+		return rh.Cred.Profile, nil
+	}
+	return "", fmt.Errorf("AuthHandler is not RealAuthHandler, cannot extract profile")
+}
+
 func (cl *IndexDClient) DeleteRecordsByProject(projectId string) error {
 	recs, err := cl.ListObjectsByProject(projectId)
 	if err != nil {
@@ -119,12 +128,7 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 		return err
 	}
 
-	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return fmt.Errorf("AuthHandler is not RealAuthHandler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(delReq, rAh.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(delReq)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -214,12 +218,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -329,12 +328,12 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-		if !ok {
-			return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+		profile, err := cl.GetProfile()
+		if err != nil {
+			return nil, fmt.Errorf("error getting profile for upload: %v", err)
 		}
 
-		err = g3cmd.UploadSingleMultipart(rAh.Cred.Profile, filePath, cl.BucketName, drsObject.Id, false)
+		err = g3cmd.UploadSingleMultipart(profile, filePath, cl.BucketName, drsObject.Id, false)
 		if err != nil {
 			cl.Logger.Printf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -363,12 +362,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -420,12 +414,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			rA, ok := cl.AuthHandler.(*RealAuthHandler)
-			if !ok {
-				return
-			}
-
-			err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+			err = cl.AuthHandler.AddAuthHeader(req)
 			if err != nil {
 				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -501,13 +490,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-
-	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -553,12 +536,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 		return err
 	}
 
-	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(delReq, rAh.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(delReq)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -597,12 +575,7 @@ func (cl *IndexDClient) GetObjectsByHash(args ...*drs.Checksum) ([][]drs.DRSObje
 		}
 		cl.Logger.Printf("Looking for files with hash %s:%s", sum.Type, sum.Checksum)
 
-		rA, ok := cl.AuthHandler.(*RealAuthHandler)
-		if !ok {
-			return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
-		}
-
-		err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+		err = cl.AuthHandler.AddAuthHeader(req)
 		if err != nil {
 			return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
 		}
@@ -677,12 +650,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			rA, ok := cl.AuthHandler.(*RealAuthHandler)
-			if !ok {
-				return
-			}
-
-			err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+			err = cl.AuthHandler.AddAuthHeader(req)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -769,12 +737,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	rA, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -816,12 +779,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	rA, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -885,12 +843,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	rA, ok := cl.AuthHandler.(*RealAuthHandler)
-	if !ok {
-		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
-	}
-
-	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
+	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}

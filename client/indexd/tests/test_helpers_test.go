@@ -28,8 +28,8 @@ const (
 // It simply sets a Bearer token header without making any external calls
 type MockAuthHandler struct{}
 
-func (m *MockAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	req.Header.Set("Authorization", "Bearer mock-test-token-"+profile)
+func (m *MockAuthHandler) AddAuthHeader(req *http.Request) error {
+	req.Header.Set("Authorization", "Bearer mock-test-token")
 	return nil
 }
 
@@ -39,7 +39,7 @@ type testErrorAuthHandler struct {
 	err  error
 }
 
-func (e *testErrorAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+func (e *testErrorAuthHandler) AddAuthHeader(req *http.Request) error {
 	return e.err
 }
 

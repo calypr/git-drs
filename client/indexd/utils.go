@@ -16,10 +16,9 @@ import (
 //   - ctx: context for the request
 //   - bucket: the bucket name to look up
 //   - bucketsEndpointURL: full URL to the /user/data/buckets endpoint
-//   - profile: the Gen3 profile to use for authentication
 //   - authHandler: handler for adding authentication headers
 //   - httpClient: the HTTP client to use
-func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, profile string, authHandler s3_utils.AuthHandler, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
+func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL string, authHandler s3_utils.AuthHandler, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
 	// Use provided client or create default
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -32,7 +31,7 @@ func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL, p
 
 	// Add authentication using the auth handler
 	if authHandler != nil {
-		if err := authHandler.AddAuthHeader(req, profile); err != nil {
+		if err := authHandler.AddAuthHeader(req); err != nil {
 			return nil, fmt.Errorf("failed to add authentication: %w", err)
 		}
 	}

@@ -204,7 +204,6 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 
 			client := &indexd_client.IndexDClient{
 				Base:        parseURL(mockServer.URL()),
-				Remote:      "test-remote",
 				ProjectId:   "test-project", // This will become /programs/test/projects/project
 				BucketName:  "test-bucket",
 				Logger:      log.Default(),

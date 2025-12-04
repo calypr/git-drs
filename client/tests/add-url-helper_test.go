@@ -150,7 +150,7 @@ func TestGetBucketDetails_Gen3Success(t *testing.T) {
 		}
 
 		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]s3_utils.S3Bucket{
+			S3Buckets: map[string]*s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.aws.amazon.com",

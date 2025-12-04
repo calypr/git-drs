@@ -26,7 +26,6 @@ import (
 
 type IndexDClient struct {
 	Base        *url.URL
-	Remote      string
 	ProjectId   string
 	BucketName  string
 	Logger      *log.Logger
@@ -38,7 +37,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, remoteName string, logger *log.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -54,7 +53,6 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, remoteName
 	//}
 
 	return &IndexDClient{
-		Remote:      remoteName,
 		Base:        baseUrl,
 		ProjectId:   projectId,
 		BucketName:  bucketName,
@@ -121,7 +119,12 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 		return err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Remote)
+	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return fmt.Errorf("AuthHandler is not RealAuthHandler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(delReq, rAh.Cred.Profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -211,7 +214,12 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -250,26 +258,30 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	//  * addresses edge case where user X registering in project A has access to record in project B
 	//  * but still needs create a new record to so user Y reading the file in project A can access it
 	//  * even if they don't have access to project B
-	matchingRecord, err := drsmap.FindMatchingRecord(records[0], cl.ProjectId)
-	if err != nil {
-		return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
+
+	var drsObject *drs.DRSObject
+	if len(records) > 0 {
+		var err error
+		drsObject, err = drsmap.FindMatchingRecord(records[0], cl.ProjectId)
+		if err != nil {
+			return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
+		}
 	}
 
-	drsObj := matchingRecord
-	if matchingRecord == nil {
+	if drsObject == nil {
 		// otherwise, create indexd record
 		cl.Logger.Print("creating record: no existing indexd record for this project")
 
 		// get indexd object using drs map
-		drsObj, err = drsmap.DrsInfoFromOid(oid)
+		drsObject, err = drsmap.DrsInfoFromOid(oid)
 		if err != nil {
 			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 		}
 
-		indexdObj, err := indexdRecordFromDrsObject(drsObj)
+		indexdObj, err := indexdRecordFromDrsObject(drsObject)
 
 		// register the record
-		drsObj, err = cl.RegisterIndexdRecord(indexdObj)
+		drsObject, err = cl.RegisterIndexdRecord(indexdObj)
 
 		if err != nil {
 			cl.Logger.Printf("error registering indexd record: %s", err)
@@ -281,10 +293,10 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	defer func() {
 		if err != nil {
 			cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)
-			err = cl.DeleteIndexdRecord(drsObj.Id)
+			err = cl.DeleteIndexdRecord(drsObject.Id)
 			if err != nil {
 				cl.Logger.Printf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-				cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObj.Id)
+				cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObject.Id)
 				cl.Logger.Printf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
 				return
 			}
@@ -317,7 +329,12 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 
-		err = g3cmd.UploadSingleMultipart(cl.Remote, filePath, cl.BucketName, drsObj.Id, false)
+		rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+		if !ok {
+			return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+		}
+
+		err = g3cmd.UploadSingleMultipart(rAh.Cred.Profile, filePath, cl.BucketName, drsObject.Id, false)
 		if err != nil {
 			cl.Logger.Printf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -333,7 +350,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	}
 
 	// return drsObject
-	return drsObj, nil
+	return drsObject, nil
 }
 
 func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
@@ -346,7 +363,12 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -398,7 +420,12 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+			rA, ok := cl.AuthHandler.(*RealAuthHandler)
+			if !ok {
+				return
+			}
+
+			err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 			if err != nil {
 				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -474,7 +501,13 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+
+	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rAh.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -520,7 +553,12 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 		return err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(delReq, cl.Remote)
+	rAh, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return fmt.Errorf("GotDownloadUrl: Auth handler is not real auth handler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(delReq, rAh.Cred.Profile)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -559,7 +597,12 @@ func (cl *IndexDClient) GetObjectsByHash(args ...*drs.Checksum) ([][]drs.DRSObje
 		}
 		cl.Logger.Printf("Looking for files with hash %s:%s", sum.Type, sum.Checksum)
 
-		err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+		rA, ok := cl.AuthHandler.(*RealAuthHandler)
+		if !ok {
+			return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
+		}
+
+		err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 		if err != nil {
 			return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
 		}
@@ -589,7 +632,7 @@ func (cl *IndexDClient) GetObjectsByHash(args ...*drs.Checksum) ([][]drs.DRSObje
 
 		// if no records found, return empty slice
 		if len(records.Records) == 0 {
-			return [][]drs.DRSObject{}, nil
+			continue
 		}
 		out := make([]drs.DRSObject, len(records.Records))
 		for i := range records.Records {
@@ -634,7 +677,12 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+			rA, ok := cl.AuthHandler.(*RealAuthHandler)
+			if !ok {
+				return
+			}
+
+			err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -721,7 +769,12 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	rA, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -763,7 +816,12 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	rA, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -827,7 +885,12 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req, cl.Remote)
+	rA, ok := cl.AuthHandler.(*RealAuthHandler)
+	if !ok {
+		return nil, fmt.Errorf("inc.AuthHandler is not RealAuthHandler")
+	}
+
+	err = cl.AuthHandler.AddAuthHeader(req, rA.Cred.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}

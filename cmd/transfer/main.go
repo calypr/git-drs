@@ -17,14 +17,15 @@ import (
 )
 
 var (
+	req       lfs.InitMessage
 	drsClient client.DRSClient
+	operation string
 )
 
 var Cmd = &cobra.Command{
 	Use:   "transfer",
 	Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
 	Long:  "[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket",
-	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
 
@@ -39,7 +40,42 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		drsClient, err = cfg.GetRemoteClient(config.Remote(args[0]), myLogger)
+		var remoteName string
+
+		// Read the first (init) message outside the main loop
+		if !scanner.Scan() {
+			err := fmt.Errorf("failed to read initial message from stdin")
+			myLogger.Printf("Error: %s", err)
+			// No OID yet, so pass empty string
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		var initMsg map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
+			myLogger.Printf("error decoding initial JSON message: %s", err)
+			return err
+		}
+
+		// Handle "init" event and extract remote
+		if evt, ok := initMsg["event"]; ok && evt == "init" {
+			if r, ok := initMsg["remote"].(string); ok {
+				remoteName = r
+				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
+			} else {
+				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
+			}
+
+			// Respond with an empty json object via stdout
+			encoder.Encode(struct{}{})
+		} else {
+			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
+			myLogger.Printf("Error: %s", err)
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
 		if err != nil {
 			myLogger.Printf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())
@@ -54,14 +90,7 @@ var Cmd = &cobra.Command{
 				continue
 			}
 
-			// Example: handle only "init" event
-			if evt, ok := msg["event"]; ok && evt == "init" {
-
-				// Respond with an empty json object via stdout
-				encoder.Encode(struct{}{})
-				myLogger.Print("Initializing connection")
-
-			} else if evt, ok := msg["event"]; ok && evt == "download" {
+			if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
 				myLogger.Printf("Download requested")
 

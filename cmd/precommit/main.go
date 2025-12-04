@@ -36,7 +36,8 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 
-		cli, err := cfg.GetRemoteClient(config.Remote(args[0]), myLogger)
+		var remote config.Remote = config.Remote(args[0])
+		cli, err := cfg.GetRemoteClient(remote, myLogger)
 
 		dc, ok := cli.(*indexd_client.IndexDClient)
 		if !ok {
@@ -45,7 +46,7 @@ var Cmd = &cobra.Command{
 		myLogger.Printf("Current server: %s", dc.ProjectId)
 
 		myLogger.Printf("Preparing DRS objects for commit...\n")
-		err = drsmap.UpdateDrsObjects(cli, myLogger)
+		err = drsmap.UpdateDrsObjects(string(remote), cli, myLogger)
 		if err != nil {
 			myLogger.Print("UpdateDrsObjects failed:", err)
 			return err

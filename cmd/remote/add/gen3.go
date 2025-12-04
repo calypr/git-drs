@@ -102,8 +102,6 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 			Endpoint:  apiEndpoint,
 			ProjectID: project,
 			Bucket:    bucket,
-			APIKey:    cfg.APIKey,
-			KeyID:     cfg.KeyId,
 		},
 	}
 
@@ -137,6 +135,5 @@ func gen3Init(remoteName string, credFile string, fenceToken string, project str
 		}
 
 	}
-
 	return nil
 }

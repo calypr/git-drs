@@ -82,30 +82,10 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("Error initializing custom transfer for DRS: %v\n", err)
 		}
 
-		// add pre-commit hook
-		err = addPreCommitHook()
-		if err != nil {
-			return fmt.Errorf("Error adding pre-commit hook: %v\n", err)
-		}
-
 		// final logs
 		logg.Print("Git DRS initialized")
 		return nil
 	},
-}
-
-func addPreCommitHook() error {
-	// Create .git/hooks/pre-commit file
-	hooksDir := filepath.Join(".git", "hooks")
-	preCommitPath := filepath.Join(hooksDir, "pre-commit")
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("[ERROR] unable to create pre-commit hook file: %v", err)
-	}
-	hookContent := "#!/bin/sh\ngit drs precommit\n"
-	if err := os.WriteFile(preCommitPath, []byte(hookContent), 0755); err != nil {
-		return fmt.Errorf("[ERROR] unable to write to pre-commit hook: %v", err)
-	}
-	return nil
 }
 
 func initGitConfig() error {

@@ -34,11 +34,11 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Logger) error {
 	logger.Print("Update to DRS objects started")
 
 	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
+	repoName, err := GetRepoNameFromGit(remote)
 	if err != nil {
 		return fmt.Errorf("Unable to fetch repository website location: %v", err)
 	}
@@ -79,15 +79,17 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		if projectId == "" {
 			return fmt.Errorf("Error getting project ID")
 		}
-		matchingRecord, err := FindMatchingRecord(records[0], projectId)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-		}
 
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
+		if len(records) > 0 {
+			matchingRecord, err := FindMatchingRecord(records[0], projectId)
+			if err != nil {
+				return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+			}
+			// skip if matching record exists
+			if matchingRecord != nil {
+				logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+				continue
+			}
 		}
 
 		// check if indexd object already prepared, skip if so
@@ -251,9 +253,9 @@ func getStagedFiles() ([]string, error) {
 	return stagedFiles, nil
 }
 
-func GetRepoNameFromGit() (string, error) {
+func GetRepoNameFromGit(remote string) (string, error) {
 	// prefer simple os.Exec over using go-git
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
+	cmd := exec.Command("git", "config", "--get", fmt.Sprintf("remote.%s.url", remote))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

@@ -9,8 +9,8 @@ import (
 )
 
 type S3BucketsResponse struct {
-	GSBuckets map[string]any      `json:"GS_BUCKETS"`
-	S3Buckets map[string]S3Bucket `json:"S3_BUCKETS"`
+	GSBuckets map[string]any       `json:"GS_BUCKETS"`
+	S3Buckets map[string]*S3Bucket `json:"S3_BUCKETS"`
 }
 
 type S3Bucket struct {

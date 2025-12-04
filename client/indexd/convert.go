@@ -34,12 +34,12 @@ func indexdRecordToDrsObject(indexdObj *IndexdRecord) *drs.DRSObject {
 
 func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) []drs.AccessMethod {
 	var accessMethods []drs.AccessMethod
-	for i, url := range urls {
+	for _, url := range urls {
 		var method drs.AccessMethod
 		method.AccessURL = drs.AccessURL{URL: url}
-		if i < len(authz) {
-			method.Authorizations = &drs.Authorizations{Value: authz[i]}
-		}
+		// NOTE: a record can only have 1 authz entry atm
+		// this is fine if we're creating UUIDs based on project ID
+		method.Authorizations = &drs.Authorizations{Value: authz[0]}
 		accessMethods = append(accessMethods, method)
 	}
 	return accessMethods

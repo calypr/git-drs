@@ -18,6 +18,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
@@ -28,7 +29,7 @@ import (
 // This is the production version that includes all config/auth dependencies.
 func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
 	// get all buckets
-	baseURL := inc.Base
+	baseURL := *inc.Base // Create a copy to avoid mutating inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
 	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.AuthHandler, httpClient)
@@ -305,8 +306,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Use NoOpLogger if no logger provided
 	if inc.Logger == nil {
-		//TODO: re-enable logging
-		//cfg.logger = &log.NoOpLogger{}
+		inc.Logger = drslog.NewNoOpLogger()
 	}
 
 	// Validate inputs
@@ -331,7 +331,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Fetch S3 metadata (size, modified date)
 	inc.Logger.Print("Fetching S3 metadata...")
-	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, cfg.Logger)
+	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, inc.Logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {

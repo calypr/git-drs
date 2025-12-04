@@ -15,7 +15,6 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
@@ -205,21 +204,27 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
 }
 
-// upserts index record, so that if...
-// 1. the record exists for the project, it updates the URL
-// 2. the record for the project does not exist, it creates a new one
-// upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
-// It's separated for easier unit testing with mock clients.
-// Parameters:
-//   - indexdClient: the indexd client interface (can be mocked)
-//   - projectId: the project ID to use for the record
-//   - url: the S3 URL to register
-//   - sha256: the SHA256 hash of the file
-//   - fileSize: the size of the file in bytes
-//   - modifiedDate: the modification date of the file
-//   - logger: the logger interface for output
-func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
+// // upserts index record, so that if...
+// // 1. the record exists for the project, it updates the URL
+// // 2. the record for the project does not exist, it creates a new one
+// // upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
+// // It's separated for easier unit testing with mock clients.
+// // Parameters:
+// //   - indexdClient: the indexd client interface (can be mocked)
+// //   - projectId: the project ID to use for the record
+// //   - url: the S3 URL to register
+// //   - sha256: the SHA256 hash of the file
+// //   - fileSize: the size of the file in bytes
+// //   - modifiedDate: the modification date of the file
+// //   - logger: the logger interface for output
+// func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
 
+// 	// Create UUID for the record
+// }
+
+// upsertIndexdRecord is the production wrapper that loads config and creates clients.
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
+	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
@@ -250,7 +255,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 			//TODO: this assumes that files aren't stored in multiple locations....
 			updatedRecord := drs.DRSObject{AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: url}}}}
 
-			_, err := indexdClient.UpdateRecord(&updatedRecord, matchingRecord.Id)
+			_, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
 			if err != nil {
 				return fmt.Errorf("failed to update indexd record: %w", err)
 			}
@@ -276,20 +281,16 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 		Size:     fileSize,
 		URLs:     []string{url},
 		Authz:    []string{authzStr},
+		// NOTE: that this isn't being carried over atm cause we're registering via DRS Object
 		Metadata: map[string]string{"remote": "true"},
-		// ContentCreatedDate: modifiedDate, // TODO: setting created/updated time in indexd requires second API call
 	}
 
-	_, err = indexdClient.RegisterRecord(indexdObject.ToDrsObject())
+	_, err = inc.RegisterRecord(indexdObject.ToDrsObject())
+
 	if err != nil {
 		return fmt.Errorf("failed to register indexd record: %w", err)
 	}
 	return nil
-}
-
-// upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
-	return UpsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL

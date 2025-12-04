@@ -723,7 +723,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 }
 
 // UpdateRecord updates an existing indexd record by GUID using the PUT /index/index/{guid} endpoint
-// WARN: only supports putting new URLs atm
+// Supports updating: URLs, name (file_name), description (metadata), version, and authz
 func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
 	// Get current revision from existing record
 	record, err := cl.GetIndexdRecordByDID(did)
@@ -731,13 +731,66 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 		return nil, fmt.Errorf("could not retrieve existing record for DID %s: %v", did, err)
 	}
 
-	// create updated update info based on existing record
-	for _, a := range updateInfo.AccessMethods {
-		record.URLs = append(record.URLs, a.AccessURL.URL)
-	}
+	// Build update payload starting with existing record values
 	updatePayload := UpdateInputInfo{
-		URLs: record.URLs,
+		URLs:     record.URLs,
+		FileName: record.FileName,
+		Version:  record.Version,
+		Authz:    record.Authz,
+		ACL:      record.ACL,
+		Metadata: record.Metadata,
 	}
+
+	// Apply updates from updateInfo
+	// Update URLs by appending new access methods (deduplicated)
+	if len(updateInfo.AccessMethods) > 0 {
+		// Build set of existing URLs for deduplication
+		existingURLs := make(map[string]bool)
+		for _, url := range updatePayload.URLs {
+			existingURLs[url] = true
+		}
+
+		// Append only new URLs
+		for _, a := range updateInfo.AccessMethods {
+			if !existingURLs[a.AccessURL.URL] {
+				updatePayload.URLs = append(updatePayload.URLs, a.AccessURL.URL)
+				existingURLs[a.AccessURL.URL] = true
+			}
+		}
+
+		// Append authz from access methods (deduplicated)
+		existingAuthz := make(map[string]bool)
+		for _, authz := range updatePayload.Authz {
+			existingAuthz[authz] = true
+		}
+
+		authz := indexdAuthzFromDrsAccessMethods(updateInfo.AccessMethods)
+		for _, a := range authz {
+			if !existingAuthz[a] {
+				updatePayload.Authz = append(updatePayload.Authz, a)
+				existingAuthz[a] = true
+			}
+		}
+	}
+
+	// Update name (maps to file_name in indexd)
+	if updateInfo.Name != "" {
+		updatePayload.FileName = updateInfo.Name
+	}
+
+	// Update version
+	if updateInfo.Version != "" {
+		updatePayload.Version = updateInfo.Version
+	}
+
+	// Update description (stored in metadata)
+	if updateInfo.Description != "" {
+		if updatePayload.Metadata == nil {
+			updatePayload.Metadata = make(map[string]any)
+		}
+		updatePayload.Metadata["description"] = updateInfo.Description
+	}
+
 	jsonBytes, err := json.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)

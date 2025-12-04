@@ -18,6 +18,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// NAMESPACE is the UUID namespace used for generating DRS UUIDs
+var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
+
 // output of git lfs ls-files
 type LfsLsOutput struct {
 	Files []LfsFileInfo `json:"files"`
@@ -36,12 +39,6 @@ type LfsFileInfo struct {
 
 func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	logger.Print("Update to DRS objects started")
-
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
-	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
-	}
 
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
@@ -108,7 +105,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		drsId := DrsUUID(drsClient.GetProjectId(), file.Oid)
 		logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
@@ -154,10 +151,10 @@ func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	return nil
 }
 
-func DrsUUID(repoName string, hash string) string {
-	// FIXME: use different UUID method? Used same method as g3t
-	hashStr := fmt.Sprintf("%s:%s", repoName, hash)
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
+func DrsUUID(projectId string, hash string) string {
+	// create UUID based on project ID and hash
+	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
+	return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
 }
 
 // creates index record from file

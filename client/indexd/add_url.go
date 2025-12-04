@@ -15,8 +15,8 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
@@ -27,15 +27,19 @@ import (
 // This is the production version that includes all config/auth dependencies.
 func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (s3_utils.S3Bucket, error) {
 	// get all buckets
-	baseURL := inc.Base
+	baseURL := *inc.Base // Create a copy to avoid mutating inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
-	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, &RealAuthHandler{}, httpClient)
+	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, inc.AuthHandler, httpClient)
 }
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
 func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
+	// setup logger if nil
+	if logger == nil {
+		logger = drslog.NewNoOpLogger()
+	}
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -203,25 +207,31 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
 }
 
-// upserts index record, so that if...
-// 1. the record exists for the project, it updates the URL
-// 2. the record for the project does not exist, it creates a new one
-// upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
-// It's separated for easier unit testing with mock clients.
-// Parameters:
-//   - indexdClient: the indexd client interface (can be mocked)
-//   - projectId: the project ID to use for the record
-//   - url: the S3 URL to register
-//   - sha256: the SHA256 hash of the file
-//   - fileSize: the size of the file in bytes
-//   - modifiedDate: the modification date of the file
-//   - logger: the logger interface for output
-func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
+// // upserts index record, so that if...
+// // 1. the record exists for the project, it updates the URL
+// // 2. the record for the project does not exist, it creates a new one
+// // upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
+// // It's separated for easier unit testing with mock clients.
+// // Parameters:
+// //   - indexdClient: the indexd client interface (can be mocked)
+// //   - projectId: the project ID to use for the record
+// //   - url: the S3 URL to register
+// //   - sha256: the SHA256 hash of the file
+// //   - fileSize: the size of the file in bytes
+// //   - modifiedDate: the modification date of the file
+// //   - logger: the logger interface for output
+// func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
 
+// 	// Create UUID for the record
+// }
+
+// upsertIndexdRecord is the production wrapper that loads config and creates clients.
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
+	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
+	records, err := inc.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
@@ -248,7 +258,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 			//TODO: this assumes that files aren't stored in multiple locations....
 			updatedRecord := drs.DRSObject{AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: url}}}}
 
-			_, err := indexdClient.UpdateRecord(&updatedRecord, matchingRecord.Id)
+			_, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
 			if err != nil {
 				return fmt.Errorf("failed to update indexd record: %w", err)
 			}
@@ -274,20 +284,16 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 		Size:     fileSize,
 		URLs:     []string{url},
 		Authz:    []string{authzStr},
+		// NOTE: that this isn't being carried over atm cause we're registering via DRS Object
 		Metadata: map[string]string{"remote": "true"},
-		// ContentCreatedDate: modifiedDate, // TODO: setting created/updated time in indexd requires second API call
 	}
 
-	_, err = indexdClient.RegisterRecord(indexdObject.ToDrsObject())
+	_, err = inc.RegisterRecord(indexdObject.ToDrsObject())
+
 	if err != nil {
 		return fmt.Errorf("failed to register indexd record: %w", err)
 	}
 	return nil
-}
-
-// upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
-	return UpsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
@@ -304,8 +310,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Use NoOpLogger if no logger provided
 	if inc.Logger == nil {
-		//TODO: re-enable logging
-		//cfg.logger = &log.NoOpLogger{}
+		inc.Logger = drslog.NewNoOpLogger()
 	}
 
 	// Validate inputs
@@ -330,7 +335,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Fetch S3 metadata (size, modified date)
 	inc.Logger.Print("Fetching S3 metadata...")
-	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, cfg.Logger)
+	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, inc.Logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {

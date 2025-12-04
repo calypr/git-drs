@@ -19,6 +19,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// NAMESPACE is the UUID namespace used for generating DRS UUIDs
+var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
+
 // output of git lfs ls-files
 type LfsLsOutput struct {
 	Files []LfsFileInfo `json:"files"`
@@ -255,9 +258,9 @@ func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 }
 
 func DrsUUID(projectId string, hash string) string {
-	// FIXME: use different UUID method? Used same method as g3t
+	// create UUID based on project ID and hash
 	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
-	return uuid.NewSHA1(uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org")), []byte(hashStr)).String()
+	return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
 }
 
 // creates index record from file

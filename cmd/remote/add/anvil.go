@@ -39,12 +39,6 @@ func anvilInit(terraProject string, logger *log.Logger) error {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
 
-		// update current server in config
-		cfg, err := config.UpdateCurrentRemote(remoteName)
-		if err != nil {
-			return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
-		}
-		logger.Printf("Current server: %s\n", cfg.GetCurrentRemote().GetEndpoint())
 	}
 
 	return nil

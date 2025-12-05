@@ -19,8 +19,8 @@ var AddURLCmd = &cobra.Command{
 	Use:   "add-url <url> --sha256 <sha256>",
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return fmt.Errorf("add-url requires 1 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+		if len(args) != 2 {
+			return fmt.Errorf("add-url requires 2 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
 		}
 		return nil
 	},
@@ -34,7 +34,7 @@ var AddURLCmd = &cobra.Command{
 		}
 
 		// Parse arguments
-		s3URL := args[0]
+		s3URL := args[1]
 		sha256, _ := cmd.Flags().GetString("sha256")
 		awsAccessKey, _ := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
 		awsSecretKey, _ := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
@@ -56,7 +56,7 @@ var AddURLCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(args[0]), myLogger)
 		if err != nil {
 			return fmt.Errorf("error getting current remote client: %v", err)
 		}

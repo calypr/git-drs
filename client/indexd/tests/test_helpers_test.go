@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/calypr/data-client/client/jwt"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 )
 
@@ -27,17 +28,18 @@ const (
 // It simply sets a Bearer token header without making any external calls
 type MockAuthHandler struct{}
 
-func (m *MockAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	req.Header.Set("Authorization", "Bearer mock-test-token-"+profile)
+func (m *MockAuthHandler) AddAuthHeader(req *http.Request) error {
+	req.Header.Set("Authorization", "Bearer mock-test-token")
 	return nil
 }
 
 // testErrorAuthHandler is a test helper for testing auth errors
 type testErrorAuthHandler struct {
-	err error
+	Cred jwt.Credential
+	err  error
 }
 
-func (e *testErrorAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+func (e *testErrorAuthHandler) AddAuthHeader(req *http.Request) error {
 	return e.err
 }
 
@@ -50,11 +52,10 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
 	return &indexd_client.IndexDClient{
 		Base:        url,
-		Remote:      "test-remote",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
 		Logger:      log.Default(),
-		AuthHandler: &indexd_client.RealAuthHandler{},
+		AuthHandler: &indexd_client.RealAuthHandler{Cred: jwt.Credential{Profile: "test-remote"}},
 	}
 }
 
@@ -64,7 +65,6 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 	url, _ := url.Parse(baseURL)
 	return &indexd_client.IndexDClient{
 		Base:        url,
-		Remote:      "test-profile",
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
 		Logger:      log.Default(),

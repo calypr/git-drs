@@ -3,7 +3,6 @@ package add
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/calypr/data-client/client/jwt"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
@@ -15,7 +14,7 @@ import (
 
 var Gen3Cmd = &cobra.Command{
 	Use:  "gen3",
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 
@@ -42,108 +41,84 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName string, credFile string, fenceToken string, project string, bucket string, log *log.Logger) error {
-	// double check that one of the credentials params is provided
-	var err error
-	var cfg jwt.Credential
-	if fenceToken == "" {
-		cred := jwt.Configure{}
-		if credFile == "" {
-			cfg, err = cred.ParseConfig(remoteName)
-			if err != nil {
-				return err
-			}
-			fenceToken = cfg.AccessToken
+func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log.Logger) error {
+	if remoteName == "" {
+		return fmt.Errorf("remote name is required")
+	}
+	if project == "" || bucket == "" {
+		return fmt.Errorf("project and bucket are required for Gen3 remote")
+	}
+
+	var accessToken, apiKey, keyID, apiEndpoint string
+	var conf jwt.Configure
+	switch {
+	case fenceToken != "":
+		accessToken = fenceToken
+		var err error
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(accessToken)
+		if err != nil {
+			return fmt.Errorf("failed to parse API endpoint from provided access token: %w", err)
+		}
+
+	case credFile != "":
+		cred, err := conf.ReadCredentials(credFile, "")
+		if err != nil {
+			return fmt.Errorf("failed to read credentials file %s: %w", credFile, err)
+		}
+		accessToken = cred.AccessToken
+		apiKey = cred.APIKey
+		keyID = cred.KeyId
+
+		apiEndpoint, err = utils.ParseAPIEndpointFromToken(cred.APIKey)
+		if err != nil {
+			return fmt.Errorf("failed to parse API endpoint from API key in credentials file: %w", err)
+		}
+
+	default:
+		existing, err := conf.ParseConfig(remoteName)
+		if err == nil {
+			accessToken = existing.AccessToken
+			apiKey = existing.APIKey
+			keyID = existing.KeyId
+			apiEndpoint = existing.APIEndpoint
 		} else {
-			log.Printf("Reading credential file: %s", credFile)
-			optCredential, err := cred.ReadCredentials(credFile, "")
-			if err != nil {
-				return err
-			}
-			cfg = *optCredential
-			fenceToken = cfg.AccessToken
-		}
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(cfg.APIKey)
-		if err != nil {
-			log.Printf("Error parsing APIEndpoint: %s", err)
-			return err
+			return fmt.Errorf("must provide either --cred or --token (or have existing profile %s)", remoteName)
 		}
 	}
 
 	if apiEndpoint == "" {
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
-		if err != nil {
-			return err
-		}
+		return fmt.Errorf("could not determine Gen3 API endpoint")
 	}
 
-	if credFile == "" && fenceToken == "" {
-		return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally")
-	}
-
-	if fenceToken == "" {
-		cred := jwt.Configure{}
-		credential, err := cred.ReadCredentials(credFile, "")
-		if err != nil {
-			return err
-		}
-		fenceToken = credential.AccessToken
-	}
-	if apiEndpoint == "" {
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(fenceToken)
-		if err != nil {
-			return err
-		}
-	}
-
-	// update config file with gen3 server info
 	remoteGen3 := config.RemoteSelect{
 		Gen3: &indexd_client.Gen3Remote{
 			Endpoint:  apiEndpoint,
 			ProjectID: project,
 			Bucket:    bucket,
-			APIKey:    cfg.APIKey,
-			KeyID:     cfg.KeyId,
 		},
 	}
 
 	remote := config.Remote(remoteName)
-	_, err = config.UpdateRemote(remote, remoteGen3)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update config file with the requested parameters: %v\n", err)
+	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
+		return fmt.Errorf("failed to update remote config: %w", err)
 	}
-	log.Printf("Remote Added: %s", remoteName)
+	log.Printf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket)
 
-	// update current server in config
-	c, err := config.UpdateCurrentRemote(remote)
-	if err != nil {
-		return fmt.Errorf("Error: unable to update current server to AnVIL: %v\n", err)
-	}
-	log.Printf("Current server: %s\n", c.GetCurrentRemote().GetEndpoint())
-
-	// authenticate with gen3
-	// if no credFile is specified, don't go for the update
-	if credFile != "" {
-		cred := &jwt.Credential{
-			Profile:            remoteName,
-			APIEndpoint:        apiEndpoint,
-			AccessToken:        fenceToken,
-			UseShepherd:        "false",
-			MinShepherdVersion: "",
-			// TODO: Don't store profile specific credentials in a global variable
-			//KeyId:              client.ProfileConfig.KeyId,
-			//APIKey:             client.ProfileConfig.APIKey,
-		}
-		err = jwt.UpdateConfig(cred)
-		if err != nil {
-			errStr := fmt.Sprintf("[ERROR] unable to configure your gen3 remote: %v", err)
-			if strings.Contains(errStr, "apiendpoint") {
-				errStr += " If you are accessing an internal website, make sure you are connected to the internal network."
-			}
-			return fmt.Errorf("%s", errStr)
-		}
-
+	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
+	cred := &jwt.Credential{
+		Profile:            remoteName,
+		APIEndpoint:        apiEndpoint,
+		APIKey:             apiKey,
+		KeyId:              keyID,
+		AccessToken:        accessToken, // may be stale
+		UseShepherd:        "false",     // or preserve from existing?
+		MinShepherdVersion: "",
 	}
 
+	if err := jwt.UpdateConfig(log, cred); err != nil {
+		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
+	}
+
+	log.Printf("Gen3 profile '%s' configured and token refreshed successfully", remoteName)
 	return nil
 }

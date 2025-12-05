@@ -25,17 +25,17 @@ import (
 
 // getBucketDetails fetches bucket details from Gen3, loading config and auth.
 // This is the production version that includes all config/auth dependencies.
-func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (s3_utils.S3Bucket, error) {
+func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
 	// get all buckets
 	baseURL := inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
-	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, &RealAuthHandler{}, httpClient)
+	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.AuthHandler, httpClient)
 }
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
+func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -221,12 +221,12 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
+	records, err := indexdClient.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
-	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records[0], projectId)
 	if err != nil {
 		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}

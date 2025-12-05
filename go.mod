@@ -1,10 +1,9 @@
 module github.com/calypr/git-drs
 
-go 1.24.0
+go 1.24.2
 
 require (
-	github.com/calypr/data-client v0.0.0-20251103160310-cc0ca9939fe7
-	github.com/golang-jwt/jwt/v4 v4.5.2
+	github.com/calypr/data-client v0.0.0-20251205171713-e01d41f735e9
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.1

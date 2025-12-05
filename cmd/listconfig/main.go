@@ -10,7 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var jsonOutput bool
+var (
+	jsonOutput bool
+)
 
 // Cmd represents the list-config command
 var Cmd = &cobra.Command{

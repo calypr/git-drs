@@ -151,13 +151,6 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	// TODO: doing this automatically feels weird
-	// add to git
-	// cmd := exec.Command("git", "add", configPath)
-	// if err := cmd.Run(); err != nil {
-	//	return nil, fmt.Errorf("Error on doing git add %s: %v", configPath, err)
-	// }
-
 	return &cfg, nil
 }
 

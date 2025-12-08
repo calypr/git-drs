@@ -36,7 +36,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecordsByProject(args[1])
+		err = drsClient.DeleteRecordsByProject(args[0])
 		if err != nil {
 			return fmt.Errorf("Error deleting project %s: %v", args[0], err)
 		}

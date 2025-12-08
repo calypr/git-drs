@@ -113,3 +113,23 @@ func ConvertHashInfoToMap(hashes HashInfo) map[string]string {
 	}
 	return result
 }
+
+func ConvertChecksumsToMap(checksums []Checksum) map[string]string {
+	result := make(map[string]string, len(checksums))
+	for _, c := range checksums {
+		// Uses the Checksum's Type (e.g., "sha256") as the key
+		// and the Checksum's Checksum value as the map value.
+		result[string(c.Type)] = c.Checksum
+	}
+	return result
+}
+
+// convertChecksumsToHashInfo is the main conversion logic needed for the structs.
+// It converts the []Checksum slice to the HashInfo struct.
+func ConvertChecksumsToHashInfo(checksums []Checksum) HashInfo {
+	// 1. Convert the slice of Checksums into a map[string]string
+	checksumMap := ConvertChecksumsToMap(checksums)
+
+	// 2. Use the existing utility function to convert the map to HashInfo
+	return ConvertStringMapToHashInfo(checksumMap)
+}

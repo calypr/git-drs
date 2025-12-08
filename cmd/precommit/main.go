@@ -21,11 +21,12 @@ var Cmd = &cobra.Command{
 	Use:   "precommit",
 	Short: "pre-commit hook to create DRS objects",
 	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
-		if remote == "" {
-			remote = config.ORIGIN
+		var remote config.Remote = config.ORIGIN
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
 		}
 
 		myLogger.Print("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
@@ -36,7 +37,6 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 
-		var remote config.Remote = config.Remote(remote)
 		cli, err := cfg.GetRemoteClient(remote, myLogger)
 
 		dc, ok := cli.(*indexd_client.IndexDClient)

@@ -381,11 +381,12 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("%s not found", id)
 	}
 
-	out := drs.DRSObject{}
-	if err := json.NewDecoder(response.Body).Decode(&out); err != nil {
+	in := drs.OutputObject{}
+	if err := json.NewDecoder(response.Body).Decode(&in); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return drs.ConvertOutputObjectToDRSObject(&in), nil
+
 }
 
 func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
@@ -602,7 +603,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
 	}
 	// log how many records were found
-	cl.Logger.Printf("Found %d indexd record(s) matching the hash", len(records.Records))
+	cl.Logger.Printf("Found %d indexd record(s) matching the hash %s", len(records.Records), records)
 
 	out := make([]drs.DRSObject, len(records.Records))
 

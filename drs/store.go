@@ -54,7 +54,7 @@ func GetPendingObjects(logger *log.Logger) ([]*PendingObject, error) {
 }
 
 func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
-	var objects map[string]*DRSObject
+	objects := map[string]*DRSObject{}
 	objectsDir := projectdir.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		logger.Printf("DRS objects directory not found: %s", objectsDir)
@@ -69,6 +69,15 @@ func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
 		if info.IsDir() {
 			return nil
 		}
+		rel, err := filepath.Rel(objectsDir, path)
+		if err != nil {
+			return err
+		}
+		parts := strings.SplitN(rel, string(os.PathSeparator), 3)
+		if len(parts) != 3 {
+			logger.Printf("Skipping malformed path: %s", path)
+			return nil
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			logger.Printf("Error reading file %s: %v", path, err)
@@ -81,7 +90,10 @@ func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
 		}
 
 		// This could be problematic
-		objects[drsObject.Checksums.SHA256] = &drsObject
+		if drsObject.Checksums.SHA256 != "" {
+			objects[drsObject.Checksums.SHA256] = &drsObject
+		}
+
 		logger.Printf("Successfully unmarshaled DRSObject from %s:\n%+v", path, drsObject)
 		return nil
 	})

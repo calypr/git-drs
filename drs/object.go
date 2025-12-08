@@ -34,6 +34,22 @@ type DRSObjectResult struct {
 	Error  error
 }
 
+type OutputObject struct {
+	Id            string          `json:"id"`
+	Name          string          `json:"name"`
+	SelfURI       string          `json:"self_uri,omitempty"`
+	Size          int64           `json:"size"`
+	CreatedTime   string          `json:"created_time,omitempty"`
+	UpdatedTime   string          `json:"updated_time,omitempty"`
+	Version       string          `json:"version,omitempty"`
+	MimeType      string          `json:"mime_type,omitempty"`
+	Checksums     []hash.Checksum `json:"checksums"`
+	AccessMethods []AccessMethod  `json:"access_methods"`
+	Contents      []Contents      `json:"contents,omitempty"`
+	Description   string          `json:"description,omitempty"`
+	Aliases       []string        `json:"aliases,omitempty"`
+}
+
 type DRSObject struct {
 	Id            string         `json:"id"`
 	Name          string         `json:"name"`
@@ -48,4 +64,33 @@ type DRSObject struct {
 	Contents      []Contents     `json:"contents,omitempty"`
 	Description   string         `json:"description,omitempty"`
 	Aliases       []string       `json:"aliases,omitempty"`
+}
+
+// ConvertOutputObjectToDRSObject converts the OutputObject struct to a DRSObject struct.
+func ConvertOutputObjectToDRSObject(in *OutputObject) *DRSObject {
+	if in == nil {
+		return nil
+	}
+
+	// 1. Convert the slice of Checksum structs to the HashInfo struct.
+	hashInfo := hash.ConvertChecksumsToHashInfo(in.Checksums)
+
+	// 2. Map all fields directly.
+	return &DRSObject{
+		Id:          in.Id,
+		Name:        in.Name,
+		SelfURI:     in.SelfURI,
+		Size:        in.Size,
+		CreatedTime: in.CreatedTime,
+		UpdatedTime: in.UpdatedTime,
+		Version:     in.Version,
+		MimeType:    in.MimeType,
+		// The key conversion:
+		Checksums: hashInfo,
+		// Direct mapping for other fields:
+		AccessMethods: in.AccessMethods,
+		Contents:      in.Contents,
+		Description:   in.Description,
+		Aliases:       in.Aliases,
+	}
 }

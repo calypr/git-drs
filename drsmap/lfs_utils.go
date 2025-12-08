@@ -5,18 +5,20 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 )
 
 func CreateLfsPointer(drsObj *drs.DRSObject, dst string) error {
-	if len(drsObj.Checksums) == 0 {
+	sumMap := hash.ConvertHashInfoToMap(drsObj.Checksums)
+	if len(sumMap) == 0 {
 		return fmt.Errorf("no checksums found for DRS object")
 	}
 
 	// find sha256 checksum
 	var shaSum string
-	for _, cs := range drsObj.Checksums {
-		if cs.Type == drs.ChecksumTypeSHA256 {
-			shaSum = cs.Checksum
+	for csType, cs := range sumMap {
+		if csType == hash.ChecksumTypeSHA256.String() {
+			shaSum = cs
 			break
 		}
 	}

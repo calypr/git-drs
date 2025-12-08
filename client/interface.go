@@ -2,6 +2,7 @@ package client
 
 import (
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
@@ -29,7 +30,11 @@ type DRSClient interface {
 
 	// given a hash, get the objects describing it
 	// no corresponding DRS endpoint exists, so this is custom code
-	GetObjectsByHash(hash ...*drs.Checksum) ([][]drs.DRSObject, error)
+	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
+
+	// given a hash or list of hashes return a map of sha256->drs objects.
+	// In instances where the drs object does not exist, sha256->nil is returned
+	GetSha256ObjMap(args ...*hash.Checksum) (map[string]*drs.DRSObject, error)
 
 	///////////////////////
 	// DRS WRITE METHODS //

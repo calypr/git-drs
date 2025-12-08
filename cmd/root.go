@@ -12,6 +12,7 @@ import (
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/listconfig"
 	"github.com/calypr/git-drs/cmd/precommit"
+	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/register"
 	"github.com/calypr/git-drs/cmd/remote"
@@ -50,6 +51,8 @@ func init() {
 	RootCmd.AddCommand(addurl.AddURLCmd)
 	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(fetch.Cmd)
+	RootCmd.AddCommand(push.Cmd)
+
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

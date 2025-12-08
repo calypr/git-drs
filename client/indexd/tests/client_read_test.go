@@ -7,6 +7,7 @@ import (
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/stretchr/testify/require"
 )
@@ -78,7 +79,7 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Act: Call the actual client method
-	results, err := client.GetObjectsByHash(&drs.Checksum{Type: "sha256", Checksum: sha256})
+	results, err := client.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: sha256})
 
 	// Assert: Verify client method works end-to-end
 	require.NoError(t, err)
@@ -86,16 +87,15 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 
 	// Verify correct record was returned
 	record := results[0]
-	require.Equal(t, testRecord.Did, record[0].Id)
-	require.Equal(t, testRecord.Size, record[0].Size)
-	require.Equal(t, sha256, record[0].Checksums[0].Checksum)
-	require.Equal(t, drs.ChecksumTypeSHA256, record[0].Checksums[0].Type)
+	require.Equal(t, testRecord.Did, record.Id)
+	require.Equal(t, testRecord.Size, record.Size)
+	require.Equal(t, sha256, record.Checksums.SHA256)
 
-	require.Equal(t, testRecord.URLs[0], record[0].AccessMethods[0].AccessURL.URL)
-	require.Equal(t, testRecord.Authz[0], record[0].AccessMethods[0].Authorizations.Value)
+	require.Equal(t, testRecord.URLs[0], record.AccessMethods[0].AccessURL.URL)
+	require.Equal(t, testRecord.Authz[0], record.AccessMethods[0].Authorizations.Value)
 
 	// Test: Query with non-existent hash
-	emptyResults, err := client.GetObjectsByHash(&drs.Checksum{Type: "sha256", Checksum: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
+	emptyResults, err := client.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
 	require.NoError(t, err)
 	require.Len(t, emptyResults, 0)
 }

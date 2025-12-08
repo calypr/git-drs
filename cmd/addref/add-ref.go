@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
@@ -44,9 +44,9 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		objSha := ""
-		for _, i := range obj.Checksums {
-			if i.Type == drs.ChecksumTypeSHA256 {
-				objSha = i.Checksum
+		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				objSha = sum
 			}
 		}
 		if objSha == "" {

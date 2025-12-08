@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +29,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// check hash type is valid Checksum type and sha256
-		if hashType != drs.ChecksumTypeSHA256.String() {
+		if hashType != hash.ChecksumTypeSHA256.String() {
 			return fmt.Errorf("Only sha256 supported, you requested to remove: %s", hashType)
 		}
 

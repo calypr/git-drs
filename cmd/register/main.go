@@ -6,6 +6,7 @@ import (
 	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
@@ -67,7 +68,7 @@ var Cmd = &cobra.Command{
 			}
 
 			// Check if records with this hash already exist in indexd
-			records, err := cli.GetObjectsByHash(&drs.Checksum{Type: "sha256", Checksum: obj.OID})
+			records, err := cli.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: obj.OID})
 			if err != nil {
 				logger.Printf("Error querying indexd for %s: %v", obj.Path, err)
 				errorCount++
@@ -76,7 +77,7 @@ var Cmd = &cobra.Command{
 
 			// Check if a record with this exact DID already exists
 			alreadyExists := false
-			for _, record := range records[0] {
+			for _, record := range records {
 				if record.Id == indexdObj.Id {
 					alreadyExists = true
 					break

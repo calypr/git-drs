@@ -53,8 +53,8 @@ func GetPendingObjects(logger *log.Logger) ([]*PendingObject, error) {
 	return objects, nil
 }
 
-func GetDrsLfsObjects(logger *log.Logger) ([]*DRSObject, error) {
-	var objects []*DRSObject
+func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
+	var objects map[string]*DRSObject
 	objectsDir := projectdir.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		logger.Printf("DRS objects directory not found: %s", objectsDir)
@@ -79,7 +79,9 @@ func GetDrsLfsObjects(logger *log.Logger) ([]*DRSObject, error) {
 			logger.Printf("Error unmarshalling JSON from %s: %v", path, err)
 			return nil
 		}
-		objects = append(objects, &drsObject)
+
+		// This could be problematic
+		objects[drsObject.Checksums.SHA256] = &drsObject
 		logger.Printf("Successfully unmarshaled DRSObject from %s:\n%+v", path, drsObject)
 		return nil
 	})

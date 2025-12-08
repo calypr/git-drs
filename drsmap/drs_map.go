@@ -13,6 +13,7 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -44,13 +45,14 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	}
 	writtenObjs := 0
 	for drsObj := range objChan {
-		if len(drsObj.Object.Checksums) == 0 {
+		sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
+		if len(sumMap) == 0 {
 			return fmt.Errorf("Error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
 		}
 		var drsObjPath, Oid string = "", ""
-		for _, sum := range drsObj.Object.Checksums {
-			if sum.Type == drs.ChecksumTypeSHA256 {
-				Oid = drsObj.Object.Checksums[0].Checksum
+		for sumType, sum := range sumMap {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				Oid = sum
 				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, Oid)
 				if err != nil {
 					return fmt.Errorf("error getting object path for oid %s: %v", Oid, err)
@@ -106,7 +108,7 @@ func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Log
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
 		// check hash to see if record already exists in indexd (source of truth)
-		records, err := drsClient.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumType(file.OidType), Checksum: file.Oid})
+		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumType(file.OidType), Checksum: file.Oid})
 		if err != nil {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
@@ -118,7 +120,7 @@ func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Log
 		}
 
 		if len(records) > 0 {
-			matchingRecord, err := FindMatchingRecord(records[0], projectId)
+			matchingRecord, err := FindMatchingRecord(records, projectId)
 			if err != nil {
 				return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 			}

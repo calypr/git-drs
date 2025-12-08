@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
@@ -221,12 +222,12 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectsByHash(&drs.Checksum{Type: drs.ChecksumTypeSHA256, Checksum: sha256})
+	records, err := indexdClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
-	matchingRecord, err := drsmap.FindMatchingRecord(records[0], projectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
 	if err != nil {
 		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
 	}
@@ -270,7 +271,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	indexdObject := &IndexdRecord{
 		Did:      uuid,
 		FileName: relPath,
-		Hashes:   HashInfo{SHA256: sha256},
+		Hashes:   hash.HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url},
 		Authz:    []string{authzStr},

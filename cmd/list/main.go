@@ -8,6 +8,7 @@ import (
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
@@ -19,9 +20,9 @@ var (
 	remote      string
 )
 
-var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
+var checksumPref = []hash.ChecksumType{hash.ChecksumTypeSHA256, hash.ChecksumTypeMD5, hash.ChecksumTypeETag}
 
-func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
+func getChecksumPos(q hash.ChecksumType, a []hash.ChecksumType) int {
 	for i, s := range a {
 		if q == s {
 			return i
@@ -34,11 +35,11 @@ func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
 func getCheckSumStr(obj drs.DRSObject) string {
 	curPos := len(checksumPref) + 1
 	curVal := ""
-	for _, e := range obj.Checksums {
-		c := getChecksumPos(e.Type, checksumPref)
+	for checksumType, checksum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+		c := getChecksumPos(hash.ChecksumType(checksumType), checksumPref)
 		if c != -1 && c < curPos {
 			curPos = c
-			curVal = e.Type.String() + ":" + e.Checksum
+			curVal = checksumType + ":" + checksum
 		}
 	}
 	return curVal

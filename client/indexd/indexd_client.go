@@ -696,8 +696,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 			pageNum++
 		}
-
-		cl.Logger.Printf("total pages retrieved: %d", pageNum)
+		//cl.Logger.Printf("total pages retrieved: %d", pageNum)
 	}()
 	return out, nil
 }

@@ -34,6 +34,43 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
+func PushLocalDrsObjects() {
+
+}
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
+	if err != nil {
+		return err
+	}
+	writtenObjs := 0
+	for drsObj := range objChan {
+		if len(drsObj.Object.Checksums) == 0 {
+			return fmt.Errorf("Error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
+		}
+		var drsObjPath, Oid string = "", ""
+		for _, sum := range drsObj.Object.Checksums {
+			if sum.Type == drs.ChecksumTypeSHA256 {
+				Oid = drsObj.Object.Checksums[0].Checksum
+				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, Oid)
+				if err != nil {
+					return fmt.Errorf("error getting object path for oid %s: %v", Oid, err)
+				}
+			}
+		}
+		// Only write a record if there exists a proper checksum to use. Checksums besides sha256 are not used
+		if drsObjPath != "" && Oid != "" {
+			writtenObjs++
+			// write drs objects to DRS_OBJS_PATH
+			err = writeDrsObj(drsObj.Object, Oid, drsObjPath)
+			if err != nil {
+				return fmt.Errorf("error writing DRS object for oid %s: %v", Oid, err)
+			}
+		}
+	}
+	logger.Printf("Wrote %d new objs to object store", writtenObjs)
+	return err
+}
+
 func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Logger) error {
 	logger.Print("Update to DRS objects started")
 

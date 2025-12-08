@@ -150,7 +150,6 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
-
 	return &cfg, nil
 }
 

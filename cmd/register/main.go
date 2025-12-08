@@ -2,17 +2,12 @@ package register
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-	"strings"
 
 	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
 
@@ -43,7 +38,7 @@ var Cmd = &cobra.Command{
 		icli, _ := cli.(*indexdCl.IndexDClient)
 
 		// Get all pending objects
-		pendingObjects, err := getPendingObjects(logger)
+		pendingObjects, err := drs.GetPendingObjects(logger)
 		if err != nil {
 			return fmt.Errorf("error reading pending objects: %v", err)
 		}
@@ -116,61 +111,6 @@ var Cmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-type PendingObject struct {
-	OID  string
-	Path string
-}
-
-// getPendingObjects walks .drs/lfs/objects/ to find all pending records
-func getPendingObjects(logger *log.Logger) ([]PendingObject, error) {
-	var objects []PendingObject
-	objectsDir := projectdir.DRS_OBJS_PATH
-
-	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
-		return objects, nil // No pending objects
-	}
-
-	err := filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if info.IsDir() {
-			return nil
-		}
-
-		// Parse the path structure: .drs/lfs/objects/XX/XX/FULL_SHA/filepath
-		rel, err := filepath.Rel(objectsDir, path)
-		if err != nil {
-			return err
-		}
-
-		parts := strings.SplitN(rel, string(os.PathSeparator), 3)
-
-		if len(parts) != 3 {
-			logger.Printf("Skipping malformed path: %s", path)
-			return nil
-		}
-
-		// Reconstruct OID from parts: XX + XX + rest_of_sha
-		// parts[0] = first 2 chars, parts[1] = next 2 chars, parts[2] = full OID
-		oid := parts[2] // GetObjectPath stores full OID in the 3rd directory level
-
-		objects = append(objects, PendingObject{
-			OID: oid,
-		})
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Printf("Found %d pending objects in %s", len(objects), objectsDir)
-	return objects, nil
 }
 
 func init() {

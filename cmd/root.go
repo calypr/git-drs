@@ -7,6 +7,7 @@ import (
 	"github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
 	"github.com/calypr/git-drs/cmd/download"
+	"github.com/calypr/git-drs/cmd/fetch"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/listconfig"
@@ -48,6 +49,7 @@ func init() {
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(addurl.AddURLCmd)
 	RootCmd.AddCommand(remote.Cmd)
+	RootCmd.AddCommand(fetch.Cmd)
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

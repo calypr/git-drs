@@ -139,7 +139,7 @@ export PATH="$ABS_PATH:$PATH"
 echo "Using git-drs from: $(which git-drs)" >&2
 
 # echo commands as they are executed
-# set -x
+set -x
 
 # ensure a gen3 project exists
 # TODO - update to calypr_admin
@@ -150,7 +150,7 @@ g3t --profile "$PROFILE" projects ls | grep "/programs/$PROGRAM/projects/$PROJEC
 
 # Initialize a git repo for the generated fixtures
 cd fixtures
-
+echo "Running in `pwd`"  >&2
 # to reset git state
 if [ "$CLEAN" = "true" ]; then
   echo "Cleaning existing git state" >&2
@@ -176,13 +176,20 @@ else
   git config lfs.customtransfer.gen3.concurrent true
 
   # Initialize drs configuration for this repo
-  git drs init --cred "$CREDENTIALS_PATH" --profile "$PROFILE" --bucket calypr --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs init
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket calypr --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+
   # verify fixtures/.drs/config.yaml exists
   if [ ! -f ".drs/config.yaml" ]; then
     echo "error: .drs/config.yaml not found after git drs init" >&2
     exit 1
   fi
+
+  echo "Finished initializing git repository with git-drs in `pwd`" >&2
+  git add .drs
   git commit -m "Add .drs" .drs
+  git add .gitignore
+  git commit -m "Add .gitignore" .gitignore
 
   # Create an empty .gitattributes file
   # if .gitattributes does not already exist initialize it
@@ -193,12 +200,18 @@ else
     touch .gitattributes
     git add .gitattributes
     git commit -m "Add .gitattributes" .gitattributes
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main 2>&1 | tee lfs-console.log
   fi
+  echo "Finished init.  Force pushing to remote." >&2
+  git remote -v
+
+  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main 2>&1 | tee lfs-console.log
+
+  echo "Finished init.  Finished pushing to remote." >&2
+  exit 0
+
 fi
 
 echo "Starting to add subfolders to git LFS tracking" >&2
-
 # For every subfolder in fixtures/, add, commit, and push to remote
 for dir in */ ; do
   if [ -d "$dir" ]; then
@@ -229,6 +242,6 @@ for dir in */ ; do
     git lfs push --dry-run origin main | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
-    # break  # uncomment for one directory at a time testing
+    break  # uncomment for one directory at a time testing
   fi
 done

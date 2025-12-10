@@ -55,12 +55,32 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error
 		}
 	}
 
-	drsMap, err := drsClient.GetSha256ObjMap(sums...)
-	if err != nil {
-		return err
+	outobjs := map[string]*drs.DRSObject{}
+	for _, sum := range sums {
+		records, err := drsClient.GetObjectByHash(sum)
+		if err != nil {
+			return err
+		}
+
+		if len(records) == 0 {
+			outobjs[sum.Checksum] = nil
+			continue
+		}
+		found := false
+		// Warning: The loop overwrites map entries if multiple records have the same SHA256 hash.
+		// If there are multiple records with SHA256 checksums, only the last one will be stored in the map
+		for i, rec := range records {
+			if rec.Checksums.SHA256 != "" {
+				found = true
+				outobjs[rec.Checksums.SHA256] = &records[i]
+			}
+		}
+		if !found {
+			outobjs[sum.Checksum] = nil
+		}
 	}
 
-	for drsObjKey, _ := range drsMap {
+	for drsObjKey := range outobjs {
 		val, ok := drsLfsObjs[drsObjKey]
 		if !ok {
 			myLogger.Printf("Drs record not found in sha256 map %s", drsObjKey)
@@ -117,14 +137,9 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	return nil
 }
 
-func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Logger) error {
-	logger.Print("Update to DRS objects started")
+func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logger *log.Logger) error {
 
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit(remote)
-	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
-	}
+	logger.Print("Update to DRS objects started")
 
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
@@ -193,7 +208,7 @@ func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Log
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		drsId := DrsUUID(projectId, file.Oid)
 		logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
@@ -239,9 +254,9 @@ func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	return nil
 }
 
-func DrsUUID(repoName string, hash string) string {
+func DrsUUID(projectId string, hash string) string {
 	// FIXME: use different UUID method? Used same method as g3t
-	hashStr := fmt.Sprintf("%s:%s", repoName, hash)
+	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
 }
 

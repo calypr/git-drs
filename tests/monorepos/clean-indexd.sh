@@ -52,6 +52,7 @@ done
 POD_NAME="${1:-}"
 POSTGRES_PASSWORD="${2:-}"
 RESOURCE_NAME="${3:-/programs/cbds/projects/monorepos}"
+DATABASE_NAME="indexd_local"
 
 if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" ]]; then
     echo "Error: missing required parameters."
@@ -61,37 +62,41 @@ fi
 
 echo "🔧 Cleaning Indexd records for resource: $RESOURCE_NAME"
 
-# SQL script with dynamic resource name
-read -r -d '' SQL << EOF
-
--- Connect to the indexd_local database
-
-\c indexd_local ;
-
--- Delete all records associated with the resource '${RESOURCE_NAME}'
+# SQL script with dynamic resource name (variables will be expanded)
+SQL=$(cat <<EOF
+-- Delete all records associated with the resource $RESOURCE_NAME
 
 -- Create a temporary table to hold DIDs for the resource
-select did into TEMP TABLE resource_did from index_record_authz where resource = '${RESOURCE_NAME}';
+SELECT did INTO TEMP TABLE resource_did FROM index_record_authz WHERE resource = '$RESOURCE_NAME';
+
+SELECT format('🗂 Found %s records to delete for resource: %s', COUNT(*), '$RESOURCE_NAME') FROM resource_did;
 
 -- Delete related records from metadata, hash, and url tables
-delete from index_record_metadata where did in (select did from resource_did);
-delete from index_record_hash     where did in (select did from resource_did);
-delete from index_record_url      where did in (select did from resource_did);
+DELETE FROM index_record_metadata WHERE did IN (SELECT did FROM resource_did);
+DELETE FROM index_record_hash     WHERE did IN (SELECT did FROM resource_did);
+DELETE FROM index_record_url      WHERE did IN (SELECT did FROM resource_did);
 
 -- Delete authz records for the resource
-delete from index_record_authz where resource = '${RESOURCE_NAME}';
+DELETE FROM index_record_authz WHERE resource = '$RESOURCE_NAME';
 
 -- Finally, delete the main index records
-delete from index_record where did in (select did from resource_did);
+DELETE FROM index_record WHERE did IN (SELECT did FROM resource_did);
 
 -- Drop the temporary table
-drop table resource_did;
-
+DROP TABLE IF EXISTS resource_did;
 EOF
+)
+
+echo "📝 Generated SQL for cleanup:"
+
+echo "🚀 Executing cleanup SQL in pod: $POD_NAME"
+
 
 # Execute SQL inside the pod
-kubectl exec -it "$POD_NAME" -- \
+# Bash - replace the psql invocation in `tests/monorepos/clean-indexd.sh`
+# Pipe the SQL into the pod and run psql reading from stdin
+printf '%s\n' "$SQL" | kubectl exec -i "$POD_NAME" -- \
     env PGPASSWORD="$POSTGRES_PASSWORD" \
-    psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "$SQL"
+    psql -U postgres -d "$DATABASE_NAME" -v ON_ERROR_STOP=1 -f -
 
 echo "✔ Cleanup complete for resource: $RESOURCE_NAME"

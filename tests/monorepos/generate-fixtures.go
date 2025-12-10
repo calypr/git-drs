@@ -1,4 +1,4 @@
-// Creates directories from stdin lines, each with 1–6 `sub-directory-N` subfolders, each containing 100–1000 files of 1 KiB filled with random printable characters. Save as `generate-fixtures.go`.
+// Creates directories from stdin lines, each with 1–6 `sub-directory-N` subfolders, each containing 100–1000 files of 1 KiB whose contents are the relative file path. Save as `generate-fixtures.go`.
 
 package main
 

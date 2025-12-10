@@ -39,6 +39,7 @@ If the value contains a hyphen, the script splits the first hyphen-separated tok
 
 * --git-remote / GIT_REMOTE (required)
 Remote repository URL for git remote add origin. No default; the script exits if not provided.
+Note: We've been using https://github.com/calypr/monorepo.git
 
 ## Behavior notes
 

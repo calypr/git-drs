@@ -32,8 +32,8 @@ type DRSClient interface {
 	// no corresponding DRS endpoint exists, so this is custom code
 	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
 
-	// given a hash or list of hashes return a map of sha256->drs objects.
-	// In instances where the drs object does not exist, sha256->nil is returned
+	// Given a hash or list of hashes, return a map of sha256 -> *drs.DRSObject (pointers to DRSObject).
+	// In instances where the DRS object does not exist, the map will contain sha256 -> nil.
 	GetSha256ObjMap(args ...*hash.Checksum) (map[string]*drs.DRSObject, error)
 
 	///////////////////////

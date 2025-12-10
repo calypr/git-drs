@@ -11,7 +11,6 @@ import (
 var remote string
 
 // Cmd line declaration
-// Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:    "delete-project <project_id>",
 	Short:  "Delete all indexd records for a given project",

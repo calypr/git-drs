@@ -36,7 +36,10 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
-		icli, _ := cli.(*indexdCl.IndexDClient)
+		icli, ok := cli.(*indexdCl.IndexDClient)
+		if !ok {
+			return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T)", cli)
+		}
 
 		// Get all pending objects
 		pendingObjects, err := drs.GetPendingObjects(logger)

@@ -63,6 +63,8 @@ var Cmd = &cobra.Command{
 				remoteName = r
 				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
 			} else {
+				// If no remote name specified used origin
+				remoteName = config.ORIGIN
 				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
 			}
 

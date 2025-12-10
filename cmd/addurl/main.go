@@ -16,7 +16,7 @@ import (
 
 // AddURLCmd represents the add-url command
 var AddURLCmd = &cobra.Command{
-	Use:   "add-url <url> --sha256 <sha256>",
+	Use:   "add-url <url> <sha256>",
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
@@ -34,8 +34,8 @@ var AddURLCmd = &cobra.Command{
 		}
 
 		// Parse arguments
-		s3URL := args[1]
-		sha256, _ := cmd.Flags().GetString("sha256")
+		s3URL := args[0]
+		sha256 := args[1]
 		awsAccessKey, _ := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
 		awsSecretKey, _ := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
 		awsRegion, _ := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
@@ -81,12 +81,10 @@ var AddURLCmd = &cobra.Command{
 }
 
 func init() {
-	AddURLCmd.Flags().String("sha256", "", "[required] SHA256 hash of the file")
 	AddURLCmd.Flags().String(s3_utils.AWS_KEY_FLAG_NAME, os.Getenv(s3_utils.AWS_KEY_ENV_VAR), "AWS access key")
 	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
 	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
 	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
-	AddURLCmd.MarkFlagRequired("sha256")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

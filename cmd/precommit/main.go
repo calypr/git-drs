@@ -11,10 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	remote string
-)
-
 // Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -41,7 +37,7 @@ var Cmd = &cobra.Command{
 
 		dc, ok := cli.(*indexd_client.IndexDClient)
 		if !ok {
-			return fmt.Errorf("cli is not IndexdClient: %s", cli)
+			return fmt.Errorf("cli is not IndexdClient: %T", cli)
 		}
 		myLogger.Printf("Current server: %s", dc.ProjectId)
 
@@ -56,8 +52,4 @@ var Cmd = &cobra.Command{
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")
 		return nil
 	},
-}
-
-func init() {
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

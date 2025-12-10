@@ -122,7 +122,7 @@ var ListProjectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListObjectsByProject(args[1])
+		objChan, err := client.ListObjectsByProject(args[0])
 		if err != nil {
 			return err
 		}

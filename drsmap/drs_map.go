@@ -35,9 +35,53 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects() {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
+	// Gather all objects in .drs/lfs/objects store
+	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
+	if err != nil {
+		return err
+	}
 
+	// Make this a map if it does not exist when hitting the server
+	sums := make([]*hash.Checksum, 0)
+	for _, obj := range drsLfsObjs {
+		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				sums = append(sums, &hash.Checksum{
+					Checksum: sum,
+					Type:     hash.ChecksumTypeSHA256,
+				})
+			}
+		}
+	}
+
+	drsMap, err := drsClient.GetSha256ObjMap(sums...)
+	if err != nil {
+		return err
+	}
+
+	for drsObjKey, _ := range drsMap {
+		val, ok := drsLfsObjs[drsObjKey]
+		if !ok {
+			myLogger.Printf("Drs record not found in sha256 map %s", drsObjKey)
+		}
+		if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
+			myLogger.Printf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name)
+			_, err = drsClient.RegisterRecord(val)
+			if err != nil {
+				return err
+			}
+
+		} else {
+			_, err = drsClient.RegisterFile(drsObjKey)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
+
 func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
 	if err != nil {
@@ -49,28 +93,28 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 		if len(sumMap) == 0 {
 			return fmt.Errorf("Error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
 		}
-		var drsObjPath, Oid string = "", ""
+		var drsObjPath, oid string = "", ""
 		for sumType, sum := range sumMap {
 			if sumType == hash.ChecksumTypeSHA256.String() {
-				Oid = sum
-				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, Oid)
+				oid = sum
+				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
 				if err != nil {
-					return fmt.Errorf("error getting object path for oid %s: %v", Oid, err)
+					return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 				}
 			}
 		}
 		// Only write a record if there exists a proper checksum to use. Checksums besides sha256 are not used
-		if drsObjPath != "" && Oid != "" {
+		if drsObjPath != "" && oid != "" {
 			writtenObjs++
 			// write drs objects to DRS_OBJS_PATH
-			err = writeDrsObj(drsObj.Object, Oid, drsObjPath)
+			err = writeDrsObj(drsObj.Object, oid, drsObjPath)
 			if err != nil {
-				return fmt.Errorf("error writing DRS object for oid %s: %v", Oid, err)
+				return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
 			}
 		}
 	}
 	logger.Printf("Wrote %d new objs to object store", writtenObjs)
-	return err
+	return nil
 }
 
 func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Logger) error {

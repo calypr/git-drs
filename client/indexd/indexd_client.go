@@ -643,7 +643,6 @@ func (cl *IndexDClient) GetSha256ObjMap(args ...*hash.Checksum) (map[string]*drs
 		if err != nil {
 			return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", sum.Type, sum.Checksum, err)
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
@@ -656,6 +655,12 @@ func (cl *IndexDClient) GetSha256ObjMap(args ...*hash.Checksum) (map[string]*drs
 		if err != nil {
 			return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
 		}
+
+		err = resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+
 		// log how many records were found
 		cl.Logger.Printf("Found %d indexd record(s) matching the hash", len(records.Records))
 
@@ -666,6 +671,8 @@ func (cl *IndexDClient) GetSha256ObjMap(args ...*hash.Checksum) (map[string]*drs
 		}
 
 		found := false
+		// Warning: The loop overwrites map entries if multiple records have the same SHA256 hash.
+		// If there are multiple records with SHA256 checksums, only the last one will be stored in the map
 		for i, rec := range records.Records {
 			if rec.Hashes.SHA256 != "" {
 				found = true

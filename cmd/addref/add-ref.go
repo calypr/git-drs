@@ -22,8 +22,8 @@ var Cmd = &cobra.Command{
 		if remote == "" {
 			remote = config.ORIGIN
 		}
-		drsUri := args[1]
-		dstPath := args[2]
+		drsUri := args[0]
+		dstPath := args[1]
 
 		logger := drslog.GetLogger()
 

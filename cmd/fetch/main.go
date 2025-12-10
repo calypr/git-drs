@@ -10,7 +10,6 @@ import (
 )
 
 // Cmd line declaration
-// Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "fetch [optional_remote]",
 	Short: "fetch drs objects from remote",

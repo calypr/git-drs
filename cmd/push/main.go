@@ -1,12 +1,9 @@
 package push
 
 import (
-	"os"
-
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 )
 
@@ -33,43 +30,11 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Gather all objects in .drs/lfs/objects store
-		drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
+		err = drsmap.PushLocalDrsObjects(drsClient, myLogger)
 		if err != nil {
 			return err
 		}
 
-		// Make this a map if it does not exist when hitting the server
-		sums := make([]*hash.Checksum, 0)
-		for _, obj := range drsLfsObjs {
-			for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
-				if sumType == hash.ChecksumTypeSHA256.String() {
-					sums = append(sums, &hash.Checksum{
-						Checksum: sum,
-						Type:     hash.ChecksumTypeSHA256,
-					})
-				}
-			}
-		}
-
-		drsMap, err := drsClient.GetSha256ObjMap(sums...)
-		if err != nil {
-			return err
-		}
-
-		for drsObjKey, _ := range drsMap {
-			val, ok := drsLfsObjs[drsObjKey]
-			if !ok {
-				myLogger.Printf("Drs record not found in sha256 map %s", drsObjKey)
-			}
-			if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
-				myLogger.Printf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name)
-				drsClient.RegisterRecord(val)
-
-			} else {
-				drsClient.RegisterFile(drsObjKey)
-			}
-		}
 		return nil
 	},
 }

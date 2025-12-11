@@ -5,6 +5,7 @@ import (
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,11 +33,8 @@ func TestIndexdClient_RegisterRecord(t *testing.T) {
 		Id:   "uuid-drs-register-test",
 		Name: "test-file.bam",
 		Size: 3000,
-		Checksums: []drs.Checksum{
-			{
-				Type:     drs.ChecksumTypeSHA256,
-				Checksum: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-			},
+		Checksums: hash.HashInfo{
+			SHA256: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
 		},
 		AccessMethods: []drs.AccessMethod{
 			{
@@ -114,7 +112,7 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 		Size:     5000,
 		URLs:     []string{"s3://bucket/new-file.bam"},
 		Authz:    []string{"/workspace/test"},
-		Hashes: indexd_client.HashInfo{
+		Hashes: hash.HashInfo{
 			SHA256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		},
 		Metadata: map[string]string{
@@ -150,8 +148,7 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 	require.Equal(t, newRecord.FileName, drsObj.Name, "DRS object name should match FileName")
 	require.Equal(t, newRecord.Size, drsObj.Size, "DRS object size should match")
 	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
-	require.Equal(t, "sha256", string(drsObj.Checksums[0].Type), "Checksum type should be sha256")
-	require.Equal(t, newRecord.Hashes.SHA256, drsObj.Checksums[0].Checksum)
+	require.Equal(t, newRecord.Hashes.SHA256, drsObj.Checksums.SHA256)
 	require.Len(t, drsObj.AccessMethods, 1, "Should have one access method")
 	require.Equal(t, newRecord.URLs[0], drsObj.AccessMethods[0].AccessURL.URL)
 }
@@ -210,8 +207,7 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	require.Equal(t, originalRecord.FileName, drsObj.Name, "DRS object name should match FileName")
 	require.Equal(t, originalRecord.Size, drsObj.Size, "DRS object size should match")
 	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
-	require.Equal(t, "sha256", string(drsObj.Checksums[0].Type), "Checksum type should be sha256")
-	require.Equal(t, originalRecord.Hashes["sha256"], drsObj.Checksums[0].Checksum)
+	require.Equal(t, originalRecord.Hashes["sha256"], drsObj.Checksums.SHA256)
 	require.Len(t, drsObj.AccessMethods, 2, "Should have two access methods (URLs)")
 	urls := []string{drsObj.AccessMethods[0].AccessURL.URL, drsObj.AccessMethods[1].AccessURL.URL}
 	require.Contains(t, urls, originalRecord.URLs[0])

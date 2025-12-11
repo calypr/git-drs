@@ -4,24 +4,31 @@ import (
 	"encoding/json"
 
 	"github.com/calypr/git-drs/config"
+	conf "github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
+
+var remote string
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "query <drs_id>",
 	Short: "Query DRS server by DRS ID",
 	Long:  "Query DRS server by DRS ID",
-	Args:  cobra.MinimumNArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if remote == "" {
+			remote = config.ORIGIN
+		}
+
 		logger := drslog.GetLogger()
 
-		config, err := config.LoadConfig()
+		config, err := conf.LoadConfig()
 		if err != nil {
 			return err
 		}
-		client, err := config.GetCurrentRemoteClient(logger)
+		client, err := config.GetRemoteClient(conf.Remote(remote), logger)
 		if err != nil {
 			return err
 		}
@@ -37,4 +44,8 @@ var Cmd = &cobra.Command{
 		logger.Printf("%s\n", string(out))
 		return nil
 	},
+}
+
+func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

@@ -6,18 +6,22 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 )
 
+var remote string
 var Cmd = &cobra.Command{
 	Use:   "add-ref <drs_uri> <dst path>",
 	Short: "Add a reference to an existing DRS object via URI",
 	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Requires that the sha256 of the file is already in the cache",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 		drsUri := args[0]
 		dstPath := args[1]
 
@@ -30,7 +34,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		client, err := cfg.GetCurrentRemoteClient(logger)
+		client, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			return err
 		}
@@ -40,9 +44,9 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		objSha := ""
-		for _, i := range obj.Checksums {
-			if i.Type == drs.ChecksumTypeSHA256 {
-				objSha = i.Checksum
+		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				objSha = sum
 			}
 		}
 		if objSha == "" {
@@ -58,4 +62,8 @@ var Cmd = &cobra.Command{
 		err = drsmap.CreateLfsPointer(obj, dstPath)
 		return err
 	},
+}
+
+func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 }

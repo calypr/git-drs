@@ -2,6 +2,7 @@ package client
 
 import (
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
@@ -29,11 +30,14 @@ type DRSClient interface {
 
 	// given a hash, get the objects describing it
 	// no corresponding DRS endpoint exists, so this is custom code
-	GetObjectsByHash(hashType string, hash string) ([]drs.DRSObject, error)
+	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
 
 	///////////////////////
 	// DRS WRITE METHODS //
 	///////////////////////
+
+	// Delete all indexd records in a given project
+	DeleteRecordsByProject(project string) error
 
 	// Delete an indexd record given an oid string
 	DeleteRecord(oid string) error

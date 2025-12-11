@@ -7,6 +7,7 @@ import (
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/stretchr/testify/require"
 )
@@ -78,7 +79,7 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	client := testIndexdClientWithMockAuth(mockServer.URL())
 
 	// Act: Call the actual client method
-	results, err := client.GetObjectsByHash("sha256", sha256)
+	results, err := client.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: sha256})
 
 	// Assert: Verify client method works end-to-end
 	require.NoError(t, err)
@@ -88,14 +89,13 @@ func TestIndexdClient_GetObjectsByHash(t *testing.T) {
 	record := results[0]
 	require.Equal(t, testRecord.Did, record.Id)
 	require.Equal(t, testRecord.Size, record.Size)
-	require.Equal(t, sha256, record.Checksums[0].Checksum)
-	require.Equal(t, drs.ChecksumTypeSHA256, record.Checksums[0].Type)
+	require.Equal(t, sha256, record.Checksums.SHA256)
 
 	require.Equal(t, testRecord.URLs[0], record.AccessMethods[0].AccessURL.URL)
 	require.Equal(t, testRecord.Authz[0], record.AccessMethods[0].Authorizations.Value)
 
 	// Test: Query with non-existent hash
-	emptyResults, err := client.GetObjectsByHash("sha256", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+	emptyResults, err := client.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"})
 	require.NoError(t, err)
 	require.Len(t, emptyResults, 0)
 }
@@ -204,7 +204,6 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 
 			client := &indexd_client.IndexDClient{
 				Base:        parseURL(mockServer.URL()),
-				Remote:      "test-remote",
 				ProjectId:   "test-project", // This will become /programs/test/projects/project
 				BucketName:  "test-bucket",
 				Logger:      log.Default(),

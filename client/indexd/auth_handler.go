@@ -17,36 +17,8 @@ type RealAuthHandler struct {
 	Cred jwt.Credential
 }
 
-func GetJWTCredential(config map[string]string) (jwt.Credential, error) {
-	if api_key, ok := config["api_key"]; ok {
-		if key_id, ok := config["key_id"]; ok {
-			if endpoint, ok := config["endpoint"]; ok {
-				c := jwt.Credential{
-					APIKey:      api_key,
-					KeyId:       key_id,
-					APIEndpoint: endpoint,
-				}
-				r := jwt.Request{}
-				err := r.RequestNewAccessToken(c.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, &c)
-				if err != nil {
-					return c, fmt.Errorf("access token error: %s", err)
-				}
-				return c, err
-			}
-			return jwt.Credential{}, fmt.Errorf("endpoint info not in config")
-		}
-		return jwt.Credential{}, fmt.Errorf("key_id info not in config")
-	}
-	return jwt.Credential{}, fmt.Errorf("api_key info not in config")
-}
-
-func NewAuthHandler(config map[string]string) (*RealAuthHandler, error) {
-	cred, err := GetJWTCredential(config)
-	return &RealAuthHandler{Cred: cred}, err
-}
-
-func (rh *RealAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
-	return rh.addGen3AuthHeader(req, profile)
+func (rh *RealAuthHandler) AddAuthHeader(req *http.Request) error {
+	return rh.addGen3AuthHeader(req)
 }
 
 // Moved this function out of bmeg/grip-graphql/middleware into this repo to simplify deps.
@@ -94,7 +66,7 @@ func (rh *RealAuthHandler) refreshToken() error {
 	return RefreshToken(&rh.Cred)
 }
 
-func (rh *RealAuthHandler) addGen3AuthHeader(req *http.Request, profile string) error {
+func (rh *RealAuthHandler) addGen3AuthHeader(req *http.Request) error {
 	err := rh.refreshToken()
 	if err != nil {
 		return err

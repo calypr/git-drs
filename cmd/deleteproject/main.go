@@ -1,40 +1,28 @@
-package delete
+package deleteproject
 
 import (
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
-var (
-	dstPath string
-	remote  string
-)
+var remote string
 
 // Cmd line declaration
-// Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:    "delete <hash-type> <oid>",
-	Short:  "Delete a file using hash and file object ID",
-	Long:   "Delete a file using file object ID. Use lfs ls-files to get oid",
+	Use:    "delete-project <project_id>",
+	Short:  "Delete all indexd records for a given project",
+	Long:   "Delete all indexd records for a given project",
 	Hidden: true,
-	Args:   cobra.ExactArgs(2),
+	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		hashType, oid := args[0], args[1]
 		if remote == "" {
 			remote = config.ORIGIN
 		}
 
-		// check hash type is valid Checksum type and sha256
-		if hashType != hash.ChecksumTypeSHA256.String() {
-			return fmt.Errorf("Only sha256 supported, you requested to remove: %s", hashType)
-		}
-
 		logger := drslog.GetLogger()
-
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
@@ -47,9 +35,9 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(oid)
+		err = drsClient.DeleteRecordsByProject(args[0])
 		if err != nil {
-			return fmt.Errorf("Error deleting file for OID %s: %v", oid, err)
+			return fmt.Errorf("Error deleting project %s: %v", args[0], err)
 		}
 
 		return nil
@@ -58,5 +46,4 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
-	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

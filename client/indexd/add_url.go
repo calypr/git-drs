@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
@@ -25,17 +26,17 @@ import (
 
 // getBucketDetails fetches bucket details from Gen3, loading config and auth.
 // This is the production version that includes all config/auth dependencies.
-func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (s3_utils.S3Bucket, error) {
+func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
 	// get all buckets
 	baseURL := inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
-	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.Remote, &RealAuthHandler{}, httpClient)
+	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.AuthHandler, httpClient)
 }
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
+func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -197,7 +198,7 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 
 	bucketDetails, err := inc.getBucketDetails(ctx, bucket, httpClient)
 	if err != nil {
-		return 0, "", fmt.Errorf("Unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
+		return 0, "", fmt.Errorf("unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
 	}
 
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
@@ -221,7 +222,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectsByHash(string(drs.ChecksumTypeSHA256), sha256)
+	records, err := indexdClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
 		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
@@ -270,7 +271,7 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	indexdObject := &IndexdRecord{
 		Did:      uuid,
 		FileName: relPath,
-		Hashes:   HashInfo{SHA256: sha256},
+		Hashes:   hash.HashInfo{SHA256: sha256},
 		Size:     fileSize,
 		URLs:     []string{url},
 		Authz:    []string{authzStr},

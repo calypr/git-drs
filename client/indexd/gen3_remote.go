@@ -3,6 +3,7 @@ package indexd_client
 import (
 	"log"
 
+	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/client"
 )
 
@@ -11,8 +12,6 @@ type Gen3Remote struct {
 	Endpoint  string `yaml:"endpoint"`
 	ProjectID string `yaml:"project_id"`
 	Bucket    string `yaml:"bucket"`
-	APIKey    string `yaml:"api_key"`
-	KeyID     string `yaml:"key_id"`
 }
 
 func (s Gen3Remote) GetProjectId() string {
@@ -27,18 +26,12 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetAPIKey() string {
-	return s.APIKey
-}
-
-func (s Gen3Remote) GetKeyId() string {
-	return s.KeyID
-}
-
 func (s Gen3Remote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
-	cred, err := GetJWTCredential(params)
+
+	var conf jwt.Configure
+	cred, err := conf.ParseConfig(params["remote_name"])
 	if err != nil {
 		return nil, err
 	}
-	return NewIndexDClient(cred, s, params["remote_name"], logger)
+	return NewIndexDClient(cred, s, logger)
 }

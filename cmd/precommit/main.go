@@ -3,17 +3,12 @@ package precommit
 import (
 	"fmt"
 
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
+
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
-)
-
-var (
-	server  string
-	dstPath string
-	drsObj  *drs.DRSObject
 )
 
 // Cmd line declaration
@@ -22,9 +17,13 @@ var Cmd = &cobra.Command{
 	Use:   "precommit",
 	Short: "pre-commit hook to create DRS objects",
 	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
+		var remote config.Remote = config.ORIGIN
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
+		}
 
 		myLogger.Print("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
@@ -33,12 +32,17 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error getting config: %v", err)
 		}
-		myLogger.Printf("Current server: %s", cfg.GetCurrentRemoteName())
 
-		client, err := cfg.GetCurrentRemoteClient(myLogger)
+		cli, err := cfg.GetRemoteClient(remote, myLogger)
+
+		dc, ok := cli.(*indexd_client.IndexDClient)
+		if !ok {
+			return fmt.Errorf("cli is not IndexdClient: %T", cli)
+		}
+		myLogger.Printf("Current server: %s", dc.ProjectId)
 
 		myLogger.Printf("Preparing DRS objects for commit...\n")
-		err = drsmap.UpdateDrsObjects(client, myLogger)
+		err = drsmap.UpdateDrsObjects(cli.GetProjectId(), string(remote), cli, myLogger)
 		if err != nil {
 			myLogger.Print("UpdateDrsObjects failed:", err)
 			return err

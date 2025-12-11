@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"golang.org/x/oauth2/google"
 )
 
@@ -69,19 +70,10 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 		return nil, err
 	}
 
-	// convert parsed.Hashes to []drs.Checksum before returning DRSObject
-	checksums := []drs.Checksum{}
-	for k, v := range parsed.Hashes {
-		checksums = append(checksums, drs.Checksum{
-			Type:     drs.ChecksumType(k),
-			Checksum: v,
-		})
-	}
-
 	return &drs.DRSObject{
 		SelfURI:   objectID,
 		Id:        objectID,
-		Checksums: checksums,
+		Checksums: hash.ConvertStringMapToHashInfo(parsed.Hashes),
 		Size:      parsed.Size,
 		Name:      parsed.FileName,
 	}, nil

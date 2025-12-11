@@ -37,6 +37,56 @@ var Cmd = &cobra.Command{
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := json.NewEncoder(os.Stdout)
 
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			myLogger.Printf("Error loading config: %v", err)
+			return err
+		}
+
+		var remoteName string
+
+		// Read the first (init) message outside the main loop
+		if !scanner.Scan() {
+			err := fmt.Errorf("failed to read initial message from stdin")
+			myLogger.Printf("Error: %s", err)
+			// No OID yet, so pass empty string
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		var initMsg map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
+			myLogger.Printf("error decoding initial JSON message: %s", err)
+			return err
+		}
+
+		// Handle "init" event and extract remote
+		if evt, ok := initMsg["event"]; ok && evt == "init" {
+			if r, ok := initMsg["remote"].(string); ok {
+				remoteName = r
+				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
+			} else {
+				// if no remote name specified use origin
+				remoteName = config.ORIGIN
+				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
+			}
+
+			// Respond with an empty json object via stdout
+			encoder.Encode(struct{}{})
+		} else {
+			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
+			myLogger.Printf("Error: %s", err)
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
+		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
+		if err != nil {
+			myLogger.Printf("Error creating indexd client: %s", err)
+			lfs.WriteErrorMessage(encoder, "", err.Error())
+			return err
+		}
+
 		for scanner.Scan() {
 			var msg map[string]any
 			err := json.Unmarshal(scanner.Bytes(), &msg)
@@ -68,7 +118,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// call DRS Downloader via downloadFile
-				dstPath, err := downloadFile(downloadMsg.Oid)
+				dstPath, err := downloadFile(config.Remote(remoteName), downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
@@ -123,7 +173,7 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func downloadFile(sha string) (string, error) {
+func downloadFile(remote config.Remote, sha string) (string, error) {
 	myLogger := drslog.GetLogger()
 
 	myLogger.Printf("Downloading file for sha %s", sha)
@@ -134,17 +184,12 @@ func downloadFile(sha string) (string, error) {
 		return "", fmt.Errorf("error loading config: %v", err)
 	}
 
-	remote := cfg.GetCurrentRemote()
-	if remote == nil {
-		return "", fmt.Errorf("no current remote set in config")
-	}
-	terraProject := remote.GetProjectId()
-
-	drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
-	//drsClient, err := cfg.GetCurrentRemoteClient(myLogger)
+	cli, err := cfg.GetRemoteClient(remote, myLogger)
 	if err != nil {
-		return "", fmt.Errorf("error creating DRS client: %v", err)
+		return "", err
 	}
+
+	terraProject := cli.GetProjectId()
 
 	filePath, err := drsmap.GetObjectPath(projectdir.DRS_REF_DIR, sha)
 	if err != nil {

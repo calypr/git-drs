@@ -15,6 +15,7 @@ import (
 	"time"
 
 	dcJWT "github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
@@ -222,7 +223,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	remoteURL := fmt.Sprintf("%s/%s/%s.git", host, owner, repoName)
 	// Add remote
 	t.Log("Remote URL: ", remoteURL)
-	cmd = exec.Command("git", "remote", "add", "origin", remoteURL)
+	cmd = exec.Command("git", "remote", "add", remote, remoteURL)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
 	}
@@ -230,6 +231,11 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	cmd = exec.Command("git", "add", dataFile)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to git add data file %s: %v", dataFile, err)
+	}
+
+	cmd = exec.Command("git", "drs", "precommit", remote)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git-drs precommit to remote %s: %v", remote, err)
 	}
 
 	cmd = exec.Command("git", "commit", "-m", "Add test file")
@@ -266,28 +272,23 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	var fileMap FileContainer
 	err = json.Unmarshal(output, &fileMap)
 
-	/*
-		 * precommit hooks don't exist for now, so this isn't done anymore
-			* TODO: discussion on wether it is necessary to add this back in.
+	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	if err != nil {
+		t.Fatalf("Failed to get object path %s: %v", path, err)
+	}
+	if path == "" {
+		t.Fatalf("Expecting path but got %s instead", path)
+	}
+	t.Logf("Path: %s", path)
 
-		path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
-		if err != nil {
-			t.Fatalf("Failed to get object path %s: %v", path, err)
-		}
-		if path == "" {
-			t.Fatalf("Expecting path but got %s instead", path)
-		}
-		t.Logf("Path: %s", path)
+	_, err = os.Stat(path)
 
-		_, err = os.Stat(path)
-
-		if os.IsNotExist(err) {
-			t.Fatalf("File or directory not found at path: %s", path)
-		}
-		if err != nil {
-			t.Fatalf("Error checking path existence %s: %v", path, err)
-			}
-	*/
+	if os.IsNotExist(err) {
+		t.Fatalf("File or directory not found at path: %s", path)
+	}
+	if err != nil {
+		t.Fatalf("Error checking path existence %s: %v", path, err)
+	}
 
 	// Verify pre-commit hook was called by checking .drs/ logs
 	files, err := fs.ReadDir(os.DirFS(projectdir.DRS_DIR), ".")
@@ -311,7 +312,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", projectdir.DRS_DIR)
 	}
 
-	cmd = exec.Command("git", "push", "--set-upstream", "origin", "main")
+	cmd = exec.Command("git", "push", "--set-upstream", remote, "main")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)
@@ -372,7 +373,12 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("git-drs add remote output: %s", output)
 
-	cmd = exec.Command("git", "lfs", "pull", "-I", dataFile)
+	cmd = exec.Command("git", "remote", "add", remote, remoteURL)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
+	}
+
+	cmd = exec.Command("git", "lfs", "pull", remote, "-I", dataFile)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Expected pull failure with dummy DRS server: %v\nOutput: %s", err, output)
@@ -396,7 +402,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 
 	err = json.Unmarshal(output, &fileMap)
 
-	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID)
+	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID, "--remote", remote)
 	output, err = cmd.Output()
 	if err != nil {
 		t.Fatalf("Failed to delete indexd record %s: %v", fileMap.Files[0].OID, err)

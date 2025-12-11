@@ -13,6 +13,7 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -34,14 +35,111 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
-	logger.Print("Update to DRS objects started")
-
-	// get the name of repository
-	repoName, err := GetRepoNameFromGit()
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
+	// Gather all objects in .drs/lfs/objects store
+	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
-		return fmt.Errorf("Unable to fetch repository website location: %v", err)
+		return err
 	}
+
+	// Make this a map if it does not exist when hitting the server
+	sums := make([]*hash.Checksum, 0)
+	for _, obj := range drsLfsObjs {
+		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				sums = append(sums, &hash.Checksum{
+					Checksum: sum,
+					Type:     hash.ChecksumTypeSHA256,
+				})
+			}
+		}
+	}
+
+	outobjs := map[string]*drs.DRSObject{}
+	for _, sum := range sums {
+		records, err := drsClient.GetObjectByHash(sum)
+		if err != nil {
+			return err
+		}
+
+		if len(records) == 0 {
+			outobjs[sum.Checksum] = nil
+			continue
+		}
+		found := false
+		// Warning: The loop overwrites map entries if multiple records have the same SHA256 hash.
+		// If there are multiple records with SHA256 checksums, only the last one will be stored in the map
+		for i, rec := range records {
+			if rec.Checksums.SHA256 != "" {
+				found = true
+				outobjs[rec.Checksums.SHA256] = &records[i]
+			}
+		}
+		if !found {
+			outobjs[sum.Checksum] = nil
+		}
+	}
+
+	for drsObjKey := range outobjs {
+		val, ok := drsLfsObjs[drsObjKey]
+		if !ok {
+			myLogger.Printf("Drs record not found in sha256 map %s", drsObjKey)
+		}
+		if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
+			myLogger.Printf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name)
+			_, err = drsClient.RegisterRecord(val)
+			if err != nil {
+				return err
+			}
+
+		} else {
+			_, err = drsClient.RegisterFile(drsObjKey)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
+	if err != nil {
+		return err
+	}
+	writtenObjs := 0
+	for drsObj := range objChan {
+		sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
+		if len(sumMap) == 0 {
+			return fmt.Errorf("Error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
+		}
+		var drsObjPath, oid string = "", ""
+		for sumType, sum := range sumMap {
+			if sumType == hash.ChecksumTypeSHA256.String() {
+				oid = sum
+				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
+				if err != nil {
+					return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+				}
+			}
+		}
+		// Only write a record if there exists a proper checksum to use. Checksums besides sha256 are not used
+		if drsObjPath != "" && oid != "" {
+			writtenObjs++
+			// write drs objects to DRS_OBJS_PATH
+			err = writeDrsObj(drsObj.Object, oid, drsObjPath)
+			if err != nil {
+				return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
+			}
+		}
+	}
+	logger.Printf("Wrote %d new objs to object store", writtenObjs)
+	return nil
+}
+
+func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logger *log.Logger) error {
+
+	logger.Print("Update to DRS objects started")
 
 	// get all lfs files
 	lfsFiles, err := getAllLfsFiles()
@@ -69,7 +167,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
 		// check hash to see if record already exists in indexd (source of truth)
-		records, err := drsClient.GetObjectsByHash(file.OidType, file.Oid)
+		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumType(file.OidType), Checksum: file.Oid})
 		if err != nil {
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
@@ -79,15 +177,17 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		if projectId == "" {
 			return fmt.Errorf("Error getting project ID")
 		}
-		matchingRecord, err := FindMatchingRecord(records, projectId)
-		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
-		}
 
-		// skip if matching record exists
-		if matchingRecord != nil {
-			logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-			continue
+		if len(records) > 0 {
+			matchingRecord, err := FindMatchingRecord(records, projectId)
+			if err != nil {
+				return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+			}
+			// skip if matching record exists
+			if matchingRecord != nil {
+				logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
+				continue
+			}
 		}
 
 		// check if indexd object already prepared, skip if so
@@ -108,7 +208,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(repoName, file.Oid)
+		drsId := DrsUUID(projectId, file.Oid)
 		logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
@@ -154,10 +254,10 @@ func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	return nil
 }
 
-func DrsUUID(repoName string, hash string) string {
+func DrsUUID(projectId string, hash string) string {
 	// FIXME: use different UUID method? Used same method as g3t
-	hashStr := fmt.Sprintf("%s:%s", repoName, hash)
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
+	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
+	return uuid.NewSHA1(uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org")), []byte(hashStr)).String()
 }
 
 // creates index record from file
@@ -251,9 +351,9 @@ func getStagedFiles() ([]string, error) {
 	return stagedFiles, nil
 }
 
-func GetRepoNameFromGit() (string, error) {
+func GetRepoNameFromGit(remote string) (string, error) {
 	// prefer simple os.Exec over using go-git
-	cmd := exec.Command("git", "config", "--get", "remote.origin.url")
+	cmd := exec.Command("git", "config", "--get", fmt.Sprintf("remote.%s.url", remote))
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

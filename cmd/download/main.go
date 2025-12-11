@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
@@ -13,9 +12,8 @@ import (
 )
 
 var (
-	server  string
 	dstPath string
-	drsObj  *drs.DRSObject
+	remote  string
 )
 
 // Cmd line declaration
@@ -29,13 +27,16 @@ var Cmd = &cobra.Command{
 		logger := drslog.GetLogger()
 
 		oid := args[0]
+		if remote == "" {
+			remote = config.ORIGIN
+		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetCurrentRemoteClient(logger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
 		if err != nil {
 			logger.Printf("\nerror creating DRS client: %s", err)
 			return err
@@ -73,5 +74,6 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

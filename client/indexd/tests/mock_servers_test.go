@@ -13,6 +13,7 @@ import (
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 )
 
 //////////////////
@@ -222,7 +223,7 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 		Size:      form.Size,
 		URLs:      form.URLs,
 		Authz:     form.Authz,
-		Hashes:    convertHashInfoToMap(form.Hashes),
+		Hashes:    hash.ConvertHashInfoToMap(form.Hashes),
 		Metadata:  form.Metadata, // Already map[string]string from IndexdRecord
 		CreatedAt: time.Now(),
 	}
@@ -301,7 +302,7 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 		for _, did := range dids {
 			if record, ok := mis.records[did]; ok {
 				// Convert sha256 hash string to HashInfo struct
-				hashes := indexd_client.HashInfo{}
+				hashes := hash.HashInfo{}
 				if sha256, ok := record.Hashes["sha256"]; ok {
 					hashes.SHA256 = sha256
 				}
@@ -520,30 +521,6 @@ func (mss *MockS3Server) Close() {
 
 // Helper functions for type conversion
 
-// convertHashInfoToMap converts HashInfo struct to map[string]string
-func convertHashInfoToMap(hashes indexd_client.HashInfo) map[string]string {
-	result := make(map[string]string)
-	if hashes.MD5 != "" {
-		result["md5"] = hashes.MD5
-	}
-	if hashes.SHA != "" {
-		result["sha"] = hashes.SHA
-	}
-	if hashes.SHA256 != "" {
-		result["sha256"] = hashes.SHA256
-	}
-	if hashes.SHA512 != "" {
-		result["sha512"] = hashes.SHA512
-	}
-	if hashes.CRC != "" {
-		result["crc"] = hashes.CRC
-	}
-	if hashes.ETag != "" {
-		result["etag"] = hashes.ETag
-	}
-	return result
-}
-
 // convertMapAnyToString converts map[string]any to map[string]string
 func convertMapAnyToString(input map[string]any) map[string]string {
 	result := make(map[string]string)
@@ -558,15 +535,6 @@ func convertMapAnyToString(input map[string]any) map[string]string {
 // convertMockRecordToDRSObject converts a MockIndexdRecord to a DRS object
 func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 	// Convert hashes to Checksum array
-	checksums := make([]drs.Checksum, 0)
-	for hashType, hashValue := range record.Hashes {
-		if hashValue != "" {
-			checksums = append(checksums, drs.Checksum{
-				Type:     drs.ChecksumType(hashType),
-				Checksum: hashValue,
-			})
-		}
-	}
 
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)
@@ -594,7 +562,7 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 		Id:            record.Did,
 		Name:          record.FileName,
 		Size:          record.Size,
-		Checksums:     checksums,
+		Checksums:     hash.ConvertStringMapToHashInfo(record.Hashes),
 		AccessMethods: accessMethods,
 		CreatedTime:   record.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Description:   "DRS object created from Indexd record",

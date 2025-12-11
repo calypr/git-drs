@@ -48,6 +48,10 @@ type ErrorMessage struct {
 	Error Error  `json:"error"` // Error details
 }
 
+type InitErrorMessage struct {
+	Error Error `json:"error"` // Error details
+}
+
 type Error struct {
 	Code    int    `json:"code"`    // Error code (standard or custom)
 	Message string `json:"message"` // Human-readable error message
@@ -73,13 +77,24 @@ type Action struct {
 	ExpiresIn int               `json:"expires_in,omitempty"`
 }
 
+func WriteInitErrorMessage(encoder *json.Encoder, code int, errMsg string) {
+	// create failure message and send it back
+	errorResponse := InitErrorMessage{
+		Error: Error{
+			Code:    code,
+			Message: errMsg,
+		},
+	}
+	encoder.Encode(errorResponse)
+}
+
 func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
 	// create failure message and send it back
 	errorResponse := ErrorMessage{
 		Event: "complete",
 		Oid:   oid,
 		Error: Error{
-			Code:    1,
+			Code:    400,
 			Message: errMsg,
 		},
 	}

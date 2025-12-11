@@ -600,7 +600,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
+		return nil, fmt.Errorf("unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
 	}
 	req.Header.Set("accept", "application/json")
 
@@ -666,7 +666,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			q := req.URL.Query()
-			q.Add("authz", fmt.Sprintf("%s", resourcePath))
+			q.Add("authz", resourcePath)
 			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()

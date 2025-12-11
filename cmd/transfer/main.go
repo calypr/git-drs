@@ -68,18 +68,18 @@ var Cmd = &cobra.Command{
 				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
 			}
 
+			drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
+			if err != nil {
+				myLogger.Printf("Error creating indexd client: %s", err)
+				lfs.WriteInitErrorMessage(encoder, 400, err.Error())
+				return err
+			}
+
 			// Respond with an empty json object via stdout
 			encoder.Encode(struct{}{})
 		} else {
 			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
 			myLogger.Printf("Error: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
-			return err
-		}
-
-		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
-		if err != nil {
-			myLogger.Printf("Error creating indexd client: %s", err)
 			lfs.WriteErrorMessage(encoder, "", err.Error())
 			return err
 		}

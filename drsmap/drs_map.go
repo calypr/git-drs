@@ -114,7 +114,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	for drsObj := range objChan {
 		sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
 		if len(sumMap) == 0 {
-			return fmt.Errorf("Error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
+			return fmt.Errorf("error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
 		}
 		var drsObjPath, oid string = "", ""
 		for sumType, sum := range sumMap {
@@ -140,7 +140,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	return nil
 }
 
-func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logger *log.Logger) error {
+func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 
@@ -148,6 +148,12 @@ func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logg
 	lfsFiles, err := getAllLfsFiles()
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
+	}
+
+	// get project
+	projectId := drsClient.GetProjectId()
+	if projectId == "" {
+		return fmt.Errorf("no project configured: %v", err)
 	}
 
 	// get all staged files
@@ -175,16 +181,10 @@ func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logg
 			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
 		}
 
-		// check if record with matching project ID already exists in indexd
-		projectId := drsClient.GetProjectId()
-		if projectId == "" {
-			return fmt.Errorf("Error getting project ID")
-		}
-
 		if len(records) > 0 {
 			matchingRecord, err := FindMatchingRecord(records, projectId)
 			if err != nil {
-				return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+				return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 			}
 			// skip if matching record exists
 			if matchingRecord != nil {
@@ -205,7 +205,7 @@ func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logg
 
 		// confirm file contents are localized
 		if !file.Downloaded {
-			return fmt.Errorf("Staged file %s is not cached. Please unstage the file, then git add the file again", file.Name)
+			return fmt.Errorf("staged file %s is not cached. Please unstage the file, then git add the file again", file.Name)
 		}
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
@@ -220,7 +220,7 @@ func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logg
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return fmt.Errorf("Error: File %s does not exist in LFS objects path %s. Aborting.", file.Name, path)
+			return fmt.Errorf("error: File %s does not exist in LFS objects path %s. Aborting", file.Name, path)
 		}
 
 		drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
@@ -288,7 +288,7 @@ func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 func GetObjectPath(basePath string, oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
-		return "", fmt.Errorf("Error: %s is not a valid sha256 hash", oid)
+		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
 	}
 
 	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil

@@ -44,11 +44,6 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	// region + endpoint must be supplied if bucket not registered in gen3
-	if bucketDetails.EndpointURL == "" || bucketDetails.Region == "" {
-		logger.Print("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
-	}
-
 	// Create s3 client if not passed as param
 	var finalRegion, finalEndpoint string
 	var finalCfg aws.Config
@@ -98,6 +93,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 		endpointToUse := ""
 		if endpoint != "" {
 			endpointToUse = endpoint
+			finalEndpoint = endpoint
 		} else if bucketDetails.EndpointURL != "" {
 			endpointToUse = bucketDetails.EndpointURL
 		}
@@ -198,7 +194,11 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 
 	bucketDetails, err := inc.getBucketDetails(ctx, bucket, httpClient)
 	if err != nil {
-		return 0, "", fmt.Errorf("unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
+		return 0, "", fmt.Errorf("unable to get bucket details: %w. Please ensure you've specified the correct AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
+	}
+	if bucketDetails == nil {
+		logger.Println("WARNING: no matching bucket found in CALYPR")
+		bucketDetails = &s3_utils.S3Bucket{}
 	}
 
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
@@ -223,19 +223,19 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 // }
 
 // upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) error {
 	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
+	records, err := inc.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
-		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
+		return fmt.Errorf("error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
 	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
 	if err != nil {
-		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+		return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 	}
 
 	if matchingRecord != nil && matchingRecord.Id == uuid {
@@ -321,7 +321,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	// open .gitattributes
+	// confirm file is tracked
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
@@ -340,13 +340,15 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 		}
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
+
+	// logging
 	inc.Logger.Print("Fetched S3 metadata successfully:")
 	inc.Logger.Printf(" - File Size: %d bytes", fileSize)
 	inc.Logger.Printf(" - Last Modified: %s", modifiedDate)
 
 	// Create indexd record
 	inc.Logger.Print("Processing indexd record...")
-	if err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, inc.Logger); err != nil {
+	if err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, inc.Logger); err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
 	inc.Logger.Print("Indexd updated")

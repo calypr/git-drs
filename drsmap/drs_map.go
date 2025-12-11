@@ -175,31 +175,13 @@ func UpdateDrsObjects(remote string, drsClient client.DRSClient, logger *log.Log
 	// Create a DRS object for each staged LFS file
 	// which will be used at push-time
 	for _, file := range lfsStagedFiles {
-		// check hash to see if record already exists in indexd (source of truth)
-		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumType(file.OidType), Checksum: file.Oid})
-		if err != nil {
-			return fmt.Errorf("error getting object by hash %s: %v", file.Oid, err)
-		}
-
-		if len(records) > 0 {
-			matchingRecord, err := FindMatchingRecord(records, projectId)
-			if err != nil {
-				return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
-			}
-			// skip if matching record exists
-			if matchingRecord != nil {
-				logger.Printf("Skipping staged file %s: OID %s already exists in indexd", file.Name, file.Oid)
-				continue
-			}
-		}
-
 		// check if indexd object already prepared, skip if so
 		drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Printf("Skipping staged file %s with OID %s, already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+			logger.Printf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
 

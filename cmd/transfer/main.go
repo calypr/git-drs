@@ -156,9 +156,7 @@ var Cmd = &cobra.Command{
 				}
 				myLogger.Printf("Uploading file OID %s", uploadMsg.Oid)
 
-				//TODO: write code to take Oid and generate DRSRecord
-				// otherwise, register the file (create indexd record and upload file)
-				//TODO: re-implement this with new DRSClient methods
+				// register file (write drs record and upload file)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())

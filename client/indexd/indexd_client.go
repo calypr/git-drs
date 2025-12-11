@@ -264,7 +264,6 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	//  * addresses edge case where user X registering in project A has access to record in project B
 	//  * but still needs create a new record to so user Y reading the file in project A can access it
 	//  * even if they don't have access to project B
-
 	var drsObject *drs.DRSObject
 	if len(records) > 0 {
 		var err error

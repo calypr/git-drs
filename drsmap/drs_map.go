@@ -257,7 +257,7 @@ func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 func DrsUUID(projectId string, hash string) string {
 	// FIXME: use different UUID method? Used same method as g3t
 	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
-	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(hashStr)).String()
+	return uuid.NewSHA1(uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org")), []byte(hashStr)).String()
 }
 
 // creates index record from file

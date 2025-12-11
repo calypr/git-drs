@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 		myLogger.Printf("Current server: %s", dc.ProjectId)
 
 		myLogger.Printf("Preparing DRS objects for commit...\n")
-		err = drsmap.UpdateDrsObjects(cfg.GetRemote(remote).GetProjectId(), string(remote), cli, myLogger)
+		err = drsmap.UpdateDrsObjects(cli.GetProjectId(), string(remote), cli, myLogger)
 		if err != nil {
 			myLogger.Print("UpdateDrsObjects failed:", err)
 			return err

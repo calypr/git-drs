@@ -2,6 +2,7 @@ package indexd_client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/calypr/data-client/client/commonUtils"
 	"github.com/calypr/data-client/client/g3cmd"
 	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/client"
@@ -20,6 +22,8 @@ import (
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
+
+	gen3Client "github.com/calypr/data-client/client/gen3Client"
 )
 
 //var conf jwt.Configure
@@ -44,7 +48,7 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *lo
 	// get the gen3Project and gen3Bucket from the config
 	projectId := remote.GetProjectId()
 	if projectId == "" {
-		return nil, fmt.Errorf("No gen3 project specified. Run 'git drs init', use the '--help' flag for more info")
+		return nil, fmt.Errorf("no gen3 project specified. Run 'git drs init', use the '--help' flag for more info")
 	}
 
 	bucketName := remote.GetBucketName()
@@ -98,19 +102,19 @@ func (cl *IndexDClient) DeleteRecord(oid string) error {
 	// get records by hash
 	record, err := cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
-		return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
+		return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 	}
 	if len(record) == 0 {
-		return fmt.Errorf("No records found for OID %s", oid)
+		return fmt.Errorf("no records found for OID %s", oid)
 	}
 
 	// Find a record that matches the project ID
 	matchingRecord, err := drsmap.FindMatchingRecord(record, cl.GetProjectId())
 	if err != nil {
-		return fmt.Errorf("Error finding matching record for project %s: %v", cl.GetProjectId(), err)
+		return fmt.Errorf("error finding matching record for project %s: %v", cl.GetProjectId(), err)
 	}
 	if matchingRecord == nil {
-		return fmt.Errorf("No matching record found for project %s", cl.GetProjectId())
+		return fmt.Errorf("no matching record found for project %s", cl.GetProjectId())
 	}
 
 	// call helper to do the delete for a gen3 GUID
@@ -253,7 +257,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	// get all existing hashes
 	records, err := cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
-		return nil, fmt.Errorf("Error querying indexd server for matches to hash %s: %v", oid, err)
+		return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", oid, err)
 	}
 
 	// use any indexd record from the same project if it exists
@@ -266,7 +270,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		var err error
 		drsObject, err = drsmap.FindMatchingRecord(records, cl.ProjectId)
 		if err != nil {
-			return nil, fmt.Errorf("Error finding matching record for project %s: %v", cl.ProjectId, err)
+			return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
 		}
 	}
 
@@ -281,6 +285,9 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 
 		indexdObj, err := indexdRecordFromDrsObject(drsObject)
+		if err != nil {
+			return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
+		}
 
 		// register the record
 		drsObject, err = cl.RegisterIndexdRecord(indexdObj)
@@ -336,7 +343,21 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting profile for upload: %v", err)
 		}
 
-		err = g3cmd.UploadSingleMultipart(profile, filePath, cl.BucketName, drsObject.Id, false)
+		g3, err := gen3Client.NewGen3InterfaceWithLogger(profile, cl.Logger)
+		if err != nil {
+			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
+		}
+		err = g3cmd.MultipartUpload(
+			context.TODO(),
+			g3,
+			commonUtils.FileUploadRequestObject{
+				FilePath:     filePath,
+				Filename:     filepath.Base(filePath),
+				GUID:         drsObject.Id,
+				FileMetadata: commonUtils.FileMetadata{},
+			},
+			cl.BucketName, false,
+		)
 		if err != nil {
 			cl.Logger.Printf("error uploading file to bucket: %s", err)
 			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
@@ -603,7 +624,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
 	}
 	// log how many records were found
-	cl.Logger.Printf("Found %d indexd record(s) matching the hash %s", len(records.Records), records)
+	cl.Logger.Printf("Found %d indexd record(s) matching the hash %v", len(records.Records), records)
 
 	out := make([]drs.DRSObject, len(records.Records))
 

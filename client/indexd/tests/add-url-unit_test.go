@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,12 +25,15 @@ import (
 // Unit Tests for validateInputs
 // (Already covered in add-url_test.go, but adding edge cases)
 
+// noOpLogger is a logger that discards all output for tests
+var noOpLogger = log.New(io.Discard, "", 0)
+
 // tokenAuthHandler is a simple test helper that sets a Bearer token
 type tokenAuthHandler struct {
 	token string
 }
 
-func (t *tokenAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+func (t *tokenAuthHandler) AddAuthHeader(req *http.Request) error {
 	if t.token != "" {
 		req.Header.Set("Authorization", "Bearer "+t.token)
 	}
@@ -70,7 +75,7 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 		authHeaderValue = r.Header.Get("Authorization")
 
 		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]s3_utils.S3Bucket{
+			S3Buckets: map[string]*s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -85,14 +90,14 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 
 	ctx := context.Background()
 	mockAuth := &MockAuthHandler{}
-	result, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", mockAuth, server.Client())
+	result, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, mockAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
 
 	// Verify the MockAuthHandler added the expected header
-	expectedAuthHeader := "Bearer mock-test-token-test-profile"
+	expectedAuthHeader := "Bearer mock-test-token"
 	if authHeaderValue != expectedAuthHeader {
 		t.Errorf("Expected auth header '%s', got '%s'", expectedAuthHeader, authHeaderValue)
 	}
@@ -110,7 +115,7 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	// Test that missing bucket returns proper error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]s3_utils.S3Bucket{
+			S3Buckets: map[string]*s3_utils.S3Bucket{
 				"other-bucket": {
 					Region:      "us-east-1",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -123,14 +128,14 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	bd, err := indexd_client.GetBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, "test-profile", nil, server.Client())
+	bd, err := indexd_client.GetBucketDetailsWithAuth(ctx, "missing-bucket", server.URL, nil, server.Client())
 
 	if err != nil {
 		t.Fatal("Expected no error, got: ", err)
 	}
 
-	if bd.Region != "" || bd.EndpointURL != "" || bd.Programs != nil {
-		t.Errorf("Expected empty bucket, got: %v", bd)
+	if bd != nil {
+		t.Errorf("Expected nil bucket for missing bucket, got: %v", bd)
 	}
 }
 
@@ -170,8 +175,8 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				response := s3_utils.S3BucketsResponse{
-					S3Buckets: map[string]s3_utils.S3Bucket{
-						"test-bucket": tt.bucket,
+					S3Buckets: map[string]*s3_utils.S3Bucket{
+						"test-bucket": &tt.bucket,
 					},
 				}
 				w.WriteHeader(http.StatusOK)
@@ -180,7 +185,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 			defer server.Close()
 
 			ctx := context.Background()
-			_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+			_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, nil, server.Client())
 
 			if err == nil {
 				t.Fatal("Expected error for missing fields, got nil")
@@ -202,7 +207,7 @@ func TestGetBucketDetailsWithAuth_Non200Status(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, nil, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected error for non-200 status, got nil")
@@ -226,7 +231,7 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 		}
 
 		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]s3_utils.S3Bucket{
+			S3Buckets: map[string]*s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -240,7 +245,7 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 
 	ctx := context.Background()
 	tokenAuth := &tokenAuthHandler{token: expectedToken}
-	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", tokenAuth, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, tokenAuth, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -262,7 +267,7 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 		}
 
 		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]s3_utils.S3Bucket{
+			S3Buckets: map[string]*s3_utils.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -275,7 +280,7 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", nil, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, nil, server.Client())
 
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -298,7 +303,7 @@ func TestGetBucketDetailsWithAuth_AuthHandlerError(t *testing.T) {
 	errorAuth := &errorMockAuthHandler{err: errors.New("auth failed")}
 
 	ctx := context.Background()
-	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, "test-profile", errorAuth, server.Client())
+	_, err := indexd_client.GetBucketDetailsWithAuth(ctx, "test-bucket", server.URL, errorAuth, server.Client())
 
 	if err == nil {
 		t.Fatal("Expected error from auth handler, got nil")
@@ -318,7 +323,7 @@ type errorMockAuthHandler struct {
 	err error
 }
 
-func (e *errorMockAuthHandler) AddAuthHeader(req *http.Request, profile string) error {
+func (e *errorMockAuthHandler) AddAuthHeader(req *http.Request) error {
 	return e.err
 }
 
@@ -435,7 +440,7 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 	})
 
 	// Provide bucket details directly (bypass getBucketDetails)
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 		Programs:    []string{"test-program"},
@@ -448,7 +453,7 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 		"", "", "", "", // No AWS credentials/region/endpoint in params (using client)
 		bucketDetails,
 		s3Client,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err != nil {
@@ -474,7 +479,7 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 
 	s3Mock.AddObject("test-bucket", "file.bam", 1024)
 
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -490,7 +495,7 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 		s3Mock.URL(),
 		bucketDetails,
 		nil, // No s3Client provided - will create one
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err != nil {
@@ -517,7 +522,7 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 	s3Mock.AddObject("test-bucket", "data.bam", 512)
 
 	// Bucket details from Gen3 (simulated)
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -532,7 +537,7 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 		"", // No endpoint param - should use bucketDetails
 		bucketDetails,
 		nil,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err != nil {
@@ -553,7 +558,7 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 	ctx := context.Background()
 
 	ignoreAWSConfigFiles(t)
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: "http://endpoint",
 	}
@@ -564,7 +569,7 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 		"key", "secret", "us-west-2", "http://endpoint",
 		bucketDetails,
 		nil,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err == nil {
@@ -587,7 +592,7 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "", // No region - this will definitely trigger validation error
 		EndpointURL: s3Mock.URL(),
 	}
@@ -601,7 +606,7 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 		"", // No endpoint
 		bucketDetails,
 		nil, // No s3Client - will try to create one
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	// Should fail on missing region at minimum
@@ -621,7 +626,7 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 
 	// Bucket details WITHOUT region
 	ignoreAWSConfigFiles(t)
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		EndpointURL: "http://s3-endpoint",
 		// No region field
 	}
@@ -635,7 +640,7 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 		"",
 		bucketDetails,
 		nil,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err == nil {
@@ -671,7 +676,7 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -682,7 +687,7 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 		"", "", "", "",
 		bucketDetails,
 		s3Client,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err == nil {
@@ -721,7 +726,7 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -732,7 +737,7 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 		"", "", "", "",
 		bucketDetails,
 		s3Client,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err != nil {
@@ -757,7 +762,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 	defer s3Mock.Close()
 
 	// Bucket details with DIFFERENT endpoint
-	bucketDetails := s3_utils.S3Bucket{
+	bucketDetails := &s3_utils.S3Bucket{
 		Region:      "us-east-1", // Different region
 		EndpointURL: "http://different-endpoint",
 		Programs:    []string{"test-program"},
@@ -775,7 +780,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 		s3Mock.URL(), // Override bucketDetails' "http://different-endpoint"
 		bucketDetails,
 		nil,
-		nil, // Use NoOpLogger
+		noOpLogger,
 	)
 
 	if err != nil {

@@ -51,16 +51,16 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		var initMsg map[string]any
+		var initMsg lfs.InitMessage
 		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
 			myLogger.Printf("error decoding initial JSON message: %s", err)
 			return err
 		}
 
 		// Handle "init" event and extract remote
-		if evt, ok := initMsg["event"]; ok && evt == "init" {
-			if r, ok := initMsg["remote"].(string); ok {
-				remoteName = r
+		if initMsg.Event == "init" {
+			if initMsg.Remote != "" {
+				remoteName = initMsg.Remote
 				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
 			} else {
 				// If no remote name specified used origin
@@ -76,8 +76,8 @@ var Cmd = &cobra.Command{
 				return err
 			}
 
-			// if upload event, then call UpdateDrsObjects to prepare DRS objects
-			if operation == "upload" {
+			// if upload event, prepare DRS objects
+			if initMsg.Operation == "upload" {
 				myLogger.Printf("Preparing DRS map for upload operation")
 				err := drsmap.UpdateDrsObjects(drsClient, myLogger)
 				if err != nil {
@@ -90,7 +90,7 @@ var Cmd = &cobra.Command{
 			// Respond with an empty json object via stdout
 			encoder.Encode(struct{}{})
 		} else {
-			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
+			err := fmt.Errorf("protocol error: expected 'init' message, got '%s'", initMsg.Event)
 			myLogger.Printf("Error: %s", err)
 			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err

@@ -20,6 +20,7 @@ import (
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
@@ -207,26 +208,26 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 // // upserts index record, so that if...
 // // 1. the record exists for the project, it updates the URL
 // // 2. the record for the project does not exist, it creates a new one
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) error {
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) (*drs.DRSObject, error) {
 	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
 	records, err := inc.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
-		return fmt.Errorf("error querying indexd server for matches to hash %s: %v", sha256, err)
+		return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
 	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
 	if err != nil {
-		return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
+		return nil, fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 	}
 
 	if matchingRecord != nil && matchingRecord.Id == uuid {
 		// if record exists and contains requested url, nothing to do
 		if slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
 			logger.Print("Nothing to do: file already registered")
-			return nil
+			return matchingRecord, nil
 		}
 
 		// if record exists with different url, update via index/{guid}
@@ -234,11 +235,11 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 			logger.Print("updating existing record with new url")
 
 			updatedRecord := drs.DRSObject{AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: url}}}}
-			_, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
+			drsObj, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
 			if err != nil {
-				return fmt.Errorf("failed to update indexd record: %w", err)
+				return nil, fmt.Errorf("failed to update indexd record: %w", err)
 			}
-			return nil
+			return drsObj, nil
 		}
 	}
 
@@ -246,11 +247,11 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 	logger.Print("creating new record")
 	authzStr, err := utils.ProjectToResource(projectId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, relPath, err := utils.ParseS3URL(url)
 	if err != nil {
-		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
+		return nil, fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
 	indexdObject := &IndexdRecord{
@@ -264,12 +265,12 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 		Metadata: map[string]string{"remote": "true"},
 	}
 
-	_, err = inc.RegisterRecord(indexdObject.ToDrsObject())
+	drsObj, err := inc.RegisterRecord(indexdObject.ToDrsObject())
 
 	if err != nil {
-		return fmt.Errorf("failed to register indexd record: %w", err)
+		return nil, fmt.Errorf("failed to register indexd record: %w", err)
 	}
-	return nil
+	return drsObj, nil
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
@@ -327,9 +328,20 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Create indexd record
 	inc.Logger.Print("Processing indexd record...")
-	if err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, inc.Logger); err != nil {
+	drsObj, err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, inc.Logger)
+	if err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
+
+	// write to file so push has that file available
+	drsObjPath, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
+	if err != nil {
+		return s3_utils.S3Meta{}, fmt.Errorf("failed to get object path: %w", err)
+	}
+	if err := drsmap.WriteDrsObj(drsObj, sha256, drsObjPath); err != nil {
+		return s3_utils.S3Meta{}, fmt.Errorf("failed to write DRS object: %w", err)
+	}
+
 	inc.Logger.Print("Indexd updated")
 
 	return s3_utils.S3Meta{

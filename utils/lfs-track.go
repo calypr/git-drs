@@ -174,9 +174,7 @@ func matchesDoubleStarPattern(pattern, filePath string) bool {
 			}
 		} else if i == len(parts)-1 {
 			// Last part - must match the end or remaining path
-			if strings.HasPrefix(part, "/") {
-				part = part[1:] // Remove leading slash
-			}
+			part = strings.TrimPrefix(part, "/")
 
 			// For the last part, try to match against the filename or remaining path
 			if strings.Contains(part, "/") {

@@ -15,8 +15,8 @@ import (
 	"time"
 
 	dcJWT "github.com/calypr/data-client/client/jwt"
-	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -33,9 +33,9 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatal("GH_PAT environment variable not set")
 	}
 
-	profile := os.Getenv("GIT_DRS_PROFILE")
-	if profile == "" {
-		t.Fatal("GIT_DRS_PROFILE environment variable not set")
+	remote := os.Getenv("GIT_DRS_REMOTE")
+	if remote == "" {
+		t.Fatal("GIT_DRS_REMOTE environment variable not set")
 	}
 
 	var err error
@@ -94,7 +94,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	cof := dcJWT.Configure{}
-	cred, err := cof.ParseConfig(profile)
+	cred, err := cof.ParseConfig(remote)
 	if err != nil {
 		t.Fatalf("Parse config: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		"--project_id",
 		repoName,
 		"--profile",
-		profile,
+		remote,
 		"-w",
 		"-a")
 
@@ -125,7 +125,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		"--project_id",
 		repoName,
 		"--profile",
-		profile,
+		remote,
 		"-w",
 		"-a",
 	)
@@ -141,13 +141,21 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git lfs install in %s: %v", repoDir, err)
 	}
 
-	cmd = exec.Command("git-drs", "init", "--project", repoName, "--bucket", DEFAULT_BUCKET, "--profile", profile)
+	cmd = exec.Command("git-drs", "init")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("git-drs init output: %s", output)
 		t.Fatalf("Failed to git-drs init in %s: %v", repoDir, err)
 	}
-	t.Logf("git-drs init output: %s", output)
+	t.Logf("git-drs add remote output: %s", output)
+
+	cmd = exec.Command("git-drs", "remote", "add", "gen3", remote, "--project", repoName, "--bucket", DEFAULT_BUCKET)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("git-drs add remote output: %s", output)
+		t.Fatalf("Failed to git-drs add remote %s: %v", repoName, err)
+	}
+	t.Logf("git-drs add remote output: %s", output)
 
 	// Verify .drs/config.yaml exists
 	configPath := filepath.Join(".drs", "config.yaml")
@@ -165,22 +173,24 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Logf(".drs/config.yaml contents: %s", configContent)
 	}
 
-	// Verify git hooks are installed (pre-commit and pre-push)
-	hooksDir := ".git/hooks"
-	preCommitHook := filepath.Join(hooksDir, "pre-commit")
-	if _, err := os.Stat(preCommitHook); err != nil {
-		if os.IsNotExist(err) {
-			t.Fatalf("pre-commit hook not installed in %s", hooksDir)
-		}
-		t.Fatalf("Failed to stat pre-commit hook in %s: %v", hooksDir, err)
-	}
-	prePushHook := filepath.Join(hooksDir, "pre-push")
-	if _, err := os.Stat(prePushHook); err != nil {
-		if os.IsNotExist(err) {
-			t.Fatalf("pre-push hook not installed in %s", hooksDir)
-		}
-		t.Fatalf("Failed to stat pre-push hook in %s: %v", hooksDir, err)
-	}
+	/* Hooks not getting added right now. Uncomment this out in the future if we go back to this setup
+	* // Verify git hooks are installed (pre-commit and pre-push)
+	  hooksDir := ".git/hooks"
+	  preCommitHook := filepath.Join(hooksDir, "pre-commit")
+	  if _, err := os.Stat(preCommitHook); err != nil {
+	          if os.IsNotExist(err) {
+	                  t.Fatalf("pre-commit hook not installed in %s", hooksDir)
+	          }
+	          t.Fatalf("Failed to stat pre-commit hook in %s: %v", hooksDir, err)
+	  }
+	  prePushHook := filepath.Join(hooksDir, "pre-push")
+	  if _, err := os.Stat(prePushHook); err != nil {
+	          if os.IsNotExist(err) {
+	                  t.Fatalf("pre-push hook not installed in %s", hooksDir)
+	          }
+	          t.Fatalf("Failed to stat pre-push hook in %s: %v", hooksDir, err)
+	  }
+	*/
 
 	cmd = exec.Command("git", "lfs", "track", "*.txt")
 	if err := cmd.Run(); err != nil {
@@ -213,7 +223,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	remoteURL := fmt.Sprintf("%s/%s/%s.git", host, owner, repoName)
 	// Add remote
 	t.Log("Remote URL: ", remoteURL)
-	cmd = exec.Command("git", "remote", "add", "origin", remoteURL)
+	cmd = exec.Command("git", "remote", "add", remote, remoteURL)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
 	}
@@ -221,6 +231,11 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	cmd = exec.Command("git", "add", dataFile)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to git add data file %s: %v", dataFile, err)
+	}
+
+	cmd = exec.Command("git", "drs", "precommit", remote)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to git-drs precommit to remote %s: %v", remote, err)
 	}
 
 	cmd = exec.Command("git", "commit", "-m", "Add test file")
@@ -253,10 +268,11 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		Files []File `json:"files"`
 	}
 
+	t.Log("OUTPUT: ", string(output))
 	var fileMap FileContainer
 	err = json.Unmarshal(output, &fileMap)
 
-	path, err := client.GetObjectPath(config.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
 	if err != nil {
 		t.Fatalf("Failed to get object path %s: %v", path, err)
 	}
@@ -275,15 +291,15 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// Verify pre-commit hook was called by checking .drs/ logs
-	files, err := fs.ReadDir(os.DirFS(config.DRS_DIR), ".")
+	files, err := fs.ReadDir(os.DirFS(projectdir.DRS_DIR), ".")
 	if err != nil {
-		t.Fatalf("Failed to read .drs dir %s: %v", config.DRS_DIR, err)
+		t.Fatalf("Failed to read .drs dir %s: %v", projectdir.DRS_DIR, err)
 	}
 	logFound := false
 	for _, file := range files {
 		if !file.IsDir() && len(file.Name()) > 0 && file.Name() != "config.yaml" {
 			logFound = true
-			logPath := filepath.Join(config.DRS_DIR, file.Name())
+			logPath := filepath.Join(projectdir.DRS_DIR, file.Name())
 			logContent, err := os.ReadFile(logPath)
 			if err != nil {
 				t.Fatalf("Failed to read log file %s: %v", logPath, err)
@@ -293,16 +309,17 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		}
 	}
 	if !logFound {
-		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", config.DRS_DIR)
+		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", projectdir.DRS_DIR)
 	}
 
-	cmd = exec.Command("git", "push", "--set-upstream", "origin", "main")
+	cmd = exec.Command("git", "push", "--set-upstream", remote, "main")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)
 	} else {
 		t.Log("Push succeeded with dummy DRS server")
 	}
+	t.Log("OUTPUT: ", string(output))
 
 	// Clean up the initial repository
 	if err := os.Chdir(tmpDir); err != nil {
@@ -340,7 +357,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to change to cloned repo dir %s: %v", cloneRepoDir, err)
 	}
 
-	cmd = exec.Command("git-drs", "init", "--profile", profile)
+	cmd = exec.Command("git-drs", "init")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("git-drs init (clone) output: %s", output)
@@ -348,7 +365,20 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("git-drs init (clone) output: %s", output)
 
-	cmd = exec.Command("git", "lfs", "pull", "-I", dataFile)
+	cmd = exec.Command("git-drs", "remote", "add", "gen3", remote, "--project", repoName, "--bucket", DEFAULT_BUCKET)
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Logf("git-drs add remote output: %s", output)
+		t.Fatalf("Failed to git-drs add remote %s: %v", repoName, err)
+	}
+	t.Logf("git-drs add remote output: %s", output)
+
+	cmd = exec.Command("git", "remote", "add", remote, remoteURL)
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
+	}
+
+	cmd = exec.Command("git", "lfs", "pull", remote, "-I", dataFile)
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Expected pull failure with dummy DRS server: %v\nOutput: %s", err, output)
@@ -372,7 +402,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 
 	err = json.Unmarshal(output, &fileMap)
 
-	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID)
+	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID, "--remote", remote)
 	output, err = cmd.Output()
 	if err != nil {
 		t.Fatalf("Failed to delete indexd record %s: %v", fileMap.Files[0].OID, err)
@@ -393,6 +423,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	if err := os.RemoveAll(cloneRepoDir); err != nil {
 		t.Errorf("Failed to remove cloned repo dir %s: %v", cloneRepoDir, err)
 	}
+
 }
 
 // createRemoteRepo creates a new repo on GHE via API

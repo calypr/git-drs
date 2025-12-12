@@ -1,4 +1,4 @@
-package client
+package indexd_tests
 
 import (
 	"encoding/json"
@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 )
 
 //////////////////
@@ -203,7 +205,7 @@ func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.R
 func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
 	// Handle IndexdRecordForm (client sends this with POST)
 	var form struct {
-		IndexdRecord
+		indexd_client.IndexdRecord
 		Form string `json:"form"`
 		Rev  string `json:"rev"`
 	}
@@ -221,7 +223,7 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 		Size:      form.Size,
 		URLs:      form.URLs,
 		Authz:     form.Authz,
-		Hashes:    convertHashInfoToMap(form.Hashes),
+		Hashes:    hash.ConvertHashInfoToMap(form.Hashes),
 		Metadata:  form.Metadata, // Already map[string]string from IndexdRecord
 		CreatedAt: time.Now(),
 	}
@@ -294,13 +296,13 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 	dids, exists := mis.hashIndex[hashQuery]
 	mis.recordMutex.RUnlock()
 
-	outputRecords := []OutputInfo{}
+	outputRecords := []indexd_client.OutputInfo{}
 	if exists {
 		mis.recordMutex.RLock()
 		for _, did := range dids {
 			if record, ok := mis.records[did]; ok {
 				// Convert sha256 hash string to HashInfo struct
-				hashes := HashInfo{}
+				hashes := hash.HashInfo{}
 				if sha256, ok := record.Hashes["sha256"]; ok {
 					hashes.SHA256 = sha256
 				}
@@ -311,7 +313,7 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 					metadata[k] = v
 				}
 
-				outputRecords = append(outputRecords, OutputInfo{
+				outputRecords = append(outputRecords, indexd_client.OutputInfo{
 					Did:      record.Did,
 					Size:     record.Size,
 					Hashes:   hashes,
@@ -326,7 +328,7 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	// Return wrapped in ListRecords object matching Indexd API
-	response := ListRecords{
+	response := indexd_client.ListRecords{
 		Records: outputRecords,
 		IDs:     dids,
 		Size:    int64(len(outputRecords)),
@@ -397,15 +399,15 @@ func NewMockGen3Server(t *testing.T, s3Endpoint string) *MockGen3Server {
 			return
 		}
 
-		response := map[string]interface{}{
-			"S3_BUCKETS": map[string]interface{}{
-				"test-bucket": map[string]interface{}{
+		response := map[string]any{
+			"S3_BUCKETS": map[string]any{
+				"test-bucket": map[string]any{
 					"region":       "us-west-2",
 					"endpoint_url": mgs.s3Endpoint,
 					"programs":     []string{"test-program"},
 				},
 			},
-			"GS_BUCKETS": map[string]interface{}{},
+			"GS_BUCKETS": map[string]any{},
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -443,12 +445,6 @@ type MockS3Server struct {
 	httpServer *httptest.Server
 	objects    map[string]*MockS3Object // "bucket/key" -> object
 	objMutex   sync.RWMutex
-}
-
-// ignoreAWSConfigFiles is a helper function to prevent reading from the real AWS config files
-func ignoreAWSConfigFiles(t *testing.T) {
-	t.Setenv("AWS_CONFIG_FILE", "/dev/null")
-	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", "/dev/null")
 }
 
 // NewMockS3Server creates and starts a mock S3 server
@@ -525,30 +521,6 @@ func (mss *MockS3Server) Close() {
 
 // Helper functions for type conversion
 
-// convertHashInfoToMap converts HashInfo struct to map[string]string
-func convertHashInfoToMap(hashes HashInfo) map[string]string {
-	result := make(map[string]string)
-	if hashes.MD5 != "" {
-		result["md5"] = hashes.MD5
-	}
-	if hashes.SHA != "" {
-		result["sha"] = hashes.SHA
-	}
-	if hashes.SHA256 != "" {
-		result["sha256"] = hashes.SHA256
-	}
-	if hashes.SHA512 != "" {
-		result["sha512"] = hashes.SHA512
-	}
-	if hashes.CRC != "" {
-		result["crc"] = hashes.CRC
-	}
-	if hashes.ETag != "" {
-		result["etag"] = hashes.ETag
-	}
-	return result
-}
-
 // convertMapAnyToString converts map[string]any to map[string]string
 func convertMapAnyToString(input map[string]any) map[string]string {
 	result := make(map[string]string)
@@ -563,19 +535,18 @@ func convertMapAnyToString(input map[string]any) map[string]string {
 // convertMockRecordToDRSObject converts a MockIndexdRecord to a DRS object
 func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 	// Convert hashes to Checksum array
-	checksums := make([]drs.Checksum, 0)
-	for hashType, hashValue := range record.Hashes {
-		if hashValue != "" {
-			checksums = append(checksums, drs.Checksum{
-				Type:     drs.ChecksumType(hashType),
-				Checksum: hashValue,
-			})
-		}
-	}
 
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)
 	for i, url := range record.URLs {
+		// Get the first authz as the authorization for this access method
+		var authzPtr *drs.Authorizations
+		if len(record.Authz) > 0 {
+			authzPtr = &drs.Authorizations{
+				Value: record.Authz[0],
+			}
+		}
+
 		accessMethods = append(accessMethods, drs.AccessMethod{
 			Type:     "https",
 			AccessID: fmt.Sprintf("access-method-%d", i),
@@ -583,6 +554,7 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 				URL:     url,
 				Headers: []string{},
 			},
+			Authorizations: authzPtr,
 		})
 	}
 
@@ -590,7 +562,7 @@ func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
 		Id:            record.Did,
 		Name:          record.FileName,
 		Size:          record.Size,
-		Checksums:     checksums,
+		Checksums:     hash.ConvertStringMapToHashInfo(record.Hashes),
 		AccessMethods: accessMethods,
 		CreatedTime:   record.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Description:   "DRS object created from Indexd record",

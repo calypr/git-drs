@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,7 @@ var Cmd = &cobra.Command{
 			fmt.Printf("Indexing DRS URI %s with sha256 %s\n", drsURI, sha)
 
 			// create sha to DRS URI mapping
-			objPath, err := client.GetObjectPath(client.DRS_REF_DIR, sha)
+			objPath, err := drsmap.GetObjectPath(projectdir.DRS_REF_DIR, sha)
 			if err != nil {
 				return fmt.Errorf("failed to get object path for %s: %w", sha, err)
 			}
@@ -78,7 +79,7 @@ var Cmd = &cobra.Command{
 			}
 
 			// Split DRS URI into a custom path and write sha to custom path
-			customPath, err := client.CreateCustomPath(client.DRS_REF_DIR, drsURI)
+			customPath, err := drsmap.CreateCustomPath(projectdir.DRS_REF_DIR, drsURI)
 			if err != nil {
 				return fmt.Errorf("failed to create custom path for %s: %w", drsURI, err)
 			}
@@ -90,7 +91,7 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		fmt.Printf("Cache created in %s\n", client.DRS_REF_DIR)
+		fmt.Printf("Cache created in %s\n", projectdir.DRS_REF_DIR)
 		return nil
 	},
 }

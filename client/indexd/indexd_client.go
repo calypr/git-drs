@@ -52,10 +52,9 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *lo
 	}
 
 	bucketName := remote.GetBucketName()
-	//TODO: Is this really a failure state?
-	//if bucketName == "" {
-	//	return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
-	//}
+	if bucketName == "" {
+		logger.Println("WARNING: no gen3 bucket specified. To add a bucket, run 'git remote add gen3', use the '--help' flag for more info")
+	}
 
 	return &IndexDClient{
 		Base:        baseUrl,
@@ -177,7 +176,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	cl.Logger.Printf("Try to get download url for file OID %s", oid)
 
 	// get the DRS object using the OID
-	// FIXME: how do we not hardcode sha256 here?
 	records, err := cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		cl.Logger.Printf("error getting DRS object for OID %s: %s", oid, err)
@@ -206,7 +204,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error getting DRS object for matching record %s: %v", matchingRecord.Id, err)
 	}
 
-	// FIXME: generalize access ID method
 	// Check if access methods exist
 	if len(drsObj.AccessMethods) == 0 {
 		cl.Logger.Printf("no access methods available for DRS object %s", drsObj.Id)
@@ -264,7 +261,6 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	//  * addresses edge case where user X registering in project A has access to record in project B
 	//  * but still needs create a new record to so user Y reading the file in project A can access it
 	//  * even if they don't have access to project B
-
 	var drsObject *drs.DRSObject
 	if len(records) > 0 {
 		var err error
@@ -600,7 +596,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	err = cl.AuthHandler.AddAuthHeader(req)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
+		return nil, fmt.Errorf("unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
 	}
 	req.Header.Set("accept", "application/json")
 
@@ -633,7 +629,11 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		return out, nil
 	}
 	for i := range records.Records {
-		out[i] = *indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+		drsObj, err := indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+		if err != nil {
+			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
+		}
+		out[i] = *drsObj
 	}
 	return out, nil
 }
@@ -666,7 +666,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			q := req.URL.Query()
-			q.Add("authz", fmt.Sprintf("%s", resourcePath))
+			q.Add("authz", resourcePath)
 			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
@@ -710,7 +710,13 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 				return
 			}
 			for _, elem := range page.Records {
-				out <- drs.DRSObjectResult{Object: elem.ToIndexdRecord().ToDrsObject()}
+				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
+				if err != nil {
+					cl.Logger.Printf("error: %s", err)
+					out <- drs.DRSObjectResult{Error: err}
+					return
+				}
+				out <- drs.DRSObjectResult{Object: drsObj}
 			}
 			if len(page.Records) == 0 {
 				active = false
@@ -723,7 +729,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 }
 
 // UpdateRecord updates an existing indexd record by GUID using the PUT /index/index/{guid} endpoint
-// WARN: only supports putting new URLs atm
+// Supports updating: URLs, name (file_name), description (metadata), version, and authz
 func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
 	// Get current revision from existing record
 	record, err := cl.GetIndexdRecordByDID(did)
@@ -731,13 +737,49 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 		return nil, fmt.Errorf("could not retrieve existing record for DID %s: %v", did, err)
 	}
 
-	// create updated update info based on existing record
-	for _, a := range updateInfo.AccessMethods {
-		record.URLs = append(record.URLs, a.AccessURL.URL)
-	}
+	// Build update payload starting with existing record values
 	updatePayload := UpdateInputInfo{
-		URLs: record.URLs,
+		URLs:     record.URLs,
+		FileName: record.FileName,
+		Version:  record.Version,
+		Authz:    record.Authz,
+		ACL:      record.ACL,
+		Metadata: record.Metadata,
 	}
+
+	// Apply updates from updateInfo
+	// Update URLs by appending new access methods (deduplicated)
+	if len(updateInfo.AccessMethods) > 0 {
+		// Collect new URLs from access methods
+		newURLs := make([]string, 0, len(updateInfo.AccessMethods))
+		for _, a := range updateInfo.AccessMethods {
+			newURLs = append(newURLs, a.AccessURL.URL)
+		}
+		updatePayload.URLs = utils.AddUnique(updatePayload.URLs, newURLs)
+
+		// Append authz from access methods (deduplicated)
+		authz := indexdAuthzFromDrsAccessMethods(updateInfo.AccessMethods)
+		updatePayload.Authz = utils.AddUnique(updatePayload.Authz, authz)
+	}
+
+	// Update name (maps to file_name in indexd)
+	if updateInfo.Name != "" {
+		updatePayload.FileName = updateInfo.Name
+	}
+
+	// Update version
+	if updateInfo.Version != "" {
+		updatePayload.Version = updateInfo.Version
+	}
+
+	// Update description (stored in metadata)
+	if updateInfo.Description != "" {
+		if updatePayload.Metadata == nil {
+			updatePayload.Metadata = make(map[string]any)
+		}
+		updatePayload.Metadata["description"] = updateInfo.Description
+	}
+
 	jsonBytes, err := json.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)

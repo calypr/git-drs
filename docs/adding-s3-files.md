@@ -20,7 +20,7 @@ This command follows the standard AWS CLI authentication and configuration prece
 
 1. **Command-line flags**: `--aws-access-key-id`, `--aws-secret-access-key`, `--region`, `--endpoint-url`
 2. **Environment variables**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ENDPOINT_URL`
-3. **AWS configuration files**: `~/.aws/credentials` and `~/.aws/config`
+3. **AWS configuration files**: `~/.aws/credentials` first, then `~/.aws/config`
 4. **Gen3 bucket registration**: For registered buckets, region and endpoint are retrieved from Gen3
 5. **IAM roles**: For EC2 instances or containers with attached IAM roles
 

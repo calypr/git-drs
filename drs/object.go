@@ -18,7 +18,7 @@ type AccessMethod struct {
 	AccessID       string          `json:"access_id,omitempty"`
 	Cloud          string          `json:"cloud,omitempty"`
 	Region         string          `json:"region,omitempty"`
-	Avalible       string          `json:"available,omitempty"`
+	Available      string          `json:"available,omitempty"`
 	Authorizations *Authorizations `json:"Authorizations,omitempty"`
 }
 

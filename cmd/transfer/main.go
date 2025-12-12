@@ -47,7 +47,7 @@ var Cmd = &cobra.Command{
 			err := fmt.Errorf("failed to read initial message from stdin")
 			myLogger.Printf("Error: %s", err)
 			// No OID yet, so pass empty string
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
@@ -92,7 +92,7 @@ var Cmd = &cobra.Command{
 		} else {
 			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
 			myLogger.Printf("Error: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
@@ -113,7 +113,7 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 				myLogger.Printf("Downloading file OID %s", downloadMsg.Oid)
@@ -123,12 +123,12 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
 				}
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 500, errMsg)
 				}
 
 				// download signed url
@@ -136,14 +136,14 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
 				}
 
 				// send success message back
@@ -164,7 +164,7 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)
 				}
 				myLogger.Printf("Uploading file OID %s", uploadMsg.Oid)
 
@@ -173,7 +173,7 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 502, errMsg)
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)

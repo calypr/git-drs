@@ -50,7 +50,7 @@ var Cmd = &cobra.Command{
 			err := fmt.Errorf("failed to read initial message from stdin")
 			myLogger.Printf("Error: %s", err)
 			// No OID yet, so pass empty string
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
@@ -76,14 +76,14 @@ var Cmd = &cobra.Command{
 		} else {
 			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
 			myLogger.Printf("Error: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
 		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
 		if err != nil {
 			myLogger.Printf("Error creating indexd client: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
@@ -113,7 +113,7 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 
@@ -122,7 +122,7 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
 					continue
 				}
 
@@ -146,7 +146,7 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)
 				}
 				myLogger.Printf("Got UploadMessage: %+v\n", uploadMsg)
 

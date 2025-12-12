@@ -88,13 +88,13 @@ func WriteInitErrorMessage(encoder *json.Encoder, code int, errMsg string) {
 	encoder.Encode(errorResponse)
 }
 
-func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
+func WriteErrorMessage(encoder *json.Encoder, oid string, code int, errMsg string) {
 	// create failure message and send it back
 	errorResponse := ErrorMessage{
 		Event: "complete",
 		Oid:   oid,
 		Error: Error{
-			Code:    400,
+			Code:    code,
 			Message: errMsg,
 		},
 	}

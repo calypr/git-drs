@@ -629,7 +629,11 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		return out, nil
 	}
 	for i := range records.Records {
-		out[i] = *indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+		drsObj, err := indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+		if err != nil {
+			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
+		}
+		out[i] = *drsObj
 	}
 	return out, nil
 }
@@ -706,7 +710,13 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 				return
 			}
 			for _, elem := range page.Records {
-				out <- drs.DRSObjectResult{Object: elem.ToIndexdRecord().ToDrsObject()}
+				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
+				if err != nil {
+					cl.Logger.Printf("error: %s", err)
+					out <- drs.DRSObjectResult{Error: err}
+					return
+				}
+				out <- drs.DRSObjectResult{Object: drsObj}
 			}
 			if len(page.Records) == 0 {
 				active = false

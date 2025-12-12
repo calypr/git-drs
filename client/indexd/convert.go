@@ -3,6 +3,8 @@ package indexd_client
 // Conversion functions between DRSObject and IndexdRecord
 
 import (
+	"fmt"
+
 	"github.com/calypr/git-drs/drs"
 )
 
@@ -20,29 +22,40 @@ func indexdRecordFromDrsObject(drsObj *drs.DRSObject) (*IndexdRecord, error) {
 	return indexdObj, nil
 }
 
-func indexdRecordToDrsObject(indexdObj *IndexdRecord) *drs.DRSObject {
+func indexdRecordToDrsObject(indexdObj *IndexdRecord) (*drs.DRSObject, error) {
+	accessMethods, err := drsAccessMethodsFromIndexdURLs(indexdObj.URLs, indexdObj.Authz)
+	if err != nil {
+		return nil, err
+	}
+
 	return &drs.DRSObject{
 		Id:   indexdObj.Did,
 		Size: indexdObj.Size,
-		//Form:     indexdObj.Form,
+		//Form:  indexdObj.Form,
 		Name:          indexdObj.FileName,
-		AccessMethods: drsAccessMethodsFromIndexdURLs(indexdObj.URLs, indexdObj.Authz),
+		AccessMethods: accessMethods,
 		Checksums:     indexdObj.Hashes,
 		//Metadata: indexdObj.Metadata,
-	}
+	}, nil
 }
 
-func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) []drs.AccessMethod {
+func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) ([]drs.AccessMethod, error) {
 	var accessMethods []drs.AccessMethod
 	for _, url := range urls {
 		var method drs.AccessMethod
 		method.AccessURL = drs.AccessURL{URL: url}
+
+		// check if authz is null or 0-length, then error
+		if authz == nil {
+			return nil, fmt.Errorf("authz is required")
+		}
+
 		// NOTE: a record can only have 1 authz entry atm
-		// this is fine if we're creating UUIDs based on project ID
+		// this is fine since rn we're creating UUIDs based on project ID
 		method.Authorizations = &drs.Authorizations{Value: authz[0]}
 		accessMethods = append(accessMethods, method)
 	}
-	return accessMethods
+	return accessMethods, nil
 }
 
 func indexdAuthzFromDrsAccessMethods(accessMethods []drs.AccessMethod) []string {
@@ -63,6 +76,10 @@ func indexdURLFromDrsAccessURLs(accessMethods []drs.AccessMethod) []string {
 	return urls
 }
 
-func (inr *IndexdRecord) ToDrsObject() *drs.DRSObject {
-	return indexdRecordToDrsObject(inr)
+func (inr *IndexdRecord) ToDrsObject() (*drs.DRSObject, error) {
+	o, err := indexdRecordToDrsObject(inr)
+	if err != nil {
+		return nil, err
+	}
+	return o, nil
 }

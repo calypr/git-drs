@@ -156,23 +156,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		return fmt.Errorf("no project configured: %v", err)
 	}
 
-	// // get all staged files
-	// stagedFiles, err := getStagedFiles()
-	// if err != nil {
-	// 	return fmt.Errorf("error getting staged files: %v", err)
-	// }
-	// logger.Print("staged files: ", stagedFiles)
-
-	// // create list of lfsStagedFiles from the lfsFiles
-	// lfsStagedFiles := make([]LfsFileInfo, 0)
-	// for _, stagedFileName := range stagedFiles {
-	// 	if lfsFileInfo, ok := lfsFiles[stagedFileName]; ok {
-	// 		lfsStagedFiles = append(lfsStagedFiles, lfsFileInfo)
-	// 	}
-	// }
-	// logger.Printf("Preparing %d LFS files out of %d staged files", len(lfsStagedFiles), len(stagedFiles))
-
-	// Create a DRS object for each staged LFS file
+	// create a DRS object for each LFS file
 	// which will be used at push-time
 	for _, file := range lfsFiles {
 		// check if indexd object already prepared, skip if so
@@ -181,15 +165,9 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
-			// TODO (QW): log here or not?
 			logger.Printf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
 			continue
 		}
-
-		// // confirm file contents are localized
-		// if !file.Downloaded {
-		// 	return fmt.Errorf("staged file %s is not cached. Please unstage the file, then git add the file again", file.Name)
-		// }
 
 		// if file is in cache, hasn't been committed to git or pushed to indexd
 		// create a local DRS object for it

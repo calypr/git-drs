@@ -265,7 +265,12 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 		Metadata: map[string]string{"remote": "true"},
 	}
 
-	drsObj, err := inc.RegisterRecord(indexdObject.ToDrsObject())
+	inputDrsObj, err := indexdObject.ToDrsObject()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert indexd record to DRS object: %w", err)
+	}
+
+	drsObj, err := inc.RegisterRecord(inputDrsObj)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to register indexd record: %w", err)

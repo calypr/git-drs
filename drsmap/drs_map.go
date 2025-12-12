@@ -130,7 +130,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 		if drsObjPath != "" && oid != "" {
 			writtenObjs++
 			// write drs objects to DRS_OBJS_PATH
-			err = writeDrsObj(drsObj.Object, oid, drsObjPath)
+			err = WriteDrsObj(drsObj.Object, oid, drsObjPath)
 			if err != nil {
 				return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
 			}
@@ -212,7 +212,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		}
 
 		// write drs objects to DRS_OBJS_PATH
-		err = writeDrsObj(drsObj, file.Oid, drsObjPath)
+		err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
@@ -222,7 +222,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	return nil
 }
 
-func writeDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
+func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	// get object bytes
 	indexdObjBytes, err := json.Marshal(drsObj)
 	if err != nil {

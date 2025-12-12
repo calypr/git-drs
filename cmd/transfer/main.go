@@ -68,11 +68,23 @@ var Cmd = &cobra.Command{
 				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
 			}
 
-			drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
+			remote := config.Remote(remoteName)
+			drsClient, err = cfg.GetRemoteClient(remote, myLogger)
 			if err != nil {
 				myLogger.Printf("Error creating indexd client: %s", err)
 				lfs.WriteInitErrorMessage(encoder, 400, err.Error())
 				return err
+			}
+
+			// if upload event, then call UpdateDrsObjects to prepare DRS objects
+			if operation == "upload" {
+				myLogger.Printf("Preparing DRS map for upload operation")
+				err := drsmap.UpdateDrsObjects(drsClient, myLogger)
+				if err != nil {
+					myLogger.Printf("Error updating DRS map: %s", err)
+					lfs.WriteInitErrorMessage(encoder, 400, err.Error())
+					return err
+				}
 			}
 
 			// Respond with an empty json object via stdout

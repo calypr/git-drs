@@ -52,10 +52,9 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *lo
 	}
 
 	bucketName := remote.GetBucketName()
-	//TODO: Is this really a failure state?
-	//if bucketName == "" {
-	//	return nil, fmt.Errorf("No gen3 bucket specified. Run 'git drs init', use the '--help' flag for more info")
-	//}
+	if bucketName == "" {
+		logger.Println("WARNING: no gen3 bucket specified. To add a bucket, run 'git remote add gen3', use the '--help' flag for more info")
+	}
 
 	return &IndexDClient{
 		Base:        baseUrl,
@@ -177,7 +176,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	cl.Logger.Printf("Try to get download url for file OID %s", oid)
 
 	// get the DRS object using the OID
-	// FIXME: how do we not hardcode sha256 here?
 	records, err := cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		cl.Logger.Printf("error getting DRS object for OID %s: %s", oid, err)
@@ -206,7 +204,6 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error getting DRS object for matching record %s: %v", matchingRecord.Id, err)
 	}
 
-	// FIXME: generalize access ID method
 	// Check if access methods exist
 	if len(drsObj.AccessMethods) == 0 {
 		cl.Logger.Printf("no access methods available for DRS object %s", drsObj.Id)
@@ -743,33 +740,16 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	// Apply updates from updateInfo
 	// Update URLs by appending new access methods (deduplicated)
 	if len(updateInfo.AccessMethods) > 0 {
-		// Build set of existing URLs for deduplication
-		existingURLs := make(map[string]bool)
-		for _, url := range updatePayload.URLs {
-			existingURLs[url] = true
-		}
-
-		// Append only new URLs
+		// Collect new URLs from access methods
+		newURLs := make([]string, 0, len(updateInfo.AccessMethods))
 		for _, a := range updateInfo.AccessMethods {
-			if !existingURLs[a.AccessURL.URL] {
-				updatePayload.URLs = append(updatePayload.URLs, a.AccessURL.URL)
-				existingURLs[a.AccessURL.URL] = true
-			}
+			newURLs = append(newURLs, a.AccessURL.URL)
 		}
+		updatePayload.URLs = utils.AddUnique(updatePayload.URLs, newURLs)
 
 		// Append authz from access methods (deduplicated)
-		existingAuthz := make(map[string]bool)
-		for _, authz := range updatePayload.Authz {
-			existingAuthz[authz] = true
-		}
-
 		authz := indexdAuthzFromDrsAccessMethods(updateInfo.AccessMethods)
-		for _, a := range authz {
-			if !existingAuthz[a] {
-				updatePayload.Authz = append(updatePayload.Authz, a)
-				existingAuthz[a] = true
-			}
-		}
+		updatePayload.Authz = utils.AddUnique(updatePayload.Authz, authz)
 	}
 
 	// Update name (maps to file_name in indexd)

@@ -16,3 +16,20 @@ func ProjectToResource(project string) (string, error) {
 	projectIdArr := strings.SplitN(project, "-", 2)
 	return "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1], nil
 }
+
+// AddUnique appends items from 'toAdd' to 'existing' only if they're not already present.
+// Returns the updated slice with unique items.
+func AddUnique[T comparable](existing []T, toAdd []T) []T {
+	seen := make(map[T]bool, len(existing))
+	for _, item := range existing {
+		seen[item] = true
+	}
+
+	for _, item := range toAdd {
+		if !seen[item] {
+			existing = append(existing, item)
+			seen[item] = true
+		}
+	}
+	return existing
+}

@@ -207,22 +207,6 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 // // upserts index record, so that if...
 // // 1. the record exists for the project, it updates the URL
 // // 2. the record for the project does not exist, it creates a new one
-// // upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
-// // It's separated for easier unit testing with mock clients.
-// // Parameters:
-// //   - indexdClient: the indexd client interface (can be mocked)
-// //   - projectId: the project ID to use for the record
-// //   - url: the S3 URL to register
-// //   - sha256: the SHA256 hash of the file
-// //   - fileSize: the size of the file in bytes
-// //   - modifiedDate: the modification date of the file
-// //   - logger: the logger interface for output
-// func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
-
-// 	// Create UUID for the record
-// }
-
-// upsertIndexdRecord is the production wrapper that loads config and creates clients.
 func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) error {
 	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
@@ -249,12 +233,7 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 		if matchingRecord.Id == uuid && !slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
 			logger.Print("updating existing record with new url")
 
-			//updateInfo := UpdateInputInfo{
-			//	URLs: []string{url},
-			//}
-			//TODO: this assumes that files aren't stored in multiple locations....
 			updatedRecord := drs.DRSObject{AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: url}}}}
-
 			_, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
 			if err != nil {
 				return fmt.Errorf("failed to update indexd record: %w", err)

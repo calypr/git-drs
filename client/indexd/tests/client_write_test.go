@@ -16,7 +16,7 @@ import (
 // Integration tests for WRITE operations on IndexdClient using mock indexd server.
 // These tests verify mutating operations that create, update, or delete data:
 // - RegisterRecord / RegisterIndexdRecord - Create new records
-// - UpdateRecord / UpdateIndexdRecord - Modify existing records
+// - UpdateRecord / UpdateRecord - Modify existing records
 // - DeleteRecord / DeleteIndexdRecord - Remove records
 
 // TestIndexdClient_RegisterRecord tests the high-level RegisterRecord method
@@ -154,11 +154,11 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 }
 
 ///////////////////////////////
-// UpdateRecord / UpdateIndexdRecord Tests
+// UpdateRecord / UpdateRecord Tests
 ///////////////////////////////
 
-// TestIndexdClient_UpdateIndexdRecord_AppendsURLs tests updating record via client method
-func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
+// TestIndexdClient_UpdateRecord_AppendsURLs tests updating record via client method
+func TestIndexdClient_UpdateRecord_AppendsURLs(t *testing.T) {
 	// Arrange
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
@@ -192,7 +192,7 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	drsObj, err := client.UpdateRecord(updateInfo, originalRecord.Did)
 
 	// Assert: Verify the client method executed successfully
-	require.NoError(t, err, "UpdateIndexdRecord should succeed")
+	require.NoError(t, err, "UpdateRecord should succeed")
 	require.NotNil(t, drsObj, "Should return a valid DRSObject")
 
 	// Verify the URLs were appended correctly
@@ -214,8 +214,8 @@ func TestIndexdClient_UpdateIndexdRecord_AppendsURLs(t *testing.T) {
 	require.Contains(t, urls, newURL)
 }
 
-// TestIndexdClient_UpdateIndexdRecord_Idempotent tests URL appending idempotency via client method
-func TestIndexdClient_UpdateIndexdRecord_Idempotent(t *testing.T) {
+// TestIndexdClient_UpdateRecord_Idempotent tests URL appending idempotency via client method
+func TestIndexdClient_UpdateRecord_Idempotent(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)
 	defer mockServer.Close()
 

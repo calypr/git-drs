@@ -48,7 +48,8 @@ type DRSClient interface {
 	// Put file into object storage and obtain a DRS record pointing to it
 	RegisterFile(oid string) (*drs.DRSObject, error)
 
-	// Update an indexd record by appending a file URL and return the updated record
+	// Update a DRS record and return the updated record
+	// Fields allowed: URLs, authz, name, version, description
 	UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error)
 
 	// Create a DRS object given file info

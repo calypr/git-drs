@@ -47,20 +47,20 @@ var Cmd = &cobra.Command{
 			err := fmt.Errorf("failed to read initial message from stdin")
 			myLogger.Printf("Error: %s", err)
 			// No OID yet, so pass empty string
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
-		var initMsg map[string]any
+		var initMsg lfs.InitMessage
 		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
 			myLogger.Printf("error decoding initial JSON message: %s", err)
 			return err
 		}
 
 		// Handle "init" event and extract remote
-		if evt, ok := initMsg["event"]; ok && evt == "init" {
-			if r, ok := initMsg["remote"].(string); ok {
-				remoteName = r
+		if initMsg.Event == "init" {
+			if initMsg.Remote != "" {
+				remoteName = initMsg.Remote
 				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
 			} else {
 				// If no remote name specified used origin
@@ -68,19 +68,31 @@ var Cmd = &cobra.Command{
 				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
 			}
 
+			remote := config.Remote(remoteName)
+			drsClient, err = cfg.GetRemoteClient(remote, myLogger)
+			if err != nil {
+				myLogger.Printf("Error creating indexd client: %s", err)
+				lfs.WriteInitErrorMessage(encoder, 400, err.Error())
+				return err
+			}
+
+			// if upload event, prepare DRS objects
+			if initMsg.Operation == "upload" {
+				myLogger.Printf("Preparing DRS map for upload operation")
+				err := drsmap.UpdateDrsObjects(drsClient, myLogger)
+				if err != nil {
+					myLogger.Printf("Error updating DRS map: %s", err)
+					lfs.WriteInitErrorMessage(encoder, 400, err.Error())
+					return err
+				}
+			}
+
 			// Respond with an empty json object via stdout
 			encoder.Encode(struct{}{})
 		} else {
-			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
+			err := fmt.Errorf("protocol error: expected 'init' message, got '%s'", initMsg.Event)
 			myLogger.Printf("Error: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
-			return err
-		}
-
-		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
-		if err != nil {
-			myLogger.Printf("Error creating indexd client: %s", err)
-			lfs.WriteErrorMessage(encoder, "", err.Error())
+			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
@@ -101,7 +113,7 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 				myLogger.Printf("Downloading file OID %s", downloadMsg.Oid)
@@ -111,12 +123,12 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
 				}
 				if accessUrl.URL == "" {
 					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 500, errMsg)
 				}
 
 				// download signed url
@@ -124,14 +136,14 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
 				}
 
 				// send success message back
@@ -152,18 +164,16 @@ var Cmd = &cobra.Command{
 				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)
 				}
 				myLogger.Printf("Uploading file OID %s", uploadMsg.Oid)
 
-				//TODO: write code to take Oid and generate DRSRecord
-				// otherwise, register the file (create indexd record and upload file)
-				//TODO: re-implement this with new DRSClient methods
+				// register file (write drs record and upload file)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, errMsg)
+					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 502, errMsg)
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(encoder, uploadMsg.Oid, drsObj.Name)

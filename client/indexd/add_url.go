@@ -15,11 +15,12 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
@@ -28,7 +29,7 @@ import (
 // This is the production version that includes all config/auth dependencies.
 func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
 	// get all buckets
-	baseURL := inc.Base
+	baseURL := *inc.Base // Create a copy to avoid mutating inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
 	// Use the AuthHandler pattern for cleaner auth handling
 	return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.AuthHandler, httpClient)
@@ -42,11 +43,6 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 	bucket, key, err := utils.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
-	}
-
-	// region + endpoint must be supplied if bucket not registered in gen3
-	if bucketDetails.EndpointURL == "" || bucketDetails.Region == "" {
-		logger.Print("Bucket details not found in Gen3 configuration. Using endpoint and region provided by user in CLI or in AWS configuration files.")
 	}
 
 	// Create s3 client if not passed as param
@@ -98,6 +94,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 		endpointToUse := ""
 		if endpoint != "" {
 			endpointToUse = endpoint
+			finalEndpoint = endpoint
 		} else if bucketDetails.EndpointURL != "" {
 			endpointToUse = bucketDetails.EndpointURL
 		}
@@ -198,62 +195,51 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 
 	bucketDetails, err := inc.getBucketDetails(ctx, bucket, httpClient)
 	if err != nil {
-		return 0, "", fmt.Errorf("Unable to get bucket details: %w. Please provide the AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
+		return 0, "", fmt.Errorf("unable to get bucket details: %w. Please ensure you've specified the correct AWS region and AWS bucket endpoint URL via flags or environment variables. %s", err, messages.ADDURL_HELP_MSG)
+	}
+	if bucketDetails == nil {
+		logger.Println("WARNING: no matching bucket found in CALYPR")
+		bucketDetails = &s3_utils.S3Bucket{}
 	}
 
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
 }
 
-// upserts index record, so that if...
-// 1. the record exists for the project, it updates the URL
-// 2. the record for the project does not exist, it creates a new one
-// upsertIndexdRecordWithClient is the core logic for upserting an indexd record.
-// It's separated for easier unit testing with mock clients.
-// Parameters:
-//   - indexdClient: the indexd client interface (can be mocked)
-//   - projectId: the project ID to use for the record
-//   - url: the S3 URL to register
-//   - sha256: the SHA256 hash of the file
-//   - fileSize: the size of the file in bytes
-//   - modifiedDate: the modification date of the file
-//   - logger: the logger interface for output
-func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
-
+// // upserts index record, so that if...
+// // 1. the record exists for the project, it updates the URL
+// // 2. the record for the project does not exist, it creates a new one
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) (*drs.DRSObject, error) {
+	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	// handle if record already exists
-	records, err := indexdClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
+	records, err := inc.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
 	if err != nil {
-		return fmt.Errorf("Error querying indexd server for matches to hash %s: %v", sha256, err)
+		return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", sha256, err)
 	}
 
 	matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
 	if err != nil {
-		return fmt.Errorf("Error finding matching record for project %s: %v", projectId, err)
+		return nil, fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 	}
 
 	if matchingRecord != nil && matchingRecord.Id == uuid {
 		// if record exists and contains requested url, nothing to do
 		if slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
 			logger.Print("Nothing to do: file already registered")
-			return nil
+			return matchingRecord, nil
 		}
 
 		// if record exists with different url, update via index/{guid}
 		if matchingRecord.Id == uuid && !slices.Contains(indexdURLFromDrsAccessURLs(matchingRecord.AccessMethods), url) {
 			logger.Print("updating existing record with new url")
 
-			//updateInfo := UpdateInputInfo{
-			//	URLs: []string{url},
-			//}
-			//TODO: this assumes that files aren't stored in multiple locations....
 			updatedRecord := drs.DRSObject{AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: url}}}}
-
-			_, err := indexdClient.UpdateRecord(&updatedRecord, matchingRecord.Id)
+			drsObj, err := inc.UpdateRecord(&updatedRecord, matchingRecord.Id)
 			if err != nil {
-				return fmt.Errorf("failed to update indexd record: %w", err)
+				return nil, fmt.Errorf("failed to update indexd record: %w", err)
 			}
-			return nil
+			return drsObj, nil
 		}
 	}
 
@@ -261,11 +247,11 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 	logger.Print("creating new record")
 	authzStr, err := utils.ProjectToResource(projectId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, relPath, err := utils.ParseS3URL(url)
 	if err != nil {
-		return fmt.Errorf("failed to get relative S3 path from URL: %s", url)
+		return nil, fmt.Errorf("failed to get relative S3 path from URL: %s", url)
 	}
 
 	indexdObject := &IndexdRecord{
@@ -275,20 +261,21 @@ func UpsertIndexdRecordWithClient(indexdClient client.DRSClient, projectId, url,
 		Size:     fileSize,
 		URLs:     []string{url},
 		Authz:    []string{authzStr},
+		// NOTE: that this isn't being carried over atm cause we're registering via DRS Object
 		Metadata: map[string]string{"remote": "true"},
-		// ContentCreatedDate: modifiedDate, // TODO: setting created/updated time in indexd requires second API call
 	}
 
-	_, err = indexdClient.RegisterRecord(indexdObject.ToDrsObject())
+	inputDrsObj, err := indexdObject.ToDrsObject()
 	if err != nil {
-		return fmt.Errorf("failed to register indexd record: %w", err)
+		return nil, fmt.Errorf("failed to convert indexd record to DRS object: %w", err)
 	}
-	return nil
-}
 
-// upsertIndexdRecord is the production wrapper that loads config and creates clients.
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, modifiedDate string, logger *log.Logger) error {
-	return UpsertIndexdRecordWithClient(inc, inc.ProjectId, url, sha256, fileSize, modifiedDate, logger)
+	drsObj, err := inc.RegisterRecord(inputDrsObj)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to register indexd record: %w", err)
+	}
+	return drsObj, nil
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
@@ -305,8 +292,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Use NoOpLogger if no logger provided
 	if inc.Logger == nil {
-		//TODO: re-enable logging
-		//cfg.logger = &log.NoOpLogger{}
+		inc.Logger = drslog.NewNoOpLogger()
 	}
 
 	// Validate inputs
@@ -320,7 +306,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	// open .gitattributes
+	// confirm file is tracked
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
@@ -331,7 +317,7 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 
 	// Fetch S3 metadata (size, modified date)
 	inc.Logger.Print("Fetching S3 metadata...")
-	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, cfg.Logger)
+	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, inc.Logger)
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {
@@ -339,15 +325,28 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 		}
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
+
+	// logging
 	inc.Logger.Print("Fetched S3 metadata successfully:")
 	inc.Logger.Printf(" - File Size: %d bytes", fileSize)
 	inc.Logger.Printf(" - Last Modified: %s", modifiedDate)
 
 	// Create indexd record
 	inc.Logger.Print("Processing indexd record...")
-	if err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, modifiedDate, inc.Logger); err != nil {
+	drsObj, err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, inc.Logger)
+	if err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
+
+	// write to file so push has that file available
+	drsObjPath, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
+	if err != nil {
+		return s3_utils.S3Meta{}, fmt.Errorf("failed to get object path: %w", err)
+	}
+	if err := drsmap.WriteDrsObj(drsObj, sha256, drsObjPath); err != nil {
+		return s3_utils.S3Meta{}, fmt.Errorf("failed to write DRS object: %w", err)
+	}
+
 	inc.Logger.Print("Indexd updated")
 
 	return s3_utils.S3Meta{

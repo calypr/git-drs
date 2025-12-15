@@ -30,7 +30,7 @@ var AddURLCmd = &cobra.Command{
 		// set git config lfs.allowincompletepush = true
 		configCmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
 		if err := configCmd.Run(); err != nil {
-			return fmt.Errorf("Unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
+			return fmt.Errorf("unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
 		}
 
 		// Parse arguments
@@ -40,10 +40,11 @@ var AddURLCmd = &cobra.Command{
 		awsSecretKey, _ := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
 		awsRegion, _ := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
 		awsEndpoint, _ := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
+		remote, _ := cmd.Flags().GetString("remote")
 
 		// if providing credentials, access key and secret must both be provided
 		if (awsAccessKey == "" && awsSecretKey != "") || (awsAccessKey != "" && awsSecretKey == "") {
-			return errors.New("Incomplete credentials provided as environment variables. Please run `export " + s3_utils.AWS_KEY_ENV_VAR + "=<key>` and `export " + s3_utils.AWS_SECRET_ENV_VAR + "=<secret>` to configure both.")
+			return errors.New("incomplete credentials provided as environment variables. Please run `export " + s3_utils.AWS_KEY_ENV_VAR + "=<key>` and `export " + s3_utils.AWS_SECRET_ENV_VAR + "=<secret>` to configure both")
 		}
 
 		// if none provided, use default AWS configuration on file
@@ -56,7 +57,7 @@ var AddURLCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(args[0]), myLogger)
+		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), myLogger)
 		if err != nil {
 			return fmt.Errorf("error getting current remote client: %v", err)
 		}
@@ -85,6 +86,7 @@ func init() {
 	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
 	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
 	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
+	AddURLCmd.Flags().String("remote", config.ORIGIN, "Git DRS remote to use")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

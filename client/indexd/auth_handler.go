@@ -38,7 +38,7 @@ func GetExpiration(tokenString string) (time.Time, error) {
 			return exp, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("Expiration field 'exp' type float64 not found in token %v", token)
+	return time.Time{}, fmt.Errorf("expiration field 'exp' type float64 not found in token %v", token)
 }
 
 func RefreshToken(cred *jwt.Credential) error {

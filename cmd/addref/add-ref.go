@@ -50,7 +50,7 @@ var Cmd = &cobra.Command{
 			}
 		}
 		if objSha == "" {
-			return fmt.Errorf("object %s sha256 not avalible", drsUri)
+			return fmt.Errorf("object %s sha256 not available", drsUri)
 		}
 		dirPath := filepath.Dir(dstPath)
 		_, err = os.Stat(dirPath)

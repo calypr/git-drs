@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/calypr/data-client/client/commonUtils"
 	"github.com/calypr/data-client/client/g3cmd"
@@ -35,6 +36,8 @@ type IndexDClient struct {
 	BucketName  string
 	Logger      *drslog.Logger
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
+
+	httpClient *http.Client
 }
 
 ////////////////////
@@ -56,12 +59,22 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *dr
 		logger.Println("WARNING: no gen3 bucket specified. To add a bucket, run 'git remote add gen3', use the '--help' flag for more info")
 	}
 
+	transport := &http.Transport{
+		MaxIdleConns:        100, // Default pool size (across all hosts)
+		MaxIdleConnsPerHost: 100, // Important: Pool size per *single host* (your Indexd server)
+		IdleConnTimeout:     90 * time.Second,
+	}
+	httpClient := &http.Client{
+		Transport: transport,
+	}
+
 	return &IndexDClient{
 		Base:        baseUrl,
 		ProjectId:   projectId,
 		BucketName:  bucketName,
 		Logger:      logger,
 		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
+		httpClient:  httpClient,
 	}, err
 }
 
@@ -141,8 +154,7 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
 
-	client := &http.Client{}
-	delResp, err := client.Do(delReq)
+	delResp, err := cl.httpClient.Do(delReq)
 	if err != nil {
 		return err
 	}
@@ -227,8 +239,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	client := &http.Client{}
-	response, err := client.Do(req)
+	response, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error getting signed URL: %v", err)
 	}
@@ -387,8 +398,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	client := &http.Client{}
-	response, err := client.Do(req)
+	response, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -443,8 +453,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			}
 
 			// execute request with error checking
-			client := &http.Client{}
-			response, err := client.Do(req)
+			response, err := cl.httpClient.Do(req)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -518,8 +527,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 
 	cl.Logger.Printf("POST request created for indexd: %s", endpt.String())
 
-	client := &http.Client{}
-	response, err := client.Do(req)
+	response, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -564,8 +572,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
 
-	client := &http.Client{}
-	delResp, err := client.Do(delReq)
+	delResp, err := cl.httpClient.Do(delReq)
 	if err != nil {
 		return err
 	}
@@ -601,8 +608,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	req.Header.Set("accept", "application/json")
 
 	// run request and do checks
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	resp, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", sum.Type, sum.Checksum, err)
 	}
@@ -679,8 +685,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			// execute request with error checking
-			httpClient := &http.Client{}
-			response, err := httpClient.Do(req)
+			response, err := cl.httpClient.Do(req)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -807,8 +812,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	cl.Logger.Printf("PUT request created for indexd update: %s", updateURL)
 
 	// Execute the request
-	client := &http.Client{}
-	response, err := client.Do(req)
+	response, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error executing PUT request: %v", err)
 	}
@@ -847,8 +851,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 	req.Header.Set("accept", "application/json")
 
-	httpClient := &http.Client{}
-	resp, err := httpClient.Do(req)
+	resp, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -911,8 +914,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 	req.Header.Set("accept", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := cl.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

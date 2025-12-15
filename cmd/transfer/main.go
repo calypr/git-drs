@@ -249,7 +249,7 @@ var Cmd = &cobra.Command{
 		if transferOperation == "upload" {
 			workerFunc = uploadWorker
 		}
-		for i := 0; i < numWorkers; i++ { // Fixed: was "range numWorkers"
+		for i := range numWorkers { // Fixed: was "range numWorkers"
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -257,7 +257,6 @@ var Cmd = &cobra.Command{
 			}(i)
 		}
 
-		// --- Process requests at Mach 5 ---
 		for scanner.Scan() {
 			currentBytes := scanner.Bytes()
 
@@ -275,8 +274,6 @@ var Cmd = &cobra.Command{
 				logger.Print("Confirmed TERMINATE. Shutting down boost...")
 				break
 			}
-
-			// Queue it up — let's-a-go!
 			transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
 		}
 

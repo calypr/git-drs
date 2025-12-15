@@ -17,7 +17,7 @@ import (
 
 type AnvilClient struct {
 	Endpoint string
-	sConfig  sonic.API
+	SConfig  sonic.API
 }
 
 func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
@@ -31,7 +31,7 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 		"url":    objectID,
 		"fields": []string{"hashes", "size", "fileName"},
 	}
-	bodyBytes, err := an.sConfig.Marshal(reqBody)
+	bodyBytes, err := an.SConfig.Marshal(reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 	if resp.StatusCode > 399 {
 		// Try to extract error message
 		var errResp map[string]any
-		an.sConfig.Unmarshal(respBody, &errResp)
+		an.SConfig.Unmarshal(respBody, &errResp)
 		msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		if m, ok := errResp["message"].(string); ok {
 			msg = m
@@ -70,7 +70,7 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 		Size     int64             `json:"size"`
 		FileName string            `json:"fileName"`
 	}
-	if err := an.sConfig.Unmarshal(respBody, &parsed); err != nil {
+	if err := an.SConfig.Unmarshal(respBody, &parsed); err != nil {
 		return nil, err
 	}
 

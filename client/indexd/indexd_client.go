@@ -38,7 +38,7 @@ type IndexDClient struct {
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
 
 	HttpClient *http.Client
-	sConfig    sonic.API
+	SConfig    sonic.API
 }
 
 ////////////////////
@@ -77,7 +77,7 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *dr
 		Logger:      logger,
 		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
 		HttpClient:  httpClient,
-		sConfig:     sonic.ConfigFastest,
+		SConfig:     sonic.ConfigFastest,
 	}, err
 }
 
@@ -249,7 +249,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	defer response.Body.Close()
 
 	accessUrl := drs.AccessURL{}
-	if err := cl.sConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
+	if err := cl.SConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	}
 
 	in := drs.OutputObject{}
-	if err := cl.sConfig.NewDecoder(response.Body).Decode(&in); err != nil {
+	if err := cl.SConfig.NewDecoder(response.Body).Decode(&in); err != nil {
 		return nil, err
 	}
 	return drs.ConvertOutputObjectToDRSObject(&in), nil
@@ -478,7 +478,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 			// return page of DRS objects
 			page := &drs.DRSPage{}
-			err = cl.sConfig.Unmarshal(body, &page)
+			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -628,7 +628,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	// unmarshal response body
 	records := ListRecords{}
-	err = cl.sConfig.NewDecoder(resp.Body).Decode(&records)
+	err = cl.SConfig.NewDecoder(resp.Body).Decode(&records)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
 	}
@@ -715,7 +715,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 
 			// return page of DRS objects
 			page := &ListRecords{}
-			err = cl.sConfig.Unmarshal(body, &page)
+			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -792,7 +792,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 		updatePayload.Metadata["description"] = updateInfo.Description
 	}
 
-	jsonBytes, err := cl.sConfig.Marshal(updatePayload)
+	jsonBytes, err := cl.SConfig.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
 	}
@@ -870,7 +870,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 
 	record := &OutputInfo{}
-	if err := cl.sConfig.NewDecoder(resp.Body).Decode(record); err != nil {
+	if err := cl.SConfig.NewDecoder(resp.Body).Decode(record); err != nil {
 		return nil, fmt.Errorf("error decoding response body: %v", err)
 	}
 
@@ -933,7 +933,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 
 	record := &OutputInfo{}
-	if err := cl.sConfig.NewDecoder(resp.Body).Decode(record); err != nil {
+	if err := cl.SConfig.NewDecoder(resp.Body).Decode(record); err != nil {
 		return nil, fmt.Errorf("error decoding response body: %v", err)
 	}
 

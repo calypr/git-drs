@@ -96,12 +96,13 @@ func (l *Logger) Fatalf(format string, v ...any) {
 // GetLogger returns the global logger. Safe to call from multiple goroutines.
 func GetLogger() *Logger {
 	mu.Lock()
-	defer mu.Unlock()
 	if globalLogger == nil {
+		mu.Unlock()
 		// Fallback: create a no-op logger if not initialized. If errs then no logger for you
 		logger, _ := NewLogger("", true)
 		return logger
 	}
+	mu.Unlock()
 	return globalLogger
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/bytedance/sonic"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -210,6 +211,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				Logger:      drslog.GetLogger(),
 				AuthHandler: authHandler,
 				HttpClient:  &http.Client{},
+				SConfig:     sonic.ConfigFastest,
 			}
 
 			// Execute method under test

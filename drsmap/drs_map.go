@@ -44,13 +44,6 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error
 	if err != nil {
 		return err
 	}
-	logger.Printf("Wrote %d new objs to object store", writtenObjs)
-	return nil
-}
-
-func UpdateDrsObjects(projectId, remote string, drsClient client.DRSClient, logger *log.Logger) error {
-
-	logger.Print("Update to DRS objects started")
 
 	// Make this a map if it does not exist when hitting the server
 	sums := make([]*hash.Checksum, 0)

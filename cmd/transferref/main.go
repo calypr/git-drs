@@ -2,13 +2,13 @@ package transferref
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
@@ -20,9 +20,8 @@ import (
 )
 
 var (
-	req       lfs.InitMessage
 	drsClient client.DRSClient
-	operation string // "upload" or "download", set by the init message
+	sConfig   sonic.API = sonic.ConfigFastest
 )
 
 var Cmd = &cobra.Command{
@@ -56,7 +55,7 @@ var Cmd = &cobra.Command{
 		}
 
 		var initMsg map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
+		if err := sConfig.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
 			myLogger.Printf("error decoding initial JSON message: %s", err)
 			return err
 		}
@@ -90,7 +89,7 @@ var Cmd = &cobra.Command{
 
 		for scanner.Scan() {
 			var msg map[string]any
-			err := json.Unmarshal(scanner.Bytes(), &msg)
+			err := sConfig.Unmarshal(scanner.Bytes(), &msg)
 			if err != nil {
 				myLogger.Printf("error decoding JSON: %s", err)
 				continue
@@ -111,7 +110,7 @@ var Cmd = &cobra.Command{
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
-				if err := json.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
+				if err := sConfig.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
 					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
@@ -144,7 +143,7 @@ var Cmd = &cobra.Command{
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
-				if err := json.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
+				if err := sConfig.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
 					myLogger.Print(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)

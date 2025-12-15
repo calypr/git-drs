@@ -1,8 +1,7 @@
 package query
 
 import (
-	"encoding/json"
-
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/config"
 	conf "github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -37,7 +36,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		out, err := json.MarshalIndent(*obj, "", "  ")
+		out, err := sonic.ConfigFastest.MarshalIndent(*obj, "", "  ")
 		if err != nil {
 			return err
 		}

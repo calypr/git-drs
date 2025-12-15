@@ -3,7 +3,6 @@ package indexd_client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/commonUtils"
 	"github.com/calypr/data-client/client/g3cmd"
 	"github.com/calypr/data-client/client/jwt"
@@ -37,7 +37,8 @@ type IndexDClient struct {
 	Logger      *drslog.Logger
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
 
-	httpClient *http.Client
+	HttpClient *http.Client
+	sConfig    sonic.API
 }
 
 ////////////////////
@@ -65,6 +66,7 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *dr
 		IdleConnTimeout:     90 * time.Second,
 	}
 	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
 		Transport: transport,
 	}
 
@@ -74,7 +76,8 @@ func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *dr
 		BucketName:  bucketName,
 		Logger:      logger,
 		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
-		httpClient:  httpClient,
+		HttpClient:  httpClient,
+		sConfig:     sonic.ConfigFastest,
 	}, err
 }
 
@@ -154,7 +157,7 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
 
-	delResp, err := cl.httpClient.Do(delReq)
+	delResp, err := cl.HttpClient.Do(delReq)
 	if err != nil {
 		return err
 	}
@@ -239,14 +242,14 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	response, err := cl.httpClient.Do(req)
+	response, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error getting signed URL: %v", err)
 	}
 	defer response.Body.Close()
 
 	accessUrl := drs.AccessURL{}
-	if err := json.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
+	if err := cl.sConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
 	}
 
@@ -398,7 +401,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
-	response, err := cl.httpClient.Do(req)
+	response, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +412,7 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	}
 
 	in := drs.OutputObject{}
-	if err := json.NewDecoder(response.Body).Decode(&in); err != nil {
+	if err := cl.sConfig.NewDecoder(response.Body).Decode(&in); err != nil {
 		return nil, err
 	}
 	return drs.ConvertOutputObjectToDRSObject(&in), nil
@@ -453,7 +456,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			}
 
 			// execute request with error checking
-			response, err := cl.httpClient.Do(req)
+			response, err := cl.HttpClient.Do(req)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -475,7 +478,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 			// return page of DRS objects
 			page := &drs.DRSPage{}
-			err = json.Unmarshal(body, &page)
+			err = cl.sConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -503,7 +506,11 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 		Form:         "object",
 	}
 
-	jsonBytes, _ := json.Marshal(indexdObjForm)
+	jsonBytes, err := sonic.Marshal(indexdObjForm)
+	if err != nil {
+		return nil, err
+	}
+
 	cl.Logger.Printf("retrieved IndexdObj: %s", string(jsonBytes))
 
 	// register DRS object via /index POST
@@ -527,7 +534,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 
 	cl.Logger.Printf("POST request created for indexd: %s", endpt.String())
 
-	response, err := cl.httpClient.Do(req)
+	response, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -572,7 +579,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
 
-	delResp, err := cl.httpClient.Do(delReq)
+	delResp, err := cl.HttpClient.Do(delReq)
 	if err != nil {
 		return err
 	}
@@ -608,7 +615,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	req.Header.Set("accept", "application/json")
 
 	// run request and do checks
-	resp, err := cl.httpClient.Do(req)
+	resp, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", sum.Type, sum.Checksum, err)
 	}
@@ -621,7 +628,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	// unmarshal response body
 	records := ListRecords{}
-	err = json.NewDecoder(resp.Body).Decode(&records)
+	err = cl.sConfig.NewDecoder(resp.Body).Decode(&records)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
 	}
@@ -685,7 +692,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			// execute request with error checking
-			response, err := cl.httpClient.Do(req)
+			response, err := cl.HttpClient.Do(req)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -708,7 +715,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 
 			// return page of DRS objects
 			page := &ListRecords{}
-			err = json.Unmarshal(body, &page)
+			err = cl.sConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -785,7 +792,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 		updatePayload.Metadata["description"] = updateInfo.Description
 	}
 
-	jsonBytes, err := json.Marshal(updatePayload)
+	jsonBytes, err := cl.sConfig.Marshal(updatePayload)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
 	}
@@ -812,7 +819,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	cl.Logger.Printf("PUT request created for indexd update: %s", updateURL)
 
 	// Execute the request
-	response, err := cl.httpClient.Do(req)
+	response, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error executing PUT request: %v", err)
 	}
@@ -851,7 +858,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 	req.Header.Set("accept", "application/json")
 
-	resp, err := cl.httpClient.Do(req)
+	resp, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -863,7 +870,7 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 
 	record := &OutputInfo{}
-	if err := json.NewDecoder(resp.Body).Decode(record); err != nil {
+	if err := cl.sConfig.NewDecoder(resp.Body).Decode(record); err != nil {
 		return nil, fmt.Errorf("error decoding response body: %v", err)
 	}
 
@@ -914,7 +921,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 	req.Header.Set("accept", "application/json")
 
-	resp, err := cl.httpClient.Do(req)
+	resp, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -926,7 +933,7 @@ func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 
 	record := &OutputInfo{}
-	if err := json.NewDecoder(resp.Body).Decode(record); err != nil {
+	if err := cl.sConfig.NewDecoder(resp.Body).Decode(record); err != nil {
 		return nil, fmt.Errorf("error decoding response body: %v", err)
 	}
 

@@ -20,9 +20,8 @@ type Logger struct {
 }
 
 var (
-	logFile      io.Closer
 	globalLogger *Logger
-	mu           sync.Mutex // Protects globalLogger and logFile initialization
+	mu           sync.Mutex // Protects globalLogger
 )
 
 // NewLogger creates a new Logger that writes to the specified file and optionally stderr.
@@ -30,15 +29,6 @@ var (
 func NewLogger(filename string, logToStderr bool) (*Logger, error) {
 	mu.Lock()
 	defer mu.Unlock()
-
-	// If already initialized, return the existing one
-	if globalLogger != nil {
-		if logFile != nil {
-			logFile.Close()
-			logFile = nil
-		}
-	}
-
 	var writers []io.Writer
 
 	if filename == "" {
@@ -55,7 +45,6 @@ func NewLogger(filename string, logToStderr bool) (*Logger, error) {
 		return nil, err
 	}
 	writers = append(writers, file)
-	logFile = file
 
 	if logToStderr {
 		writers = append(writers, os.Stderr)
@@ -120,10 +109,6 @@ func GetLogger() *Logger {
 func Close() {
 	mu.Lock()
 	defer mu.Unlock()
-	if logFile != nil {
-		logFile.Close()
-		logFile = nil
-	}
 }
 
 // NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).

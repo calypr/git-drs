@@ -35,7 +35,8 @@ type TransferResult struct {
 
 var (
 	// Set once after init — determines which path all workers take
-	transferOperation string // "upload" or "download"
+	transferOperation string    // "upload" or "download"
+	sConfig           sonic.API = sonic.ConfigFastest
 )
 
 // downloadWorker handles only download requests — SONIC SPEED
@@ -43,7 +44,7 @@ func downloadWorker(id int, input <-chan TransferJob, output chan<- TransferResu
 	myLogger := drslog.GetLogger()
 	for job := range input {
 		var msg lfs.DownloadMessage
-		if err := sonic.ConfigFastest.Unmarshal(job.data, &msg); err != nil {
+		if err := sConfig.Unmarshal(job.data, &msg); err != nil {
 			errMsg := fmt.Sprintf("Failed to parse download message: %v", err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
@@ -110,7 +111,7 @@ func uploadWorker(id int, input <-chan TransferJob, output chan<- TransferResult
 	myLogger := drslog.GetLogger()
 	for job := range input {
 		var msg lfs.UploadMessage
-		if err := sonic.ConfigFastest.Unmarshal(job.data, &msg); err != nil {
+		if err := sConfig.Unmarshal(job.data, &msg); err != nil {
 			errMsg := fmt.Sprintf("Failed to parse upload message: %v", err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
@@ -196,7 +197,7 @@ var Cmd = &cobra.Command{
 		}
 		initBytes := scanner.Bytes()
 		var initMsg lfs.InitMessage
-		if err := sonic.ConfigFastest.Unmarshal(initBytes, &initMsg); err != nil {
+		if err := sConfig.Unmarshal(initBytes, &initMsg); err != nil {
 			logger.Printf("Error decoding initial JSON message: %v", err)
 			return err
 		}
@@ -270,7 +271,7 @@ var Cmd = &cobra.Command{
 			var generic struct {
 				Event string `json:"event"`
 			}
-			if sonic.ConfigFastest.Unmarshal(currentBytes, &generic) == nil && generic.Event == "terminate" {
+			if sConfig.Unmarshal(currentBytes, &generic) == nil && generic.Event == "terminate" {
 				logger.Print("Confirmed TERMINATE. Shutting down boost...")
 				break
 			}

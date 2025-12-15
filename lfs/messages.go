@@ -1,8 +1,6 @@
 package lfs
 
 import (
-	"encoding/json"
-
 	"github.com/bytedance/sonic/encoder"
 )
 
@@ -81,7 +79,7 @@ type Action struct {
 	ExpiresIn int               `json:"expires_in,omitempty"`
 }
 
-func WriteInitErrorMessage(encoder *json.Encoder, code int, errMsg string) {
+func WriteInitErrorMessage(encoder *encoder.Encoder, code int, errMsg string) {
 	// create failure message and send it back
 	errorResponse := InitErrorMessage{
 		Error: Error{
@@ -105,7 +103,7 @@ func WriteErrorMessage(encoder *encoder.StreamEncoder, oid string, code int, err
 	encoder.Encode(errorResponse)
 }
 
-func WriteCompleteMessage(encoder *json.Encoder, oid string, path string) {
+func WriteCompleteMessage(encoder *encoder.Encoder, oid string, path string) {
 	// create success message and send it back
 	completeResponse := CompleteMessage{
 		Event: "complete",

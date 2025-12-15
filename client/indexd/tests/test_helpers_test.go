@@ -56,6 +56,7 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 		BucketName:  "test-bucket",
 		Logger:      drslog.GetLogger(),
 		AuthHandler: &indexd_client.RealAuthHandler{Cred: jwt.Credential{Profile: "test-remote"}},
+		HttpClient:  &http.Client{},
 	}
 }
 
@@ -69,6 +70,7 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 		BucketName:  "test-bucket",
 		Logger:      drslog.GetLogger(),
 		AuthHandler: &MockAuthHandler{},
+		HttpClient:  &http.Client{},
 	}
 }
 

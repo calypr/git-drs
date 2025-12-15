@@ -3,13 +3,13 @@ package anvil_client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	"golang.org/x/oauth2/google"
@@ -17,6 +17,7 @@ import (
 
 type AnvilClient struct {
 	Endpoint string
+	sConfig  sonic.API
 }
 
 func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
@@ -30,7 +31,10 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 		"url":    objectID,
 		"fields": []string{"hashes", "size", "fileName"},
 	}
-	bodyBytes, _ := json.Marshal(reqBody)
+	bodyBytes, err := an.sConfig.Marshal(reqBody)
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequest("POST", an.Endpoint, bytes.NewBuffer(bodyBytes))
 	if err != nil {
@@ -50,7 +54,7 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 	if resp.StatusCode > 399 {
 		// Try to extract error message
 		var errResp map[string]any
-		json.Unmarshal(respBody, &errResp)
+		an.sConfig.Unmarshal(respBody, &errResp)
 		msg := fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		if m, ok := errResp["message"].(string); ok {
 			msg = m
@@ -66,7 +70,7 @@ func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
 		Size     int64             `json:"size"`
 		FileName string            `json:"fileName"`
 	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err := an.sConfig.Unmarshal(respBody, &parsed); err != nil {
 		return nil, err
 	}
 

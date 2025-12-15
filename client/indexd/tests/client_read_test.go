@@ -2,6 +2,7 @@ package indexd_tests
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
@@ -208,6 +209,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				BucketName:  "test-bucket",
 				Logger:      drslog.GetLogger(),
 				AuthHandler: authHandler,
+				HttpClient:  &http.Client{},
 			}
 
 			// Execute method under test

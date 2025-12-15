@@ -1,11 +1,11 @@
 package drs
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 )
@@ -84,7 +84,7 @@ func GetDrsLfsObjects(logger *drslog.Logger) (map[string]*DRSObject, error) {
 			return err
 		}
 		var drsObject DRSObject
-		if err := json.Unmarshal(data, &drsObject); err != nil {
+		if err := sonic.ConfigFastest.Unmarshal(data, &drsObject); err != nil {
 			logger.Printf("Error unmarshalling JSON from %s: %v", path, err)
 			return nil
 		}

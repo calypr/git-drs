@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"gopkg.in/yaml.v3"
@@ -51,7 +51,7 @@ type DRSRemote interface {
 	GetProjectId() string
 	GetEndpoint() string
 	GetBucketName() string
-	GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error)
+	GetClient(params map[string]string, logger *drslog.Logger) (client.DRSClient, error)
 }
 
 type RemoteSelect struct {
@@ -64,7 +64,7 @@ type Config struct {
 	Remotes map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
-func (c Config) GetRemoteClient(remote Remote, logger *log.Logger) (client.DRSClient, error) {
+func (c Config) GetRemoteClient(remote Remote, logger *drslog.Logger) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("no remote configuration found for current remote: %s", remote)

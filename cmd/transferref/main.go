@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -35,7 +36,7 @@ var Cmd = &cobra.Command{
 		myLogger.Print("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
-		encoder := json.NewEncoder(os.Stdout)
+		encoder := encoder.NewStreamEncoder(os.Stdout)
 
 		cfg, err := config.LoadConfig()
 		if err != nil {

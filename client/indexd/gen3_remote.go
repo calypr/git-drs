@@ -1,10 +1,9 @@
 package indexd_client
 
 import (
-	"log"
-
 	"github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/drslog"
 )
 
 // Gen3Server holds Gen3 server config
@@ -26,7 +25,7 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
+func (s Gen3Remote) GetClient(params map[string]string, logger *drslog.Logger) (client.DRSClient, error) {
 
 	var conf jwt.Configure
 	cred, err := conf.ParseConfig(params["remote_name"])

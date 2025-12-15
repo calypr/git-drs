@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/s3_utils"
 )
@@ -26,7 +25,7 @@ import (
 // (Already covered in add-url_test.go, but adding edge cases)
 
 // noOpLogger is a logger that discards all output for tests
-var noOpLogger = log.New(io.Discard, "", 0)
+var noOpLogger = drslog.NewNoOpLogger()
 
 // tokenAuthHandler is a simple test helper that sets a Bearer token
 type tokenAuthHandler struct {

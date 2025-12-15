@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
@@ -33,7 +33,7 @@ type IndexDClient struct {
 	Base        *url.URL
 	ProjectId   string
 	BucketName  string
-	Logger      *log.Logger
+	Logger      *drslog.Logger
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
 }
 
@@ -42,7 +42,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config

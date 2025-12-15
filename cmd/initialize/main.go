@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"log"
-
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
@@ -110,7 +108,7 @@ func initGitConfig() error {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string, logger *log.Logger) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *drslog.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)

@@ -5,15 +5,40 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/calypr/git-drs/projectdir"
 )
 
-var log_file io.Closer
-var global_logger *log.Logger
+// Logger is a thread-safe wrapper around the standard *drslog.Logger.
+type Logger struct {
+	// Embed the standard logger
+	*log.Logger
 
-// NewLogger opens the log file and returns a Logger.
-func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
+	// Mutex to protect concurrent calls (required when using Lshortfile/Llongfile)
+	mu sync.Mutex
+}
+
+var (
+	logFile      io.Closer
+	globalLogger *Logger
+	mu           sync.Mutex // Protects globalLogger and logFile initialization
+)
+
+// NewLogger creates a new Logger that writes to the specified file and optionally stderr.
+// It is safe to call this multiple times; only the first successful call sets the global logger.
+func NewLogger(filename string, logToStderr bool) (*Logger, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// If already initialized, return the existing one
+	if globalLogger != nil {
+		if logFile != nil {
+			logFile.Close()
+			logFile = nil
+		}
+	}
+
 	var writers []io.Writer
 
 	if filename == "" {
@@ -30,33 +55,80 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 		return nil, err
 	}
 	writers = append(writers, file)
+	logFile = file
 
 	if logToStderr {
 		writers = append(writers, os.Stderr)
 	}
 
 	multiWriter := io.MultiWriter(writers...)
-	//TODO: make Lshortfile optional via config
-	logger := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile) // Standard log flags
 
-	log_file = file
-	global_logger = logger
+	// Create the core logger with Lshortfile for better debugging
+	core := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile)
+
+	logger := &Logger{Logger: core}
+	globalLogger = logger
+
 	return logger, nil
 }
 
-func GetLogger() *log.Logger {
-	return global_logger
+// Thread-safe wrappers
+
+func (l *Logger) Printf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Logger.Printf(format, v...)
 }
 
+func (l *Logger) Print(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Logger.Print(v...)
+}
+
+func (l *Logger) Println(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Logger.Println(v...)
+}
+
+func (l *Logger) Fatal(v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Logger.Fatal(v...)
+}
+
+func (l *Logger) Fatalf(format string, v ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.Logger.Fatalf(format, v...)
+}
+
+// GetLogger returns the global logger. Safe to call from multiple goroutines.
+func GetLogger() *Logger {
+	mu.Lock()
+	defer mu.Unlock()
+	if globalLogger == nil {
+		// Fallback: create a no-op logger if not initialized. If errs then no logger for you
+		logger, _ := NewLogger("", true)
+		return logger
+	}
+	return globalLogger
+}
+
+// Close closes the log file if open.
 func Close() {
-	if log_file != nil {
-		log_file.Close()
-		log_file = nil
+	mu.Lock()
+	defer mu.Unlock()
+	if logFile != nil {
+		logFile.Close()
+		logFile = nil
 	}
 }
 
-// NewNoOpLogger creates a logger that discards all output.
-// Returns a *log.Logger that writes to io.Discard.
-func NewNoOpLogger() *log.Logger {
-	return log.New(io.Discard, "", 0)
+// NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).
+func NewNoOpLogger() *Logger {
+	return &Logger{
+		Logger: log.New(io.Discard, "", 0),
+	}
 }

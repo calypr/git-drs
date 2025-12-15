@@ -2,12 +2,12 @@ package indexd_tests
 
 import (
 	"fmt"
-	"log"
 	"testing"
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/stretchr/testify/require"
 )
@@ -206,7 +206,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				Base:        parseURL(mockServer.URL()),
 				ProjectId:   "test-project", // This will become /programs/test/projects/project
 				BucketName:  "test-bucket",
-				Logger:      log.Default(),
+				Logger:      drslog.GetLogger(),
 				AuthHandler: authHandler,
 			}
 

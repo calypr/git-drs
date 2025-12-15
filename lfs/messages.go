@@ -1,6 +1,10 @@
 package lfs
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/bytedance/sonic/encoder"
+)
 
 // InitMessage represents the structure of the initiation data
 type InitMessage struct {
@@ -88,7 +92,7 @@ func WriteInitErrorMessage(encoder *json.Encoder, code int, errMsg string) {
 	encoder.Encode(errorResponse)
 }
 
-func WriteErrorMessage(encoder *json.Encoder, oid string, code int, errMsg string) {
+func WriteErrorMessage(encoder *encoder.StreamEncoder, oid string, code int, errMsg string) {
 	// create failure message and send it back
 	errorResponse := ErrorMessage{
 		Event: "complete",

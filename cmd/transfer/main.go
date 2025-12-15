@@ -39,7 +39,12 @@ var (
 	sConfig           sonic.API = sonic.ConfigFastest
 )
 
-// downloadWorker handles only download requests — SONIC SPEED
+const (
+	OPERATION_UPLOAD   = "upload"
+	OPERATION_DOWNLOAD = "download"
+)
+
+// downloadWorker handles only download requests
 func downloadWorker(id int, input <-chan TransferJob, output chan<- TransferResult) {
 	myLogger := drslog.GetLogger()
 	for job := range input {
@@ -149,7 +154,7 @@ var Cmd = &cobra.Command{
 	Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		logger.Print("~~~~~~~~~~~~~ START: drs transfer (SONIC MODE) ~~~~~~~~~~~~~")
+		logger.Print("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
 		numWorkers := getConcurrentTransfers(logger)
 
@@ -159,8 +164,8 @@ var Cmd = &cobra.Command{
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, maxCapacity)
 
-		transferQueue := make(chan TransferJob, numWorkers)
-		resultQueue := make(chan TransferResult, numWorkers)
+		transferQueue := make(chan TransferJob, numWorkers*4)
+		resultQueue := make(chan TransferResult, numWorkers*4)
 		var wg sync.WaitGroup
 
 		// Single writer goroutine — must stay ordered
@@ -189,22 +194,26 @@ var Cmd = &cobra.Command{
 		var drsClient client.DRSClient
 		var remoteName string
 
-		// --- Handle init message with SONIC ---
 		if !scanner.Scan() {
 			err := fmt.Errorf("failed to read initial message from stdin")
 			logger.Printf("Error: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
-		initBytes := scanner.Bytes()
+
+		initBytes := make([]byte, len(scanner.Bytes()))
+		copy(initBytes, scanner.Bytes())
 		var initMsg lfs.InitMessage
 		if err := sConfig.Unmarshal(initBytes, &initMsg); err != nil {
 			logger.Printf("Error decoding initial JSON message: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
 
 		if initMsg.Event != "init" {
 			err := fmt.Errorf("protocol error: expected 'init' message, got '%s'", initMsg.Event)
 			logger.Printf("Error: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
 
@@ -220,34 +229,37 @@ var Cmd = &cobra.Command{
 		drsClient, err = cfg.GetRemoteClient(remote, logger)
 		if err != nil {
 			logger.Printf("Error creating DRS client: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
 
 		// Set operation — this is the law
-		if initMsg.Operation == "upload" || initMsg.Operation == "download" {
+		if initMsg.Operation == OPERATION_UPLOAD || initMsg.Operation == OPERATION_DOWNLOAD {
 			transferOperation = initMsg.Operation
-			logger.Printf("Transfer operation: %s — GOTTA GO FAST", transferOperation)
+			logger.Printf("Transfer operation: %s", transferOperation)
 		} else {
 			err := fmt.Errorf("invalid or missing operation in init message: %s", initMsg.Operation)
 			logger.Print(err.Error())
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
 
 		// Pre-load DRS map only for uploads
-		if transferOperation == "upload" {
+		if transferOperation == OPERATION_UPLOAD {
 			logger.Print("Preparing DRS map for upload operation")
 			if err := drsmap.UpdateDrsObjects(drsClient, logger); err != nil {
 				logger.Printf("Error updating DRS map: %v", err)
+				lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 				return err
 			}
 		}
 
 		// Respond to init
-		resultQueue <- TransferResult{data: struct{}{}}
+		resultQueue <- TransferResult{data: struct{}{}, isError: err != nil}
 
 		// Start the correct worker fleet
 		workerFunc := downloadWorker
-		if transferOperation == "upload" {
+		if transferOperation == OPERATION_UPLOAD {
 			workerFunc = uploadWorker
 		}
 		for i := range numWorkers { // Fixed: was "range numWorkers"
@@ -259,11 +271,12 @@ var Cmd = &cobra.Command{
 		}
 
 		for scanner.Scan() {
-			currentBytes := scanner.Bytes()
+			currentBytes := make([]byte, len(scanner.Bytes()))
+			copy(currentBytes, scanner.Bytes())
 
 			// Ultra-fast terminate check
 			if strings.Contains(string(currentBytes), `"event":"terminate"`) {
-				logger.Print("Received TERMINATE signal. Draining rings and finishing...")
+				logger.Print("Received TERMINATE signal")
 				break
 			}
 
@@ -271,29 +284,31 @@ var Cmd = &cobra.Command{
 			var generic struct {
 				Event string `json:"event"`
 			}
-			if sConfig.Unmarshal(currentBytes, &generic) == nil && generic.Event == "terminate" {
-				logger.Print("Confirmed TERMINATE. Shutting down boost...")
+			if err := sConfig.Unmarshal(currentBytes, &generic); err == nil && generic.Event == "terminate" {
+				logger.Print("Confirmed TERMINATE. Shutting down...")
 				break
 			}
 			transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
 		}
 
 		// Cleanup
-		if err := scanner.Err(); err != nil {
-			logger.Printf("stdin error: %v", err)
-		}
+		scanErr := scanner.Err()
 		close(transferQueue)
 		wg.Wait()
 		close(resultQueue)
 		<-writerDone
+		if scanErr != nil {
+			logger.Printf("stdin error: %v", scanErr)
+			return scanErr
+		}
 
-		logger.Print("~~~~~~~~~~~~~ COMPLETED: transfer (ZOOM ZOOM) ~~~~~~~~~~~~~")
+		logger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
 		return nil
 	},
 }
 
 func getConcurrentTransfers(logger *drslog.Logger) int {
-	const defaultValue = 8
+	const defaultValue = 4
 	cmd := exec.Command("git", "config", "--get", "lfs.concurrenttransfers")
 	output, err := cmd.Output()
 	if err != nil {
@@ -309,6 +324,6 @@ func getConcurrentTransfers(logger *drslog.Logger) int {
 		logger.Printf("Invalid or zero lfs.concurrenttransfers (%s). Using default: %d", s, defaultValue)
 		return defaultValue
 	}
-	logger.Printf("Using lfs.concurrenttransfers = %d (more rings = more speed)", val)
+	logger.Printf("Using lfs.concurrenttransfers = %d", val)
 	return val
 }

@@ -94,6 +94,8 @@ func initGitConfig() error {
 		{"lfs.customtransfer.drs.args", "transfer"},
 		// TODO: different for anvil / read-only?
 		{"lfs.allowincompletepush", "false"},
+		{"lfs.customtransfer.drs.concurrent", "true"},
+		{"lfs.customtransfer.drs.concurrenttransfers", "16"},
 	}
 
 	for _, args := range configs {

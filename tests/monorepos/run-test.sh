@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
-PROFILE_DEFAULT="calypr-dev"
+PROFILE_DEFAULT="origin"
 PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"

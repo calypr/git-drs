@@ -184,13 +184,6 @@ var Cmd = &cobra.Command{
 			}
 		}()
 
-		// Load config
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			logger.Printf("Error loading config: %v", err)
-			return err
-		}
-
 		var drsClient client.DRSClient
 		var remoteName string
 
@@ -225,6 +218,15 @@ var Cmd = &cobra.Command{
 			remoteName = config.ORIGIN
 			logger.Print("Initializing connection, remote not specified — using origin")
 		}
+
+		// Load config
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			logger.Printf("Error loading config: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
+			return err
+		}
+
 		remote := config.Remote(remoteName)
 		drsClient, err = cfg.GetRemoteClient(remote, logger)
 		if err != nil {

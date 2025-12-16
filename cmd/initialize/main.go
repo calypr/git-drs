@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/config"
@@ -14,6 +15,8 @@ import (
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
+
+var transfers int = 4
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -94,8 +97,8 @@ func initGitConfig() error {
 		{"lfs.customtransfer.drs.args", "transfer"},
 		// TODO: different for anvil / read-only?
 		{"lfs.allowincompletepush", "false"},
-		{"lfs.customtransfer.drs.concurrent", "true"},
-		{"lfs.customtransfer.drs.concurrenttransfers", "16"},
+		{"lfs.customtransfer.drs.concurrent", strconv.FormatBool(transfers > 1)},
+		{"lfs.customtransfer.drs.concurrenttransfers", strconv.Itoa(transfers)},
 	}
 
 	for _, args := range configs {
@@ -106,6 +109,10 @@ func initGitConfig() error {
 	}
 
 	return nil
+}
+
+func init() {
+	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.

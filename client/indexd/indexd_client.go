@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -306,22 +305,22 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			cl.Logger.Printf("error registering indexd record: %s", err)
 			return nil, fmt.Errorf("error registering indexd record: %v", err)
 		}
-	}
 
-	// delete indexd record if subsequent file upload code errors out
-	defer func() {
-		if err != nil {
-			cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)
-			err = cl.DeleteIndexdRecord(drsObject.Id)
+		// delete indexd record only if it's been registered in this repo
+		defer func() {
 			if err != nil {
-				cl.Logger.Printf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-				cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObject.Id)
-				cl.Logger.Printf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
-				return
+				cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)
+				err = cl.DeleteIndexdRecord(drsObject.Id)
+				if err != nil {
+					cl.Logger.Printf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
+					cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObject.Id)
+					cl.Logger.Printf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+					return
+				}
+				cl.Logger.Printf("cleaned up indexd record for oid %s", oid)
 			}
-			cl.Logger.Printf("cleaned up indexd record for oid %s", oid)
-		}
-	}()
+		}()
+	}
 
 	// determine if file is downloadable
 	isDownloadable := true
@@ -333,6 +332,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		err = utils.CanDownloadFile(signedUrl.URL)
 		if err != nil {
 			isDownloadable = false
+			cl.Logger.Printf("file with oid %s is not yet downloadable: %s", oid, err)
 		} else {
 			cl.Logger.Printf("file with oid %s is downloadable", oid)
 		}
@@ -340,7 +340,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// if file is not downloadable, then upload it to bucket
 	if !isDownloadable {
-		cl.Logger.Printf("file with oid %s not downloadable from bucket, proceeding to upload", oid)
+		cl.Logger.Printf("Proceeding to upload %s", oid)
 
 		filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
 		if err != nil {
@@ -376,11 +376,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		cl.Logger.Print("file exists in bucket, skipping upload")
 	}
 
-	// if all successful, remove temp DRS object
-	drsPath, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
-	if err == nil {
-		_ = os.Remove(drsPath)
-	}
+	// no implicit cleanup of DRS objects, should be done manually
 
 	// return drsObject
 	return drsObject, nil

@@ -53,7 +53,7 @@ func downloadWorker(id int, input <-chan TransferJob, output chan<- TransferResu
 			errMsg := fmt.Sprintf("Failed to parse download message: %v", err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
-				data:    lfs.ErrorMessage{Event: "error", Oid: "", Error: lfs.Error{Code: 400, Message: errMsg}},
+				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 400, Message: errMsg}},
 				isError: true,
 			}
 			continue
@@ -120,7 +120,7 @@ func uploadWorker(id int, input <-chan TransferJob, output chan<- TransferResult
 			errMsg := fmt.Sprintf("Failed to parse upload message: %v", err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
-				data:    lfs.ErrorMessage{Event: "error", Oid: "", Error: lfs.Error{Code: 400, Message: errMsg}},
+				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 400, Message: errMsg}},
 				isError: true,
 			}
 			continue

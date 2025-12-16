@@ -171,12 +171,8 @@ else
   # Add remote origin
   git remote add origin "$GIT_REMOTE"
 
-  # Configure git lfs for this repo, more concurrent transfers
-  git config lfs.concurrenttransfers 16
-  git config lfs.customtransfer.gen3.concurrent true
-
   # Initialize drs configuration for this repo
-  git drs init
+  git drs init -t 16
   git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket calypr --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
 
   # verify fixtures/.drs/config.yaml exists

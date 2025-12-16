@@ -49,7 +49,7 @@ func TestListConfigCommand(t *testing.T) {
 
 		// Verify it's valid JSON by unmarshaling
 		var parsedConfig config.Config
-		err := json.Unmarshal([]byte(output), &parsedConfig)
+		err := sonic.ConfigFastest.Unmarshal([]byte(output), &parsedConfig)
 		require.NoError(t, err)
 
 		// Verify the content matches expected values

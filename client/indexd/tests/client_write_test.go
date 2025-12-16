@@ -147,7 +147,7 @@ func TestIndexdClient_RegisterIndexdRecord_CreatesNewRecord(t *testing.T) {
 	require.Equal(t, newRecord.Did, drsObj.Id, "DRS object ID should match DID")
 	require.Equal(t, newRecord.FileName, drsObj.Name, "DRS object name should match FileName")
 	require.Equal(t, newRecord.Size, drsObj.Size, "DRS object size should match")
-	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
+	require.NotEmpty(t, drsObj.Checksums.SHA256, "Should have SHA256 checksum")
 	require.Equal(t, newRecord.Hashes.SHA256, drsObj.Checksums.SHA256)
 	require.Len(t, drsObj.AccessMethods, 1, "Should have one access method")
 	require.Equal(t, newRecord.URLs[0], drsObj.AccessMethods[0].AccessURL.URL)
@@ -206,7 +206,7 @@ func TestIndexdClient_UpdateRecord_AppendsURLs(t *testing.T) {
 	require.Equal(t, originalRecord.Did, drsObj.Id, "DRS object ID should match DID")
 	require.Equal(t, originalRecord.FileName, drsObj.Name, "DRS object name should match FileName")
 	require.Equal(t, originalRecord.Size, drsObj.Size, "DRS object size should match")
-	require.Len(t, drsObj.Checksums, 1, "Should have one checksum")
+	require.NotEmpty(t, drsObj.Checksums.SHA256, "Should have SHA256 checksum")
 	require.Equal(t, originalRecord.Hashes["sha256"], drsObj.Checksums.SHA256)
 	require.Len(t, drsObj.AccessMethods, 2, "Should have two access methods (URLs)")
 	urls := []string{drsObj.AccessMethods[0].AccessURL.URL, drsObj.AccessMethods[1].AccessURL.URL}
@@ -291,7 +291,7 @@ func TestIndexdClient_DeleteRecord_NotFound(t *testing.T) {
 
 	// Assert: Should return error
 	require.Error(t, err, "Should fail when record doesn't exist")
-	require.Contains(t, err.Error(), "No records found for OID")
+	require.Contains(t, err.Error(), "no records found for OID")
 }
 
 // TestIndexdClient_DeleteRecord_NoMatchingProject tests deletion when record exists but for different project
@@ -316,7 +316,7 @@ func TestIndexdClient_DeleteRecord_NoMatchingProject(t *testing.T) {
 
 	// Assert
 	require.Error(t, err, "Should fail when no matching project")
-	require.Contains(t, err.Error(), "No matching record found for project")
+	require.Contains(t, err.Error(), "no matching record found for project")
 
 	// Verify record still exists (wasn't deleted)
 	recordAfter := mockServer.GetRecord(testRecord.Did)

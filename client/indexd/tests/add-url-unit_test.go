@@ -3,10 +3,7 @@ package indexd_tests
 // // TODO: fix this during add-url fix
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,8 +13,11 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/encoder"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/s3_utils"
 )
@@ -26,7 +26,7 @@ import (
 // (Already covered in add-url_test.go, but adding edge cases)
 
 // noOpLogger is a logger that discards all output for tests
-var noOpLogger = log.New(io.Discard, "", 0)
+var noOpLogger = drslog.NewNoOpLogger()
 
 // tokenAuthHandler is a simple test helper that sets a Bearer token
 type tokenAuthHandler struct {
@@ -84,7 +84,9 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		if err := encoder.NewStreamEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -123,7 +125,9 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		if err := encoder.NewStreamEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -180,7 +184,9 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 					},
 				}
 				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(response)
+				if err := encoder.NewStreamEncoder(w).Encode(response); err != nil {
+					t.Fatalf("Failed to encode response: %v", err)
+				}
 			}))
 			defer server.Close()
 
@@ -239,7 +245,9 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		if err := encoder.NewStreamEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -275,7 +283,9 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		if err := encoder.NewStreamEncoder(w).Encode(response); err != nil {
+			t.Fatalf("Failed to encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -341,7 +351,7 @@ func TestS3BucketsResponse_UnmarshalValid(t *testing.T) {
 	}`
 
 	var response s3_utils.S3BucketsResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
+	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3BucketsResponse: %v", err)
 	}
@@ -375,7 +385,7 @@ func TestS3BucketsResponse_EmptyBuckets(t *testing.T) {
 	}`
 
 	var response s3_utils.S3BucketsResponse
-	err := json.Unmarshal([]byte(jsonData), &response)
+	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal empty S3BucketsResponse: %v", err)
 	}
@@ -393,7 +403,7 @@ func TestS3Bucket_MissingOptionalFields(t *testing.T) {
 	}`
 
 	var bucket s3_utils.S3Bucket
-	err := json.Unmarshal([]byte(jsonData), &bucket)
+	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &bucket)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3Bucket: %v", err)
 	}

@@ -2,7 +2,6 @@ package test
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bytedance/sonic"
 	dcJWT "github.com/calypr/data-client/client/jwt"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
@@ -270,7 +270,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 
 	t.Log("OUTPUT: ", string(output))
 	var fileMap FileContainer
-	err = json.Unmarshal(output, &fileMap)
+	err = sonic.ConfigFastest.Unmarshal(output, &fileMap)
 
 	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
 	if err != nil {
@@ -400,7 +400,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git lfs ls-files in %s: %v", cloneRepoDir, err)
 	}
 
-	err = json.Unmarshal(output, &fileMap)
+	err = sonic.ConfigFastest.Unmarshal(output, &fileMap)
 
 	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID, "--remote", remote)
 	output, err = cmd.Output()
@@ -434,7 +434,7 @@ func createRemoteRepo(host, owner, repoName, token string) error {
 		"description": "Test repo for git-drs e2e test",
 		"private":     true,
 	}
-	jsonBody, err := json.Marshal(body)
+	jsonBody, err := sonic.ConfigFastest.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal create repo request: %v", err)
 	}

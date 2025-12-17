@@ -114,7 +114,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 		MinShepherdVersion: "",
 	}
 
-	if err := jwt.UpdateConfig(drslog.GetLogger().Logger, cred); err != nil {
+	if err := jwt.UpdateConfig(&indexd_client.Gen3LoggerAdapter{Logger: drslog.GetLogger()}, cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
 

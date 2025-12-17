@@ -2,12 +2,14 @@ module github.com/calypr/git-drs
 
 go 1.24.2
 
+replace github.com/calypr/data-client v0.0.0-20251211175912-094f7a74b2ab => ../data-client
+
 require (
 	github.com/bytedance/sonic v1.14.2
 	github.com/calypr/data-client v0.0.0-20251211175912-094f7a74b2ab
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.10.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -36,7 +38,8 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -44,6 +47,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/vbauerster/mpb/v8 v8.11.2 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
+	golang.org/x/mod v0.31.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
 
@@ -52,16 +56,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.12
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.16
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.4
-	github.com/google/go-github v17.0.0+incompatible // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/hashicorp/go-version v1.7.0 // indirect
+	github.com/hashicorp/go-version v1.8.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
-	golang.org/x/net v0.45.0 // indirect
 	golang.org/x/oauth2 v0.32.0
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )

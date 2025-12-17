@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/client/commonUtils"
+	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/data-client/client/g3cmd"
 	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -353,18 +354,21 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting profile for upload: %v", err)
 		}
 
-		g3, err := gen3Client.NewGen3InterfaceWithLogger(profile, cl.Logger)
+		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
+		defer closer()
+
+		g3, err := gen3Client.NewGen3Interface(context.TODO(), profile, logger)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
 		}
 		err = g3cmd.MultipartUpload(
 			context.TODO(),
 			g3,
-			commonUtils.FileUploadRequestObject{
+			common.FileUploadRequestObject{
 				FilePath:     filePath,
 				Filename:     filepath.Base(filePath),
 				GUID:         drsObject.Id,
-				FileMetadata: commonUtils.FileMetadata{},
+				FileMetadata: common.FileMetadata{},
 			},
 			cl.BucketName, false,
 		)

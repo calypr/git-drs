@@ -95,6 +95,10 @@ func (l *Logger) Fatalf(format string, v ...any) {
 	l.Logger.Fatalf(format, v...)
 }
 
+func (l *Logger) Writer() io.Writer {
+	return os.Stderr // or os.Stdout – sufficient for most library use cases
+}
+
 // GetLogger returns the global logger. Safe to call from multiple goroutines.
 func GetLogger() *Logger {
 	mu.Lock()

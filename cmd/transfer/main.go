@@ -311,10 +311,10 @@ var Cmd = &cobra.Command{
 
 func getConcurrentTransfers(logger *drslog.Logger) int {
 	const defaultValue = 4
-	cmd := exec.Command("git", "config", "--get", "lfs.concurrenttransfers")
+	cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.concurrenttransfers")
 	output, err := cmd.Output()
 	if err != nil {
-		logger.Printf("Could not read 'lfs.concurrenttransfers' from git config: %v. Using default: %d", err, defaultValue)
+		logger.Printf("Could not read 'lfs.customtransfer.drs.concurrenttransfers' from git config: %v. Using default: %d", err, defaultValue)
 		return defaultValue
 	}
 	s := strings.TrimSpace(string(output))

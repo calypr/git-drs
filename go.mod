@@ -2,11 +2,9 @@ module github.com/calypr/git-drs
 
 go 1.24.2
 
-replace github.com/calypr/data-client v0.0.0-20251211175912-094f7a74b2ab => ../data-client
-
 require (
 	github.com/bytedance/sonic v1.14.2
-	github.com/calypr/data-client v0.0.0-20251211175912-094f7a74b2ab
+	github.com/calypr/data-client v0.0.0-20251217192723-ce4c29982ba4
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2

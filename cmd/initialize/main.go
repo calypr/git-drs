@@ -93,7 +93,6 @@ func initGitConfig() error {
 	configs := [][]string{
 		{"lfs.standalonetransferagent", "drs"},
 		{"lfs.customtransfer.drs.path", "git-drs"},
-		{"lfs.customtransfer.drs.concurrent", "false"},
 		{"lfs.customtransfer.drs.args", "transfer"},
 		// TODO: different for anvil / read-only?
 		{"lfs.allowincompletepush", "false"},

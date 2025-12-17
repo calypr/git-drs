@@ -24,19 +24,6 @@ const (
 	fileSizeBytes = 1024
 )
 
-var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-
-// randStringBytes returns a new byte slice of length n filled with random
-// characters selected from the global letters slice. It uses math/rand and
-// should be seeded by the caller if deterministic variability is required.
-func randStringBytes(n int) []byte {
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return b
-}
-
 // main reads directory names from stdin (one per line) and creates a set of
 // "fixture" directories and files for each input name. For each top-level
 // directory it creates between minSubDirs and maxSubDirs subdirectories

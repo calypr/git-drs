@@ -3,17 +3,17 @@ package drsmap
 // Utilities to map between Git LFS files and DRS objects
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -38,7 +38,7 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *drslog.Logger) error {
 	// Gather all objects in .drs/lfs/objects store
 	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
@@ -105,7 +105,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error
 	return nil
 }
 
-func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
 	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
 	if err != nil {
 		return err
@@ -140,7 +140,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 
@@ -202,7 +202,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 
 func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	// get object bytes
-	indexdObjBytes, err := json.Marshal(drsObj)
+	indexdObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
 	if err != nil {
 		return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
 	}
@@ -238,7 +238,7 @@ func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 	}
 
 	var indexdObj drs.DRSObject
-	err = json.Unmarshal(indexdObjBytes, &indexdObj)
+	err = sonic.ConfigFastest.Unmarshal(indexdObjBytes, &indexdObj)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
 	}
@@ -277,7 +277,7 @@ func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
 
 	// Parse the JSON output
 	var lfsOutput LfsLsOutput
-	err = json.Unmarshal(out, &lfsOutput)
+	err = sonic.ConfigFastest.Unmarshal(out, &lfsOutput)
 	if err != nil {
 		return false, nil, fmt.Errorf("error unmarshaling git lfs ls-files output for %s: %v", fileName, err)
 	}
@@ -337,7 +337,7 @@ func getAllLfsFiles() (map[string]LfsFileInfo, error) {
 	}
 
 	var lfsFiles LfsLsOutput
-	err = json.Unmarshal(out, &lfsFiles)
+	err = sonic.ConfigFastest.Unmarshal(out, &lfsFiles)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
 	}

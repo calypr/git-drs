@@ -1,12 +1,12 @@
 package drs
 
 import (
-	"encoding/json"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/bytedance/sonic"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 )
 
@@ -17,7 +17,7 @@ type PendingObject struct {
 }
 
 // getPendingObjects walks .drs/lfs/objects/ to find all pending records
-func GetPendingObjects(logger *log.Logger) ([]*PendingObject, error) {
+func GetPendingObjects(logger *drslog.Logger) ([]*PendingObject, error) {
 	var objects []*PendingObject
 	objectsDir := projectdir.DRS_OBJS_PATH
 
@@ -53,7 +53,7 @@ func GetPendingObjects(logger *log.Logger) ([]*PendingObject, error) {
 	return objects, nil
 }
 
-func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
+func GetDrsLfsObjects(logger *drslog.Logger) (map[string]*DRSObject, error) {
 	objects := map[string]*DRSObject{}
 	objectsDir := projectdir.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
@@ -84,7 +84,7 @@ func GetDrsLfsObjects(logger *log.Logger) (map[string]*DRSObject, error) {
 			return err
 		}
 		var drsObject DRSObject
-		if err := json.Unmarshal(data, &drsObject); err != nil {
+		if err := sonic.ConfigFastest.Unmarshal(data, &drsObject); err != nil {
 			logger.Printf("Error unmarshalling JSON from %s: %v", path, err)
 			return nil
 		}

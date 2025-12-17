@@ -2,11 +2,11 @@ package indexd_client
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
@@ -48,7 +48,7 @@ func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL st
 
 	// extract bucket endpoint
 	var bucketInfo s3_utils.S3BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&bucketInfo); err != nil {
+	if err := sonic.ConfigFastest.NewDecoder(resp.Body).Decode(&bucketInfo); err != nil {
 		return nil, fmt.Errorf("failed to decode bucket information: %w", err)
 	}
 

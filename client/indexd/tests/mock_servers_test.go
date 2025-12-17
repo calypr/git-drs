@@ -1,7 +1,6 @@
 package indexd_tests
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bytedance/sonic/decoder"
+	"github.com/bytedance/sonic/encoder"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -153,31 +154,66 @@ func (mis *MockIndexdServer) handleGetRecord(w http.ResponseWriter, r *http.Requ
 
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Record not found"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Record not found"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(record)
+	encoder.NewStreamEncoder(w).Encode(record)
 }
 
 func (mis *MockIndexdServer) handleGetDRSObject(w http.ResponseWriter, r *http.Request, id string) {
 	mis.recordMutex.RLock()
 	record, exists := mis.records[id]
 	mis.recordMutex.RUnlock()
-
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Object not found"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Object not found"})
 		return
 	}
 
-	// Convert MockIndexdRecord to DRSObject format
-	drsObj := convertMockRecordToDRSObject(record)
+	// Build standard DRS checksums array
+	checksums := []map[string]string{}
+	for typ, sum := range record.Hashes {
+		if sum != "" {
+			checksums = append(checksums, map[string]string{
+				"type":     strings.ToLower(typ),
+				"checksum": sum,
+			})
+		}
+	}
+
+	// Build access methods
+	accessMethods := []map[string]any{}
+	for i, url := range record.URLs {
+		am := map[string]any{
+			"type":       "https",
+			"access_id":  fmt.Sprintf("https-%d", i),
+			"access_url": map[string]string{"url": url},
+		}
+		// Only add authorizations if present, and as a SINGLE object (not array)
+		if len(record.Authz) > 0 {
+			am["authorizations"] = map[string]string{
+				"value": record.Authz[0],
+			}
+		}
+		accessMethods = append(accessMethods, am)
+	}
+
+	// Full response
+	response := map[string]any{
+		"id":             record.Did,
+		"name":           record.FileName,
+		"size":           record.Size,
+		"created_time":   record.CreatedAt.Format(time.RFC3339),
+		"checksums":      checksums,
+		"access_methods": accessMethods,
+		"description":    "Mock DRS object from Indexd record",
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(drsObj)
+	encoder.NewStreamEncoder(w).Encode(response)
 }
 
 func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.Request, objectId, accessId string) {
@@ -187,7 +223,7 @@ func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.R
 
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Object not found"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Object not found"})
 		return
 	}
 
@@ -199,7 +235,7 @@ func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(signedURL)
+	encoder.NewStreamEncoder(w).Encode(signedURL)
 }
 
 func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.Request) {
@@ -210,9 +246,9 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 		Rev  string `json:"rev"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&form); err != nil {
+	if err := decoder.NewStreamDecoder(r.Body).Decode(&form); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
 		return
 	}
 
@@ -230,7 +266,7 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 
 	if record.Did == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Missing required field: did"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Missing required field: did"})
 		return
 	}
 
@@ -239,7 +275,7 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 
 	if _, exists := mis.records[record.Did]; exists {
 		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Record already exists"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Record already exists"})
 		return
 	}
 
@@ -255,7 +291,7 @@ func (mis *MockIndexdServer) handleCreateRecord(w http.ResponseWriter, r *http.R
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(record)
+	encoder.NewStreamEncoder(w).Encode(record)
 }
 
 func (mis *MockIndexdServer) handleUpdateRecord(w http.ResponseWriter, r *http.Request, did string) {
@@ -265,16 +301,16 @@ func (mis *MockIndexdServer) handleUpdateRecord(w http.ResponseWriter, r *http.R
 	record, exists := mis.records[did]
 	if !exists {
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Record not found"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Record not found"})
 		return
 	}
 
 	var update struct {
 		URLs []string `json:"urls"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+	if err := decoder.NewStreamDecoder(r.Body).Decode(&update); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
+		encoder.NewStreamEncoder(w).Encode(map[string]string{"error": "Invalid JSON"})
 		return
 	}
 
@@ -286,7 +322,7 @@ func (mis *MockIndexdServer) handleUpdateRecord(w http.ResponseWriter, r *http.R
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(record)
+	encoder.NewStreamEncoder(w).Encode(record)
 }
 
 func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Request) {
@@ -333,7 +369,7 @@ func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Re
 		IDs:     dids,
 		Size:    int64(len(outputRecords)),
 	}
-	json.NewEncoder(w).Encode(response)
+	encoder.NewStreamEncoder(w).Encode(response)
 }
 
 func (mis *MockIndexdServer) handleDeleteRecord(w http.ResponseWriter, r *http.Request, did string) {
@@ -411,7 +447,7 @@ func NewMockGen3Server(t *testing.T, s3Endpoint string) *MockGen3Server {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		encoder.NewStreamEncoder(w).Encode(response)
 	})
 
 	mgs.httpServer = httptest.NewServer(mux)
@@ -520,21 +556,7 @@ func (mss *MockS3Server) Close() {
 }
 
 // Helper functions for type conversion
-
-// convertMapAnyToString converts map[string]any to map[string]string
-func convertMapAnyToString(input map[string]any) map[string]string {
-	result := make(map[string]string)
-	for k, v := range input {
-		if str, ok := v.(string); ok {
-			result[k] = str
-		}
-	}
-	return result
-}
-
-// convertMockRecordToDRSObject converts a MockIndexdRecord to a DRS object
 func convertMockRecordToDRSObject(record *MockIndexdRecord) *drs.DRSObject {
-	// Convert hashes to Checksum array
 
 	// Convert URLs to AccessMethods
 	accessMethods := make([]drs.AccessMethod, 0)

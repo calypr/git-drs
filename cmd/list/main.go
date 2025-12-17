@@ -1,11 +1,11 @@
 package list
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -91,7 +91,7 @@ var Cmd = &cobra.Command{
 			}
 			obj := objResult.Object
 			if outJson {
-				out, err := json.Marshal(*obj)
+				out, err := sonic.ConfigFastest.Marshal(*obj)
 				if err != nil {
 					return err
 				}
@@ -144,7 +144,7 @@ var ListProjectCmd = &cobra.Command{
 				return objResult.Error
 			}
 			obj := objResult.Object
-			out, err := json.Marshal(*obj)
+			out, err := sonic.ConfigFastest.Marshal(*obj)
 			if err != nil {
 				return err
 			}

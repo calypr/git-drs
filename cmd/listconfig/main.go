@@ -1,10 +1,10 @@
 package listconfig
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -29,7 +29,7 @@ var Cmd = &cobra.Command{
 
 		if jsonOutput {
 			// Output as JSON if requested
-			encoder := json.NewEncoder(os.Stdout)
+			encoder := sonic.ConfigFastest.NewEncoder(os.Stdout)
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(cfg)
 		} else {

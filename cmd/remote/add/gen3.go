@@ -2,9 +2,9 @@ package add
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/logs"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -41,7 +41,7 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drslog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
@@ -115,7 +115,10 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log
 		MinShepherdVersion: "",
 	}
 
-	if err := jwt.UpdateConfig(log, cred); err != nil {
+	logger, closer := logs.New(remoteName, logs.WithBaseLogger(log))
+	defer closer()
+
+	if err := jwt.UpdateConfig(logger, cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
 

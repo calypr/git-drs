@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/client/commonUtils"
+	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/data-client/client/jwt"
 	GoJwt "github.com/golang-jwt/jwt/v5"
 )
@@ -49,7 +49,7 @@ func RefreshToken(cred *jwt.Credential) error {
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
 		r := jwt.Request{}
-		err = r.RequestNewAccessToken(cred.APIEndpoint+commonUtils.FenceAccessTokenEndpoint, cred)
+		err = r.RequestNewAccessToken(cred.APIEndpoint+common.FenceAccessTokenEndpoint, cred)
 		if err != nil {
 			// load config and see if the endpoint is printed
 			errStr := fmt.Sprintf("error refreshing access token: %v", err)

@@ -1,13 +1,14 @@
 package indexd_tests
 
 import (
-	"log"
 	"net/http"
 	"net/url"
 	"testing"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/jwt"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/drslog"
 )
 
 //////////////////////////
@@ -54,8 +55,10 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 		Base:        url,
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		Logger:      log.Default(),
+		Logger:      drslog.GetLogger(),
 		AuthHandler: &indexd_client.RealAuthHandler{Cred: jwt.Credential{Profile: "test-remote"}},
+		HttpClient:  &http.Client{},
+		SConfig:     sonic.ConfigFastest,
 	}
 }
 
@@ -67,8 +70,10 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 		Base:        url,
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
-		Logger:      log.Default(),
+		Logger:      drslog.GetLogger(),
 		AuthHandler: &MockAuthHandler{},
+		HttpClient:  &http.Client{},
+		SConfig:     sonic.ConfigFastest,
 	}
 }
 

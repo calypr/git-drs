@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/logs"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -114,7 +115,10 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 		MinShepherdVersion: "",
 	}
 
-	if err := jwt.UpdateConfig(&indexd_client.Gen3LoggerAdapter{Logger: drslog.GetLogger()}, cred); err != nil {
+	logger, closer := logs.New(remoteName, logs.WithBaseLogger(log))
+	defer closer()
+
+	if err := jwt.UpdateConfig(logger, cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
 

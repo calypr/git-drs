@@ -1,6 +1,7 @@
 package indexd_client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,7 +19,7 @@ type RealAuthHandler struct {
 }
 
 func (rh *RealAuthHandler) AddAuthHeader(req *http.Request) error {
-	return rh.addGen3AuthHeader(req)
+	return rh.addGen3AuthHeader(req.Context(), req)
 }
 
 // Moved this function out of bmeg/grip-graphql/middleware into this repo to simplify deps.
@@ -41,14 +42,14 @@ func GetExpiration(tokenString string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("expiration field 'exp' type float64 not found in token %v", token)
 }
 
-func RefreshToken(cred *jwt.Credential) error {
+func RefreshToken(ctx context.Context, cred *jwt.Credential) error {
 	expiration, err := GetExpiration(cred.AccessToken)
 	if err != nil {
 		return err
 	}
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
-		r := jwt.Request{}
+		r := jwt.Request{Ctx: ctx}
 		err = r.RequestNewAccessToken(cred.APIEndpoint+common.FenceAccessTokenEndpoint, cred)
 		if err != nil {
 			// load config and see if the endpoint is printed
@@ -62,12 +63,12 @@ func RefreshToken(cred *jwt.Credential) error {
 	return nil
 }
 
-func (rh *RealAuthHandler) refreshToken() error {
-	return RefreshToken(&rh.Cred)
+func (rh *RealAuthHandler) refreshToken(ctx context.Context) error {
+	return RefreshToken(ctx, &rh.Cred)
 }
 
-func (rh *RealAuthHandler) addGen3AuthHeader(req *http.Request) error {
-	err := rh.refreshToken()
+func (rh *RealAuthHandler) addGen3AuthHeader(ctx context.Context, req *http.Request) error {
+	err := rh.refreshToken(ctx)
 	if err != nil {
 		return err
 	}

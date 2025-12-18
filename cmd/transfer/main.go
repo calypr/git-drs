@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -63,10 +61,10 @@ func downloadWorker(id int, input <-chan TransferJob, output chan<- TransferResu
 
 		accessUrl, err := job.drsClient.GetDownloadURL(msg.Oid)
 		if err != nil {
-			errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", msg.Oid, err)
+			errMsg := fmt.Sprintf("Worker %d: Error getting signed URL for OID %s: %v", id, msg.Oid, err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
-				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 502, Message: errMsg}},
+				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 500, Message: errMsg}},
 				isError: true,
 			}
 			continue
@@ -96,7 +94,7 @@ func downloadWorker(id int, input <-chan TransferJob, output chan<- TransferResu
 			errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", msg.Oid, err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
-				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 502, Message: errMsg}},
+				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 500, Message: errMsg}},
 				isError: true,
 			}
 			continue
@@ -130,10 +128,10 @@ func uploadWorker(id int, input <-chan TransferJob, output chan<- TransferResult
 
 		drsObj, err := job.drsClient.RegisterFile(msg.Oid)
 		if err != nil {
-			errMsg := "Error registering file: " + err.Error()
+			errMsg := fmt.Sprintf("(Worker %d) Error registering file: %v", id, err)
 			myLogger.Print(errMsg)
 			output <- TransferResult{
-				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 502, Message: errMsg}},
+				data:    lfs.ErrorMessage{Event: "error", Oid: msg.Oid, Error: lfs.Error{Code: 400, Message: errMsg}},
 				isError: true,
 			}
 			continue
@@ -156,37 +154,13 @@ var Cmd = &cobra.Command{
 		logger := drslog.GetLogger()
 		logger.Print("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
-		numWorkers := getConcurrentTransfers(logger)
-
 		// Gotta go fast — big buffer
 		scanner := bufio.NewScanner(os.Stdin)
 		const maxCapacity = 10 * 1024 * 1024 // 10 MB
 		buf := make([]byte, 0, 64*1024)
 		scanner.Buffer(buf, maxCapacity)
 
-		transferQueue := make(chan TransferJob, numWorkers*4)
-		resultQueue := make(chan TransferResult, numWorkers*4)
-		var wg sync.WaitGroup
-
-		// Single writer goroutine — must stay ordered
-		writerDone := make(chan struct{})
-		go func() {
-			defer close(writerDone)
-			encoder := encoder.NewStreamEncoder(os.Stdout) // Output still uses stdlib (safe & compatible)
-			for result := range resultQueue {
-				if result.isError {
-					if errMsg, ok := result.data.(lfs.ErrorMessage); ok {
-						lfs.WriteErrorMessage(encoder, errMsg.Oid, errMsg.Error.Code, errMsg.Error.Message)
-					}
-				} else {
-					encoder.Encode(result.data)
-				}
-			}
-		}()
-
-		var drsClient client.DRSClient
-		var remoteName string
-
+		// Read init message
 		if !scanner.Scan() {
 			err := fmt.Errorf("failed to read initial message from stdin")
 			logger.Printf("Error: %v", err)
@@ -209,6 +183,39 @@ var Cmd = &cobra.Command{
 			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
 			return err
 		}
+
+		// Use ConcurrentTransfers from init message
+		numWorkers := initMsg.ConcurrentTransfers
+		if numWorkers <= 0 {
+			numWorkers = 4
+			logger.Printf("Invalid ConcurrentTransfers (%d), using default: 4", initMsg.ConcurrentTransfers)
+		} else {
+			logger.Printf("Using %d concurrent workers (from Git LFS)", numWorkers)
+		}
+
+		// Create channels with correct sizing
+		transferQueue := make(chan TransferJob, numWorkers*4)
+		resultQueue := make(chan TransferResult, numWorkers*4)
+		var wg sync.WaitGroup
+
+		// Single writer goroutine — must stay ordered
+		writerDone := make(chan struct{})
+		go func() {
+			defer close(writerDone)
+			encoder := encoder.NewStreamEncoder(os.Stdout)
+			for result := range resultQueue {
+				if result.isError {
+					if errMsg, ok := result.data.(lfs.ErrorMessage); ok {
+						lfs.WriteErrorMessage(encoder, errMsg.Oid, errMsg.Error.Code, errMsg.Error.Message)
+					}
+				} else {
+					encoder.Encode(result.data)
+				}
+			}
+		}()
+
+		var drsClient client.DRSClient
+		var remoteName string
 
 		// Determine remote
 		if initMsg.Remote != "" {
@@ -235,7 +242,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Set operation — this is the law
+		// Determine if upload or download
 		if initMsg.Operation == OPERATION_UPLOAD || initMsg.Operation == OPERATION_DOWNLOAD {
 			transferOperation = initMsg.Operation
 			logger.Printf("Transfer operation: %s", transferOperation)
@@ -264,7 +271,7 @@ var Cmd = &cobra.Command{
 		if transferOperation == OPERATION_UPLOAD {
 			workerFunc = uploadWorker
 		}
-		for i := range numWorkers { // Fixed: was "range numWorkers"
+		for i := range numWorkers {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
@@ -307,25 +314,4 @@ var Cmd = &cobra.Command{
 		logger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
 		return nil
 	},
-}
-
-func getConcurrentTransfers(logger *drslog.Logger) int {
-	const defaultValue = 4
-	cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.concurrenttransfers")
-	output, err := cmd.Output()
-	if err != nil {
-		logger.Printf("Could not read 'lfs.customtransfer.drs.concurrenttransfers' from git config: %v. Using default: %d", err, defaultValue)
-		return defaultValue
-	}
-	s := strings.TrimSpace(string(output))
-	if s == "" {
-		return defaultValue
-	}
-	val, err := strconv.Atoi(s)
-	if err != nil || val <= 0 {
-		logger.Printf("Invalid or zero lfs.concurrenttransfers (%s). Using default: %d", s, defaultValue)
-		return defaultValue
-	}
-	logger.Printf("Using lfs.concurrenttransfers = %d", val)
-	return val
 }

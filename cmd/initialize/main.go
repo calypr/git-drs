@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var transfers int = 4
+var transfers int
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -31,20 +31,20 @@ var Cmd = &cobra.Command{
 		// check if .git dir exists to ensure you're in a git repository
 		_, err := utils.GitTopLevel()
 		if err != nil {
-			return fmt.Errorf("Error: not in a git repository. Please run this command in the root of your git repository.\n")
+			return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 		}
 
 		// create config file if it doesn't exist
 		err = config.CreateEmptyConfig()
 		if err != nil {
-			return fmt.Errorf("Error: unable to create config file: %v\n", err)
+			return fmt.Errorf("error: unable to create config file: %v", err)
 		}
 
 		// load the config
 		_, err = config.LoadConfig()
 		if err != nil {
 			logg.Printf("We should probably fix this: %v", err)
-			return fmt.Errorf("Error: unable to load config file: %v\n", err)
+			return fmt.Errorf("error: unable to load config file: %v", err)
 		}
 
 		// add some patterns to the .gitignore if not already present
@@ -54,7 +54,7 @@ var Cmd = &cobra.Command{
 		gitignorePatterns := []string{drsDirStr, configStr, "drs_downloader.log"}
 		for _, pattern := range gitignorePatterns {
 			if err := ensureDrsObjectsIgnore(pattern, logg); err != nil {
-				return fmt.Errorf("Init Error: %v\n", err)
+				return fmt.Errorf("init error: %v", err)
 			}
 		}
 
@@ -62,7 +62,7 @@ var Cmd = &cobra.Command{
 		statusCmd := exec.Command("git", "status", "--porcelain", ".gitignore")
 		output, err := statusCmd.Output()
 		if err != nil {
-			return fmt.Errorf("Error checking git status of .gitignore file: %v", err)
+			return fmt.Errorf("error checking git status of .gitignore file: %v", err)
 		}
 		if len(output) > 0 {
 			logg.Print(".gitignore has been updated and staged")
@@ -73,18 +73,19 @@ var Cmd = &cobra.Command{
 		// git add .gitignore
 		gitCmd := exec.Command("git", "add", ".gitignore")
 		if cmdOut, err := gitCmd.Output(); err != nil {
-			return fmt.Errorf("Error adding .gitignore to git: %s", cmdOut)
+			return fmt.Errorf("error adding .gitignore to git: %s", cmdOut)
 		}
 
 		// setup lfs custom transfer
 		// TODO: may need to generalize for anvil
 		err = initGitConfig()
 		if err != nil {
-			return fmt.Errorf("Error initializing custom transfer for DRS: %v\n", err)
+			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
 		}
 
 		// final logs
 		logg.Print("Git DRS initialized")
+		logg.Printf("Using %d concurrent transfers", transfers)
 		return nil
 	},
 }
@@ -103,7 +104,7 @@ func initGitConfig() error {
 	for _, args := range configs {
 		cmd := exec.Command("git", "config", args[0], args[1])
 		if cmdOut, err := cmd.Output(); err != nil {
-			return fmt.Errorf("Unable to set git config %s: %s", args[0], cmdOut)
+			return fmt.Errorf("unable to set git config %s: %s", args[0], cmdOut)
 		}
 	}
 
@@ -111,7 +112,7 @@ func initGitConfig() error {
 }
 
 func init() {
-	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
+	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.

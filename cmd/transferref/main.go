@@ -122,7 +122,7 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
 					myLogger.Print(errMsg)
-					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 502, errMsg)
+					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 500, errMsg)
 					continue
 				}
 

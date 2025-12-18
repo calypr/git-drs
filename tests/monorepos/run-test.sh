@@ -142,8 +142,7 @@ echo "Using git-drs from: $(which git-drs)" >&2
 set -x
 
 # ensure a gen3 project exists
-# TODO - update to calypr_admin
-g3t --profile "$PROFILE" projects ls | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
+calypr_admin projects ls --profile "$PROFILE" | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
   echo "error: /programs/$PROGRAM/projects/$PROJECT does not exist; please create it first" >&2
   exit 1
 }
@@ -173,7 +172,7 @@ else
 
   # Initialize drs configuration for this repo
   git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket calypr --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket cbds --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
 
   # verify fixtures/.drs/config.yaml exists
   if [ ! -f ".drs/config.yaml" ]; then

@@ -2,7 +2,6 @@ package query
 
 import (
 	"github.com/bytedance/sonic"
-	"github.com/calypr/git-drs/config"
 	conf "github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
@@ -17,17 +16,25 @@ var Cmd = &cobra.Command{
 	Long:  "Query DRS server by DRS ID",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if remote == "" {
-			remote = config.ORIGIN
-		}
-
 		logger := drslog.GetLogger()
 
 		config, err := conf.LoadConfig()
 		if err != nil {
 			return err
 		}
-		client, err := config.GetRemoteClient(conf.Remote(remote), logger)
+
+		var remoteName conf.Remote
+		if remote != "" {
+			remoteName = conf.Remote(remote)
+		} else {
+			remoteName, err = config.GetDefaultRemote()
+			if err != nil {
+				logger.Printf("Error getting default remote: %v", err)
+				return err
+			}
+		}
+
+		client, err := config.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}

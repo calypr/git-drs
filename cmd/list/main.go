@@ -51,9 +51,6 @@ var Cmd = &cobra.Command{
 	Short: "List DRS entities from server",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		var outWriter io.Writer
 		if listOutFile != "" {
@@ -71,7 +68,18 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
+
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = conf.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("Client failed")
 			return err
@@ -109,16 +117,23 @@ var ListProjectCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		conf, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = conf.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}

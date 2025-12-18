@@ -20,18 +20,33 @@ var ListCmd = &cobra.Command{
 			return err
 		}
 
-		for k, v := range cfg.Remotes {
-			tString := "NA"
-			var remote config.DRSRemote
-			if v.Gen3 != nil {
-				tString = "gen3"
-				remote = v.Gen3
-			} else if v.Anvil != nil {
-				tString = "anvil"
-				remote = v.Anvil
+		for name, remoteSelect := range cfg.Remotes {
+			// Determine if this is the default
+			isDefault := name == cfg.DefaultRemote
+			marker := " "
+			if isDefault {
+				marker = "*"
 			}
-			fmt.Printf(" %s\t%s\t%s\n", k, tString, remote.GetEndpoint())
 
+			// Determine remote type and endpoint
+			var remoteType string
+			var remote config.DRSRemote
+			if remoteSelect.Gen3 != nil {
+				remoteType = "gen3"
+				remote = remoteSelect.Gen3
+			} else if remoteSelect.Anvil != nil {
+				remoteType = "anvil"
+				remote = remoteSelect.Anvil
+			} else {
+				remoteType = "unknown"
+			}
+
+			endpoint := "N/A"
+			if remote != nil {
+				endpoint = remote.GetEndpoint()
+			}
+
+			fmt.Printf("%s %-10s %-8s %s\n", marker, name, remoteType, endpoint)
 		}
 		return nil
 	},

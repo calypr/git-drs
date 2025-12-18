@@ -24,9 +24,6 @@ var Cmd = &cobra.Command{
 	Args:   cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hashType, oid := args[0], args[1]
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		// check hash type is valid Checksum type and sha256
 		if hashType != hash.ChecksumTypeSHA256.String() {
@@ -40,7 +37,17 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = cfg.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("error creating indexd client: %s", err)
 			return err
@@ -57,6 +64,6 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote instance to use  (defaults to default_remote from config)")
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

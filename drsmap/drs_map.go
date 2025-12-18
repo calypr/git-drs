@@ -145,7 +145,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
 	logger.Print("Update to DRS objects started")
 
 	// get all lfs files
-	lfsFiles, err := getAllLfsFiles()
+	lfsFiles, err := GetAllLfsFiles()
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
 	}
@@ -328,7 +328,7 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func getAllLfsFiles() (map[string]LfsFileInfo, error) {
+func GetAllLfsFiles() (map[string]LfsFileInfo, error) {
 	// get all LFS files' info using json
 	cmd := exec.Command("git", "lfs", "ls-files", "--json")
 	out, err := cmd.Output()

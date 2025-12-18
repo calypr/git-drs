@@ -17,14 +17,20 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
-		var remote config.Remote = config.ORIGIN
-		if len(args) > 0 {
-			remote = config.Remote(args[0])
-		}
-
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		var remote config.Remote
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
+		} else {
+			remote, err = cfg.GetDefaultRemote()
+			if err != nil {
+				logger.Printf("Error getting default remote: %v", err)
+				return err
+			}
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, logger)

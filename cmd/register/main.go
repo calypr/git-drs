@@ -19,9 +19,6 @@ var Cmd = &cobra.Command{
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 		logger, err := drslog.NewLogger("", true)
 		if err != nil {
 			return err
@@ -32,7 +29,18 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		cli, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = cfg.GetDefaultRemote()
+			if err != nil {
+				logger.Printf("Error getting default remote: %v", err)
+				return err
+			}
+		}
+
+		cli, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}

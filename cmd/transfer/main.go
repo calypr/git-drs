@@ -215,18 +215,8 @@ var Cmd = &cobra.Command{
 		}()
 
 		var drsClient client.DRSClient
-		var remoteName string
 
-		// Determine remote
-		if initMsg.Remote != "" {
-			remoteName = initMsg.Remote
-			logger.Printf("Initializing connection. Remote used: %s", remoteName)
-		} else {
-			remoteName = config.ORIGIN
-			logger.Print("Initializing connection, remote not specified — using origin")
-		}
-
-		// Load config
+		// Load config first
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			logger.Printf("Error loading config: %v", err)
@@ -234,7 +224,14 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		remote := config.Remote(remoteName)
+		// Determine remote
+		remote, err := cfg.GetDefaultRemote()
+		if err != nil {
+			logger.Printf("Error getting default remote: %v", err)
+			lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
+			return err
+		}
+
 		drsClient, err = cfg.GetRemoteClient(remote, logger)
 		if err != nil {
 			logger.Printf("Error creating DRS client: %v", err)

@@ -12,16 +12,22 @@ var Cmd = &cobra.Command{
 	Short: "push local objects to drs server.",
 	Long:  "push local objects to drs server. Any local files that do not have drs records are written to a bucket.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var remote config.Remote = config.ORIGIN
-		if len(args) > 0 {
-			remote = config.Remote(args[0])
-		}
-
 		myLogger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			myLogger.Printf("Error loading config: %v", err)
 			return err
+		}
+
+		var remote config.Remote
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
+		} else {
+			remote, err = cfg.GetDefaultRemote()
+			if err != nil {
+				myLogger.Printf("Error getting default remote: %v", err)
+				return err
+			}
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)

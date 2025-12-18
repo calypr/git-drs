@@ -20,10 +20,6 @@ var Cmd = &cobra.Command{
 	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
-		var remote config.Remote = config.ORIGIN
-		if len(args) > 0 {
-			remote = config.Remote(args[0])
-		}
 
 		myLogger.Print("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
@@ -31,6 +27,17 @@ var Cmd = &cobra.Command{
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error getting config: %v", err)
+		}
+
+		var remote config.Remote
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
+		} else {
+			remote, err = cfg.GetDefaultRemote()
+			if err != nil {
+				myLogger.Printf("Error getting default remote: %v", err)
+				return err
+			}
 		}
 
 		cli, err := cfg.GetRemoteClient(remote, myLogger)

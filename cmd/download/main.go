@@ -27,16 +27,23 @@ var Cmd = &cobra.Command{
 		logger := drslog.GetLogger()
 
 		oid := args[0]
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = cfg.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("\nerror creating DRS client: %s", err)
 			return err

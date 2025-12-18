@@ -18,17 +18,23 @@ var Cmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if remote == "" {
-			remote = config.ORIGIN
-		}
-
 		logger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = cfg.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("error creating indexd client: %s", err)
 			return err

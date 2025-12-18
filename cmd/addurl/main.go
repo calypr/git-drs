@@ -57,7 +57,17 @@ var AddURLCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), myLogger)
+		var remoteName config.Remote
+		if remote != "" {
+			remoteName = config.Remote(remote)
+		} else {
+			remoteName, err = cfg.GetDefaultRemote()
+			if err != nil {
+				return fmt.Errorf("error getting default remote: %v", err)
+			}
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, myLogger)
 		if err != nil {
 			return fmt.Errorf("error getting current remote client: %v", err)
 		}
@@ -86,7 +96,7 @@ func init() {
 	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
 	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
 	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
-	AddURLCmd.Flags().String("remote", config.ORIGIN, "Git DRS remote to use")
+	AddURLCmd.Flags().String("remote", "", "Git DRS remote to use (defaults to default_remote from config)")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

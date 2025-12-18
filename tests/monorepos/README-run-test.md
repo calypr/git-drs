@@ -9,7 +9,7 @@ This file documents the `run-test.sh` helper script located in `tests/monorepos`
 - Generates fixtures via `make test-monorepos` only if `fixtures/` does not exist.
 - Verifies that `git-lfs` is installed (attempts `brew install git-lfs` on macOS).
 - Locates the locally built `git-drs` binary two levels up from the script and prepends its absolute path to `PATH` so the local build is used.
-- Validates the target Gen3 project exists via `g3t`.
+- Validates the target Gen3 project exists via `calypr_admin`.
 - Initializes a git repo in `fixtures/`, runs `git drs init`, creates or updates `.gitattributes`, configures LFS tracking, and pushes subfolders to the remote.
 
 ## Invocation
@@ -46,7 +46,7 @@ Note: We've been using https://github.com/calypr/monorepo.git
 * The script will abort if not run from tests/monorepos.
 * Fixtures are generated only when fixtures/ is absent.
 * The script looks for git-drs in the directory two levels above the script path and prepends the absolute path to PATH so the locally built git-drs is used.
-* A project existence check is performed with g3t --profile "$PROFILE" projects ls and must match /programs/$PROGRAM/projects/$PROJECT.
+* A project existence check is performed with `calypr_admin projects ls --profile "$PROFILE"` and must match `/programs/$PROGRAM/projects/$PROJECT`.
 * When initializing the fixtures repo the script:
   * creates or uses branch main,
   * runs git drs init --cred ... --profile ... --bucket calypr --project "$PROGRAM-$PROJECT" ...,

@@ -4,7 +4,7 @@ set -euo pipefail
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
-PROFILE_DEFAULT="origin"
+PROFILE_DEFAULT="calypr-dev"
 PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"
@@ -199,7 +199,7 @@ else
   echo "Finished init.  Force pushing to remote." >&2
   git remote -v
 
-  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main 2>&1 | tee lfs-console.log
+  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f 2>&1 | tee lfs-console.log
 
   echo "Finished init.  Finished pushing to remote." >&2
   exit 0
@@ -220,7 +220,7 @@ for dir in */ ; do
     git add "$dir"
     git commit -am "Add $dir" 2>&1 | tee commit.log
     cat commit.log >> commit-aggregate.log
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main 2>&1 | tee lfs-console.log
+    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
     # if .drs/lfs/objects exists, log last 3 lines of tree
@@ -234,7 +234,7 @@ for dir in */ ; do
     echo "# git lfs status:" >> lfs-console.log
     git lfs status >> lfs-console.log
     echo "# Number of LFS files to be pushed in dry-run:" >> lfs-console.log
-    git lfs push --dry-run origin main | wc -l >> lfs-console.log
+    git lfs push --dry-run | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
     break  # uncomment for one directory at a time testing

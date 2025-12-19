@@ -338,7 +338,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}
 
-	cmd = exec.Command("git-drs", "delete", "sha256", lfsFiles[dataFile].Oid, "--remote", remote)
+	cmd = exec.Command("git-drs", "delete", "sha256", lfsFiles[dataFile].Oid, "--remote", remote, "--confirm")
 	_, err = cmd.Output()
 	if err != nil {
 		t.Fatalf("Failed to delete indexd record %s: %v", lfsFiles[dataFile].Oid, err)

@@ -11,9 +11,15 @@ import (
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "fetch [optional_remote]",
+	Use:   "fetch [remote-name]",
 	Short: "fetch drs objects from remote",
-	Args:  cobra.RangeArgs(0, 1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts at most 1 argument (remote name), received %d\n\nUsage: %s\n\nSee 'git drs fetch --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 

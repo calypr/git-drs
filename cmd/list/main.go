@@ -49,6 +49,13 @@ func getCheckSumStr(obj drs.DRSObject) string {
 var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List DRS entities from server",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs list --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
@@ -114,7 +121,13 @@ var Cmd = &cobra.Command{
 var ListProjectCmd = &cobra.Command{
 	Use:   "list-project <project-id>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (project ID), received %d\n\nUsage: %s\n\nSee 'git drs list-project --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 

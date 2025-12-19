@@ -17,7 +17,13 @@ var Cmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register all pending DRS objects with indexd",
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
-	Args:  cobra.ExactArgs(0),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs register --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger, err := drslog.NewLogger("", true)
 		if err != nil {

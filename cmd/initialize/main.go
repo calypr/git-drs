@@ -24,7 +24,13 @@ var Cmd = &cobra.Command{
 	Short: "Initialize repo for git-drs",
 	Long: "Description:" +
 		"\n  Initialize repo for git-drs",
-	Args: cobra.ExactArgs(0),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs init --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 

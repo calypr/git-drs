@@ -20,7 +20,8 @@ var AddURLCmd = &cobra.Command{
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
-			return fmt.Errorf("add-url requires 2 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 2 arguments (S3 URL and SHA256), received %d\n\nUsage: %s\n\nSee 'git drs add-url --help' for more details", len(args), cmd.UseLine())
 		}
 		return nil
 	},

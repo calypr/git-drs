@@ -12,7 +12,13 @@ var SetCmd = &cobra.Command{
 	Use:   "set <remote-name>",
 	Short: "Set the default DRS remote",
 	Long:  "Set which DRS remote to use by default for all operations",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (remote name), received %d\n\nUsage: %s\n\nRun 'git drs remote list' to see available remotes or 'git drs remote set --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		remoteName := args[0]
 		logger := drslog.GetLogger()

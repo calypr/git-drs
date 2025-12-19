@@ -11,7 +11,13 @@ import (
 var ListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List DRS repos",
-	Args:  cobra.ExactArgs(0),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs remote list --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 		cfg, err := config.LoadConfig()

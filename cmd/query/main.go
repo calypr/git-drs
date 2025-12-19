@@ -1,6 +1,8 @@
 package query
 
 import (
+	"fmt"
+
 	"github.com/bytedance/sonic"
 	conf "github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -14,7 +16,13 @@ var Cmd = &cobra.Command{
 	Use:   "query <drs_id>",
 	Short: "Query DRS server by DRS ID",
 	Long:  "Query DRS server by DRS ID",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (DRS ID), received %d\n\nUsage: %s\n\nSee 'git drs query --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 

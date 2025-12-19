@@ -19,7 +19,13 @@ var Cmd = &cobra.Command{
 	Use:   "list-config",
 	Short: "Display the current configuration",
 	Long:  "Pretty prints the current configuration file in YAML format",
-	Args:  cobra.ExactArgs(0),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs list-config --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Load the current configuration
 		cfg, err := config.LoadConfig()

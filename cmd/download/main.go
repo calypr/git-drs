@@ -22,7 +22,13 @@ var Cmd = &cobra.Command{
 	Use:   "download <oid>",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (file object ID), received %d\n\nUsage: %s\n\nSee 'git drs download --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 

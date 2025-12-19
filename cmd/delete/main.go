@@ -13,7 +13,6 @@ import (
 )
 
 var (
-	dstPath     string
 	remote      string
 	confirmFlag bool
 )
@@ -108,6 +107,5 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
-	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 	Cmd.Flags().BoolVar(&confirmFlag, "confirm", false, "skip interactive confirmation prompt")
 }

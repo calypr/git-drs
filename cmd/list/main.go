@@ -177,9 +177,9 @@ var ListProjectCmd = &cobra.Command{
 }
 
 func init() {
-	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	Cmd.Flags().StringVarP(&listOutFile, "out", "o", listOutFile, "File path to save output to")
 	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

@@ -96,7 +96,7 @@ func init() {
 	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
 	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
 	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
-	AddURLCmd.Flags().String("remote", "", "Git DRS remote to use (defaults to default_remote from config)")
+	AddURLCmd.Flags().String("remote", "", "target remote DRS server (default: default_remote)")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

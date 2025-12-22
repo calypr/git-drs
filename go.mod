@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/bytedance/sonic v1.14.2
-	github.com/calypr/data-client v0.0.0-20251217192723-ce4c29982ba4
+	github.com/calypr/data-client v0.0.0-20251218175643-eed4b782fd68
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/fs"
 	"math/rand"
 	"net/http"
 	"os"
@@ -173,25 +172,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Logf(".drs/config.yaml contents: %s", configContent)
 	}
 
-	/* Hooks not getting added right now. Uncomment this out in the future if we go back to this setup
-	* // Verify git hooks are installed (pre-commit and pre-push)
-	  hooksDir := ".git/hooks"
-	  preCommitHook := filepath.Join(hooksDir, "pre-commit")
-	  if _, err := os.Stat(preCommitHook); err != nil {
-	          if os.IsNotExist(err) {
-	                  t.Fatalf("pre-commit hook not installed in %s", hooksDir)
-	          }
-	          t.Fatalf("Failed to stat pre-commit hook in %s: %v", hooksDir, err)
-	  }
-	  prePushHook := filepath.Join(hooksDir, "pre-push")
-	  if _, err := os.Stat(prePushHook); err != nil {
-	          if os.IsNotExist(err) {
-	                  t.Fatalf("pre-push hook not installed in %s", hooksDir)
-	          }
-	          t.Fatalf("Failed to stat pre-push hook in %s: %v", hooksDir, err)
-	  }
-	*/
-
 	cmd = exec.Command("git", "lfs", "track", "*.txt")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to git lfs track in %s: %v", repoDir, err)
@@ -220,22 +200,18 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to add main branch: %v", err)
 	}
 
+	// add remote
 	remoteURL := fmt.Sprintf("%s/%s/%s.git", host, owner, repoName)
-	// Add remote
 	t.Log("Remote URL: ", remoteURL)
 	cmd = exec.Command("git", "remote", "add", remote, remoteURL)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to add remote %s: %v", remoteURL, err)
 	}
 
+	// add + commit
 	cmd = exec.Command("git", "add", dataFile)
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("Failed to git add data file %s: %v", dataFile, err)
-	}
-
-	cmd = exec.Command("git", "drs", "precommit", remote)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git-drs precommit to remote %s: %v", remote, err)
 	}
 
 	cmd = exec.Command("git", "commit", "-m", "Add test file")
@@ -245,34 +221,27 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git commit in %s: %v", repoDir, err)
 	}
 
-	// Verify LFS files are listed
-	cmd = exec.Command("git", "lfs", "ls-files", "--json")
-	output, err = cmd.Output()
+	// verify LFS files are listed
+	lfsFiles, err := drsmap.GetAllLfsFiles()
 	if err != nil {
-		t.Fatalf("Failed to git lfs ls-files in %s: %v", repoDir, err)
+		t.Fatalf("Failed to get LFS files: %v", err)
 	}
-	if string(output) == "" {
-		t.Fatalf("No LFS files listed after commit in %s", repoDir)
-	}
-
-	type File struct {
-		Name       string `json:"name"`
-		Size       int64  `json:"size"`
-		Checkout   bool   `json:"checkout"`
-		Downloaded bool   `json:"downloaded"`
-		OIDType    string `json:"oid_type"`
-		OID        string `json:"oid"`
-		Version    string `json:"version"`
-	}
-	type FileContainer struct {
-		Files []File `json:"files"`
+	if len(lfsFiles) != 1 {
+		t.Fatalf("Expected 1 LFS file, found %d", len(lfsFiles))
 	}
 
+	// push
+	cmd = exec.Command("git", "push")
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)
+	} else {
+		t.Log("Push succeeded with dummy DRS server")
+	}
 	t.Log("OUTPUT: ", string(output))
-	var fileMap FileContainer
-	err = sonic.ConfigFastest.Unmarshal(output, &fileMap)
 
-	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, fileMap.Files[0].OID)
+	// test local files exist
+	path, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, lfsFiles[dataFile].Oid)
 	if err != nil {
 		t.Fatalf("Failed to get object path %s: %v", path, err)
 	}
@@ -289,37 +258,6 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error checking path existence %s: %v", path, err)
 	}
-
-	// Verify pre-commit hook was called by checking .drs/ logs
-	files, err := fs.ReadDir(os.DirFS(projectdir.DRS_DIR), ".")
-	if err != nil {
-		t.Fatalf("Failed to read .drs dir %s: %v", projectdir.DRS_DIR, err)
-	}
-	logFound := false
-	for _, file := range files {
-		if !file.IsDir() && len(file.Name()) > 0 && file.Name() != "config.yaml" {
-			logFound = true
-			logPath := filepath.Join(projectdir.DRS_DIR, file.Name())
-			logContent, err := os.ReadFile(logPath)
-			if err != nil {
-				t.Fatalf("Failed to read log file %s: %v", logPath, err)
-			} else {
-				t.Logf("Log file %s contents: %s", logPath, logContent)
-			}
-		}
-	}
-	if !logFound {
-		t.Fatalf("No logs found in .drs/ after commit in %s; pre-commit hook may not have run", projectdir.DRS_DIR)
-	}
-
-	cmd = exec.Command("git", "push", "--set-upstream", remote, "main")
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Expected push failure with dummy DRS server: %v\nOutput: %s", err, output)
-	} else {
-		t.Log("Push succeeded with dummy DRS server")
-	}
-	t.Log("OUTPUT: ", string(output))
 
 	// Clean up the initial repository
 	if err := os.Chdir(tmpDir); err != nil {
@@ -394,18 +332,16 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to stat data.txt in %s: %v", cloneRepoDir, err)
 	}
 
-	cmd = exec.Command("git", "lfs", "ls-files", "--json")
-	output, err = cmd.Output()
+	// verify LFS files are listed
+	lfsFiles, err = drsmap.GetAllLfsFiles()
 	if err != nil {
-		t.Fatalf("Failed to git lfs ls-files in %s: %v", cloneRepoDir, err)
+		t.Fatalf("Failed to get LFS files: %v", err)
 	}
 
-	err = sonic.ConfigFastest.Unmarshal(output, &fileMap)
-
-	cmd = exec.Command("git-drs", "delete", "sha256", fileMap.Files[0].OID, "--remote", remote)
-	output, err = cmd.Output()
+	cmd = exec.Command("git-drs", "delete", "sha256", lfsFiles[dataFile].Oid, "--remote", remote, "--confirm")
+	_, err = cmd.Output()
 	if err != nil {
-		t.Fatalf("Failed to delete indexd record %s: %v", fileMap.Files[0].OID, err)
+		t.Fatalf("Failed to delete indexd record %s: %v", lfsFiles[dataFile].Oid, err)
 	}
 
 	// Verify .gitattributes exists and contains the txt pattern

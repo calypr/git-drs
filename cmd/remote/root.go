@@ -14,4 +14,5 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.AddCommand(add.Cmd)
 	Cmd.AddCommand(ListCmd)
+	Cmd.AddCommand(SetCmd)
 }

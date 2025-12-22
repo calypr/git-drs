@@ -22,21 +22,29 @@ var Cmd = &cobra.Command{
 	Use:   "download <oid>",
 	Short: "Download file using file object ID",
 	Long:  "Download file using file object ID (sha256 hash). Use lfs ls-files to get oid",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (file object ID), received %d\n\nUsage: %s\n\nSee 'git drs download --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
 		oid := args[0]
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("\nerror creating DRS client: %s", err)
 			return err
@@ -74,6 +82,6 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }

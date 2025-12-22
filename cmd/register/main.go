@@ -17,11 +17,14 @@ var Cmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register all pending DRS objects with indexd",
 	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
-	Args:  cobra.ExactArgs(0),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if remote == "" {
-			remote = config.ORIGIN
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs register --help' for more details", len(args), cmd.UseLine())
 		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
 		logger, err := drslog.NewLogger("", true)
 		if err != nil {
 			return err
@@ -32,7 +35,13 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		cli, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			logger.Printf("Error getting remote: %v", err)
+			return err
+		}
+
+		cli, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
@@ -118,5 +127,5 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 }

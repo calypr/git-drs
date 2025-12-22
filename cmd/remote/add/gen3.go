@@ -13,19 +13,25 @@ import (
 )
 
 var Gen3Cmd = &cobra.Command{
-	Use:  "gen3",
-	Args: cobra.RangeArgs(0, 1),
+	Use:  "gen3 [remote-name]",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts at most 1 argument (remote name), received %d\n\nUsage: %s\n\nSee 'git drs remote add gen3 --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 
 		// make sure at least one of the credentials params is provided
 		if credFile == "" && fenceToken == "" && len(args) == 0 {
-			return fmt.Errorf("Error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs init --help' for more details")
+			return fmt.Errorf("error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs remote add gen3 --help' for more details")
 		}
 
 		// When adding a new remote, bucket field is required.
 		if bucket == "" {
-			return fmt.Errorf("Error: Gen3 requires a bucket name to be specified when adding a new remote specify a bucket with --bucket flag. See 'git drs init --help' for more details")
+			return fmt.Errorf("error: Gen3 requires a bucket name to be specified when adding a new remote. Please specify a bucket with --bucket flag. See 'git drs remote add gen3 --help' for more details")
 		}
 
 		remoteName := config.ORIGIN
@@ -35,7 +41,7 @@ var Gen3Cmd = &cobra.Command{
 
 		err := gen3Init(remoteName, credFile, fenceToken, project, bucket, logg)
 		if err != nil {
-			return fmt.Errorf("Error configuring gen3 server: %v", err)
+			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
 		return nil
 	},

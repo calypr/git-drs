@@ -61,7 +61,8 @@ type RemoteSelect struct {
 
 // Config holds the overall config structure
 type Config struct {
-	Remotes map[Remote]RemoteSelect `yaml:"remotes"`
+	DefaultRemote Remote                  `yaml:"default_remote,omitempty"`
+	Remotes       map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
 func (c Config) GetRemoteClient(remote Remote, logger *drslog.Logger) (client.DRSClient, error) {
@@ -92,6 +93,47 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 		return x.Anvil
 	}
 	return nil
+}
+
+// GetDefaultRemote returns the configured default remote with validation
+func (c Config) GetDefaultRemote() (Remote, error) {
+	if c.DefaultRemote == "" {
+		return "", fmt.Errorf(
+			"no default remote configured.\n"+
+				"Set one with: git drs remote set <name>\n"+
+				"Available remotes: %v",
+			c.listRemoteNames(),
+		)
+	}
+
+	if _, ok := c.Remotes[c.DefaultRemote]; !ok {
+		return "", fmt.Errorf(
+			"default remote '%s' not found in configuration.\n"+
+				"Available remotes: %v",
+			c.DefaultRemote,
+			c.listRemoteNames(),
+		)
+	}
+
+	return c.DefaultRemote, nil
+}
+
+// GetRemoteOrDefault returns the specified remote if provided, otherwise returns the default remote
+// This is a common pattern used across many commands that accept an optional --remote flag
+func (c Config) GetRemoteOrDefault(remote string) (Remote, error) {
+	if remote != "" {
+		return Remote(remote), nil
+	}
+	return c.GetDefaultRemote()
+}
+
+// listRemoteNames returns a slice of all remote names for error messages
+func (c Config) listRemoteNames() []string {
+	names := make([]string, 0, len(c.Remotes))
+	for name := range c.Remotes {
+		names = append(names, string(name))
+	}
+	return names
 }
 
 func getConfigPath() (string, error) {
@@ -142,6 +184,11 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		cfg.Remotes = make(map[Remote]RemoteSelect)
 	}
 
+	// Set as default if this is the first remote
+	if len(cfg.Remotes) == 0 && cfg.DefaultRemote == "" {
+		cfg.DefaultRemote = name
+	}
+
 	cfg.Remotes[name] = remote
 
 	// overwrite the file using config
@@ -181,6 +228,23 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("config file at %s is invalid: %w", configPath, err)
 	}
 
+	// Validate: if remotes exist but no default, error with migration instructions
+	// FIXME: can be deleted after internal dev team ports over
+	if len(conf.Remotes) > 0 && conf.DefaultRemote == "" {
+		remoteNames := make([]string, 0, len(conf.Remotes))
+		for name := range conf.Remotes {
+			remoteNames = append(remoteNames, string(name))
+		}
+		return nil, fmt.Errorf(
+			"configuration migration required.\n\n"+
+				"Your config has remotes but no default_remote field.\n"+
+				"Add this line to .drs/config.yaml:\n\n"+
+				"  default_remote: <remote-name>\n\n",
+			"or delete and recreate the config file by re-running\n\n"+
+				"  git drs remote add \n\n",
+		)
+	}
+
 	return &conf, nil
 }
 
@@ -215,4 +279,24 @@ func GetProjectId(remote Remote) (string, error) {
 		return "", fmt.Errorf("no remote configuration found for current remote: %s", remote)
 	}
 	return rmt.GetProjectId(), nil
+}
+
+// SaveConfig writes the configuration to disk
+func SaveConfig(cfg *Config) error {
+	configPath, err := getConfigPath()
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if err := yaml.NewEncoder(file).Encode(cfg); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }

@@ -10,12 +10,16 @@ import (
 )
 
 var AnvilCmd = &cobra.Command{
-	Use:  "anvil",
-	Args: cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// TODO: actuallly implement
-		fmt.Printf("NOT IMPLEMENTED")
+	Use:  "anvil [remote-name]",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts at most 1 argument (remote name), received %d\n\nUsage: %s\n\nSee 'git drs remote add anvil --help' for more details", len(args), cmd.UseLine())
+		}
 		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return fmt.Errorf("error: anvil remote is not yet implemented. Use 'git drs remote add gen3' instead. See 'git drs remote add gen3 --help' for more details")
 	},
 }
 

@@ -19,9 +19,6 @@ var Cmd = &cobra.Command{
 	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Requires that the sha256 of the file is already in the cache",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 		drsUri := args[0]
 		dstPath := args[1]
 
@@ -34,7 +31,13 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		client, err := cfg.GetRemoteClient(config.Remote(remote), logger)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			logger.Printf("Error getting remote: %v", err)
+			return err
+		}
+
+		client, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}
@@ -65,5 +68,5 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 }

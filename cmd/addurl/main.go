@@ -20,7 +20,8 @@ var AddURLCmd = &cobra.Command{
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 2 {
-			return fmt.Errorf("add-url requires 2 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 2 arguments (S3 URL and SHA256), received %d\n\nUsage: %s\n\nSee 'git drs add-url --help' for more details", len(args), cmd.UseLine())
 		}
 		return nil
 	},
@@ -57,7 +58,12 @@ var AddURLCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(config.Remote(remote), myLogger)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, myLogger)
 		if err != nil {
 			return fmt.Errorf("error getting current remote client: %v", err)
 		}
@@ -86,7 +92,7 @@ func init() {
 	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
 	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
 	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
-	AddURLCmd.Flags().String("remote", config.ORIGIN, "Git DRS remote to use")
+	AddURLCmd.Flags().String("remote", "", "target remote DRS server (default: default_remote)")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

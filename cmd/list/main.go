@@ -49,11 +49,15 @@ func getCheckSumStr(obj drs.DRSObject) string {
 var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List DRS entities from server",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs list --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		var outWriter io.Writer
 		if listOutFile != "" {
@@ -71,7 +75,13 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
-		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
+
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			logger.Printf("Client failed")
 			return err
@@ -106,19 +116,27 @@ var Cmd = &cobra.Command{
 var ListProjectCmd = &cobra.Command{
 	Use:   "list-project <project-id>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (project ID), received %d\n\nUsage: %s\n\nSee 'git drs list-project --help' for more details", len(args), cmd.UseLine())
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		if remote == "" {
-			remote = config.ORIGIN
-		}
 
 		conf, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		client, err := conf.GetRemoteClient(config.Remote(remote), logger)
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}
@@ -162,9 +180,9 @@ var ListProjectCmd = &cobra.Command{
 }
 
 func init() {
-	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
-	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "remote calypr instance to use")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	Cmd.Flags().StringVarP(&listOutFile, "out", "o", listOutFile, "File path to save output to")
 	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

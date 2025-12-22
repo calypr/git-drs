@@ -24,6 +24,7 @@ var (
 	sConfig   sonic.API = sonic.ConfigFastest
 )
 
+// TODO: used for AnvIL use case, requires implementation
 var Cmd = &cobra.Command{
 	Use:   "transfer-ref",
 	Short: "[RUN VIA GIT LFS] handle transfers of existing DRS object into git during git push",
@@ -62,14 +63,15 @@ var Cmd = &cobra.Command{
 
 		// Handle "init" event and extract remote
 		if evt, ok := initMsg["event"]; ok && evt == "init" {
-			if r, ok := initMsg["remote"].(string); ok {
-				remoteName = r
-				myLogger.Printf("Initializing connection. Remote used: %s", remoteName)
-			} else {
-				// if no remote name specified use origin
-				remoteName = config.ORIGIN
-				myLogger.Printf("Initializing connection, but remote field was not found or wasn't a string.")
+			// if no remote name specified, use default remote
+			defaultRemote, err := cfg.GetDefaultRemote()
+			if err != nil {
+				myLogger.Printf("Error getting default remote: %v", err)
+				lfs.WriteErrorMessage(encoder, "", 400, err.Error())
+				return err
 			}
+			remoteName = string(defaultRemote)
+			myLogger.Printf("Initializing connection, remote not specified — using default: %s", remoteName)
 
 			// Respond with an empty json object via stdout
 			encoder.Encode(struct{}{})

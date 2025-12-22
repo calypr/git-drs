@@ -651,6 +651,43 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	return out, nil
 }
 
+// GetProjectSample retrieves a sample of DRS objects for a given project (limit: 1 by default)
+// Returns up to 'limit' records for preview purposes before destructive operations
+func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRSObject, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+
+	cl.Logger.Printf("Getting sample DRS objects from indexd for project %s (limit: %d)", projectId, limit)
+
+	// Reuse ListObjectsByProject and collect first 'limit' results
+	objChan, err := cl.ListObjectsByProject(projectId)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]drs.DRSObject, 0, limit)
+	for objResult := range objChan {
+		if objResult.Error != nil {
+			return nil, objResult.Error
+		}
+		result = append(result, *objResult.Object)
+
+		// Stop after collecting enough samples
+		if len(result) >= limit {
+			// Drain remaining results to avoid goroutine leak
+			go func() {
+				for range objChan {
+				}
+			}()
+			break
+		}
+	}
+
+	cl.Logger.Printf("Retrieved %d sample record(s)", len(result))
+	return result, nil
+}
+
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET
 func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) {
 	const PAGESIZE = 50

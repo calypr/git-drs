@@ -61,6 +61,9 @@ var Cmd = &cobra.Command{
 		}
 
 		// Show details and get confirmation unless --confirm flag matches project_id
+		if confirmFlag != "" && confirmFlag != projectId {
+			return fmt.Errorf("error: --confirm value '%s' does not match project ID '%s'", confirmFlag, projectId)
+		}
 		if confirmFlag != projectId {
 			utils.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
 			utils.DisplayField(os.Stderr, "Remote", string(remoteName))
@@ -103,5 +106,5 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
-	Cmd.Flags().StringVar(&confirmFlag, "confirm", "", "skip interactive confirmation by providing the project_id (e.g., --confirm=my-project)")
+	Cmd.Flags().StringVar(&confirmFlag, "confirm", "", "skip interactive confirmation by providing the project_id (e.g., --confirm my-project)")
 }

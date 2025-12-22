@@ -9,7 +9,8 @@ Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Re
 ## Key Features
 
 - **Unified Workflow**: Manage both code and large data files using standard Git commands
-- **DRS Integration**: Built-in support for Gen3 and AnVIL DRS servers
+- **DRS Integration**: Built-in support for Gen3 DRS servers (AnVIL support under active development)
+- **Multi-Remote Support**: Work with development, staging, and production servers in one repository
 - **Automatic Processing**: Files are processed automatically during commits and pushes
 - **Flexible Tracking**: Track individual files, patterns, or entire directories
 
@@ -39,8 +40,15 @@ export GIT_DRS_VERSION=0.2.2
 ### Basic Usage
 
 ```bash
+# Add DRS remote
+git drs remote add gen3 production \
+    --cred /path/to/credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
+
 # Initialize repository
-git drs init --cred /path/to/credentials.json --profile <name>
+git drs init
 
 # Track files
 git lfs track "*.bam"
@@ -57,37 +65,41 @@ git lfs pull -I "*.bam"
 
 ## Documentation
 
-For detailed setup and usage information, see the documentation:
+For detailed setup and usage information:
 
-- **[Installation Guide](docs/installation.md)** - Platform-specific installation instructions
-- **[Getting Started](docs/getting-started.md)** - Repository initialization and basic workflows
-- **[Common Commands](docs/commands.md)** - Complete command reference and examples
-- **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
+- **[Getting Started](docs/getting-started.md)** - Repository setup and basic workflows
+- **[Commands Reference](docs/commands.md)** - Complete command documentation
+- **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[Developer Guide](docs/developer-guide.md)** - Internals and development information
+- **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
+- **[Developer Guide](docs/developer-guide.md)** - Internals and development
 
-## Supported Server
+## Supported Servers
 
-- **Gen3 Data Commons** (eg CALYPR)
-- **AnVIL/Terra** DRS servers
+- **Gen3 Data Commons** (e.g., CALYPR)
+- **AnVIL/Terra** DRS servers (under active development)
 
 ## Supported Environments
 
 - **Local Development** environments
-- **HPC Systems** (eg ARC)
+- **HPC Systems** (e.g., ARC)
 
 ## Commands Overview
 
-| Command               | Description                                  |
-| --------------------- | -------------------------------------------- |
-| `git drs init`        | Initialize repository with DRS configuration |
-| `git drs list-config` | View current configuration                   |
-| `git drs add-url`     | Add files via S3 URLs                        |
-| `git lfs track`       | Track file patterns with LFS                 |
-| `git lfs pull`        | Download tracked files                       |
-| `git lfs ls-files`    | List tracked files                           |
+| Command                | Description                           |
+| ---------------------- | ------------------------------------- |
+| `git drs init`         | Initialize repository                 |
+| `git drs remote add`   | Add a DRS remote server               |
+| `git drs remote list`  | List configured remotes               |
+| `git drs remote set`   | Set default remote                    |
+| `git drs add-url`      | Add files via S3 URLs                 |
+| `git lfs track`        | Track file patterns with LFS          |
+| `git lfs ls-files`     | List tracked files                    |
+| `git lfs pull`         | Download tracked files                |
+| `git drs fetch`        | Fetch metadata from DRS server        |
+| `git drs push`         | Push objects to DRS server            |
 
-Use `--help` with any command for detailed usage information.
+Use `--help` with any command for details. See [Commands Reference](docs/commands.md) for complete documentation.
 
 ## Requirements
 

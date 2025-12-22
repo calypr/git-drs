@@ -7,56 +7,69 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
 // AddURLCmd represents the add-url command
 var AddURLCmd = &cobra.Command{
-	Use:   "add-url <url> --sha256 <sha256>",
+	Use:   "add-url <url> <sha256>",
 	Short: "Add a file to the Git DRS repo using an S3 URL",
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 {
-			return fmt.Errorf("add-url requires 1 arg, but received %d\n\nUsage: %s\n\nFlags:\n%s", len(args), cmd.UseLine(), cmd.Flags().FlagUsages())
+		if len(args) != 2 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 2 arguments (S3 URL and SHA256), received %d\n\nUsage: %s\n\nSee 'git drs add-url --help' for more details", len(args), cmd.UseLine())
 		}
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// set up logger
-		myLogger, err := client.NewLogger("", true) // Log to both file and stdout
-		if err != nil {
-			fmt.Printf("Failed to open log file: %v", err)
-			return err
-		}
-		defer myLogger.Close()
+		myLogger := drslog.GetLogger()
 
 		// set git config lfs.allowincompletepush = true
 		configCmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
 		if err := configCmd.Run(); err != nil {
-			return fmt.Errorf("Unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
+			return fmt.Errorf("unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
 		}
 
 		// Parse arguments
 		s3URL := args[0]
-		sha256, _ := cmd.Flags().GetString("sha256")
-		awsAccessKey, _ := cmd.Flags().GetString(client.AWS_KEY_FLAG_NAME)
-		awsSecretKey, _ := cmd.Flags().GetString(client.AWS_SECRET_FLAG_NAME)
-		awsRegion, _ := cmd.Flags().GetString(client.AWS_REGION_FLAG_NAME)
-		awsEndpoint, _ := cmd.Flags().GetString(client.AWS_ENDPOINT_URL_FLAG_NAME)
+		sha256 := args[1]
+		awsAccessKey, _ := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
+		awsSecretKey, _ := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
+		awsRegion, _ := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
+		awsEndpoint, _ := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
+		remote, _ := cmd.Flags().GetString("remote")
 
 		// if providing credentials, access key and secret must both be provided
 		if (awsAccessKey == "" && awsSecretKey != "") || (awsAccessKey != "" && awsSecretKey == "") {
-			return errors.New("Incomplete credentials provided as environment variables. Please run `export " + client.AWS_KEY_ENV_VAR + "=<key>` and `export " + client.AWS_SECRET_ENV_VAR + "=<secret>` to configure both.")
+			return errors.New("incomplete credentials provided as environment variables. Please run `export " + s3_utils.AWS_KEY_ENV_VAR + "=<key>` and `export " + s3_utils.AWS_SECRET_ENV_VAR + "=<secret>` to configure both")
 		}
 
 		// if none provided, use default AWS configuration on file
 		if awsAccessKey == "" && awsSecretKey == "" {
-			myLogger.Log("No AWS credentials provided. Using default AWS configuration from file.")
+			myLogger.Print("No AWS credentials provided. Using default AWS configuration from file.")
+		}
+
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, myLogger)
+		if err != nil {
+			return fmt.Errorf("error getting current remote client: %v", err)
 		}
 
 		// Call client.AddURL to handle Gen3 interactions
-		meta, err := client.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint, client.WithLogger(myLogger))
+		meta, err := drsClient.AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, awsRegion, awsEndpoint)
 		if err != nil {
 			return err
 		}
@@ -69,18 +82,17 @@ var AddURLCmd = &cobra.Command{
 		if err := generatePointerFile(relFilePath, sha256, meta.Size); err != nil {
 			return fmt.Errorf("failed to generate pointer file: %w", err)
 		}
-		myLogger.Log("S3 URL successfully added to Git DRS repo.")
+		myLogger.Print("S3 URL successfully added to Git DRS repo.")
 		return nil
 	},
 }
 
 func init() {
-	AddURLCmd.Flags().String("sha256", "", "[required] SHA256 hash of the file")
-	AddURLCmd.Flags().String(client.AWS_KEY_FLAG_NAME, os.Getenv(client.AWS_KEY_ENV_VAR), "AWS access key")
-	AddURLCmd.Flags().String(client.AWS_SECRET_FLAG_NAME, os.Getenv(client.AWS_SECRET_ENV_VAR), "AWS secret key")
-	AddURLCmd.Flags().String(client.AWS_REGION_FLAG_NAME, os.Getenv(client.AWS_REGION_ENV_VAR), "AWS S3 region")
-	AddURLCmd.Flags().String(client.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(client.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
-	AddURLCmd.MarkFlagRequired("sha256")
+	AddURLCmd.Flags().String(s3_utils.AWS_KEY_FLAG_NAME, os.Getenv(s3_utils.AWS_KEY_ENV_VAR), "AWS access key")
+	AddURLCmd.Flags().String(s3_utils.AWS_SECRET_FLAG_NAME, os.Getenv(s3_utils.AWS_SECRET_ENV_VAR), "AWS secret key")
+	AddURLCmd.Flags().String(s3_utils.AWS_REGION_FLAG_NAME, os.Getenv(s3_utils.AWS_REGION_ENV_VAR), "AWS S3 region")
+	AddURLCmd.Flags().String(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR), "AWS S3 endpoint")
+	AddURLCmd.Flags().String("remote", "", "target remote DRS server (default: default_remote)")
 }
 
 func generatePointerFile(filePath string, sha256 string, fileSize int64) error {

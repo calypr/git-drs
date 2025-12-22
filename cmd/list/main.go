@@ -1,23 +1,28 @@
 package list
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/calypr/git-drs/client"
+	"github.com/bytedance/sonic"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
-var outJson = false
-var outFile string
-var listOutFile string
+var (
+	outJson     bool = false
+	outFile     string
+	listOutFile string
+	remote      string
+)
 
-var checksumPref = []drs.ChecksumType{drs.ChecksumTypeSHA256, drs.ChecksumTypeMD5, drs.ChecksumTypeETag}
+var checksumPref = []hash.ChecksumType{hash.ChecksumTypeSHA256, hash.ChecksumTypeMD5, hash.ChecksumTypeETag}
 
-func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
+func getChecksumPos(q hash.ChecksumType, a []hash.ChecksumType) int {
 	for i, s := range a {
 		if q == s {
 			return i
@@ -30,11 +35,11 @@ func getChecksumPos(q drs.ChecksumType, a []drs.ChecksumType) int {
 func getCheckSumStr(obj drs.DRSObject) string {
 	curPos := len(checksumPref) + 1
 	curVal := ""
-	for _, e := range obj.Checksums {
-		c := getChecksumPos(e.Type, checksumPref)
+	for checksumType, checksum := range hash.ConvertHashInfoToMap(obj.Checksums) {
+		c := getChecksumPos(hash.ChecksumType(checksumType), checksumPref)
 		if c != -1 && c < curPos {
 			curPos = c
-			curVal = e.Type.String() + ":" + e.Checksum
+			curVal = checksumType + ":" + checksum
 		}
 	}
 	return curVal
@@ -44,19 +49,19 @@ func getCheckSumStr(obj drs.DRSObject) string {
 var Cmd = &cobra.Command{
 	Use:   "list",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(0),
-	RunE: func(cmd *cobra.Command, args []string) error {
-
-		logger, err := client.NewLogger("", true)
-		if err != nil {
-			return err
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 0 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: accepts no arguments, received %d\n\nUsage: %s\n\nSee 'git drs list --help' for more details", len(args), cmd.UseLine())
 		}
-		defer logger.Close()
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		logger := drslog.GetLogger()
 
-		var f *os.File
 		var outWriter io.Writer
 		if listOutFile != "" {
-			f, err = os.Create(listOutFile)
+			f, err := os.Create(listOutFile)
 			if err != nil {
 				return err
 			}
@@ -66,8 +71,19 @@ var Cmd = &cobra.Command{
 			outWriter = os.Stdout
 		}
 
-		client, err := client.NewIndexDClient(logger)
+		conf, err := config.LoadConfig()
 		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
+		if err != nil {
+			logger.Printf("Client failed")
 			return err
 		}
 		objChan, err := client.ListObjects()
@@ -85,7 +101,7 @@ var Cmd = &cobra.Command{
 			}
 			obj := objResult.Object
 			if outJson {
-				out, err := json.Marshal(*obj)
+				out, err := sonic.ConfigFastest.Marshal(*obj)
 				if err != nil {
 					return err
 				}
@@ -100,15 +116,27 @@ var Cmd = &cobra.Command{
 var ListProjectCmd = &cobra.Command{
 	Use:   "list-project <project-id>",
 	Short: "List DRS entities from server",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		logger, err := client.NewLogger("", true)
-		if err != nil {
-			return err
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) != 1 {
+			cmd.SilenceUsage = false
+			return fmt.Errorf("error: requires exactly 1 argument (project ID), received %d\n\nUsage: %s\n\nSee 'git drs list-project --help' for more details", len(args), cmd.UseLine())
 		}
-		defer logger.Close()
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		logger := drslog.GetLogger()
 
-		client, err := client.NewIndexDClient(logger)
+		conf, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("error loading config: %v", err)
+		}
+
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}
@@ -133,8 +161,8 @@ var ListProjectCmd = &cobra.Command{
 			if objResult.Error != nil {
 				return objResult.Error
 			}
-			obj := objResult.Record
-			out, err := json.Marshal(*obj)
+			obj := objResult.Object
+			out, err := sonic.ConfigFastest.Marshal(*obj)
 			if err != nil {
 				return err
 			}
@@ -152,7 +180,9 @@ var ListProjectCmd = &cobra.Command{
 }
 
 func init() {
+	ListProjectCmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	ListProjectCmd.Flags().StringVarP(&outFile, "out", "o", outFile, "File path to save output to")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	Cmd.Flags().StringVarP(&listOutFile, "out", "o", listOutFile, "File path to save output to")
 	Cmd.Flags().BoolVarP(&outJson, "json", "j", outJson, "Output formatted as JSON")
 }

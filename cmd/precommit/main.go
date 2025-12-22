@@ -3,16 +3,12 @@ package precommit
 import (
 	"fmt"
 
-	"github.com/calypr/git-drs/client"
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
-	"github.com/spf13/cobra"
-)
 
-var (
-	server  string
-	dstPath string
-	drsObj  *drs.DRSObject
+	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/spf13/cobra"
 )
 
 // Cmd line declaration
@@ -21,34 +17,49 @@ var Cmd = &cobra.Command{
 	Use:   "precommit",
 	Short: "pre-commit hook to create DRS objects",
 	Long:  "Pre-commit hook that creates and commits a DRS object to the repo for every LFS file committed",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// set up logger
-		myLogger, err := client.NewLogger("", true)
-		if err != nil {
-			myLogger.Logf("Failed to open log file: %v", err)
-			return err
-		}
-		defer myLogger.Close()
+		myLogger := drslog.GetLogger()
 
-		myLogger.Log("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
+		myLogger.Print("~~~~~~~~~~~~~ START: pre-commit ~~~~~~~~~~~~~")
 
 		// get the current server from config and log it
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("error getting config: %v", err)
 		}
-		myLogger.Logf("Current server: %s", cfg.CurrentServer)
 
-		myLogger.Logf("Preparing DRS objects for commit...\n")
-		err = client.UpdateDrsObjects(myLogger)
+		var remote config.Remote
+		if len(args) > 0 {
+			remote = config.Remote(args[0])
+		} else {
+			remote, err = cfg.GetDefaultRemote()
+			if err != nil {
+				myLogger.Printf("Error getting default remote: %v", err)
+				return err
+			}
+		}
+
+		cli, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			myLogger.Log("UpdateDrsObjects failed:", err)
 			return err
 		}
-		myLogger.Logf("DRS objects prepared for commit!\n")
 
-		myLogger.Log("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")
+		dc, ok := cli.(*indexd_client.IndexDClient)
+		if !ok {
+			return fmt.Errorf("cli is not IndexdClient: %T", cli)
+		}
+		myLogger.Printf("Current server: %s", dc.ProjectId)
+
+		myLogger.Printf("Preparing DRS objects for commit...\n")
+		err = drsmap.UpdateDrsObjects(cli, myLogger)
+		if err != nil {
+			myLogger.Print("UpdateDrsObjects failed:", err)
+			return err
+		}
+		myLogger.Printf("DRS objects prepared for commit!\n")
+
+		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-commit ~~~~~~~~~~~~~")
 		return nil
 	},
 }

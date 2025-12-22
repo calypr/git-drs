@@ -1,0 +1,5 @@
+.drs/**
+
+!.drs/config.yaml
+
+drs_downloader.log

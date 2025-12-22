@@ -1,11 +1,11 @@
 package drs
 
 import (
-	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -32,7 +32,7 @@ func (d *dirWalker) call(path string, dir fs.DirEntry, cErr error) error {
 		return nil
 	}
 	obj := DRSObject{}
-	err = json.Unmarshal(data, &obj)
+	err = sonic.ConfigFastest.Unmarshal(data, &obj)
 	if err != nil {
 		return err
 	}

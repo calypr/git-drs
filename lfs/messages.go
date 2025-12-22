@@ -1,6 +1,8 @@
 package lfs
 
-import "encoding/json"
+import (
+	"github.com/bytedance/sonic/encoder"
+)
 
 // InitMessage represents the structure of the initiation data
 type InitMessage struct {
@@ -48,6 +50,10 @@ type ErrorMessage struct {
 	Error Error  `json:"error"` // Error details
 }
 
+type InitErrorMessage struct {
+	Error Error `json:"error"` // Error details
+}
+
 type Error struct {
 	Code    int    `json:"code"`    // Error code (standard or custom)
 	Message string `json:"message"` // Human-readable error message
@@ -73,20 +79,31 @@ type Action struct {
 	ExpiresIn int               `json:"expires_in,omitempty"`
 }
 
-func WriteErrorMessage(encoder *json.Encoder, oid string, errMsg string) {
+func WriteInitErrorMessage(encoder *encoder.StreamEncoder, code int, errMsg string) {
 	// create failure message and send it back
-	errorResponse := ErrorMessage{
-		Event: "complete",
-		Oid:   oid,
+	errorResponse := InitErrorMessage{
 		Error: Error{
-			Code:    1,
+			Code:    code,
 			Message: errMsg,
 		},
 	}
 	encoder.Encode(errorResponse)
 }
 
-func WriteCompleteMessage(encoder *json.Encoder, oid string, path string) {
+func WriteErrorMessage(encoder *encoder.StreamEncoder, oid string, code int, errMsg string) {
+	// create failure message and send it back
+	errorResponse := ErrorMessage{
+		Event: "complete",
+		Oid:   oid,
+		Error: Error{
+			Code:    code,
+			Message: errMsg,
+		},
+	}
+	encoder.Encode(errorResponse)
+}
+
+func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path string) {
 	// create success message and send it back
 	completeResponse := CompleteMessage{
 		Event: "complete",

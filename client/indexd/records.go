@@ -1,24 +1,9 @@
-package client
+package indexd_client
+
+import "github.com/calypr/git-drs/drs/hash"
 
 // Based on OpenAPI specification
 // https://github.com/uc-cdis/indexd/blob/master/openapis/swagger.yaml
-
-// HashInfo represents file hash information as per OpenAPI spec
-// Patterns are documented for reference, but not enforced at struct level
-// md5:    ^[0-9a-f]{32}$
-// sha:    ^[0-9a-f]{40}$
-// sha256: ^[0-9a-f]{64}$
-// sha512: ^[0-9a-f]{128}$
-// crc:    ^[0-9a-f]{8}$
-// etag:   ^[0-9a-f]{32}(-\d+)?$
-type HashInfo struct {
-	MD5    string `json:"md5,omitempty"`
-	SHA    string `json:"sha,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
-	SHA512 string `json:"sha512,omitempty"`
-	CRC    string `json:"crc,omitempty"`
-	ETag   string `json:"etag,omitempty"`
-}
 
 // subset of the OpenAPI spec for the InputInfo object in indexd
 // TODO: make another object based on VersionInputInfo that has content_created_date and so can handle a POST of dates via indexd/<GUID>
@@ -41,7 +26,7 @@ type IndexdRecord struct {
 	// List of authorization policies
 	Authz []string `json:"authz,omitempty"`
 
-	Hashes HashInfo `json:"hashes,omitzero"`
+	Hashes hash.HashInfo `json:"hashes,omitzero"`
 
 	// Additional metadata as key-value pairs
 	Metadata map[string]string `json:"metadata,omitempty"`
@@ -67,6 +52,7 @@ type ListRecordsResult struct {
 	Record *OutputInfo
 	Error  error
 }
+
 type ListRecords struct {
 	IDs      []string       `json:"ids"`
 	Records  []OutputInfo   `json:"records"`
@@ -77,7 +63,7 @@ type ListRecords struct {
 	URLs     []string       `json:"urls"`
 	ACL      []string       `json:"acl"`
 	Authz    []string       `json:"authz"`
-	Hashes   HashInfo       `json:"hashes"`
+	Hashes   hash.HashInfo  `json:"hashes"`
 	Metadata map[string]any `json:"metadata"`
 	Version  string         `json:"version"`
 }
@@ -94,11 +80,25 @@ type OutputInfo struct {
 	URLs         []string       `json:"urls"`
 	ACL          []string       `json:"acl"`
 	Authz        []string       `json:"authz"`
-	Hashes       HashInfo       `json:"hashes"`
+	Hashes       hash.HashInfo  `json:"hashes"`
 	UpdatedDate  string         `json:"updated_date"`
 	CreatedDate  string         `json:"created_date"`
 	Metadata     map[string]any `json:"metadata"`
 	URLsMetadata map[string]any `json:"urls_metadata"`
+}
+
+func (outputInfo *OutputInfo) ToIndexdRecord() *IndexdRecord {
+	return &IndexdRecord{
+		Did:      outputInfo.Did,
+		Size:     outputInfo.Size,
+		FileName: outputInfo.FileName,
+		URLs:     outputInfo.URLs,
+		ACL:      outputInfo.ACL,
+		Authz:    outputInfo.Authz,
+		Hashes:   outputInfo.Hashes,
+		//Metadata: outputInfo.Metadata, //TODO: re-enable metadata. One is map[string]string, the other is map[string]interface{}
+		Version: outputInfo.Version,
+	}
 }
 
 // UpdateInputInfo is the put object for index records
@@ -107,10 +107,10 @@ type UpdateInputInfo struct {
 	FileName string `json:"file_name,omitempty"`
 
 	// Additional metadata as key-value pairs
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 
 	// URL-specific metadata as key-value pairs
-	URLsMetadata map[string]interface{} `json:"urls_metadata,omitempty"`
+	URLsMetadata map[string]any `json:"urls_metadata,omitempty"`
 
 	// Version of the record
 	Version string `json:"version,omitempty"`

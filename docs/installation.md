@@ -57,10 +57,10 @@ git lfs install --skip-smudge
 1. **Install Git LFS on HPC**
    ```bash
    # Download and install Git LFS
-   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz
-   tar -xvf git-lfs-linux-amd64-v3.7.0.tar.gz
+   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/git-lfs-linux-amd64-v3.7.1.tar.gz
+   tar -xvf git-lfs-linux-amd64-v3.7.1.tar.gz
    export PREFIX=$HOME
-   ./git-lfs-v3.7.0/install.sh
+   ./git-lfs-3.7.1/install.sh
    
    # Make permanent
    echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile
@@ -132,14 +132,15 @@ git lfs install --skip-smudge
    # Clone example repository
    git clone https://github.com/quinnwai/super-cool-anvil-analysis.git
    cd super-cool-anvil-analysis/
-   
-   # Configure for your Terra project
-   git drs init --server anvil --terraProject $GOOGLE_PROJECT
-   
+
+   # Initialize and configure for your Terra project
+   git drs init
+   git drs remote add anvil development --terraProject $GOOGLE_PROJECT
+
    # Work with manifests
    gsutil cp $WORKSPACE_BUCKET/anvil-manifest.tsv .
    git drs create-cache anvil-manifest.tsv
-   
+
    # List and pull files
    git lfs ls-files
    git lfs pull -I data_tables_sequencing_dataset.tsv
@@ -164,10 +165,11 @@ git lfs install --skip-smudge
 3. **Configure AnVIL Access**
    ```bash
    # Check existing configuration
-   git drs list-config
-   
-   # If no AnVIL server configured, initialize it
-   git drs init --server anvil --terraProject <your-terra-project-id>
+   git drs remote list
+
+   # If no AnVIL server configured, add it
+   git drs init
+   git drs remote add anvil development --terraProject <your-terra-project-id>
    ```
 
 ## Build from Source
@@ -197,12 +199,15 @@ git-drs version
 # Check Git LFS
 git lfs version
 
-# View configuration
-git drs list-config
+# View configured remotes (after setup)
+git drs remote list
 ```
 
 ## Next Steps
 
 After installation, see:
-- [Getting Started Guide](getting-started.md) for repository setup
-- [Commands Reference](commands.md) for detailed usage
+
+> **Navigation:** [Installation](installation.md) → [Getting Started](getting-started.md) → [Commands Reference](commands.md)
+
+- **[Getting Started](getting-started.md)** - Repository setup and basic workflows
+- **[Commands Reference](commands.md)** - Complete command documentation

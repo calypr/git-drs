@@ -2,91 +2,225 @@
 
 Complete reference for Git DRS and related Git LFS commands.
 
+> **Navigation:** [Getting Started](getting-started.md) → **Commands Reference** → [Troubleshooting](troubleshooting.md)
+
 ## Git DRS Commands
 
 ### `git drs init`
 
-Initialize or configure Git DRS for a repository. Required after each clone.
+Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and configures `.gitignore` patterns.
 
-**Basic Usage:**
-
-```bash
-git drs init --cred /path/to/credentials.json --profile <name>
-```
-
-**Full Configuration:**
+**Usage:**
 
 ```bash
-git drs init --profile <name> \
-             --url <server-url> \
-             --cred <credentials-file> \
-             --project <project-id> \
-             --bucket <bucket-name>
-```
-
-**Simplified Configuration:**
-
-Use this configuration if you have already setup an authentication profile with `git drs init --cred /path/to/credentials.json --profile <name>` and you want to use that profile again:
-
-```bash
-git drs init --profile <name> --project <project-id> --bucket <bucket-name>
-```
-
-In cases where you are cloning a repository that already exists and want to keep the existing project and bucket names you will only need to do:
-
-```bash
-git drs init --profile <name>
-```
-
-**Server-Specific:**
-
-```bash
-# AnVIL server
-git drs init --server anvil --terraProject <terra-project-id>
-
-# AnVIL basic usages
-git drs init --server anvil
+git drs init [flags]
 ```
 
 **Options:**
 
-- `--profile <name>`: Server profile name
-- `--url <url>`: DRS server endpoint URL
-- `--cred <file>`: Path to credentials JSON file
-- `--project <id>`: Project ID
-- `--bucket <name>`: Storage bucket name
-- `--server <type>`: Server type (`gen3`, `anvil`)
-- `--terraProject <id>`: Terra project ID for AnVIL
+- `--transfers <n>`: Number of concurrent transfers (default: 4)
 
-### `git drs list-config`
-
-Display current Git DRS configuration.
+**Example:**
 
 ```bash
-git drs list-config
+git drs init
 ```
 
-Shows:
+**What it does:**
 
-- Current active server
-- Configured servers and their endpoints
-- Project IDs and bucket configurations
-- Credential status
+- Creates `.drs/` directory structure
+- Configures Git LFS custom transfer agent
+- Updates `.gitignore` to exclude DRS cache files
+- Stages `.gitignore` changes automatically
+
+**Note:** Run this before adding remotes.
+
+### `git drs remote`
+
+Manage DRS remote server configurations. Git DRS supports multiple remotes for working with development, staging, and production servers.
+
+#### `git drs remote add gen3 <name>`
+
+Add a Gen3 DRS server configuration.
+
+**Usage:**
+
+```bash
+git drs remote add gen3 <remote-name> \
+    --url <server-url> \
+    --cred <credentials-file> \
+    --project <project-id> \
+    --bucket <bucket-name>
+```
+
+**Options:**
+
+- `--url <url>`: Gen3 server endpoint (required)
+- `--cred <file>`: Path to credentials JSON file (required)
+- `--token <token>`: Token for temporary access (alternative to --cred)
+- `--project <id>`: Project ID in format `<program>-<project>` (required)
+- `--bucket <name>`: S3 bucket name (required)
+
+**Examples:**
+
+```bash
+# Add production remote
+git drs remote add gen3 production \
+    --url https://calypr-public.ohsu.edu \
+    --cred /path/to/credentials.json \
+    --project my-project \
+    --bucket my-bucket
+
+# Add staging remote
+git drs remote add gen3 staging \
+    --url https://staging.calypr.ohsu.edu \
+    --cred /path/to/staging-credentials.json \
+    --project staging-project \
+    --bucket staging-bucket
+```
+
+**Note:** The first remote you add automatically becomes the default remote.
+
+#### `git drs remote add anvil <name>`
+
+Add an AnVIL/Terra DRS server configuration.
+
+> **Note:** AnVIL support is under active development. For production use, we recommend Gen3 workflows or version 0.2.2 for AnVIL functionality.
+
+**Usage:**
+
+```bash
+git drs remote add anvil <remote-name> --terraProject <project-id>
+```
+
+**Options:**
+
+- `--terraProject <id>`: Terra/Google Cloud project ID (required)
+
+**Example:**
+
+```bash
+git drs remote add anvil development --terraProject my-terra-project
+```
+
+#### `git drs remote list`
+
+List all configured DRS remotes.
+
+**Usage:**
+
+```bash
+git drs remote list
+```
+
+**Example Output:**
+
+```
+* production  gen3    https://calypr-public.ohsu.edu
+  staging     gen3    https://staging.calypr.ohsu.edu
+  development gen3    https://dev.calypr.ohsu.edu
+```
+
+The `*` indicates the default remote used by all commands unless specified otherwise.
+
+#### `git drs remote set <name>`
+
+Set the default DRS remote for all operations.
+
+**Usage:**
+
+```bash
+git drs remote set <remote-name>
+```
+
+**Examples:**
+
+```bash
+# Switch to staging for testing
+git drs remote set staging
+
+# Switch back to production
+git drs remote set production
+
+# Verify change
+git drs remote list
+```
+
+### `git drs fetch [remote-name]`
+
+Fetch DRS object metadata from remote server. Downloads metadata only, not actual files.
+
+**Usage:**
+
+```bash
+# Fetch from default remote
+git drs fetch
+
+# Fetch from specific remote
+git drs fetch staging
+git drs fetch production
+```
+
+**Note:** `fetch` and `push` are commonly used together for cross-remote workflows. See `git drs push` below.
+
+**What it does:**
+
+- Identifies remote and project from configuration
+- Transfers all DRS records for a given project from the server to the local `.drs/lfs/objects/` directory
+
+### `git drs push [remote-name]`
+
+Push local DRS objects to server. Uploads new files and registers metadata.
+
+**Usage:**
+
+```bash
+# Push to default remote
+git drs push
+
+# Push to specific remote
+git drs push staging
+git drs push production
+```
+
+**What it does:**
+
+- Checks local `.drs/lfs/objects/` for DRS metadata
+- For each object, uploads file to bucket if file exists locally
+- If file doesn't exist locally (metadata only), registers metadata without upload
+- This enables cross-remote promotion workflows
+
+**Cross-Remote Promotion:**
+
+Transfer DRS records from one remote to another (eg staging to production) without re-uploading files:
+
+```bash
+# Fetch metadata from staging
+git drs fetch staging
+
+# Push metadata to production (no file upload since files don't exist locally)
+git drs push production
+```
+
+This is useful when files are already in the production bucket with matching SHA256 hashes. It can also be used to reupload files given that the files are pulled to the repo first.
+
+**Note:** `fetch` and `push` are commonly used together. `fetch` pulls metadata from one remote, `push` registers it to another.
 
 ### `git drs add-url`
 
 Add a file reference via S3 URL without copying the data.
 
-**Basic Usage:**
+**Usage:**
 
 ```bash
-export AWS_ACCESS_KEY_ID=<key>
-export AWS_SECRET_ACCESS_KEY=<secret>
-
+# Use default remote
 git drs add-url s3://bucket/path/file --sha256 <hash>
+
+# Use specific remote
+git drs add-url s3://bucket/path/file --sha256 <hash> --remote staging
 ```
 
-**With Credentials Flags:**
+**With AWS Credentials:**
 
 ```bash
 git drs add-url s3://bucket/path/file \
@@ -95,23 +229,12 @@ git drs add-url s3://bucket/path/file \
   --aws-secret-key <secret>
 ```
 
-**External Bucket:**
-
-```bash
-export AWS_ACCESS_KEY_ID=<key>
-export AWS_SECRET_ACCESS_KEY=<secret>
-
-git drs add-url s3://external-bucket/file \
-  --sha256 <hash> \
-  --endpoint https://custom-endpoint.com \
-  --region us-west-2
-```
-
 **Options:**
 
 - `--sha256 <hash>`: Required SHA256 hash of the file
-- `--aws-access-key <key>`: AWS access key (overrides `AWS_ACCESS_KEY_ID`)
-- `--aws-secret-key <key>`: AWS secret key (overrides `AWS_SECRET_ACCESS_KEY`)
+- `--remote <name>`: Target remote (default: default_remote)
+- `--aws-access-key <key>`: AWS access key
+- `--aws-secret-key <secret>`: AWS secret key
 - `--endpoint <url>`: Custom S3 endpoint
 - `--region <region>`: AWS region
 
@@ -268,7 +391,8 @@ Clone repository. Use with Git DRS initialization:
 ```bash
 git clone <repo-url>
 cd <repo-name>
-git drs init --cred /path/to/credentials.json --profile <name>
+git drs init
+git drs remote add gen3 production --cred /path/to/credentials.json --url ... --project ... --bucket ...
 ```
 
 ## Workflow Examples
@@ -276,9 +400,6 @@ git drs init --cred /path/to/credentials.json --profile <name>
 ### Complete File Addition Workflow
 
 ```bash
-# 0. Initialize project
-git drs init --cred path/to/cred --profile <name>
-
 # 1. Ensure file type is tracked
 git lfs track "*.bam"
 git add .gitattributes
@@ -292,16 +413,13 @@ git lfs ls-files -I "mydata.bam"
 # 4. Commit (creates DRS record)
 git commit -m "Add analysis results"
 
-# 5. Push (uploads to DRS server)
+# 5. Push (uploads to default DRS server)
 git push
 ```
 
 ### Selective File Download
 
 ```bash
-# 0. Initialize project
-git drs init --cred path/to/cred --profile <name>
-
 # Check what's available
 git lfs ls-files
 
@@ -321,13 +439,16 @@ git clone <new-repo-url>
 cd <repo-name>
 
 # 2. Initialize Git DRS
-git drs init --profile mylab \
-             --url https://data.mylab.org/ \
-             --cred /path/to/creds.json \
-             --project my-project \
-             --bucket my-bucket
+git drs init
 
-# 3. Set up file tracking
+# 3. Add DRS remote
+git drs remote add gen3 production \
+    --url https://calypr-public.ohsu.edu \
+    --cred /path/to/credentials.json \
+    --project my-project \
+    --bucket my-bucket
+
+# 4. Set up file tracking
 git lfs track "*.bam"
 git lfs track "*.vcf.gz"
 git lfs track "data/**"
@@ -335,10 +456,33 @@ git add .gitattributes
 git commit -m "Configure LFS tracking"
 git push
 
-# 4. Add data files
+# 5. Add data files
 git add data/sample1.bam
 git commit -m "Add sample data"
 git push
+```
+
+### Cross-Remote Promotion Workflow
+
+```bash
+# 1. Add multiple remotes
+git drs remote add gen3 staging \
+    --url https://staging.calypr.ohsu.edu \
+    --cred /path/to/staging-credentials.json \
+    --project staging-project \
+    --bucket staging-bucket
+
+git drs remote add gen3 production \
+    --url https://calypr-public.ohsu.edu \
+    --cred /path/to/prod-credentials.json \
+    --project prod-project \
+    --bucket prod-bucket
+
+# 2. Fetch metadata from staging
+git drs fetch staging
+
+# 3. Push metadata to production (no re-upload)
+git drs push production
 ```
 
 ## Environment Variables

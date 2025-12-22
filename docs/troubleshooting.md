@@ -2,21 +2,25 @@
 
 Common issues and solutions when working with Git DRS.
 
+> **Navigation:** [Getting Started](getting-started.md) → [Commands Reference](commands.md) → **Troubleshooting**
+
 ## When to Use Which Tool
 
 Understanding when to use Git, Git LFS, or Git DRS commands:
 
 ### Git DRS Commands
 
-**Use for**: Repository initialization and configuration
+**Use for**: Repository and remote configuration
 
-- `git drs init` - Set up credentials and server configuration
-- `git drs list-config` - Check configuration
+- `git drs init` - Initialize Git LFS hooks
+- `git drs remote add` - Configure DRS server connections
+- `git drs remote list` - View configured remotes
 - `git drs add-url` - Add S3 file references
 
 **When**:
 
 - Setting up a new repository
+- Adding/managing DRS remotes
 - Refreshing expired credentials
 - Adding external file references
 
@@ -61,8 +65,12 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 
 ```bash
 # Download new credentials from your data commons
-# Then refresh them
-git drs init --cred /path/to/new-credentials.json --profile <name>
+# Then refresh them by re-adding the remote
+git drs remote add gen3 production \
+    --cred /path/to/new-credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
 ```
 
 **Prevention**:
@@ -81,7 +89,11 @@ git drs init --cred /path/to/new-credentials.json --profile <name>
 1. Wait and retry the operation
 2. Refresh credentials:
    ```bash
-   git drs init --cred /path/to/credentials.json --profile <name>
+   git drs remote add gen3 production \
+       --cred /path/to/credentials.json \
+       --url https://calypr-public.ohsu.edu \
+       --project my-project \
+       --bucket my-bucket
    ```
 3. If persistent, download new credentials from the data commons
 
@@ -177,42 +189,108 @@ cat .drs/*.log
 
 ### Configuration Issues
 
-**Error**: `git drs list-config` shows empty or incomplete configuration
+**Error**: `git drs remote list` shows empty or incomplete configuration
 
-**Cause**: Repository not properly initialized
+**Cause**: Repository not properly initialized or no remotes configured
 
 **Solution**:
 
 ```bash
-# For existing Gen3 setup
-git drs init --cred /path/to/credentials.json --profile <name>
+# Initialize repository if needed
+git drs init
 
-# For new Gen3 setup
-git drs init --profile <name> \
-             --url <server-url> \
-             --cred <creds-file> \
-             --project <project-id> \
-             --bucket <bucket-name>
+# Add Gen3 remote
+git drs remote add gen3 production \
+    --cred /path/to/credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
 
 # For AnVIL
-git drs init --server anvil --terraProject <project-id>
+git drs remote add anvil development --terraProject <project-id>
+
+# Verify configuration
+git drs remote list
 ```
 
 ---
 
 **Error**: Configuration exists but commands fail
 
-**Cause**: Mismatched configuration between global and local settings
+**Cause**: Mismatched configuration between global and local settings, or expired credentials
 
 **Solution**:
 
 ```bash
-# Check both configurations
-cat ~/.drs/config
-cat .drs/config
+# Check configuration
+git drs remote list
 
-# Re-initialize if needed
-git drs init --cred /path/to/credentials.json --profile <name>
+# Refresh credentials by re-adding the remote
+git drs remote add gen3 production \
+    --cred /path/to/new-credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
+```
+
+### Remote Configuration Issues
+
+**Error**: `no default remote configured`
+
+**Cause**: Repository initialized but no remotes added yet
+
+**Solution**:
+
+```bash
+# Add your first remote (automatically becomes default)
+git drs remote add gen3 production \
+    --cred /path/to/credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
+```
+
+---
+
+**Error**: `default remote 'X' not found`
+
+**Cause**: Default remote was deleted or configuration is corrupted
+
+**Solution**:
+
+```bash
+# List available remotes
+git drs remote list
+
+# Set a different remote as default
+git drs remote set staging
+
+# Or add a new remote
+git drs remote add gen3 production \
+    --cred /path/to/credentials.json \
+    --url https://calypr-public.ohsu.edu \
+    --project my-project \
+    --bucket my-bucket
+```
+
+---
+
+**Error**: Commands using wrong remote
+
+**Cause**: Default remote is not the one you want to use
+
+**Solution**:
+
+```bash
+# Check current default
+git drs remote list
+
+# Option 1: Change default remote
+git drs remote set production
+
+# Option 2: Specify remote for single command
+git drs push staging
+git drs fetch production
 ```
 
 ## Undoing Changes
@@ -291,7 +369,7 @@ git-drs version
 git-drs --help
 
 # Configuration
-git drs list-config
+git drs remote list
 
 # Repository status
 git status
@@ -313,7 +391,7 @@ cat .drs/*.log
 git lfs pull --dry-run
 
 # Test DRS configuration
-git drs list-config
+git drs remote list
 ```
 
 ## Getting Help
@@ -329,7 +407,7 @@ git lfs version
 git --version
 
 # Configuration
-git drs list-config
+git drs remote list
 
 # Recent logs
 tail -50 .drs/*.log

@@ -38,10 +38,10 @@ var ListCmd = &cobra.Command{
 			var remoteType string
 			var remote config.DRSRemote
 			if remoteSelect.Gen3 != nil {
-				remoteType = "gen3"
+				remoteType = string(config.Gen3ServerType)
 				remote = remoteSelect.Gen3
 			} else if remoteSelect.Anvil != nil {
-				remoteType = "anvil"
+				remoteType = string(config.AnvilServerType)
 				remote = remoteSelect.Anvil
 			} else {
 				remoteType = "unknown"

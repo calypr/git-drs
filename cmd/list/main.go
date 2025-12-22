@@ -76,14 +76,9 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		var remoteName config.Remote
-		if remote != "" {
-			remoteName = config.Remote(remote)
-		} else {
-			remoteName, err = conf.GetDefaultRemote()
-			if err != nil {
-				return fmt.Errorf("error getting default remote: %v", err)
-			}
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
 		client, err := conf.GetRemoteClient(remoteName, logger)
@@ -136,14 +131,9 @@ var ListProjectCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		var remoteName config.Remote
-		if remote != "" {
-			remoteName = config.Remote(remote)
-		} else {
-			remoteName, err = conf.GetDefaultRemote()
-			if err != nil {
-				return fmt.Errorf("error getting default remote: %v", err)
-			}
+		remoteName, err := conf.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
 		client, err := conf.GetRemoteClient(remoteName, logger)

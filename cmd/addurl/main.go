@@ -58,14 +58,9 @@ var AddURLCmd = &cobra.Command{
 			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		var remoteName config.Remote
-		if remote != "" {
-			remoteName = config.Remote(remote)
-		} else {
-			remoteName, err = cfg.GetDefaultRemote()
-			if err != nil {
-				return fmt.Errorf("error getting default remote: %v", err)
-			}
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, myLogger)

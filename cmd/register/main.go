@@ -35,15 +35,10 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		var remoteName config.Remote
-		if remote != "" {
-			remoteName = config.Remote(remote)
-		} else {
-			remoteName, err = cfg.GetDefaultRemote()
-			if err != nil {
-				logger.Printf("Error getting default remote: %v", err)
-				return err
-			}
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
+		if err != nil {
+			logger.Printf("Error getting remote: %v", err)
+			return err
 		}
 
 		cli, err := cfg.GetRemoteClient(remoteName, logger)

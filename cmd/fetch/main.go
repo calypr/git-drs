@@ -34,7 +34,7 @@ var Cmd = &cobra.Command{
 		} else {
 			remote, err = cfg.GetDefaultRemote()
 			if err != nil {
-				logger.Printf("Error getting default remote: %v", err)
+				logger.Printf("Error getting remote: %v", err)
 				return err
 			}
 		}

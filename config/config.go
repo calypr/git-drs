@@ -118,6 +118,15 @@ func (c Config) GetDefaultRemote() (Remote, error) {
 	return c.DefaultRemote, nil
 }
 
+// GetRemoteOrDefault returns the specified remote if provided, otherwise returns the default remote
+// This is a common pattern used across many commands that accept an optional --remote flag
+func (c Config) GetRemoteOrDefault(remote string) (Remote, error) {
+	if remote != "" {
+		return Remote(remote), nil
+	}
+	return c.GetDefaultRemote()
+}
+
 // listRemoteNames returns a slice of all remote names for error messages
 func (c Config) listRemoteNames() []string {
 	names := make([]string, 0, len(c.Remotes))

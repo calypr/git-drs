@@ -3,8 +3,7 @@ package add
 import (
 	"fmt"
 
-	"github.com/calypr/data-client/client/jwt"
-	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -13,7 +12,7 @@ import (
 )
 
 var Gen3Cmd = &cobra.Command{
-	Use:  "gen3 [remote-name]",
+	Use: "gen3 [remote-name]",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -56,7 +55,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
-	var conf jwt.Configure
+	configure := conf.NewConfigure(log)
 	switch {
 	case fenceToken != "":
 		accessToken = fenceToken
@@ -67,13 +66,13 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 		}
 
 	case credFile != "":
-		cred, err := conf.ReadCredentials(credFile, "")
+		cred, err := configure.Import(credFile, "")
 		if err != nil {
 			return fmt.Errorf("failed to read credentials file %s: %w", credFile, err)
 		}
 		accessToken = cred.AccessToken
 		apiKey = cred.APIKey
-		keyID = cred.KeyId
+		keyID = cred.KeyID
 
 		apiEndpoint, err = utils.ParseAPIEndpointFromToken(cred.APIKey)
 		if err != nil {
@@ -81,11 +80,11 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 		}
 
 	default:
-		existing, err := conf.ParseConfig(remoteName)
+		existing, err := configure.Load(remoteName)
 		if err == nil {
 			accessToken = existing.AccessToken
 			apiKey = existing.APIKey
-			keyID = existing.KeyId
+			keyID = existing.KeyID
 			apiEndpoint = existing.APIEndpoint
 		} else {
 			return fmt.Errorf("must provide either --cred or --token (or have existing profile %s)", remoteName)
@@ -111,20 +110,17 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drs
 	log.Printf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket)
 
 	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
-	cred := &jwt.Credential{
+	cred := &conf.Credential{
 		Profile:            remoteName,
 		APIEndpoint:        apiEndpoint,
 		APIKey:             apiKey,
-		KeyId:              keyID,
+		KeyID:              keyID,
 		AccessToken:        accessToken, // may be stale
 		UseShepherd:        "false",     // or preserve from existing?
 		MinShepherdVersion: "",
 	}
 
-	logger, closer := logs.New(remoteName, logs.WithBaseLogger(log))
-	defer closer()
-
-	if err := jwt.UpdateConfig(logger, cred); err != nil {
+	if err := configure.Save(cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
 

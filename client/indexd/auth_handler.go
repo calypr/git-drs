@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/client/common"
-	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/api"
+	"github.com/calypr/data-client/client/conf"
 	GoJwt "github.com/golang-jwt/jwt/v5"
 )
 
 // RealAuthHandler uses actual Gen3 authentication
 type RealAuthHandler struct {
-	Cred jwt.Credential
+	Cred conf.Credential
 }
 
 func (rh *RealAuthHandler) AddAuthHeader(req *http.Request) error {
@@ -42,15 +42,20 @@ func GetExpiration(tokenString string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("expiration field 'exp' type float64 not found in token %v", token)
 }
 
-func RefreshToken(ctx context.Context, cred *jwt.Credential) error {
+// Kindof hackish. There exists logic to do this deeper in gen3-client but it is not exported
+func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 	expiration, err := GetExpiration(cred.AccessToken)
 	if err != nil {
 		return err
 	}
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
-		r := jwt.Request{Ctx: ctx}
-		err = r.RequestNewAccessToken(cred.APIEndpoint+common.FenceAccessTokenEndpoint, cred)
+		r := api.NewFunctions(conf.NewConfigure(nil), nil, cred, nil)
+		f, ok := r.(*api.Functions)
+		if !ok {
+			return fmt.Errorf("Function interface is not of type api.Functions")
+		}
+		cred.AccessToken = f.Cred.AccessToken
 		if err != nil {
 			// load config and see if the endpoint is printed
 			errStr := fmt.Sprintf("error refreshing access token: %v", err)

@@ -7,14 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/common"
-	"github.com/calypr/data-client/client/g3cmd"
-	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -24,11 +25,8 @@ import (
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 
-	gen3Client "github.com/calypr/data-client/client/gen3Client"
+	dataClient "github.com/calypr/data-client/client/client"
 )
-
-//var conf jwt.Configure
-//var ProfileConfig jwt.Credential
 
 type IndexDClient struct {
 	Base        *url.URL
@@ -46,7 +44,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -357,11 +355,17 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
 		defer closer()
 
-		g3, err := gen3Client.NewGen3Interface(context.TODO(), profile, logger)
+		g3, err := dataClient.NewGen3Interface(profile, logger)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
 		}
-		err = g3cmd.MultipartUpload(
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
+		}
+
+		err = upload.MultipartUpload(
 			context.TODO(),
 			g3,
 			common.FileUploadRequestObject{
@@ -370,7 +374,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 				GUID:         drsObject.Id,
 				FileMetadata: common.FileMetadata{},
 			},
-			cl.BucketName, false,
+			file, false,
 		)
 		if err != nil {
 			cl.Logger.Printf("error uploading file to bucket: %s", err)

@@ -323,7 +323,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// determine if file is downloadable
 	isDownloadable := true
-	cl.Logger.Print("checking if file is downloadable")
+	cl.Logger.Printf("checking if %s file is downloadable", oid)
 	signedUrl, err := cl.GetDownloadURL(oid)
 	if err != nil || signedUrl == nil {
 		isDownloadable = false
@@ -365,20 +365,34 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
 		}
 
-		err = upload.MultipartUpload(
-			context.TODO(),
-			g3,
-			common.FileUploadRequestObject{
-				FilePath:     filePath,
-				Filename:     filepath.Base(filePath),
-				GUID:         drsObject.Id,
-				FileMetadata: common.FileMetadata{},
-			},
-			file, false,
-		)
+		stat, err := file.Stat()
 		if err != nil {
-			cl.Logger.Printf("error uploading file to bucket: %s", err)
-			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
+		}
+
+		if stat.Size() < 5*common.GB {
+			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+			if err != nil {
+				cl.Logger.Printf("error uploading single file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading single file to bucket: %s", err)
+			}
+		} else {
+			err = upload.MultipartUpload(
+				context.TODO(),
+				g3,
+				common.FileUploadRequestObject{
+					FilePath:     filePath,
+					Filename:     filepath.Base(filePath),
+					GUID:         drsObject.Id,
+					FileMetadata: common.FileMetadata{},
+					Bucket:       cl.BucketName,
+				},
+				file, false,
+			)
+			if err != nil {
+				cl.Logger.Printf("error uploading file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			}
 		}
 	} else {
 		cl.Logger.Print("file exists in bucket, skipping upload")

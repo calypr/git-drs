@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/bytedance/sonic v1.14.2
-	github.com/calypr/data-client v0.0.0-20251229214617-1130f52d2cc1
+	github.com/calypr/data-client v0.0.0-20251229233436-7289156af3e1
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
@@ -47,8 +47,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/vbauerster/mpb/v8 v8.11.2 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
-	golang.org/x/mod v0.31.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
 

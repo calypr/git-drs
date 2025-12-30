@@ -210,6 +210,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("no matching record found for project %s", cl.ProjectId)
 	}
 
+	cl.Logger.Printf("Matching record: %#v for oid %s", matchingRecord, oid)
 	// Get the DRS object for the matching record
 	drsObj, err := cl.GetObject(matchingRecord.Id)
 	if err != nil {
@@ -249,6 +250,11 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	accessUrl := drs.AccessURL{}
 	if err := cl.SConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
+	}
+
+	// check if empty
+	if accessUrl.URL == "" {
+		return nil, fmt.Errorf("Signed url is empty %#v", accessUrl)
 	}
 
 	cl.Logger.Printf("signed url retrieved: %s", response.Status)

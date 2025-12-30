@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drslog"
 )
@@ -36,7 +36,7 @@ func (m *MockAuthHandler) AddAuthHeader(req *http.Request) error {
 
 // testErrorAuthHandler is a test helper for testing auth errors
 type testErrorAuthHandler struct {
-	Cred jwt.Credential
+	Cred conf.Credential
 	err  error
 }
 
@@ -56,7 +56,7 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 		ProjectId:   "test-project",
 		BucketName:  "test-bucket",
 		Logger:      drslog.GetLogger(),
-		AuthHandler: &indexd_client.RealAuthHandler{Cred: jwt.Credential{Profile: "test-remote"}},
+		AuthHandler: &indexd_client.RealAuthHandler{Cred: conf.Credential{Profile: "test-remote"}},
 		HttpClient:  &http.Client{},
 		SConfig:     sonic.ConfigFastest,
 	}

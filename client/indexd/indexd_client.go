@@ -7,14 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/common"
-	"github.com/calypr/data-client/client/g3cmd"
-	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -24,11 +25,8 @@ import (
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 
-	gen3Client "github.com/calypr/data-client/client/gen3Client"
+	dataClient "github.com/calypr/data-client/client/client"
 )
-
-//var conf jwt.Configure
-//var ProfileConfig jwt.Credential
 
 type IndexDClient struct {
 	Base        *url.URL
@@ -46,7 +44,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -212,6 +210,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("no matching record found for project %s", cl.ProjectId)
 	}
 
+	cl.Logger.Printf("Matching record: %#v for oid %s", matchingRecord, oid)
 	// Get the DRS object for the matching record
 	drsObj, err := cl.GetObject(matchingRecord.Id)
 	if err != nil {
@@ -251,6 +250,11 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	accessUrl := drs.AccessURL{}
 	if err := cl.SConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
+	}
+
+	// check if empty
+	if accessUrl.URL == "" {
+		return nil, fmt.Errorf("Signed url is empty %#v", accessUrl)
 	}
 
 	cl.Logger.Printf("signed url retrieved: %s", response.Status)
@@ -325,7 +329,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// determine if file is downloadable
 	isDownloadable := true
-	cl.Logger.Print("checking if file is downloadable")
+	cl.Logger.Printf("checking if %s file is downloadable", oid)
 	signedUrl, err := cl.GetDownloadURL(oid)
 	if err != nil || signedUrl == nil {
 		isDownloadable = false
@@ -357,24 +361,44 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
 		defer closer()
 
-		g3, err := gen3Client.NewGen3Interface(context.TODO(), profile, logger)
+		g3, err := dataClient.NewGen3Interface(profile, logger)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
 		}
-		err = g3cmd.MultipartUpload(
-			context.TODO(),
-			g3,
-			common.FileUploadRequestObject{
-				FilePath:     filePath,
-				Filename:     filepath.Base(filePath),
-				GUID:         drsObject.Id,
-				FileMetadata: common.FileMetadata{},
-			},
-			cl.BucketName, false,
-		)
+
+		file, err := os.Open(filePath)
 		if err != nil {
-			cl.Logger.Printf("error uploading file to bucket: %s", err)
-			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
+		}
+
+		stat, err := file.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
+		}
+
+		if stat.Size() < 5*common.GB {
+			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+			if err != nil {
+				cl.Logger.Printf("error uploading single file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading single file to bucket: %s", err)
+			}
+		} else {
+			err = upload.MultipartUpload(
+				context.TODO(),
+				g3,
+				common.FileUploadRequestObject{
+					FilePath:     filePath,
+					Filename:     filepath.Base(filePath),
+					GUID:         drsObject.Id,
+					FileMetadata: common.FileMetadata{},
+					Bucket:       cl.BucketName,
+				},
+				file, false,
+			)
+			if err != nil {
+				cl.Logger.Printf("error uploading file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			}
 		}
 	} else {
 		cl.Logger.Print("file exists in bucket, skipping upload")

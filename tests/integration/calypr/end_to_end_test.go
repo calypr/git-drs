@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	dcJWT "github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
@@ -92,8 +92,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git init in %s: %v", repoDir, err)
 	}
 
-	cof := dcJWT.Configure{}
-	cred, err := cof.ParseConfig(remote)
+	cred, err := conf.NewConfigure(nil).Load(remote)
 	if err != nil {
 		t.Fatalf("Parse config: %v", err)
 	}

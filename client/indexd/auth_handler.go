@@ -2,7 +2,6 @@ package indexd_client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,6 +9,8 @@ import (
 
 	"github.com/calypr/data-client/client/api"
 	"github.com/calypr/data-client/client/conf"
+	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/request"
 	GoJwt "github.com/golang-jwt/jwt/v5"
 )
 
@@ -50,20 +51,19 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 	}
 	// Update AccessToken if token is old
 	if expiration.Before(time.Now()) {
-		r := api.NewFunctions(conf.NewConfigure(nil), nil, cred, nil)
+		logger, closer := logs.New(cred.Profile)
+		defer closer()
+		conf := conf.NewConfigure(logger)
+		r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)
 		f, ok := r.(*api.Functions)
 		if !ok {
 			return fmt.Errorf("Function interface is not of type api.Functions")
 		}
-		cred.AccessToken = f.Cred.AccessToken
+		err := f.NewAccessToken(ctx)
 		if err != nil {
-			// load config and see if the endpoint is printed
-			errStr := fmt.Sprintf("error refreshing access token: %v", err)
-			if strings.Contains(errStr, "no such host") {
-				errStr += ". If you are accessing an internal website, make sure you are connected to the internal network."
-			}
-			return errors.New(errStr)
+			return err
 		}
+		cred.AccessToken = f.Cred.AccessToken
 	}
 	return nil
 }

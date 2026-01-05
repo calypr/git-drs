@@ -7,14 +7,15 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/common"
-	"github.com/calypr/data-client/client/g3cmd"
-	"github.com/calypr/data-client/client/jwt"
+	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -23,12 +24,10 @@ import (
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
+	"github.com/hashicorp/go-multierror"
 
-	gen3Client "github.com/calypr/data-client/client/gen3Client"
+	dataClient "github.com/calypr/data-client/client/client"
 )
-
-//var conf jwt.Configure
-//var ProfileConfig jwt.Credential
 
 type IndexDClient struct {
 	Base        *url.URL
@@ -46,7 +45,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig jwt.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -212,6 +211,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		return nil, fmt.Errorf("no matching record found for project %s", cl.ProjectId)
 	}
 
+	cl.Logger.Printf("Matching record: %#v for oid %s", matchingRecord, oid)
 	// Get the DRS object for the matching record
 	drsObj, err := cl.GetObject(matchingRecord.Id)
 	if err != nil {
@@ -251,6 +251,11 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	accessUrl := drs.AccessURL{}
 	if err := cl.SConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
 		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
+	}
+
+	// check if empty
+	if accessUrl.URL == "" {
+		return nil, fmt.Errorf("Signed url is empty %#v", accessUrl)
 	}
 
 	cl.Logger.Printf("signed url retrieved: %s", response.Status)
@@ -325,7 +330,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 	// determine if file is downloadable
 	isDownloadable := true
-	cl.Logger.Print("checking if file is downloadable")
+	cl.Logger.Printf("checking if %s file is downloadable", oid)
 	signedUrl, err := cl.GetDownloadURL(oid)
 	if err != nil || signedUrl == nil {
 		isDownloadable = false
@@ -357,24 +362,44 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
 		defer closer()
 
-		g3, err := gen3Client.NewGen3Interface(context.TODO(), profile, logger)
+		g3, err := dataClient.NewGen3Interface(profile, logger)
 		if err != nil {
 			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
 		}
-		err = g3cmd.MultipartUpload(
-			context.TODO(),
-			g3,
-			common.FileUploadRequestObject{
-				FilePath:     filePath,
-				Filename:     filepath.Base(filePath),
-				GUID:         drsObject.Id,
-				FileMetadata: common.FileMetadata{},
-			},
-			cl.BucketName, false,
-		)
+
+		file, err := os.Open(filePath)
 		if err != nil {
-			cl.Logger.Printf("error uploading file to bucket: %s", err)
-			return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
+		}
+
+		stat, err := file.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
+		}
+
+		if stat.Size() < 5*common.GB {
+			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+			if err != nil {
+				cl.Logger.Printf("error uploading single file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading single file to bucket: %s", err)
+			}
+		} else {
+			err = upload.MultipartUpload(
+				context.TODO(),
+				g3,
+				common.FileUploadRequestObject{
+					FilePath:     filePath,
+					Filename:     filepath.Base(filePath),
+					GUID:         drsObject.Id,
+					FileMetadata: common.FileMetadata{},
+					Bucket:       cl.BucketName,
+				},
+				file, false,
+			)
+			if err != nil {
+				cl.Logger.Printf("error uploading file to bucket: %s", err)
+				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+			}
 		}
 	} else {
 		cl.Logger.Print("file exists in bucket, skipping upload")
@@ -419,82 +444,94 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
 }
 
-func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
+func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) {
+	const PAGESIZE = 50
+	pageNum := 0
 
 	cl.Logger.Print("Getting DRS objects from indexd")
+	resourcePath, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, err
+	}
 
 	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
+	a.Path = filepath.Join(a.Path, "index/index")
 
-	out := make(chan drs.DRSObjectResult, 10)
-
-	LIMIT := 50
-	pageNum := 0
+	out := make(chan drs.DRSObjectResult, PAGESIZE)
 
 	go func() {
 		defer close(out)
+
+		// This will hold all errors encountered during the loop
+		var resultErrors *multierror.Error
 		active := true
+
 		for active {
-			// setup request
 			req, err := http.NewRequest("GET", a.String(), nil)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("request creation: %w", err))
+				break
 			}
 
 			q := req.URL.Query()
-			q.Add("limit", fmt.Sprintf("%d", LIMIT))
+			q.Add("authz", resourcePath)
+			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req)
-			if err != nil {
-				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+			if err := cl.AuthHandler.AddAuthHeader(req); err != nil {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("auth: %w", err))
+				break
 			}
 
-			// execute request with error checking
 			response, err := cl.HttpClient.Do(req)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("http call: %w", err))
+				break
 			}
 
-			defer response.Body.Close()
+			// Read body and close immediately
 			body, err := io.ReadAll(response.Body)
+			response.Body.Close()
+
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
-			}
-			if response.StatusCode != http.StatusOK {
-				cl.Logger.Printf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
-				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("read body: %w", err))
+				break
 			}
 
-			// return page of DRS objects
-			page := &drs.DRSPage{}
-			err = cl.SConfig.Unmarshal(body, &page)
-			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+			if response.StatusCode != http.StatusOK {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("api error %d: %s", response.StatusCode, string(body)))
+				break
 			}
-			for _, elem := range page.DRSObjects {
-				out <- drs.DRSObjectResult{Object: &elem}
+
+			page := &ListRecords{}
+			if err := cl.SConfig.Unmarshal(body, &page); err != nil {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("unmarshal: %w", err))
+				break
 			}
-			if len(page.DRSObjects) == 0 {
+
+			if len(page.Records) == 0 {
 				active = false
+			}
+
+			for _, elem := range page.Records {
+				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
+				if err != nil {
+					// Append and keep going, or break if this is fatal
+					resultErrors = multierror.Append(resultErrors, err)
+					continue
+				}
+				out <- drs.DRSObjectResult{Object: drsObj}
 			}
 			pageNum++
 		}
 
-		cl.Logger.Printf("total pages retrieved: %d", pageNum)
+		// If we accumulated any errors, send the final concatenated result
+		if resultErrors != nil {
+			out <- drs.DRSObjectResult{Error: resultErrors.ErrorOrNil()}
+		}
 	}()
+
 	return out, nil
 }
 
@@ -689,20 +726,18 @@ func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRS
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET
-func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) {
-	const PAGESIZE = 50
-	pageNum := 0
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.Logger.Print("Getting DRS objects from indexd")
-	resourcePath, err := utils.ProjectToResource(projectId)
-	if err != nil {
-		return nil, err
-	}
 
 	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "index/index")
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
-	out := make(chan drs.DRSObjectResult, PAGESIZE)
+	out := make(chan drs.DRSObjectResult, 10)
+
+	LIMIT := 50
+	pageNum := 0
+
 	go func() {
 		defer close(out)
 		active := true
@@ -716,14 +751,13 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			q := req.URL.Query()
-			q.Add("authz", resourcePath)
-			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
+			q.Add("limit", fmt.Sprintf("%d", LIMIT))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
 			err = cl.AuthHandler.AddAuthHeader(req)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
+				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -744,35 +778,29 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 				return
 			}
 			if response.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(response.Body)
 				cl.Logger.Printf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
 				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
 				return
 			}
 
 			// return page of DRS objects
-			page := &ListRecords{}
+			page := &drs.DRSPage{}
 			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
-			for _, elem := range page.Records {
-				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
-				if err != nil {
-					cl.Logger.Printf("error: %s", err)
-					out <- drs.DRSObjectResult{Error: err}
-					return
-				}
-				out <- drs.DRSObjectResult{Object: drsObj}
+			for _, elem := range page.DRSObjects {
+				out <- drs.DRSObjectResult{Object: &elem}
 			}
-			if len(page.Records) == 0 {
+			if len(page.DRSObjects) == 0 {
 				active = false
 			}
 			pageNum++
 		}
-		//cl.Logger.Printf("total pages retrieved: %d", pageNum)
+
+		cl.Logger.Printf("total pages retrieved: %d", pageNum)
 	}()
 	return out, nil
 }

@@ -5,12 +5,17 @@ import (
 	"github.com/calypr/git-drs/cmd/addurl"
 	"github.com/calypr/git-drs/cmd/cache"
 	"github.com/calypr/git-drs/cmd/delete"
+	"github.com/calypr/git-drs/cmd/deleteproject"
 	"github.com/calypr/git-drs/cmd/download"
+	"github.com/calypr/git-drs/cmd/fetch"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/listconfig"
 	"github.com/calypr/git-drs/cmd/precommit"
+	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
+	"github.com/calypr/git-drs/cmd/register"
+	"github.com/calypr/git-drs/cmd/remote"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/cmd/version"
@@ -31,6 +36,8 @@ func init() {
 	RootCmd.AddCommand(addref.Cmd)
 	RootCmd.AddCommand(cache.Cmd)
 	RootCmd.AddCommand(delete.Cmd)
+	RootCmd.AddCommand(deleteproject.Cmd)
+	RootCmd.AddCommand(register.Cmd)
 	RootCmd.AddCommand(download.Cmd)
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(list.Cmd)
@@ -42,6 +49,10 @@ func init() {
 	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(addurl.AddURLCmd)
+	RootCmd.AddCommand(remote.Cmd)
+	RootCmd.AddCommand(fetch.Cmd)
+	RootCmd.AddCommand(push.Cmd)
+
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true
 }

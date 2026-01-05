@@ -2,17 +2,19 @@ package delete
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
 var (
-	server  string
-	dstPath string
-	drsObj  *drs.DRSObject
+	remote      string
+	confirmFlag bool
 )
 
 // Cmd line declaration
@@ -26,59 +28,79 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hashType, oid := args[0], args[1]
 
-		// check hash type is valid Checksum type
-		if !drs.ChecksumType(hashType).IsValid() {
-			return fmt.Errorf("invalid hash type: %s", hashType)
+		// check hash type is valid Checksum type and sha256
+		if hashType != hash.ChecksumTypeSHA256.String() {
+			return fmt.Errorf("only sha256 supported, you requested to remove: %s", hashType)
 		}
 
-		logger, err := client.NewLogger("", true)
-		if err != nil {
-			return err
-		}
-		defer logger.Close()
+		logger := drslog.GetLogger()
 
-		indexdClient, err := client.NewIndexDClient(logger)
-		if err != nil {
-			logger.Logf("error creating indexd client: %s", err)
-			return err
-		}
-		// get records by hash
-		records, err := indexdClient.GetObjectsByHash(hashType, oid)
-		if err != nil {
-			return fmt.Errorf("Error getting records for OID %s: %v", oid, err)
-		}
-		if len(records) == 0 {
-			return fmt.Errorf("No records found for OID %s", oid)
-		}
-
-		// Get project ID from config to find matching record
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			return fmt.Errorf("Error loading config: %v", err)
-		}
-		if cfg.Servers.Gen3 == nil || cfg.Servers.Gen3.Auth.ProjectID == "" {
-			return fmt.Errorf("No project ID found in config")
+			return fmt.Errorf("error loading config: %v", err)
 		}
 
-		// Find a record that matches the project ID
-		matchingRecord, err := client.FindMatchingRecord(records, cfg.Servers.Gen3.Auth.ProjectID)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
 		if err != nil {
-			return fmt.Errorf("Error finding matching record for project %s: %v", cfg.Servers.Gen3.Auth.ProjectID, err)
+			return fmt.Errorf("error getting default remote: %v", err)
+		}
+
+		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
+		if err != nil {
+			logger.Printf("error creating indexd client: %s", err)
+			return err
+		}
+
+		// Get record details before deletion for confirmation
+		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+		if err != nil {
+			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
+		}
+		if len(records) == 0 {
+			return fmt.Errorf("no records found for OID %s", oid)
+		}
+
+		// Find matching record for current project
+		projectId := drsClient.GetProjectId()
+		matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
+		if err != nil {
+			return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 		}
 		if matchingRecord == nil {
-			return fmt.Errorf("No matching record found for project %s", cfg.Servers.Gen3.Auth.ProjectID)
+			return fmt.Errorf("no matching record found for project %s and OID %s", projectId, oid)
+		}
+
+		// Show details and get confirmation unless --confirm flag is set
+		if !confirmFlag {
+			utils.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
+			utils.DisplayField(os.Stderr, "Remote", string(remoteName))
+			utils.DisplayField(os.Stderr, "Project", projectId)
+			utils.DisplayField(os.Stderr, "OID", oid)
+			utils.DisplayField(os.Stderr, "Hash Type", hashType)
+			utils.DisplayField(os.Stderr, "DID", matchingRecord.Id)
+			if matchingRecord.Name != "" {
+				utils.DisplayField(os.Stderr, "Filename", matchingRecord.Name)
+			}
+			utils.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
+			utils.DisplayFooter(os.Stderr)
+
+			if err := utils.PromptForConfirmation(os.Stderr, "Type 'yes' to confirm deletion", utils.ConfirmationYes, false); err != nil {
+				return err
+			}
 		}
 
 		// Delete the matching record
-		err = indexdClient.DeleteIndexdRecord(matchingRecord.Did)
+		err = drsClient.DeleteRecord(oid)
 		if err != nil {
-			return fmt.Errorf("Error deleting file for OID %s: %v", oid, err)
+			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}
 
+		logger.Printf("Successfully deleted record for OID %s", oid)
 		return nil
 	},
 }
 
 func init() {
-	Cmd.Flags().StringVarP(&dstPath, "dst", "d", "", "Destination path to save the downloaded file")
+	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
+	Cmd.Flags().BoolVar(&confirmFlag, "confirm", false, "skip interactive confirmation prompt")
 }

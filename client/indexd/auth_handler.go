@@ -64,6 +64,10 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 			return err
 		}
 		cred.AccessToken = f.Cred.AccessToken
+		err = conf.Save(cred)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

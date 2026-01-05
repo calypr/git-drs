@@ -24,6 +24,7 @@ import (
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
+	"github.com/hashicorp/go-multierror"
 
 	dataClient "github.com/calypr/data-client/client/client"
 )
@@ -443,82 +444,94 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
 }
 
-func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
+func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) {
+	const PAGESIZE = 50
+	pageNum := 0
 
 	cl.Logger.Print("Getting DRS objects from indexd")
+	resourcePath, err := utils.ProjectToResource(projectId)
+	if err != nil {
+		return nil, err
+	}
 
 	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
+	a.Path = filepath.Join(a.Path, "index/index")
 
-	out := make(chan drs.DRSObjectResult, 10)
-
-	LIMIT := 50
-	pageNum := 0
+	out := make(chan drs.DRSObjectResult, PAGESIZE)
 
 	go func() {
 		defer close(out)
+
+		// This will hold all errors encountered during the loop
+		var resultErrors *multierror.Error
 		active := true
+
 		for active {
-			// setup request
 			req, err := http.NewRequest("GET", a.String(), nil)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("request creation: %w", err))
+				break
 			}
 
 			q := req.URL.Query()
-			q.Add("limit", fmt.Sprintf("%d", LIMIT))
+			q.Add("authz", resourcePath)
+			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req)
-			if err != nil {
-				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+			if err := cl.AuthHandler.AddAuthHeader(req); err != nil {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("auth: %w", err))
+				break
 			}
 
-			// execute request with error checking
 			response, err := cl.HttpClient.Do(req)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("http call: %w", err))
+				break
 			}
 
-			defer response.Body.Close()
+			// Read body and close immediately
 			body, err := io.ReadAll(response.Body)
+			response.Body.Close()
+
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
-			}
-			if response.StatusCode != http.StatusOK {
-				cl.Logger.Printf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
-				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
-				return
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("read body: %w", err))
+				break
 			}
 
-			// return page of DRS objects
-			page := &drs.DRSPage{}
-			err = cl.SConfig.Unmarshal(body, &page)
-			if err != nil {
-				cl.Logger.Printf("error: %s", err)
-				out <- drs.DRSObjectResult{Error: err}
-				return
+			if response.StatusCode != http.StatusOK {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("api error %d: %s", response.StatusCode, string(body)))
+				break
 			}
-			for _, elem := range page.DRSObjects {
-				out <- drs.DRSObjectResult{Object: &elem}
+
+			page := &ListRecords{}
+			if err := cl.SConfig.Unmarshal(body, &page); err != nil {
+				resultErrors = multierror.Append(resultErrors, fmt.Errorf("unmarshal: %w", err))
+				break
 			}
-			if len(page.DRSObjects) == 0 {
+
+			if len(page.Records) == 0 {
 				active = false
+			}
+
+			for _, elem := range page.Records {
+				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
+				if err != nil {
+					// Append and keep going, or break if this is fatal
+					resultErrors = multierror.Append(resultErrors, err)
+					continue
+				}
+				out <- drs.DRSObjectResult{Object: drsObj}
 			}
 			pageNum++
 		}
 
-		cl.Logger.Printf("total pages retrieved: %d", pageNum)
+		// If we accumulated any errors, send the final concatenated result
+		if resultErrors != nil {
+			out <- drs.DRSObjectResult{Error: resultErrors.ErrorOrNil()}
+		}
 	}()
+
 	return out, nil
 }
 
@@ -713,20 +726,18 @@ func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRS
 }
 
 // implements /index/index?authz={resource_path}&start={start}&limit={limit} GET
-func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) {
-	const PAGESIZE = 50
-	pageNum := 0
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 	cl.Logger.Print("Getting DRS objects from indexd")
-	resourcePath, err := utils.ProjectToResource(projectId)
-	if err != nil {
-		return nil, err
-	}
 
 	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "index/index")
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects")
 
-	out := make(chan drs.DRSObjectResult, PAGESIZE)
+	out := make(chan drs.DRSObjectResult, 10)
+
+	LIMIT := 50
+	pageNum := 0
+
 	go func() {
 		defer close(out)
 		active := true
@@ -740,14 +751,13 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			}
 
 			q := req.URL.Query()
-			q.Add("authz", resourcePath)
-			q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
+			q.Add("limit", fmt.Sprintf("%d", LIMIT))
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
 			err = cl.AuthHandler.AddAuthHeader(req)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
+				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -768,35 +778,29 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 				return
 			}
 			if response.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(response.Body)
 				cl.Logger.Printf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body)
 				out <- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
 				return
 			}
 
 			// return page of DRS objects
-			page := &ListRecords{}
+			page := &drs.DRSPage{}
 			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
-			for _, elem := range page.Records {
-				drsObj, err := elem.ToIndexdRecord().ToDrsObject()
-				if err != nil {
-					cl.Logger.Printf("error: %s", err)
-					out <- drs.DRSObjectResult{Error: err}
-					return
-				}
-				out <- drs.DRSObjectResult{Object: drsObj}
+			for _, elem := range page.DRSObjects {
+				out <- drs.DRSObjectResult{Object: &elem}
 			}
-			if len(page.Records) == 0 {
+			if len(page.DRSObjects) == 0 {
 				active = false
 			}
 			pageNum++
 		}
-		//cl.Logger.Printf("total pages retrieved: %d", pageNum)
+
+		cl.Logger.Printf("total pages retrieved: %d", pageNum)
 	}()
 	return out, nil
 }

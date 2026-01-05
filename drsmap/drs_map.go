@@ -112,6 +112,10 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) err
 	}
 	writtenObjs := 0
 	for drsObj := range objChan {
+		if drsObj.Object == nil {
+			logger.Printf("OBJ is nil: %#v, continuing...", drsObj)
+			continue
+		}
 		sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
 		if len(sumMap) == 0 {
 			return fmt.Errorf("error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)

@@ -10,7 +10,7 @@ import (
 )
 
 var AnvilCmd = &cobra.Command{
-	Use:  "anvil [remote-name]",
+	Use: "anvil [remote-name]",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false

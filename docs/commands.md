@@ -33,6 +33,18 @@ git drs init
 - Updates `.gitignore` to exclude DRS cache files
 - Stages `.gitignore` changes automatically
 
+**When to run:**
+
+- **Once** after cloning a Git repository to your local machine
+- **Once** after creating a new Git repository locally
+- **Never** needed for subsequent work sessions
+
+**You do NOT need to run `git drs init` again:**
+
+- When starting a new work session
+- After refreshing credentials
+- After pulling new changes
+
 **Note:** Run this before adding remotes.
 
 ### `git drs remote`

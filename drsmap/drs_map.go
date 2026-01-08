@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -81,7 +82,9 @@ func ResolveRemoteAndRef(ctx context.Context, repoDir, defaultRemote string, log
 			fmt.Sprintf("refs/heads/%s", branch),
 		)
 		if upErr == nil && upstream != "" {
-			// upstream is like "origin/main" or potentially "origin/feature/x"
+			// Upstream is expected as `remote/branch` (for example `origin/main` or `origin/feature/x`).
+			// The code splits on `/` to extract the remote name; if no `/` is present we fall back to `defaultRemote`
+			// to handle unusual upstream formats defensively.
 			remote := upstream
 			if i := strings.IndexByte(upstream, '/'); i >= 0 {
 				remote = upstream[:i]
@@ -494,6 +497,9 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 		return nil, err
 	}
 
+	// accept lowercase or uppercase hex
+	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
+
 	lfsFileMap := make(map[string]LfsFileInfo)
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
@@ -506,6 +512,12 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 		}
 		oid := parts[1]
 		path := parts[len(parts)-1]
+
+		// Validate OID looks like a SHA256 hex string.
+		if !sha256Re.MatchString(oid) {
+			logger.Printf("skipping LFS line with invalid oid %q: %q", oid, line)
+			continue
+		}
 
 		// see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
 		if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" && strings.Contains(path, ".gitattributes") {

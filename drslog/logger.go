@@ -1,10 +1,12 @@
 package drslog
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/calypr/git-drs/projectdir"
@@ -55,7 +57,9 @@ func NewLogger(filename string, logToStderr bool) (*Logger, error) {
 	multiWriter := io.MultiWriter(writers...)
 
 	// Create the core logger with Lshortfile for better debugging
-	core := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile)
+	// Prefix log entries with PID for easier tracing in multi-process scenarios
+	prefix := fmt.Sprintf("[%d] ", os.Getpid())
+	core := log.New(multiWriter, prefix, log.LstdFlags|log.Lshortfile)
 
 	logger := &Logger{Logger: core}
 	globalLogger = logger
@@ -64,35 +68,43 @@ func NewLogger(filename string, logToStderr bool) (*Logger, error) {
 }
 
 // Thread-safe wrappers
+// Printf uses Output with :
+//  * call depth 3 so the log shows the original caller's "method that logged" file:line.
+//  * call depth 2 so the log shows the original caller's "log location" method file:line.
 
 func (l *Logger) Printf(format string, v ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.Logger.Printf(format, v...)
+	_ = l.Logger.Output(2, fmt.Sprintf(format, v...))
 }
 
 func (l *Logger) Print(v ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.Logger.Print(v...)
+	_ = l.Logger.Output(2, fmt.Sprint(v...))
 }
 
 func (l *Logger) Println(v ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.Logger.Println(v...)
+	// fmt.Sprintln adds a trailing newline; trim it because Output adds its own newline.
+	msg := strings.TrimSuffix(fmt.Sprintln(v...), "\n")
+	_ = l.Logger.Output(2, msg)
 }
 
 func (l *Logger) Fatal(v ...any) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.Logger.Fatal(v...)
+	// Use Output so file/line points to caller, then exit like log.Fatal would.
+	_ = l.Logger.Output(2, fmt.Sprint(v...))
+	l.mu.Unlock()
+	os.Exit(1)
 }
 
 func (l *Logger) Fatalf(format string, v ...any) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.Logger.Fatalf(format, v...)
+	_ = l.Logger.Output(2, fmt.Sprintf(format, v...))
+	l.mu.Unlock()
+	os.Exit(1)
 }
 
 func (l *Logger) Writer() io.Writer {

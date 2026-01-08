@@ -68,9 +68,8 @@ func NewLogger(filename string, logToStderr bool) (*Logger, error) {
 }
 
 // Thread-safe wrappers
-// Printf uses Output with :
-//  * call depth 3 so the log shows the original caller's "method that logged" file:line.
-//  * call depth 2 so the log shows the original caller's "log location" method file:line.
+// These methods use Output with call depth 2 so the log shows the original caller's file:line,
+// not the wrapper method's location.
 
 func (l *Logger) Printf(format string, v ...any) {
 	l.mu.Lock()

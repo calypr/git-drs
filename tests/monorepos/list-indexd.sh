@@ -19,7 +19,7 @@ PARAMETERS:
         Example: <see default/local-postgresql>
 
     resource-name (optional)
-        The Indexd resource path to delete.
+        The Indexd resource path to list.
         Defaults to: /programs/cbds/projects/monorepos
 
 OPTIONS:
@@ -63,7 +63,7 @@ fi
 # SQL script with dynamic resource name (variables will be expanded)
 SQL=$(cat <<EOF
 -- List all records associated with the resource $RESOURCE_NAME
--- dont show totals or headers
+-- don't show totals or headers
 \pset footer off
 \pset tuples_only on
 -- Select the relevant DIDs

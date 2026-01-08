@@ -46,8 +46,8 @@ var Cmd = &cobra.Command{
 		cli, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
 			// Print warning to stderr and return success (exit 0)
-			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting default remote:", err)
-			myLogger.Printf("Warning. Skipping DRS preparation. Error getting default remote: %v", err)
+			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
+			myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
 			return nil
 		}
 

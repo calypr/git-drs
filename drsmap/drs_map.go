@@ -497,6 +497,11 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 		return nil, err
 	}
 
+	// Log when dry-run returns no output to help with debugging
+	if strings.TrimSpace(string(out)) == "" {
+		logger.Printf("No LFS files to push (dry-run returned no output)")
+	}
+
 	// accept lowercase or uppercase hex
 	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 

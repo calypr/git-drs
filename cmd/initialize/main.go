@@ -89,6 +89,12 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
 		}
 
+		// install pre-push hook
+		err = installPrePushHook(logg)
+		if err != nil {
+			return fmt.Errorf("error installing pre-push hook: %v", err)
+		}
+
 		// final logs
 		logg.Print("Git DRS initialized")
 		logg.Printf("Using %d concurrent transfers", transfers)
@@ -119,6 +125,56 @@ func initGitConfig() error {
 
 func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
+}
+
+func installPrePushHook(logger *drslog.Logger) error {
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmdOut, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("unable to locate git directory: %w", err)
+	}
+	gitDir := strings.TrimSpace(string(cmdOut))
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("unable to create hooks directory: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-push")
+	hookBody := `remote="$1"
+if [ -n "$remote" ]; then
+  git drs prepush "$remote"
+else
+  git drs prepush
+fi
+`
+	hookScript := "#!/bin/sh\n" + hookBody
+
+	existingContent, err := os.ReadFile(hookPath)
+	if err == nil {
+		if strings.Contains(string(existingContent), "git drs prepush") {
+			logger.Print("pre-push hook already configured")
+			return nil
+		}
+		updated := string(existingContent)
+		if !strings.HasSuffix(updated, "\n") {
+			updated += "\n"
+		}
+		updated += "\n# git-drs pre-push hook\n" + hookBody
+		if err := os.WriteFile(hookPath, []byte(updated), 0755); err != nil {
+			return fmt.Errorf("unable to update pre-push hook: %w", err)
+		}
+		logger.Print("pre-push hook updated")
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("unable to read pre-push hook: %w", err)
+	}
+
+	if err := os.WriteFile(hookPath, []byte(hookScript), 0755); err != nil {
+		return fmt.Errorf("unable to write pre-push hook: %w", err)
+	}
+	logger.Print("pre-push hook installed")
+	return nil
 }
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.

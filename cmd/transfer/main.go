@@ -250,15 +250,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Pre-load DRS map only for uploads
-		if transferOperation == OPERATION_UPLOAD {
-			logger.Print("Preparing DRS map for upload operation")
-			if err := drsmap.UpdateDrsObjects(drsClient, logger); err != nil {
-				logger.Printf("Error updating DRS map: %v", err)
-				lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
-				return err
-			}
-		}
+		// Pre-load DRS map only for uploads - UpdateDrsObjects moved to pre-push hook
 
 		// Respond to init
 		resultQueue <- TransferResult{data: struct{}{}, isError: err != nil}
@@ -279,6 +271,7 @@ var Cmd = &cobra.Command{
 		for scanner.Scan() {
 			currentBytes := make([]byte, len(scanner.Bytes()))
 			copy(currentBytes, scanner.Bytes())
+			logger.Printf("Current command: %s", string(currentBytes))
 
 			// Ultra-fast terminate check
 			if strings.Contains(string(currentBytes), `"event":"terminate"`) {

@@ -498,7 +498,7 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 	}
 
 	// Log when dry-run returns no output to help with debugging
-	if strings.TrimSpace(string(out)) == "" {
+	if strings.TrimSpace(out) == "" {
 		logger.Printf("No LFS files to push (dry-run returned no output)")
 	}
 

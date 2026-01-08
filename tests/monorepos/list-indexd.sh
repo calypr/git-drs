@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
 
 show_help() {
@@ -58,29 +57,18 @@ if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" ]]; then
     exit 1
 fi
 
-# echo "🔧 listing Indexd records for resource: $RESOURCE_NAME"
-
-# SQL script with dynamic resource name (variables will be expanded)
-SQL=$(cat <<EOF
--- List all records associated with the resource $RESOURCE_NAME
+# SQL script using psql variable substitution (do not expand $RESOURCE_NAME here)
+SQL=$(cat <<'EOF'
+-- List all records associated with the resource (use psql variable substitution)
 -- don't show totals or headers
 \pset footer off
 \pset tuples_only on
--- Select the relevant DIDs
-SELECT did FROM index_record_authz WHERE resource = '$RESOURCE_NAME';
+-- Select the relevant DIDs; :'resource_name' is substituted as a SQL string literal
+SELECT did FROM index_record_authz WHERE resource = :'resource_name';
 EOF
 )
 
-# echo "📝 Generated SQL for listing:"
-
-# echo "🚀 Executing listing SQL in pod: $POD_NAME"
-
-
-# Execute SQL inside the pod
-# Bash - replace the psql invocation in `tests/monorepos/clean-indexd.sh`
-# Pipe the SQL into the pod and run psql reading from stdin
+# Execute SQL inside the pod, passing resource_name via -v so psql does safe quoting
 printf '%s\n' "$SQL" | kubectl exec -i "$POD_NAME" -- \
     env PGPASSWORD="$POSTGRES_PASSWORD" \
-    psql -U postgres -d "$DATABASE_NAME" -v ON_ERROR_STOP=1 -f -
-
-# echo "✔ Listing complete for resource: $RESOURCE_NAME"
+    psql -U postgres -d "$DATABASE_NAME" -v resource_name="$RESOURCE_NAME" -v ON_ERROR_STOP=1 -f -

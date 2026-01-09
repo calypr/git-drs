@@ -33,37 +33,36 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 
+		// Try to prepare DRS objects, but don't fail the entire push if config is incomplete
 		var remote config.Remote
 		myLogger.Printf("pre-push args: %v", args)
 		remote, err = cfg.GetDefaultRemote()
 		if err != nil {
 			myLogger.Printf("Warning. Error getting default remote: %v", err)
-			// Print warning to stderr and return success (exit 0)
+			// Print warning to stderr but continue to git lfs pre-push
 			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting default remote:", err)
-			return nil
-		}
+		} else {
+			cli, err := cfg.GetRemoteClient(remote, myLogger)
+			if err != nil {
+				// Print warning to stderr but continue to git lfs pre-push
+				fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
+				myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
+			} else {
+				dc, ok := cli.(*indexd_client.IndexDClient)
+				if !ok {
+					return fmt.Errorf("cli is not IndexdClient: %T", cli)
+				}
+				myLogger.Printf("Current server: %s", dc.ProjectId)
 
-		cli, err := cfg.GetRemoteClient(remote, myLogger)
-		if err != nil {
-			// Print warning to stderr and return success (exit 0)
-			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-			myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
-			return nil
+				myLogger.Printf("Preparing DRS objects for push...\n")
+				err = drsmap.UpdateDrsObjects(cli, myLogger)
+				if err != nil {
+					myLogger.Print("UpdateDrsObjects failed:", err)
+					return err
+				}
+				myLogger.Printf("DRS objects prepared for push!\n")
+			}
 		}
-
-		dc, ok := cli.(*indexd_client.IndexDClient)
-		if !ok {
-			return fmt.Errorf("cli is not IndexdClient: %T", cli)
-		}
-		myLogger.Printf("Current server: %s", dc.ProjectId)
-
-		myLogger.Printf("Preparing DRS objects for push...\n")
-		err = drsmap.UpdateDrsObjects(cli, myLogger)
-		if err != nil {
-			myLogger.Print("UpdateDrsObjects failed:", err)
-			return err
-		}
-		myLogger.Printf("DRS objects prepared for push!\n")
 
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")

@@ -195,6 +195,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		cl.Logger.Printf("error getting DRS object for OID %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for OID %s: %v", oid, err)
 	}
+	return cl.getDownloadURLFromRecords(oid, records)
+}
+
+func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
 	if len(records) == 0 {
 		cl.Logger.Printf("no DRS object found for OID %s", oid)
 		return nil, fmt.Errorf("no DRS object found for OID %s", oid)
@@ -328,10 +332,24 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}()
 	}
 
+	recordsForDownload := records
+	if drsObject != nil {
+		found := false
+		for _, record := range recordsForDownload {
+			if record.Id == drsObject.Id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			recordsForDownload = append(recordsForDownload, *drsObject)
+		}
+	}
+
 	// determine if file is downloadable
 	isDownloadable := true
 	cl.Logger.Printf("checking if %s file is downloadable", oid)
-	signedUrl, err := cl.GetDownloadURL(oid)
+	signedUrl, err := cl.getDownloadURLFromRecords(oid, recordsForDownload)
 	if err != nil || signedUrl == nil {
 		isDownloadable = false
 	} else { // signedUrl exists

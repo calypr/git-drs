@@ -60,7 +60,7 @@ fi
 # SQL script using psql variable substitution (do not expand $RESOURCE_NAME here)
 SQL=$(cat <<'EOF'
 -- List all records associated with the resource (use psql variable substitution)
--- don't show totals or headers
+-- dont show totals or headers
 \pset footer off
 \pset tuples_only on
 -- Select the relevant DIDs; :'resource_name' is substituted as a SQL string literal

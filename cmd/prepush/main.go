@@ -34,40 +34,8 @@ var Cmd = &cobra.Command{
 		}
 
 		// Try to prepare DRS objects, but don't fail the entire push if config is incomplete
-		var remote config.Remote
 		myLogger.Printf("pre-push args: %v", args)
-		remote, err = cfg.GetDefaultRemote()
-		if err != nil {
-			myLogger.Printf("Warning. Error getting default remote: %v", err)
-			// Print warning to stderr but continue to git lfs pre-push
-			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting default remote:", err)
-		} else {
-			cli, err := cfg.GetRemoteClient(remote, myLogger)
-			if err != nil {
-				// Print warning to stderr but continue to git lfs pre-push
-				fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-				myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
-			} else {
-				dc, ok := cli.(*indexd_client.IndexDClient)
-				if !ok {
-					// Unexpected client type - log warning and continue
-					fmt.Fprintf(os.Stderr, "Warning. Skipping DRS preparation. Unexpected client type: %T\n", cli)
-					myLogger.Printf("Warning. Skipping DRS preparation. Unexpected client type: %T", cli)
-				} else {
-					myLogger.Printf("Current server: %s", dc.ProjectId)
-
-					myLogger.Printf("Preparing DRS objects for push...\n")
-					err = drsmap.UpdateDrsObjects(cli, myLogger)
-					if err != nil {
-						// DRS preparation failed - log warning and continue with git lfs pre-push
-						fmt.Fprintln(os.Stderr, "Warning. DRS object preparation failed:", err)
-						myLogger.Print("Warning. DRS object preparation failed:", err)
-					} else {
-						myLogger.Printf("DRS objects prepared for push!\n")
-					}
-				}
-			}
-		}
+		prepareDrsObjects(cfg, myLogger)
 
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")
@@ -113,4 +81,42 @@ var Cmd = &cobra.Command{
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 		return nil
 	},
+}
+
+// prepareDrsObjects attempts to prepare DRS objects for push.
+// If any step fails, it logs a warning and returns without error,
+// allowing the git lfs pre-push to proceed regardless.
+func prepareDrsObjects(cfg *config.Config, myLogger *drslog.Logger) {
+	remote, err := cfg.GetDefaultRemote()
+	if err != nil {
+		myLogger.Printf("Warning. Error getting default remote: %v", err)
+		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting default remote:", err)
+		return
+	}
+
+	cli, err := cfg.GetRemoteClient(remote, myLogger)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
+		myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
+		return
+	}
+
+	dc, ok := cli.(*indexd_client.IndexDClient)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Warning. Skipping DRS preparation. Unexpected client type: %T\n", cli)
+		myLogger.Printf("Warning. Skipping DRS preparation. Unexpected client type: %T", cli)
+		return
+	}
+
+	myLogger.Printf("Current server: %s", dc.ProjectId)
+	myLogger.Printf("Preparing DRS objects for push...\n")
+
+	err = drsmap.UpdateDrsObjects(cli, myLogger)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Warning. DRS object preparation failed:", err)
+		myLogger.Printf("Warning. DRS object preparation failed: %v", err)
+		return
+	}
+
+	myLogger.Printf("DRS objects prepared for push!\n")
 }

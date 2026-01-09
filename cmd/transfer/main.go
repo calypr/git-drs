@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/bytedance/sonic"
@@ -276,29 +275,7 @@ var Cmd = &cobra.Command{
 			}(i)
 		}
 
-		for scanner.Scan() {
-			currentBytes := make([]byte, len(scanner.Bytes()))
-			copy(currentBytes, scanner.Bytes())
-
-			// Ultra-fast terminate check
-			if strings.Contains(string(currentBytes), `"event":"terminate"`) {
-				logger.Print("Received TERMINATE signal")
-				break
-			}
-
-			// Double-check with Sonic just in case
-			var generic struct {
-				Event string `json:"event"`
-			}
-			if err := sConfig.Unmarshal(currentBytes, &generic); err == nil && generic.Event == "terminate" {
-				logger.Print("Confirmed TERMINATE. Shutting down...")
-				break
-			}
-			transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
-		}
-
-		// Cleanup
-		scanErr := scanner.Err()
+		scanErr := enqueueTransferJobs(scanner, drsClient, transferQueue, logger)
 		close(transferQueue)
 		wg.Wait()
 		close(resultQueue)

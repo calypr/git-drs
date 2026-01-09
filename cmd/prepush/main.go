@@ -102,13 +102,14 @@ func prepareDrsObjects(cfg *config.Config, myLogger *drslog.Logger) {
 	}
 
 	dc, ok := cli.(*indexd_client.IndexDClient)
-	if !ok {
-		fmt.Fprintf(os.Stderr, "Warning. Skipping DRS preparation. Unexpected client type: %T\n", cli)
-		myLogger.Printf("Warning. Skipping DRS preparation. Unexpected client type: %T", cli)
-		return
+	if ok {
+		// Log project ID for IndexDClient (Gen3)
+		myLogger.Printf("Current server: %s", dc.ProjectId)
+	} else {
+		// For other client types (e.g., AnvilClient), just log that we have a client
+		myLogger.Printf("Using DRS client: %T", cli)
 	}
 
-	myLogger.Printf("Current server: %s", dc.ProjectId)
 	myLogger.Printf("Preparing DRS objects for push...\n")
 
 	err = drsmap.UpdateDrsObjects(cli, myLogger)

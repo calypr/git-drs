@@ -50,17 +50,22 @@ var Cmd = &cobra.Command{
 			} else {
 				dc, ok := cli.(*indexd_client.IndexDClient)
 				if !ok {
-					return fmt.Errorf("cli is not IndexdClient: %T", cli)
-				}
-				myLogger.Printf("Current server: %s", dc.ProjectId)
+					// Unexpected client type - log warning and continue
+					fmt.Fprintf(os.Stderr, "Warning. Skipping DRS preparation. Unexpected client type: %T\n", cli)
+					myLogger.Printf("Warning. Skipping DRS preparation. Unexpected client type: %T", cli)
+				} else {
+					myLogger.Printf("Current server: %s", dc.ProjectId)
 
-				myLogger.Printf("Preparing DRS objects for push...\n")
-				err = drsmap.UpdateDrsObjects(cli, myLogger)
-				if err != nil {
-					myLogger.Print("UpdateDrsObjects failed:", err)
-					return err
+					myLogger.Printf("Preparing DRS objects for push...\n")
+					err = drsmap.UpdateDrsObjects(cli, myLogger)
+					if err != nil {
+						// DRS preparation failed - log warning and continue with git lfs pre-push
+						fmt.Fprintln(os.Stderr, "Warning. DRS object preparation failed:", err)
+						myLogger.Print("Warning. DRS object preparation failed:", err)
+					} else {
+						myLogger.Printf("DRS objects prepared for push!\n")
+					}
 				}
-				myLogger.Printf("DRS objects prepared for push!\n")
 			}
 		}
 

@@ -199,7 +199,7 @@ else
   echo "Finished init.  Force pushing to remote." >&2
   git remote -v
 
-  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f 2>&1 | tee lfs-console.log
+  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main -f 2>&1 | tee lfs-console.log
 
   echo "Finished init.  Finished pushing to remote." >&2
   exit 0
@@ -220,7 +220,7 @@ for dir in */ ; do
     git add "$dir"
     git commit -am "Add $dir" 2>&1 | tee commit.log
     cat commit.log >> commit-aggregate.log
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push 2>&1 | tee lfs-console.log
+    GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
     # if .drs/lfs/objects exists, log last 3 lines of tree

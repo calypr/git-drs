@@ -18,7 +18,7 @@ var Cmd = &cobra.Command{
 	Use:   "prepush",
 	Short: "pre-push hook to update DRS objects",
 	Long:  "Pre-push hook that updates DRS objects before transfer",
-	Args:  cobra.RangeArgs(0, 1),
+	Args:  cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		//myLogger := drslog.GetLogger()
 		myLogger, err := drslog.NewLogger("", false)

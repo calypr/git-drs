@@ -33,8 +33,22 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting config: %v", err)
 		}
 
-		var remote config.Remote
+		//Command-line arguments: The hook receives two parameters:
+		//* The name of the remote (e.g., origin).
+		//* The remote's location/URL (e.g., github.com).
+		// Create gitRemoteName and gitRemoteLocation from args.
 		myLogger.Printf("pre-push args: %v", args)
+		var gitRemoteName, gitRemoteLocation string
+		if len(args) >= 1 {
+			gitRemoteName = args[0]
+		}
+		if len(args) >= 2 {
+			gitRemoteLocation = args[1]
+		}
+		myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
+
+		// get the default remote from the .drs/config
+		var remote config.Remote
 		remote, err = cfg.GetDefaultRemote()
 		if err != nil {
 			myLogger.Printf("Warning. Error getting default remote: %v", err)
@@ -43,6 +57,7 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
+		// get the remote client
 		cli, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
 			// Print warning to stderr and return success (exit 0)

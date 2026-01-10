@@ -1,10 +1,13 @@
 package prepush
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
@@ -72,14 +75,6 @@ var Cmd = &cobra.Command{
 		}
 		myLogger.Printf("Current server: %s", dc.ProjectId)
 
-		myLogger.Printf("Preparing DRS objects for push...\n")
-		err = drsmap.UpdateDrsObjects(cli, myLogger)
-		if err != nil {
-			myLogger.Print("UpdateDrsObjects failed:", err)
-			return err
-		}
-		myLogger.Printf("DRS objects prepared for push!\n")
-
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")
 		if err != nil {
@@ -103,6 +98,22 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
+		// read the temp file and get a list of all unique local branches being pushed
+		branches, err := readPushedBranches(tmp)
+		if err != nil {
+			myLogger.Printf("error reading pushed branches: %v", err)
+			return err
+		}
+		myLogger.Printf("local branches being pushed: %v", branches)
+
+		myLogger.Printf("Preparing DRS objects for push...\n")
+		err = drsmap.UpdateDrsObjects(cli, myLogger)
+		if err != nil {
+			myLogger.Print("UpdateDrsObjects failed:", err)
+			return err
+		}
+		myLogger.Printf("DRS objects prepared for push!\n")
+
 		// Build and run: git lfs pre-push <args...>
 		cmdArgs := append([]string{"lfs", "pre-push"}, args...)
 		myLogger.Printf("running: git %v (stdin buffered)", cmdArgs)
@@ -124,4 +135,46 @@ var Cmd = &cobra.Command{
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 		return nil
 	},
+}
+
+// readPushedBranches reads git push lines from the provided temp file,
+// extracts unique local branch names for refs under `refs/heads/` and
+// returns them sorted. The file is rewound to the start before returning.
+func readPushedBranches(f *os.File) ([]string, error) {
+	// Ensure we read from start
+	// example:
+	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(f)
+	set := make(map[string]struct{})
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		localRef := fields[0]
+		const prefix = "refs/heads/"
+		if strings.HasPrefix(localRef, prefix) {
+			branch := strings.TrimPrefix(localRef, prefix)
+			if branch != "" {
+				set[branch] = struct{}{}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	branches := make([]string, 0, len(set))
+	for b := range set {
+		branches = append(branches, b)
+	}
+	sort.Strings(branches)
+	// Rewind so caller can reuse the file
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	return branches, nil
 }

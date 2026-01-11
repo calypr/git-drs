@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 
@@ -18,7 +17,7 @@ import (
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
-	Use:   "prepush",
+	Use:   "pre-push-prepare",
 	Short: "pre-push hook to update DRS objects",
 	Long:  "Pre-push hook that updates DRS objects before transfer",
 	Args:  cobra.RangeArgs(0, 2),
@@ -47,6 +46,9 @@ var Cmd = &cobra.Command{
 		}
 		if len(args) >= 2 {
 			gitRemoteLocation = args[1]
+		}
+		if gitRemoteName == "" {
+			gitRemoteName = "origin"
 		}
 		myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
 
@@ -104,33 +106,14 @@ var Cmd = &cobra.Command{
 			myLogger.Printf("error reading pushed branches: %v", err)
 			return err
 		}
-		myLogger.Printf("local branches being pushed: %v", branches)
 
-		myLogger.Printf("Preparing DRS objects for push...\n")
-		err = drsmap.UpdateDrsObjects(cli, myLogger)
+		myLogger.Printf("Preparing DRS objects for push branches: %v", branches)
+		err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
 		if err != nil {
 			myLogger.Print("UpdateDrsObjects failed:", err)
 			return err
 		}
 		myLogger.Printf("DRS objects prepared for push!\n")
-
-		// Build and run: git lfs pre-push <args...>
-		cmdArgs := append([]string{"lfs", "pre-push"}, args...)
-		myLogger.Printf("running: git %v (stdin buffered)", cmdArgs)
-
-		// Use a different variable name to avoid shadowing the cobra 'cmd' parameter.
-		gitCmd := exec.Command("git", cmdArgs...)
-		gitCmd.Stdin = tmp
-		// Send stdout/stderr to stderr to avoid confusing Git (hook should not emit stdout).
-		gitCmd.Stdout = os.Stderr
-		gitCmd.Stderr = os.Stderr
-
-		if err := gitCmd.Run(); err != nil {
-			myLogger.Printf("git lfs pre-push failed: %v", err)
-			return err
-		}
-
-		myLogger.Print("git lfs pre-push completed successfully")
 
 		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 		return nil

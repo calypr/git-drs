@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -140,38 +141,46 @@ func installPrePushHook(logger *drslog.Logger) error {
 	}
 
 	hookPath := filepath.Join(hooksDir, "pre-push")
-	hookBody := `remote="$1"
-if [ -n "$remote" ]; then
-  git drs prepush "$remote"
-else
-  git drs prepush
-fi
+	hookBody := `
+# . git/hooks/pre-push
+remote="$1"
+url="$2"
+
+# Buffer stdin for both commands
+TMPFILE="${TMPDIR:-/tmp}/git-drs-$$"
+trap "rm -f $TMPFILE" EXIT
+cat > "$TMPFILE"
+
+# Run DRS preparation
+git drs pre-push-prepare "$remote" "$url" < "$TMPFILE" || exit 1
+
+# Run LFS push
+exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 `
 	hookScript := "#!/bin/sh\n" + hookBody
 
 	existingContent, err := os.ReadFile(hookPath)
 	if err == nil {
-		if strings.Contains(string(existingContent), "git drs prepush") {
-			logger.Print("pre-push hook already configured")
-			return nil
+		// there is an existing hook, rename it, and let the user know
+		// Backup existing hook with timestamp
+		timestamp := time.Now().Format("20060102T150405")
+		backupPath := hookPath + "." + timestamp
+		if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
+			return fmt.Errorf("unable to back up existing pre-push hook: %w", err)
 		}
-		updated := string(existingContent)
-		if !strings.HasSuffix(updated, "\n") {
-			updated += "\n"
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("unable remove hook after backing up: %w", err)
 		}
-		updated += "\n# git-drs pre-push hook\n" + hookBody
-		if err := os.WriteFile(hookPath, []byte(updated), 0755); err != nil {
-			return fmt.Errorf("unable to update pre-push hook: %w", err)
-		}
-		logger.Print("pre-push hook updated")
-		return nil
+		logger.Printf("pre-push hook updated; backup written to %s", backupPath)
 	}
-	if !os.IsNotExist(err) {
+	// If there was an error other than expected not existing, return it
+	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("unable to read pre-push hook: %w", err)
 	}
 
-	if err := os.WriteFile(hookPath, []byte(hookScript), 0755); err != nil {
-		return fmt.Errorf("unable to write pre-push hook: %w", err)
+	err = os.WriteFile(hookPath, []byte(hookScript), 0755)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("unable to read pre-push hook: %w", err)
 	}
 	logger.Print("pre-push hook installed")
 	return nil

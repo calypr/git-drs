@@ -31,81 +31,6 @@ type LfsDryRunSpec struct {
 	Ref    string // e.g. "refs/heads/main" or "HEAD"
 }
 
-// runGit runs `git <args...>` and returns trimmed stdout.
-// If the command fails, stderr is included in the error.
-func runGit(ctx context.Context, repoDir string, logger *drslog.Logger, args ...string) (string, error) {
-	// Debug-print the command to stderr
-	fullCmd := append([]string{"git"}, args...)
-	logger.Printf("running command: %v", fullCmd)
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	out := strings.TrimSpace(stdout.String())
-	if err != nil {
-		// Include stderr to aid debugging.
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return out, fmt.Errorf("git %s failed: %s", strings.Join(args, " "), msg)
-	}
-	return out, nil
-}
-
-// ResolveRemoteAndRef mirrors typical `git push` intent for LFS dry-run:
-//
-//  1. If on a named branch and it has an upstream -> use that remote, and refs/heads/<branch>
-//  2. If on a named branch but no upstream -> use origin + HEAD
-//  3. If detached HEAD -> use origin + HEAD
-//
-// Notes:
-// - This avoids `--all` (repo-wide scan) unless you explicitly choose it.
-// - You can change defaultRemote from "origin" if your app wants a different default.
-func ResolveRemoteAndRef(ctx context.Context, repoDir, defaultRemote string, logger *drslog.Logger) (LfsDryRunSpec, error) {
-	if defaultRemote == "" {
-		defaultRemote = "origin"
-	}
-
-	// Determine current branch; fails/empty when detached.
-	branch, err := runGit(ctx, repoDir, logger, "symbolic-ref", "-q", "--short", "HEAD")
-	if err == nil && branch != "" {
-		// Look up upstream of this branch: e.g. "origin/main"
-		upstream, upErr := runGit(ctx, repoDir, logger,
-			"for-each-ref",
-			"--format=%(upstream:short)",
-			fmt.Sprintf("refs/heads/%s", branch),
-		)
-		if upErr == nil && upstream != "" {
-			// Upstream is expected as `remote/branch` (for example `origin/main` or `origin/feature/x`).
-			// The code splits on `/` to extract the remote name; if no `/` is present we fall back to `defaultRemote`
-			// to handle unusual upstream formats defensively.
-			remote := upstream
-			if i := strings.IndexByte(upstream, '/'); i >= 0 {
-				remote = upstream[:i]
-			} else {
-				// Extremely unusual, but be defensive.
-				remote = defaultRemote
-			}
-			return LfsDryRunSpec{
-				Remote: remote,
-				Ref:    fmt.Sprintf("refs/heads/%s", branch),
-			}, nil
-		}
-
-		// Named branch but no upstream => fall back to HEAD on default remote.
-		return LfsDryRunSpec{Remote: defaultRemote, Ref: "HEAD"}, nil
-	}
-
-	// Detached HEAD (or symbolic-ref failed) => HEAD on default remote.
-	return LfsDryRunSpec{Remote: defaultRemote, Ref: "HEAD"}, nil
-}
-
 // RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
 func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *drslog.Logger) (string, error) {
 	if spec.Remote == "" || spec.Ref == "" {
@@ -257,12 +182,12 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) err
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 
 	// get all lfs files
-	lfsFiles, err := GetAllLfsFiles(logger)
+	lfsFiles, err := GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
 	}
@@ -445,32 +370,7 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func getDefaultRemote() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-	out, err := cmd.Output()
-	if err == nil {
-		upstream := strings.TrimSpace(string(out))
-		if upstream != "" {
-			parts := strings.SplitN(upstream, "/", 2)
-			if len(parts) > 0 && parts[0] != "" {
-				return parts[0], nil
-			}
-		}
-	}
-
-	cmd = exec.Command("git", "remote")
-	out, err = cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("error listing git remotes: %w", err)
-	}
-	remotes := strings.Fields(string(out))
-	if len(remotes) == 0 {
-		return "", fmt.Errorf("no git remotes configured")
-	}
-	return remotes[0], nil
-}
-
-func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
@@ -486,26 +386,72 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 	//ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	//defer cancel()
 
-	// Determine remote and ref to use for dry-run
-	spec, err := ResolveRemoteAndRef(ctx, repoDir, "origin", logger)
-	if err != nil {
-		return nil, err
+	if gitRemoteName == "" {
+		gitRemoteName = "origin"
+	}
+	if gitRemoteLocation != "" {
+		logger.Printf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation)
+	} else {
+		logger.Printf("Using git remote %s for LFS dry-run", gitRemoteName)
 	}
 
-	out, err := RunLfsPushDryRun(ctx, repoDir, spec, logger)
-	if err != nil {
-		return nil, err
+	refs := buildLfsRefs(branches)
+	lfsFileMap := make(map[string]LfsFileInfo)
+	for _, ref := range refs {
+		spec := LfsDryRunSpec{
+			Remote: gitRemoteName,
+			Ref:    ref,
+		}
+		out, err := RunLfsPushDryRun(ctx, repoDir, spec, logger)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil {
+			return nil, err
+		}
 	}
 
+	return lfsFileMap, nil
+}
+
+func buildLfsRefs(branches []string) []string {
+	if len(branches) == 0 {
+		return []string{"HEAD"}
+	}
+	refs := make([]string, 0, len(branches))
+	seen := make(map[string]struct{})
+	for _, branch := range branches {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		ref := branch
+		if branch != "HEAD" && !strings.HasPrefix(branch, "refs/") {
+			ref = fmt.Sprintf("refs/heads/%s", branch)
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return []string{"HEAD"}
+	}
+	return refs
+}
+
+func addLfsFilesFromDryRun(out, repoDir string, logger *drslog.Logger, lfsFileMap map[string]LfsFileInfo) error {
 	// Log when dry-run returns no output to help with debugging
 	if strings.TrimSpace(out) == "" {
 		logger.Printf("No LFS files to push (dry-run returned no output)")
+		return nil
 	}
 
 	// accept lowercase or uppercase hex
 	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 
-	lfsFileMap := make(map[string]LfsFileInfo)
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -574,7 +520,7 @@ func GetAllLfsFiles(logger *drslog.Logger) (map[string]LfsFileInfo, error) {
 		//logger.Printf("GetAllLfsFiles added LFS file %s", path)
 	}
 
-	return lfsFileMap, nil
+	return nil
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI

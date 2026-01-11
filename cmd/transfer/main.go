@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/bytedance/sonic"

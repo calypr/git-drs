@@ -1,6 +1,10 @@
 #!/bin/bash
 
+# strict
 set -euo pipefail
+# echo commands as they are executed
+set -x
+    
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
@@ -138,8 +142,6 @@ fi
 export PATH="$ABS_PATH:$PATH"
 echo "Using git-drs from: $(which git-drs)" >&2
 
-# echo commands as they are executed
-set -x
 
 # ensure a gen3 project exists
 calypr_admin projects ls --profile "$PROFILE" | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
@@ -199,7 +201,7 @@ else
   echo "Finished init.  Force pushing to remote." >&2
   git remote -v
 
-  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push origin main -f 2>&1 | tee lfs-console.log
+  GIT_TRACE=1 GIT_TRANSFER_TRACE=1  git push -f origin main 2>&1 | tee lfs-console.log
 
   echo "Finished init.  Finished pushing to remote." >&2
   exit 0

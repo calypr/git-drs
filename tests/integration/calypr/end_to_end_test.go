@@ -14,6 +14,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/conf"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
@@ -220,8 +221,11 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git commit in %s: %v", repoDir, err)
 	}
 
+	// create a drs logger and pass it to GetAllLfsFiles
+	logger := &drslog.Logger{}
+
 	// verify LFS files are listed
-	lfsFiles, err := drsmap.GetAllLfsFiles()
+	lfsFiles, err := drsmap.GetAllLfsFiles(logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}
@@ -332,7 +336,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// verify LFS files are listed
-	lfsFiles, err = drsmap.GetAllLfsFiles()
+	lfsFiles, err = drsmap.GetAllLfsFiles(logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}

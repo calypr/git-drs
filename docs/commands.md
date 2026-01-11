@@ -31,6 +31,7 @@ git drs init
 - Creates `.drs/` directory structure
 - Configures Git LFS custom transfer agent
 - Updates `.gitignore` to exclude DRS cache files
+- Installs Git hooks for DRS workflows
 - Stages `.gitignore` changes automatically
 
 **Note:** Run this before adding remotes.
@@ -259,6 +260,7 @@ git drs version
 These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
+- `git drs prepush`: Update DRS objects before push
 - `git drs transfer`: Handle file transfers during push/pull
 - `git drs transferref`: Handle reference transfers (AnVIL/Terra)
 

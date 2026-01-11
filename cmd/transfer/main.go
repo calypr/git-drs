@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"sync"
@@ -199,16 +200,40 @@ var Cmd = &cobra.Command{
 
 		// Single writer goroutine — must stay ordered
 		writerDone := make(chan struct{})
+		// writer goroutine: consumes TransferResult values from resultQueue, encodes each
+		// into the LFS/DRS protocol using a stream encoder, logs the exact encoded bytes
+		// for debugging, and writes them to stdout in the same order they were received.
+		// It preserves prior behavior for error and non-error messages and closes
+		// `writerDone` when finished.
 		go func() {
 			defer close(writerDone)
-			encoder := encoder.NewStreamEncoder(os.Stdout)
 			for result := range resultQueue {
+				var buf bytes.Buffer
+				enc := encoder.NewStreamEncoder(&buf)
+
 				if result.isError {
 					if errMsg, ok := result.data.(lfs.ErrorMessage); ok {
-						lfs.WriteErrorMessage(encoder, errMsg.Oid, errMsg.Error.Code, errMsg.Error.Message)
+						// Write the lfs error into the buffer via the encoder
+						lfs.WriteErrorMessage(enc, errMsg.Oid, errMsg.Error.Code, errMsg.Error.Message)
+					} else {
+						logger.Printf("ERROR: Transfer has error, did not write error back: %v", result)
+						// Fallback: try to encode the raw data
+						if err := enc.Encode(result.data); err != nil {
+							logger.Printf("encode fallback error: %v", err)
+						}
 					}
 				} else {
-					encoder.Encode(result.data)
+					if err := enc.Encode(result.data); err != nil {
+						logger.Printf("encode error: %v", err)
+					}
+				}
+
+				// Log the exact bytes that will be written to stdout
+				logger.Printf("response: %s", buf.String())
+
+				// Write the buffered encoded bytes to stdout (preserve original behavior)
+				if _, err := os.Stdout.Write(buf.Bytes()); err != nil {
+					logger.Printf("error writing encoded output to stdout: %v", err)
 				}
 			}
 		}()
@@ -249,15 +274,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Pre-load DRS map only for uploads
-		if transferOperation == OPERATION_UPLOAD {
-			logger.Print("Preparing DRS map for upload operation")
-			if err := drsmap.UpdateDrsObjects(drsClient, logger); err != nil {
-				logger.Printf("Error updating DRS map: %v", err)
-				lfs.WriteInitErrorMessage(encoder.NewStreamEncoder(os.Stdout), 400, err.Error())
-				return err
-			}
-		}
+		// Pre-load DRS map only for uploads - UpdateDrsObjects moved to pre-push hook
 
 		// Respond to init
 		resultQueue <- TransferResult{data: struct{}{}, isError: err != nil}
@@ -275,7 +292,30 @@ var Cmd = &cobra.Command{
 			}(i)
 		}
 
-		scanErr := enqueueTransferJobs(scanner, drsClient, transferQueue, logger)
+		for scanner.Scan() {
+			currentBytes := make([]byte, len(scanner.Bytes()))
+			copy(currentBytes, scanner.Bytes())
+			logger.Printf("command: %s", string(currentBytes))
+
+			// Ultra-fast terminate check
+			if strings.Contains(string(currentBytes), `"event":"terminate"`) {
+				logger.Print("Received TERMINATE signal")
+				break
+			}
+
+			// Double-check with Sonic just in case
+			var generic struct {
+				Event string `json:"event"`
+			}
+			if err := sConfig.Unmarshal(currentBytes, &generic); err == nil && generic.Event == "terminate" {
+				logger.Print("Confirmed TERMINATE. Shutting down...")
+				break
+			}
+			transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
+		}
+
+		// Cleanup
+		scanErr := scanner.Err()
 		close(transferQueue)
 		wg.Wait()
 		close(resultQueue)

@@ -11,7 +11,6 @@ import (
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
 	"github.com/calypr/git-drs/cmd/listconfig"
-	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/prepush"
 	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
@@ -44,7 +43,6 @@ func init() {
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(list.ListProjectCmd)
 	RootCmd.AddCommand(listconfig.Cmd)
-	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(prepush.Cmd)
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)

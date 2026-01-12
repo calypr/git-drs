@@ -274,7 +274,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Pre-load DRS map only for uploads - UpdateDrsObjects moved to pre-push hook
+		// UpdateDrsObjects accomplished in pre-push hook
 
 		// Respond to init
 		resultQueue <- TransferResult{data: struct{}{}, isError: err != nil}
@@ -292,30 +292,17 @@ var Cmd = &cobra.Command{
 			}(i)
 		}
 
-		for scanner.Scan() {
-			currentBytes := make([]byte, len(scanner.Bytes()))
-			copy(currentBytes, scanner.Bytes())
-			logger.Printf("command: %s", string(currentBytes))
+		scanErr := enqueueTransferJobs(scanner, drsClient, transferQueue, logger)
 
-			// Ultra-fast terminate check
-			if strings.Contains(string(currentBytes), `"event":"terminate"`) {
-				logger.Print("Received TERMINATE signal")
-				break
-			}
-
-			// Double-check with Sonic just in case
-			var generic struct {
-				Event string `json:"event"`
-			}
-			if err := sConfig.Unmarshal(currentBytes, &generic); err == nil && generic.Event == "terminate" {
-				logger.Print("Confirmed TERMINATE. Shutting down...")
-				break
-			}
-			transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
-		}
-
-		// Cleanup
-		scanErr := scanner.Err()
+		// Signal workers there are no more jobs, wait for them to finish sending results,
+		// then close the results channel and wait for the writer to finish.
+		//
+		// Order matters:
+		// 1) close(transferQueue) -> unblocks workers (their range loops end) so they can exit.
+		// 2) wg.Wait() -> ensures all workers have completed and will no longer send to resultQueue.
+		// 3) close(resultQueue) -> safe because there are no remaining senders; closing earlier would panic.
+		// 4) <-writerDone -> wait for the writer goroutine to finish writing all responses to stdout,
+		//    preserving ordering and avoiding truncated output.		close(transferQueue)
 		close(transferQueue)
 		wg.Wait()
 		close(resultQueue)

@@ -40,5 +40,10 @@ func enqueueTransferJobs(scanner *bufio.Scanner, drsClient client.DRSClient, tra
 		transferQueue <- TransferJob{data: currentBytes, drsClient: drsClient}
 	}
 
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		logger.Printf("scan error: %v", err)
+		return err
+	}
+	logger.Print("stdin closed (EOF)")
+	return nil
 }

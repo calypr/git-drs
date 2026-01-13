@@ -46,11 +46,9 @@ func GetExpiration(tokenString string) (time.Time, error) {
 // Kindof hackish. There exists logic to do this deeper in gen3-client but it is not exported
 func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 	expiration, err := GetExpiration(cred.AccessToken)
-	if err != nil {
-		return err
-	}
-	// Update AccessToken if token is old
-	if expiration.Before(time.Now()) {
+
+	// Update AccessToken if token is old or there was an error getting the experation
+	if err != nil || expiration.Before(time.Now()) {
 		logger, closer := logs.New(cred.Profile)
 		defer closer()
 		conf := conf.NewConfigure(logger)

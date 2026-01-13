@@ -3,6 +3,7 @@ package initialize
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,7 +124,7 @@ func init() {
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string, logger *drslog.Logger) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *log.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)

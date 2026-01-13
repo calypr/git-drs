@@ -208,7 +208,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				Base:        parseURL(mockServer.URL()),
 				ProjectId:   "test-project", // This will become /programs/test/projects/project
 				BucketName:  "test-bucket",
-				Logger:      drslog.GetLogger(),
+				Logger:      drslog.NewNoOpLogger(),
 				AuthHandler: authHandler,
 				HttpClient:  &http.Client{},
 				SConfig:     sonic.ConfigFastest,

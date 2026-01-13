@@ -4,6 +4,7 @@ package drsmap
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -38,7 +38,7 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *drslog.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
 	// Gather all objects in .drs/lfs/objects store
 	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
@@ -105,7 +105,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *drslog.Logger) er
 	return nil
 }
 
-func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) err
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 

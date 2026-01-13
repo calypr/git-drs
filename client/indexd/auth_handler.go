@@ -60,7 +60,7 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 		defer closer()
 
 		if err != nil {
-			logger.Errorf("failed to get access token expiration, attempting token refresh: %v", err)
+			logger.Printf("failed to get access token expiration, attempting token refresh: %v", err)
 		}
 		conf := conf.NewConfigure(logger)
 		r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)

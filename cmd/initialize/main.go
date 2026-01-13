@@ -129,7 +129,7 @@ func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
 }
 
-func installPrePushHook(logger *drslog.Logger) error {
+func installPrePushHook(logger *log.Logger) error {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmdOut, err := cmd.Output()
 	if err != nil {

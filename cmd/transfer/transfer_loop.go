@@ -2,13 +2,13 @@ package transfer
 
 import (
 	"bufio"
+	"log"
 	"strings"
 
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drslog"
 )
 
-func enqueueTransferJobs(scanner *bufio.Scanner, drsClient client.DRSClient, transferQueue chan<- TransferJob, logger *drslog.Logger) error {
+func enqueueTransferJobs(scanner *bufio.Scanner, drsClient client.DRSClient, transferQueue chan<- TransferJob, logger *log.Logger) error {
 	terminateSeen := false
 	for scanner.Scan() {
 		currentBytes := make([]byte, len(scanner.Bytes()))

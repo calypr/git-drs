@@ -32,7 +32,7 @@ type LfsDryRunSpec struct {
 }
 
 // RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *drslog.Logger) (string, error) {
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *log.Logger) (string, error) {
 	if spec.Remote == "" || spec.Ref == "" {
 		return "", errors.New("missing remote or ref")
 	}
@@ -370,7 +370,7 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) (map[string]LfsFileInfo, error) {
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) (map[string]LfsFileInfo, error) {
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
@@ -442,7 +442,7 @@ func buildLfsRefs(branches []string) []string {
 	return refs
 }
 
-func addLfsFilesFromDryRun(out, repoDir string, logger *drslog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap map[string]LfsFileInfo) error {
 	// Log when dry-run returns no output to help with debugging
 	if strings.TrimSpace(out) == "" {
 		logger.Printf("No LFS files to push (dry-run returned no output)")

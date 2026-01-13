@@ -69,13 +69,16 @@ func GetLogger() *log.Logger {
 }
 
 // Close closes the log file if open.
-func Close() {
+func Close() error {
 	globalLoggerMu.Lock()
 	defer globalLoggerMu.Unlock()
 	if globalLogFile != nil {
-		globalLogFile.Close()
+		err := globalLogFile.Close()
+
 		globalLogFile = nil
+		return err
 	}
+	return nil
 }
 
 // NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).

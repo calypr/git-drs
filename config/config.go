@@ -68,7 +68,7 @@ type Config struct {
 func (c Config) GetRemoteClient(remote Remote, logger *log.Logger) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
-		return nil, fmt.Errorf("no remote configuration found for current remote: %s", remote)
+		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
 	if x.Gen3 != nil {
 		configText, _ := yaml.Marshal(x.Gen3)

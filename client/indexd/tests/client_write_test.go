@@ -214,6 +214,31 @@ func TestIndexdClient_UpdateRecord_AppendsURLs(t *testing.T) {
 	require.Contains(t, urls, newURL)
 }
 
+// TestIndexdClient_RegisterFile_UsesSingleHashQuery verifies RegisterFile reuses
+// the initial hash lookup when checking downloadability.
+func TestIndexdClient_RegisterFile_UsesSingleHashQuery(t *testing.T) {
+	// Arrange
+	mockServer := NewMockIndexdServer(t)
+	defer mockServer.Close()
+
+	mockServer.signedURLBase = mockServer.URL() + "/signed"
+
+	record := newTestRecord("uuid-register-file-test",
+		withTestRecordHash("sha256", testSHA256Hash),
+		withTestRecordURLs("s3://test-bucket/test-file.bam"))
+	addRecordWithHashIndex(mockServer, record, "sha256", testSHA256Hash)
+
+	client := testIndexdClientWithMockAuth(mockServer.URL())
+
+	// Act
+	result, err := client.RegisterFile(testSHA256Hash)
+
+	// Assert
+	require.NoError(t, err, "RegisterFile should not error when file is downloadable")
+	require.NotNil(t, result, "RegisterFile should return the existing DRS object")
+	require.Equal(t, 1, mockServer.HashQueryCount(), "expected a single hash query during RegisterFile")
+}
+
 // TestIndexdClient_UpdateRecord_Idempotent tests URL appending idempotency via client method
 func TestIndexdClient_UpdateRecord_Idempotent(t *testing.T) {
 	mockServer := NewMockIndexdServer(t)

@@ -3,11 +3,15 @@ package drsmap
 // Utilities to map between Git LFS files and DRS objects
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -21,6 +25,40 @@ import (
 
 // NAMESPACE is the UUID namespace used for generating DRS UUIDs
 var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
+
+type LfsDryRunSpec struct {
+	Remote string // e.g. "origin"
+	Ref    string // e.g. "refs/heads/main" or "HEAD"
+}
+
+// RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *drslog.Logger) (string, error) {
+	if spec.Remote == "" || spec.Ref == "" {
+		return "", errors.New("missing remote or ref")
+	}
+
+	// Debug-print the command to stderr
+	fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
+	logger.Printf("running command: %v", fullCmd)
+
+	cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
+	cmd.Dir = repoDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	out := stdout.String()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return out, fmt.Errorf("git lfs push --dry-run failed: %s", msg)
+	}
+	return out, nil
+}
 
 // output of git lfs ls-files
 type LfsLsOutput struct {
@@ -144,12 +182,12 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 
 	// get all lfs files
-	lfsFiles, err := GetAllLfsFiles()
+	lfsFiles, err := GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
 	}
@@ -177,7 +215,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		// create a local DRS object for it
 		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 		drsId := DrsUUID(projectId, file.Oid)
-		logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
+		// logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
 		path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
@@ -198,7 +236,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 		if err != nil {
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
-		logger.Printf("Prepared %s with DRS ID %s for commit", file.Name, drsObj.Id)
+		logger.Printf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id)
 	}
 
 	return nil
@@ -332,27 +370,157 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func GetAllLfsFiles() (map[string]LfsFileInfo, error) {
-	// get all LFS files' info using json
-	cmd := exec.Command("git", "lfs", "ls-files", "--json")
-	out, err := cmd.Output()
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repoDir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("error running git lfs ls-files: %v", err)
+		return nil, err
 	}
 
-	var lfsFiles LfsLsOutput
-	err = sonic.ConfigFastest.Unmarshal(out, &lfsFiles)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling git lfs ls-files output: %v", err)
+	// no timeout for now
+	ctx := context.Background()
+	// If needed, can re-enable timeout
+	// Set a timeout context for git commands, 3 minutes should be enough
+	//ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	//defer cancel()
+
+	if gitRemoteName == "" {
+		gitRemoteName = "origin"
+	}
+	if gitRemoteLocation != "" {
+		logger.Printf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation)
+	} else {
+		logger.Printf("Using git remote %s for LFS dry-run", gitRemoteName)
 	}
 
-	// create a map of LFS file info
+	refs := buildLfsRefs(branches)
 	lfsFileMap := make(map[string]LfsFileInfo)
-	for _, file := range lfsFiles.Files {
-		lfsFileMap[file.Name] = file
+	for _, ref := range refs {
+		spec := LfsDryRunSpec{
+			Remote: gitRemoteName,
+			Ref:    ref,
+		}
+		out, err := RunLfsPushDryRun(ctx, repoDir, spec, logger)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil {
+			return nil, err
+		}
 	}
 
 	return lfsFileMap, nil
+}
+
+func buildLfsRefs(branches []string) []string {
+	if len(branches) == 0 {
+		return []string{"HEAD"}
+	}
+	refs := make([]string, 0, len(branches))
+	seen := make(map[string]struct{})
+	for _, branch := range branches {
+		branch = strings.TrimSpace(branch)
+		if branch == "" {
+			continue
+		}
+		ref := branch
+		if branch != "HEAD" && !strings.HasPrefix(branch, "refs/") {
+			ref = fmt.Sprintf("refs/heads/%s", branch)
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return []string{"HEAD"}
+	}
+	return refs
+}
+
+func addLfsFilesFromDryRun(out, repoDir string, logger *drslog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+	// Log when dry-run returns no output to help with debugging
+	if strings.TrimSpace(out) == "" {
+		logger.Printf("No LFS files to push (dry-run returned no output)")
+		return nil
+	}
+
+	// accept lowercase or uppercase hex
+	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
+
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		oid := parts[1]
+		path := parts[len(parts)-1]
+
+		// Validate OID looks like a SHA256 hex string.
+		if !sha256Re.MatchString(oid) {
+			logger.Printf("skipping LFS line with invalid oid %q: %q", oid, line)
+			continue
+		}
+
+		// see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
+		if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" && strings.Contains(path, ".gitattributes") {
+			logger.Printf("skipping empty LFS pointer for %s", path)
+			continue
+		}
+		// Remove a trailing parenthetical suffix from p, e.g.:
+		// "path/to/file.dat (100 KB)" -> "path/to/file.dat"
+		if idx := strings.LastIndex(path, " ("); idx != -1 && strings.HasSuffix(path, ")") {
+			path = strings.TrimSpace(path[:idx])
+		}
+		size := int64(0)
+		absPath := path
+		if repoDir != "" && !filepath.IsAbs(path) {
+			absPath = filepath.Join(repoDir, path)
+		}
+		if stat, err := os.Stat(absPath); err == nil {
+			size = stat.Size()
+		} else {
+			logger.Printf("could not stat file %s: %v", path, err)
+			if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil {
+				logger.Printf("error writing to stderr for %s: %v", path, fmtErr)
+			}
+			continue
+		}
+
+		// If the file is small, read it and detect LFS pointer signature.
+		// Pointer files are textual and include the LFS spec version + an oid line.
+		if size > 0 && size < 2048 {
+			if data, readErr := os.ReadFile(absPath); readErr == nil {
+				s := strings.TrimSpace(string(data))
+				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
+					logger.Printf("WARNING: Detected upload of lfs pointer file %s skipping", path)
+					if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil {
+						logger.Printf("error writing to stderr for %s: %v", path, fprintfErr)
+					}
+					continue
+				}
+			}
+		}
+
+		lfsFileMap[path] = LfsFileInfo{
+			Name:    path,
+			Size:    size,
+			OidType: "sha256",
+			Oid:     oid,
+			Version: "https://git-lfs.github.com/spec/v1",
+		}
+		//logger.Printf("GetAllLfsFiles added LFS file %s", path)
+	}
+
+	return nil
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI
@@ -395,9 +563,14 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Get the first record with matching authz if exists
+
 	for _, record := range records {
 		for _, access := range record.AccessMethods {
-			if access.Authorizations.Value == expectedAuthz {
+			// assert access has Authorizations
+			if access.Authorizations == nil {
+				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
+			}
+			if access.Authorizations != nil && access.Authorizations.Value == expectedAuthz {
 				return &record, nil
 			}
 		}

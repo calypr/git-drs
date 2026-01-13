@@ -35,17 +35,20 @@ type MockIndexdRecord struct {
 
 // MockIndexdServer simulates an Indexd server with in-memory storage
 type MockIndexdServer struct {
-	httpServer  *httptest.Server
-	records     map[string]*MockIndexdRecord
-	hashIndex   map[string][]string // hash -> [DIDs]
-	recordMutex sync.RWMutex
+	httpServer     *httptest.Server
+	records        map[string]*MockIndexdRecord
+	hashIndex      map[string][]string // hash -> [DIDs]
+	signedURLBase  string
+	hashQueryCount int
+	recordMutex    sync.RWMutex
 }
 
 // NewMockIndexdServer creates and starts a mock Indexd server
 func NewMockIndexdServer(t *testing.T) *MockIndexdServer {
 	mis := &MockIndexdServer{
-		records:   make(map[string]*MockIndexdRecord),
-		hashIndex: make(map[string][]string),
+		records:       make(map[string]*MockIndexdRecord),
+		hashIndex:     make(map[string][]string),
+		signedURLBase: "https://signed-url.example.com",
 	}
 
 	mux := http.NewServeMux()
@@ -111,6 +114,10 @@ func NewMockIndexdServer(t *testing.T) *MockIndexdServer {
 		} else {
 			http.Error(w, "Invalid path", http.StatusBadRequest)
 		}
+	})
+
+	mux.HandleFunc("/signed/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// /index/ matches /index/{guid} (trailing slash pattern)
@@ -228,8 +235,9 @@ func (mis *MockIndexdServer) handleGetSignedURL(w http.ResponseWriter, r *http.R
 	}
 
 	// Create a mock signed URL
+	base := strings.TrimSuffix(mis.signedURLBase, "/")
 	signedURL := drs.AccessURL{
-		URL:     fmt.Sprintf("https://signed-url.example.com/%s/%s", objectId, accessId),
+		URL:     fmt.Sprintf("%s/%s/%s", base, objectId, accessId),
 		Headers: []string{},
 	}
 
@@ -328,6 +336,10 @@ func (mis *MockIndexdServer) handleUpdateRecord(w http.ResponseWriter, r *http.R
 func (mis *MockIndexdServer) handleQueryByHash(w http.ResponseWriter, r *http.Request) {
 	hashQuery := r.URL.Query().Get("hash") // format: "sha256:aaaa..."
 
+	mis.recordMutex.Lock()
+	mis.hashQueryCount++
+	mis.recordMutex.Unlock()
+
 	mis.recordMutex.RLock()
 	dids, exists := mis.hashIndex[hashQuery]
 	mis.recordMutex.RUnlock()
@@ -413,6 +425,13 @@ func (mis *MockIndexdServer) GetRecord(did string) *MockIndexdRecord {
 	mis.recordMutex.RLock()
 	defer mis.recordMutex.RUnlock()
 	return mis.records[did]
+}
+
+// HashQueryCount returns the number of hash query requests observed by the mock server.
+func (mis *MockIndexdServer) HashQueryCount() int {
+	mis.recordMutex.RLock()
+	defer mis.recordMutex.RUnlock()
+	return mis.hashQueryCount
 }
 
 // MockGen3Server simulates Gen3 /user/data/buckets endpoint

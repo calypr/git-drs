@@ -1,6 +1,7 @@
 package drslog
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -40,7 +41,9 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 	multiWriter := io.MultiWriter(writers...)
 
 	// Create the core logger with Lshortfile for better debugging
-	core := log.New(multiWriter, "", log.LstdFlags|log.Lshortfile)
+	// Prefix log entries with PID for easier tracing in multi-process scenarios
+	prefix := fmt.Sprintf("[%d] ", os.Getpid())
+	core := log.New(multiWriter, prefix, log.LstdFlags|log.Lshortfile)
 
 	globalLogger = core
 

@@ -6,12 +6,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/calypr/git-drs/projectdir"
 )
 
 var globalLogger *log.Logger
 var globalLogFile io.Closer
+var globalLoggerOnce sync.Once
+var globalLoggerMu sync.RWMutex
 
 // NewLogger creates a new Logger that writes to the specified file and optionally stderr.
 // It is safe to call this multiple times; only the first successful call sets the global logger.
@@ -31,7 +34,6 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 	if err != nil {
 		return nil, err
 	}
-	globalLogFile = file
 	writers = append(writers, file)
 
 	if logToStderr {
@@ -45,17 +47,31 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 	prefix := fmt.Sprintf("[%d] ", os.Getpid())
 	core := log.New(multiWriter, prefix, log.LstdFlags|log.Lshortfile)
 
+	globalLoggerMu.Lock()
+	globalLogFile = file
 	globalLogger = core
+	globalLoggerMu.Unlock()
 
 	return globalLogger, nil
 }
 
 func GetLogger() *log.Logger {
+	globalLoggerOnce.Do(func() {
+		globalLoggerMu.Lock()
+		if globalLogger == nil {
+			globalLogger = NewNoOpLogger()
+		}
+		globalLoggerMu.Unlock()
+	})
+	globalLoggerMu.RLock()
+	defer globalLoggerMu.RUnlock()
 	return globalLogger
 }
 
 // Close closes the log file if open.
 func Close() {
+	globalLoggerMu.Lock()
+	defer globalLoggerMu.Unlock()
 	if globalLogFile != nil {
 		globalLogFile.Close()
 		globalLogFile = nil

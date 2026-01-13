@@ -563,11 +563,12 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Get the first record with matching authz if exists
+
 	for _, record := range records {
 		for _, access := range record.AccessMethods {
 			// assert access has Authorizations
 			if access.Authorizations == nil {
-				return nil, fmt.Errorf("access method for record %s missing authorizations", record.Id)
+				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
 			}
 			if access.Authorizations != nil && access.Authorizations.Value == expectedAuthz {
 				return &record, nil

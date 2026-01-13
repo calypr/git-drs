@@ -369,9 +369,9 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		err = utils.CanDownloadFile(signedUrl.URL)
 		if err != nil {
 			isDownloadable = false
-			cl.Logger.Printf("file with oid %s is not yet downloadable: %s", oid, err)
+			cl.Logger.Printf("file with oid %s does not exist in bucket: %s", oid, err)
 		} else {
-			cl.Logger.Printf("file with oid %s is downloadable", oid)
+			cl.Logger.Printf("file with oid %s exists in bucket", oid)
 		}
 	}
 
@@ -617,12 +617,11 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	}
 	cl.Logger.Printf("POST successful: %s", response.Status)
 
-	// query and return DRS object
-	drsObj, err := cl.GetObject(indexdObjForm.Did)
+	// removed re-query return DRS object (was missing access method authorization anyway)
+	drsObj, err := indexdRecordToDrsObject(indexdObj)
 	if err != nil {
-		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
+		return nil, fmt.Errorf("error converting indexd record to DRS object: %w %v", err, indexdObj)
 	}
-	cl.Logger.Printf("GET for DRS ID successful: %s", drsObj.Id)
 	return drsObj, nil
 }
 
@@ -709,13 +708,29 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	if len(records.Records) == 0 {
 		return out, nil
 	}
-	for i := range records.Records {
-		drsObj, err := indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+
+	resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
+
+	for _, record := range records.Records {
+		// skip records that do not authorize this client/project
+		found := false
+		for _, a := range record.Authz {
+			if a == resourcePath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		drsObj, err := indexdRecordToDrsObject(record.ToIndexdRecord())
 		if err != nil {
 			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
 		}
-		out[i] = *drsObj
+		out = append(out, *drsObj)
 	}
+
 	return out, nil
 }
 

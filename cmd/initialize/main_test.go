@@ -43,8 +43,8 @@ func TestInstallPrePushHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hook: %v", err)
 	}
-	if !strings.Contains(string(content), "git drs prepush") {
-		t.Fatalf("expected hook to contain git drs prepush")
+	if !strings.Contains(string(content), "git drs pre-push") {
+		t.Fatalf("expected hook to contain git drs pre-push")
 	}
 
 	if err := installPrePushHook(logger); err != nil {

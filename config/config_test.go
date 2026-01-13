@@ -108,7 +108,12 @@ func TestCreateEmptyConfigAndSave(t *testing.T) {
 }
 
 func TestGetRemoteOrDefault(t *testing.T) {
-	cfg := Config{DefaultRemote: Remote("origin")}
+	cfg := Config{
+		DefaultRemote: Remote("origin"),
+		Remotes: map[Remote]RemoteSelect{
+			Remote("origin"): RemoteSelect{},
+		},
+	}
 	if remote, err := cfg.GetRemoteOrDefault(""); err != nil || remote != Remote("origin") {
 		t.Fatalf("expected default remote, got %s (%v)", remote, err)
 	}

@@ -47,10 +47,21 @@ func GetExpiration(tokenString string) (time.Time, error) {
 func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 	expiration, err := GetExpiration(cred.AccessToken)
 
-	// Update AccessToken if token is old or there was an error getting the experation
-	if err != nil || expiration.Before(time.Now()) {
+	// Update AccessToken if token is old or there was an error getting the expiration
+	needRefresh := false
+	if err != nil {
+		needRefresh = true
+	} else if expiration.Before(time.Now()) {
+		needRefresh = true
+	}
+
+	if needRefresh {
 		logger, closer := logs.New(cred.Profile)
 		defer closer()
+
+		if err != nil {
+			logger.Errorf("failed to get access token expiration, attempting token refresh: %v", err)
+		}
 		conf := conf.NewConfigure(logger)
 		r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)
 		f, ok := r.(*api.Functions)

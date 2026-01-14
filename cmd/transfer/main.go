@@ -144,7 +144,7 @@ var Cmd = &cobra.Command{
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
+					errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
 					continue
@@ -175,11 +175,7 @@ var Cmd = &cobra.Command{
 				// send success message back
 				logger.Printf("Download for OID %s complete", downloadMsg.Oid)
 
-				streamEncoder.Encode(lfs.CompleteMessage{
-					Event: "complete",
-					Oid:   downloadMsg.Oid,
-					Path:  dstPath,
-				})
+				lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event

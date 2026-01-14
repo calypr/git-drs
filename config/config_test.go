@@ -111,7 +111,7 @@ func TestGetRemoteOrDefault(t *testing.T) {
 	cfg := Config{
 		DefaultRemote: Remote("origin"),
 		Remotes: map[Remote]RemoteSelect{
-			Remote("origin"): RemoteSelect{},
+			Remote("origin"): {},
 		},
 	}
 	if remote, err := cfg.GetRemoteOrDefault(""); err != nil || remote != Remote("origin") {

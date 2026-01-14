@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,7 +20,6 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
@@ -34,7 +34,7 @@ type IndexDClient struct {
 	Base        *url.URL
 	ProjectId   string
 	BucketName  string
-	Logger      *drslog.Logger
+	Logger      *log.Logger
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
 
 	HttpClient *retryablehttp.Client
@@ -46,7 +46,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -834,7 +834,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			page := &drs.DRSPage{}
 			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
+				cl.Logger.Printf("error: %s (%s)", err, body)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}

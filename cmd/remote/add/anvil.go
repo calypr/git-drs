@@ -2,10 +2,10 @@ package add
 
 import (
 	"fmt"
+	"log"
 
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ var AnvilCmd = &cobra.Command{
 	},
 }
 
-func anvilInit(terraProject string, logger *drslog.Logger) error {
+func anvilInit(terraProject string, logger *log.Logger) error {
 	// make sure terra project is provided
 	if terraProject != "" {
 		// populate anvil config

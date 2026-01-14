@@ -48,6 +48,7 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 				page := ListRecords{Records: []OutputInfo{record}}
 				w.WriteHeader(http.StatusOK)
 				_ = encoder.NewStreamEncoder(w).Encode(page)
+				fmt.Fprintf(os.Stderr, "/index/index returned %s %s %+v\n", r.Method, r.URL.Path, page)
 				return
 			}
 			if r.URL.Query().Get("authz") != "" {
@@ -128,7 +129,7 @@ func ioReadAll(r *http.Request) ([]byte, error) {
 }
 
 func sampleOutputInfo() OutputInfo {
-	return OutputInfo{
+	record := OutputInfo{
 		Did:      "did-1",
 		FileName: "file.txt",
 		URLs:     []string{"s3://bucket/key"},
@@ -136,6 +137,10 @@ func sampleOutputInfo() OutputInfo {
 		Hashes:   hash.HashInfo{SHA256: "sha-256"},
 		Size:     123,
 	}
+	if record.Did != "" {
+		fmt.Fprintf(os.Stderr, "Did set record Did %s\n", record.Did)
+	}
+	return record
 }
 
 func sampleDrsObject() drs.DRSObject {
@@ -184,6 +189,7 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectByHash error: %v", err)
 	}
+	fmt.Fprintf(os.Stderr, "GetObjectByHash records: %+v\n", records)
 	if len(records) != 1 || records[0].Id != "did-1" {
 		t.Fatalf("unexpected records: %+v", records)
 	}

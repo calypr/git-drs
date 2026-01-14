@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -32,7 +32,7 @@ type LfsDryRunSpec struct {
 }
 
 // RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *drslog.Logger) (string, error) {
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *log.Logger) (string, error) {
 	if spec.Remote == "" || spec.Ref == "" {
 		return "", errors.New("missing remote or ref")
 	}
@@ -76,7 +76,7 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *drslog.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
 	// Gather all objects in .drs/lfs/objects store
 	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
@@ -143,7 +143,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *drslog.Logger) er
 	return nil
 }
 
-func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) error {
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
 	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
 	if err != nil {
 		return err
@@ -182,7 +182,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *drslog.Logger) err
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) error {
 
 	logger.Print("Update to DRS objects started")
 
@@ -370,7 +370,7 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *drslog.Logger) (map[string]LfsFileInfo, error) {
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) (map[string]LfsFileInfo, error) {
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
@@ -442,7 +442,7 @@ func buildLfsRefs(branches []string) []string {
 	return refs
 }
 
-func addLfsFilesFromDryRun(out, repoDir string, logger *drslog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap map[string]LfsFileInfo) error {
 	// Log when dry-run returns no output to help with debugging
 	if strings.TrimSpace(out) == "" {
 		logger.Printf("No LFS files to push (dry-run returned no output)")

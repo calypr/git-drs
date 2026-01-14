@@ -3,6 +3,7 @@ package initialize
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,7 +129,7 @@ func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
 }
 
-func installPrePushHook(logger *drslog.Logger) error {
+func installPrePushHook(logger *log.Logger) error {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmdOut, err := cmd.Output()
 	if err != nil {
@@ -188,7 +189,7 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 
 // ensureDrsObjectsIgnore ensures that ".drs/objects" is ignored in .gitignore.
 // It creates the file if it doesn't exist, and adds the line if not present.
-func ensureDrsObjectsIgnore(ignorePattern string, logger *drslog.Logger) error {
+func ensureDrsObjectsIgnore(ignorePattern string, logger *log.Logger) error {
 	const (
 		gitignorePath = ".gitignore"
 	)

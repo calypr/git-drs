@@ -57,14 +57,10 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 
 func GetLogger() *log.Logger {
 	globalLoggerOnce.Do(func() {
-		globalLoggerMu.Lock()
 		if globalLogger == nil {
 			globalLogger = NewNoOpLogger()
 		}
-		globalLoggerMu.Unlock()
 	})
-	globalLoggerMu.RLock()
-	defer globalLoggerMu.RUnlock()
 	return globalLogger
 }
 

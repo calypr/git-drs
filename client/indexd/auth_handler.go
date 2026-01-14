@@ -68,7 +68,7 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error {
 		if !ok {
 			return fmt.Errorf("Function interface is not of type api.Functions")
 		}
-		err := f.NewAccessToken(ctx)
+		err = f.NewAccessToken(ctx)
 		if err != nil {
 			return err
 		}

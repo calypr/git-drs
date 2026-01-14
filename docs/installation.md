@@ -89,7 +89,7 @@ git lfs install --skip-smudge
 
 3. **Install Git DRS**
    ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)"
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    
    # Update PATH
    echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bash_profile
@@ -114,7 +114,7 @@ git lfs install --skip-smudge
 3. **Install Dependencies**
    ```bash
    # Install Git DRS
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)"
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    
    # Install DRS Downloader
    wget https://github.com/anvilproject/drs_downloader/releases/download/0.1.6-rc.4/drs_downloader
@@ -154,7 +154,7 @@ git lfs install --skip-smudge
 
 1. **Install Git DRS** (same as Gen3 local installation)
    ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/fix/install-error-macos/install.sh)"
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    ```
 
 2. **Get Terra Project ID**

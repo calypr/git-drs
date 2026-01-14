@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/client/conf"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
@@ -222,10 +222,10 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// create a drs logger and pass it to GetAllLfsFiles
-	logger := &drslog.Logger{}
+	logger := &log.Logger{}
 
 	// verify LFS files are listed
-	lfsFiles, err := drsmap.GetAllLfsFiles(logger)
+	lfsFiles, err := drsmap.GetAllLfsFiles(remote, remoteURL, []string{"main"}, logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// verify LFS files are listed
-	lfsFiles, err = drsmap.GetAllLfsFiles(logger)
+	lfsFiles, err = drsmap.GetAllLfsFiles(remote, remoteURL, []string{"main"}, logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}

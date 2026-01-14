@@ -2,7 +2,6 @@ package indexd_tests
 
 import (
 	"fmt"
-	"net/http"
 	"testing"
 
 	"github.com/bytedance/sonic"
@@ -11,6 +10,7 @@ import (
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/s3_utils"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -210,7 +210,7 @@ func TestIndexdClient_GetDownloadURL(t *testing.T) {
 				BucketName:  "test-bucket",
 				Logger:      drslog.NewNoOpLogger(),
 				AuthHandler: authHandler,
-				HttpClient:  &http.Client{},
+				HttpClient:  &retryablehttp.Client{},
 				SConfig:     sonic.ConfigFastest,
 			}
 

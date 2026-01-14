@@ -9,6 +9,7 @@ import (
 	"github.com/calypr/data-client/client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 //////////////////////////
@@ -57,7 +58,7 @@ func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
 		BucketName:  "test-bucket",
 		Logger:      drslog.NewNoOpLogger(),
 		AuthHandler: &indexd_client.RealAuthHandler{Cred: conf.Credential{Profile: "test-remote"}},
-		HttpClient:  &http.Client{},
+		HttpClient:  &retryablehttp.Client{},
 		SConfig:     sonic.ConfigFastest,
 	}
 }
@@ -72,7 +73,7 @@ func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
 		BucketName:  "test-bucket",
 		Logger:      drslog.NewNoOpLogger(),
 		AuthHandler: &MockAuthHandler{},
-		HttpClient:  &http.Client{},
+		HttpClient:  &retryablehttp.Client{},
 		SConfig:     sonic.ConfigFastest,
 	}
 }

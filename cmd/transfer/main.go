@@ -302,7 +302,7 @@ var Cmd = &cobra.Command{
 		// 2) wg.Wait() -> ensures all workers have completed and will no longer send to resultQueue.
 		// 3) close(resultQueue) -> safe because there are no remaining senders; closing earlier would panic.
 		// 4) <-writerDone -> wait for the writer goroutine to finish writing all responses to stdout,
-		//    preserving ordering and avoiding truncated output.		close(transferQueue)
+		//    preserving ordering and avoiding truncated output.
 		close(transferQueue)
 		wg.Wait()
 		close(resultQueue)

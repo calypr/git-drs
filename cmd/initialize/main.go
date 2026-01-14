@@ -170,7 +170,7 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 			return fmt.Errorf("unable to back up existing pre-push hook: %w", err)
 		}
 		if err := os.Remove(hookPath); err != nil {
-			return fmt.Errorf("unable remove hook after backing up: %w", err)
+			return fmt.Errorf("unable to remove hook after backing up: %w", err)
 		}
 		logger.Printf("pre-push hook updated; backup written to %s", backupPath)
 	}
@@ -180,8 +180,8 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 	}
 
 	err = os.WriteFile(hookPath, []byte(hookScript), 0755)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("unable to read pre-push hook: %w", err)
+	if err != nil {
+		return fmt.Errorf("unable to write pre-push hook: %w", err)
 	}
 	logger.Print("pre-push hook installed")
 	return nil

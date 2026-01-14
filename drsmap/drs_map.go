@@ -570,7 +570,7 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 			if access.Authorizations == nil {
 				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
 			}
-			if access.Authorizations != nil && access.Authorizations.Value == expectedAuthz {
+			if access.Authorizations.Value == expectedAuthz {
 				return &record, nil
 			}
 		}

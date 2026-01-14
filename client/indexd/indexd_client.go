@@ -75,8 +75,8 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 	retryClient.Logger = logger
 	// TODO - make these configurable?
 	retryClient.RetryMax = 5
-	retryClient.RetryWaitMin = 3 * time.Second
-	retryClient.RetryWaitMin = 15 * time.Second
+	retryClient.RetryWaitMin = 5 * time.Second
+	retryClient.RetryWaitMax = 15 * time.Second
 
 	return &IndexDClient{
 		Base:        baseUrl,

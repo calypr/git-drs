@@ -4,6 +4,31 @@ Common issues and solutions when working with Git DRS.
 
 > **Navigation:** [Getting Started](getting-started.md) → [Commands Reference](commands.md) → **Troubleshooting**
 
+## Frequently Asked Questions
+
+### Do I need to run `git drs init` each time?
+
+**No.** `git drs init` is set up once per Git repo.
+
+**Run it once when:**
+
+- You first clone a repository
+- You create a new repository locally
+
+**Don't run it again:**
+
+- At the start of each work session
+- After refreshing credentials
+- After pulling updates
+
+**What it does:**
+
+- Sets up `.drs/` directory structure
+- Configures Git LFS hooks
+- Updates `.gitignore`
+
+These changes persist in your local repository. For subsequent sessions, you only need to refresh credentials if they've expired (every 30 days).
+
 ## When to Use Which Tool
 
 Understanding when to use Git, Git LFS, or Git DRS commands:

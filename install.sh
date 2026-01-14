@@ -35,7 +35,7 @@ fi
 VERSION_NUMBER="${VERSION_TAG#v}"
 
 # Determine OS and Architecture
-OS=$(uname -s | tr '[: upper:]' '[:lower:]')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
 if [ "$ARCH" == "x86_64" ]; then

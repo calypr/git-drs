@@ -134,9 +134,9 @@ var Cmd = &cobra.Command{
 				// get download message
 				var downloadMsg lfs.DownloadMessage
 				if err := sConfig.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
-					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
+					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v", err)
 					logger.Print(errMsg)
-					lfs.WriteInitErrorMessage(streamEncoder, 400, errMsg)
+					lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
 					continue
 				}
 				logger.Printf("Downloading file OID %s", downloadMsg.Oid)
@@ -147,11 +147,13 @@ var Cmd = &cobra.Command{
 					errMsg := fmt.Sprintf("Error getting signed url for OID %s: %v", downloadMsg.Oid, err)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+					continue
 				}
 				if accessUrl.URL == "" {
-					errMsg := fmt.Sprintf("Unable to get access URL %s", downloadMsg.Oid)
+					errMsg := fmt.Sprintf("Unable to get access URL for OID %s", downloadMsg.Oid)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
+					continue
 				}
 
 				// download signed url
@@ -167,6 +169,7 @@ var Cmd = &cobra.Command{
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+					continue
 				}
 
 				// send success message back
@@ -185,16 +188,18 @@ var Cmd = &cobra.Command{
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
 				if err := sConfig.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
-					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
+					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v", err)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
+					continue
 				}
 				logger.Printf("Uploading file OID %s", uploadMsg.Oid)
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
-					errMsg := fmt.Sprintln("Error registering file: " + err.Error())
+					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
 					logger.Print(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
+					continue
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)

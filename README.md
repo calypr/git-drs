@@ -32,8 +32,7 @@ Git DRS extends Git LFS by:
 brew install git-lfs  # macOS
 git lfs install --skip-smudge
 
-# Install Git DRS (replace with desired version)
-export GIT_DRS_VERSION=0.2.2
+# Install Git DRS
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $GIT_DRS_VERSION
 ```
 

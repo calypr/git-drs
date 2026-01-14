@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -36,7 +37,7 @@ func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, ht
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *drslog.Logger) (int64, string, error) {
+func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *log.Logger) (int64, string, error) {
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -184,7 +185,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 
 // fetchS3Metadata fetches S3 metadata (size, modified date) for a given S3 URL.
 // This is the production version that fetches bucket details from Gen3.
-func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger *drslog.Logger) (int64, string, error) {
+func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger *log.Logger) (int64, string, error) {
 
 	// Fetch AWS bucket region and endpoint from /data/buckets (fence in gen3)
 	bucket, _, err := utils.ParseS3URL(s3URL)
@@ -207,7 +208,7 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 // // upserts index record, so that if...
 // // 1. the record exists for the project, it updates the URL
 // // 2. the record for the project does not exist, it creates a new one
-func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *drslog.Logger) (*drs.DRSObject, error) {
+func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize int64, logger *log.Logger) (*drs.DRSObject, error) {
 	projectId := inc.GetProjectId()
 	uuid := drsmap.DrsUUID(projectId, sha256)
 

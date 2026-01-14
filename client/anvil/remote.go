@@ -2,9 +2,9 @@ package anvil_client
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drslog"
 )
 
 // AnvilAuth holds authentication info for Anvil
@@ -30,7 +30,7 @@ func (s AnvilRemote) GetBucketName() string {
 	return ""
 }
 
-func (s AnvilRemote) GetClient(params map[string]string, logger *drslog.Logger) (client.DRSClient, error) {
+func (s AnvilRemote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
 	return nil, fmt.Errorf(("AnVIL Client needs to be implemented"))
 	// return NewAnvilClient(s, logger)
 }

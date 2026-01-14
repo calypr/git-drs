@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -220,8 +221,11 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 		t.Fatalf("Failed to git commit in %s: %v", repoDir, err)
 	}
 
+	// create a drs logger and pass it to GetAllLfsFiles
+	logger := &log.Logger{}
+
 	// verify LFS files are listed
-	lfsFiles, err := drsmap.GetAllLfsFiles()
+	lfsFiles, err := drsmap.GetAllLfsFiles(remote, remoteURL, []string{"main"}, logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}
@@ -332,7 +336,7 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 
 	// verify LFS files are listed
-	lfsFiles, err = drsmap.GetAllLfsFiles()
+	lfsFiles, err = drsmap.GetAllLfsFiles(remote, remoteURL, []string{"main"}, logger)
 	if err != nil {
 		t.Fatalf("Failed to get LFS files: %v", err)
 	}

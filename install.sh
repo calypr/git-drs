@@ -30,8 +30,12 @@ else
     echo "Fetching release for version $VERSION_TAG"
 fi
 
+# Normalize version tag by removing 'v' prefix if present
+# This ensures consistency for file naming
+VERSION_NUMBER="${VERSION_TAG#v}"
+
 # Determine OS and Architecture
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+OS=$(uname -s | tr '[: upper:]' '[:lower:]')
 ARCH=$(uname -m)
 
 if [ "$ARCH" == "x86_64" ]; then
@@ -45,7 +49,7 @@ fi
 
 # Define the tar file based on OS and Architecture
 TAR_FILE="git-drs-${OS}-${ARCH}*.tar.gz"
-CHECKSUM_FILE="git-drs_${VERSION_TAG}_checksums.txt"
+CHECKSUM_FILE="git-drs_${VERSION_NUMBER}_checksums.txt"
 
 # Fetch the release assets URLs
 ASSETS=$(curl -s $RELEASE_URL | grep "browser_download_url" | cut -d '"' -f 4)

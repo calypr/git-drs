@@ -15,6 +15,10 @@ Git DRS integrates with Git through several mechanisms:
 - Only processes files that don't already exist on the DRS server
 - Prepares metadata for later upload during push
 
+**Pre-push Hook**: `git drs prepush`
+- Triggered automatically before each push
+- Updates DRS records for new or changed LFS files
+
 **Custom Transfer Protocol**
 - Git LFS uses custom transfers to communicate with Git DRS
 - Handles both upload (push) and download (pull) operations
@@ -30,8 +34,10 @@ Git DRS integrates with Git through several mechanisms:
    - Creates DRS object metadata
    - Stores in .drs/ directory
 4. Developer: git push
-5. Git LFS: Initiates custom transfer
-6. Git DRS: 
+5. Git Hook: git drs prepush
+   - Updates DRS object metadata
+6. Git LFS: Initiates custom transfer
+7. Git DRS: 
    - Registers file with DRS server (indexd record)
    - Uploads file to configured bucket
    - Updates transfer logs

@@ -1,9 +1,10 @@
 package indexd_client
 
 import (
+	"log"
+
 	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drslog"
 )
 
 // Gen3Server holds Gen3 server config
@@ -25,7 +26,7 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetClient(params map[string]string, logger *drslog.Logger) (client.DRSClient, error) {
+func (s Gen3Remote) GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error) {
 	cred, err := conf.NewConfigure(logger).Load(params["remote_name"])
 	if err != nil {
 		return nil, err

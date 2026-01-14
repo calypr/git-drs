@@ -2,6 +2,7 @@ package add
 
 import (
 	"fmt"
+	"log"
 
 	"github.com/calypr/data-client/client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
@@ -46,7 +47,7 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *drslog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}

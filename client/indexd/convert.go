@@ -27,6 +27,11 @@ func indexdRecordToDrsObject(indexdObj *IndexdRecord) (*drs.DRSObject, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, am := range accessMethods {
+		if am.Authorizations == nil || am.Authorizations.Value == "" {
+			return nil, fmt.Errorf("access method missing authorization %v, %v", indexdObj, indexdObj.Authz)
+		}
+	}
 
 	return &drs.DRSObject{
 		Id:   indexdObj.Did,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,12 +20,12 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-retryablehttp"
 
 	dataClient "github.com/calypr/data-client/client/client"
 )
@@ -33,10 +34,10 @@ type IndexDClient struct {
 	Base        *url.URL
 	ProjectId   string
 	BucketName  string
-	Logger      *drslog.Logger
+	Logger      *log.Logger
 	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
 
-	HttpClient *http.Client
+	HttpClient *retryablehttp.Client
 	SConfig    sonic.API
 }
 
@@ -45,7 +46,7 @@ type IndexDClient struct {
 ////////////////////
 
 // load repo-level config and return a new IndexDClient
-func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *drslog.Logger) (client.DRSClient, error) {
+func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *log.Logger) (client.DRSClient, error) {
 
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	// get the gen3Project and gen3Bucket from the config
@@ -68,6 +69,14 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *d
 		Timeout:   30 * time.Second,
 		Transport: transport,
 	}
+	retryClient := retryablehttp.NewClient()
+	retryClient.HTTPClient = httpClient
+
+	retryClient.Logger = logger
+	// TODO - make these configurable?
+	retryClient.RetryMax = 5
+	retryClient.RetryWaitMin = 5 * time.Second
+	retryClient.RetryWaitMax = 15 * time.Second
 
 	return &IndexDClient{
 		Base:        baseUrl,
@@ -75,7 +84,7 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *d
 		BucketName:  bucketName,
 		Logger:      logger,
 		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
-		HttpClient:  httpClient,
+		HttpClient:  retryClient,
 		SConfig:     sonic.ConfigFastest,
 	}, err
 }
@@ -144,12 +153,12 @@ func (cl *IndexDClient) deleteIndexdRecord(did string) error {
 
 	// delete indexd record using did and rev
 	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
-	delReq, err := http.NewRequest("DELETE", url, nil)
+	delReq, err := retryablehttp.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(delReq)
+	err = cl.AuthHandler.AddAuthHeader(delReq.Request)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
@@ -195,6 +204,10 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 		cl.Logger.Printf("error getting DRS object for OID %s: %s", oid, err)
 		return nil, fmt.Errorf("error getting DRS object for OID %s: %v", oid, err)
 	}
+	return cl.getDownloadURLFromRecords(oid, records)
+}
+
+func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
 	if len(records) == 0 {
 		cl.Logger.Printf("no DRS object found for OID %s", oid)
 		return nil, fmt.Errorf("no DRS object found for OID %s", oid)
@@ -232,12 +245,12 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
 
-	req, err := http.NewRequest("GET", a.String(), nil)
+	req, err := retryablehttp.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -255,7 +268,7 @@ func (cl *IndexDClient) GetDownloadURL(oid string) (*drs.AccessURL, error) {
 
 	// check if empty
 	if accessUrl.URL == "" {
-		return nil, fmt.Errorf("Signed url is empty %#v", accessUrl)
+		return nil, fmt.Errorf("signed url is empty %#v %s", accessUrl, response.Status)
 	}
 
 	cl.Logger.Printf("signed url retrieved: %s", response.Status)
@@ -328,19 +341,37 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}()
 	}
 
+	recordsForDownload := records
+	if drsObject != nil {
+		found := false
+		for _, record := range recordsForDownload {
+			if record.Id == drsObject.Id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			recordsForDownload = append(recordsForDownload, *drsObject)
+		}
+	}
+
 	// determine if file is downloadable
 	isDownloadable := true
 	cl.Logger.Printf("checking if %s file is downloadable", oid)
-	signedUrl, err := cl.GetDownloadURL(oid)
-	if err != nil || signedUrl == nil {
+	signedUrl, err := cl.getDownloadURLFromRecords(oid, recordsForDownload)
+	if err != nil {
+		cl.Logger.Printf("error getting signed URL for file with oid %s: %s", oid, err)
+		return nil, fmt.Errorf("error getting signed URL for file with oid %s: %s", oid, err)
+	}
+	if signedUrl == nil {
 		isDownloadable = false
 	} else { // signedUrl exists
 		err = utils.CanDownloadFile(signedUrl.URL)
 		if err != nil {
 			isDownloadable = false
-			cl.Logger.Printf("file with oid %s is not yet downloadable: %s", oid, err)
+			cl.Logger.Printf("file with oid %s does not exist in bucket: %s", oid, err)
 		} else {
-			cl.Logger.Printf("file with oid %s is downloadable", oid)
+			cl.Logger.Printf("file with oid %s exists in bucket", oid)
 		}
 	}
 
@@ -359,6 +390,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			return nil, fmt.Errorf("error getting profile for upload: %v", err)
 		}
 
+		// TODO - should we deprecate this gen3-client style logger in favor of drslog.Logger?
+		// TODO - or can we "wrap it" so both work together?
 		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
 		defer closer()
 
@@ -376,7 +409,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
 		}
-
+		// TODO - Can we reuse Auth to ensure we are not repeatedly refreshing tokens?
 		if stat.Size() < 5*common.GB {
 			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
 			if err != nil {
@@ -416,12 +449,12 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 	a := *cl.Base
 	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id)
 
-	req, err := http.NewRequest("GET", a.String(), nil)
+	req, err := retryablehttp.NewRequest("GET", a.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -467,7 +500,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 		active := true
 
 		for active {
-			req, err := http.NewRequest("GET", a.String(), nil)
+			req, err := retryablehttp.NewRequest("GET", a.String(), nil)
 			if err != nil {
 				resultErrors = multierror.Append(resultErrors, fmt.Errorf("request creation: %w", err))
 				break
@@ -479,7 +512,7 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			if err := cl.AuthHandler.AddAuthHeader(req); err != nil {
+			if err := cl.AuthHandler.AddAuthHeader(req.Request); err != nil {
 				resultErrors = multierror.Append(resultErrors, fmt.Errorf("auth: %w", err))
 				break
 			}
@@ -555,7 +588,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	endpt := *cl.Base
 	endpt.Path = filepath.Join(endpt.Path, "index", "index")
 
-	req, err := http.NewRequest("POST", endpt.String(), bytes.NewBuffer(jsonBytes))
+	req, err := retryablehttp.NewRequest("POST", endpt.String(), bytes.NewBuffer(jsonBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -564,13 +597,12 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	req.Header.Set("Content-Type", "application/json")
 
 	// add auth token
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
 	cl.Logger.Printf("POST request created for indexd: %s", endpt.String())
-
 	response, err := cl.HttpClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -585,12 +617,11 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 	}
 	cl.Logger.Printf("POST successful: %s", response.Status)
 
-	// query and return DRS object
-	drsObj, err := cl.GetObject(indexdObjForm.Did)
+	// removed re-query return DRS object (was missing access method authorization anyway)
+	drsObj, err := indexdRecordToDrsObject(indexdObj)
 	if err != nil {
-		return nil, fmt.Errorf("error querying DRS ID %s: %v", drsId, err)
+		return nil, fmt.Errorf("error converting indexd record to DRS object: %w %v", err, indexdObj)
 	}
-	cl.Logger.Printf("GET for DRS ID successful: %s", drsObj.Id)
 	return drsObj, nil
 }
 
@@ -604,18 +635,17 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error {
 
 	// delete indexd record using did and rev
 	url := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
-	delReq, err := http.NewRequest("DELETE", url, nil)
+	delReq, err := retryablehttp.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(delReq)
+	err = cl.AuthHandler.AddAuthHeader(delReq.Request)
 	if err != nil {
 		return fmt.Errorf("error adding Gen3 auth header to delete record: %v", err)
 	}
 	// set Content-Type header for JSON
 	delReq.Header.Set("accept", "application/json")
-
 	delResp, err := cl.HttpClient.Do(delReq)
 	if err != nil {
 		return err
@@ -638,14 +668,14 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	// setup get request to indexd
 	url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), sum.Type, sum.Checksum)
 	cl.Logger.Printf("Querying indexd at %s", url)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
 		cl.Logger.Printf("http.NewRequest Error: %s", err)
 		return nil, err
 	}
 	cl.Logger.Printf("Looking for files with hash %s:%s", sum.Type, sum.Checksum)
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
 	}
@@ -678,13 +708,29 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	if len(records.Records) == 0 {
 		return out, nil
 	}
-	for i := range records.Records {
-		drsObj, err := indexdRecordToDrsObject(records.Records[i].ToIndexdRecord())
+
+	resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
+
+	for _, record := range records.Records {
+		// skip records that do not authorize this client/project
+		found := false
+		for _, a := range record.Authz {
+			if a == resourcePath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		drsObj, err := indexdRecordToDrsObject(record.ToIndexdRecord())
 		if err != nil {
 			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
 		}
-		out[i] = *drsObj
+		out = append(out, *drsObj)
 	}
+
 	return out, nil
 }
 
@@ -743,7 +789,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 		active := true
 		for active {
 			// setup request
-			req, err := http.NewRequest("GET", a.String(), nil)
+			req, err := retryablehttp.NewRequest("GET", a.String(), nil)
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -755,7 +801,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			q.Add("page", fmt.Sprintf("%d", pageNum))
 			req.URL.RawQuery = q.Encode()
 
-			err = cl.AuthHandler.AddAuthHeader(req)
+			err = cl.AuthHandler.AddAuthHeader(req.Request)
 			if err != nil {
 				cl.Logger.Printf("error contacting %s : %s", req.URL, err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -764,6 +810,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 
 			// execute request with error checking
 			response, err := cl.HttpClient.Do(req)
+
 			if err != nil {
 				cl.Logger.Printf("error: %s", err)
 				out <- drs.DRSObjectResult{Error: err}
@@ -787,7 +834,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) {
 			page := &drs.DRSPage{}
 			err = cl.SConfig.Unmarshal(body, &page)
 			if err != nil {
-				cl.Logger.Printf("error: %s", err)
+				cl.Logger.Printf("error: %s (%s)", err, body)
 				out <- drs.DRSObjectResult{Error: err}
 				return
 			}
@@ -867,7 +914,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	// prepare URL
 	updateURL := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
 
-	req, err := http.NewRequest("PUT", updateURL, bytes.NewBuffer(jsonBytes))
+	req, err := retryablehttp.NewRequest("PUT", updateURL, bytes.NewBuffer(jsonBytes))
 	if err != nil {
 		return nil, fmt.Errorf("error creating PUT request: %v", err)
 	}
@@ -876,7 +923,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
@@ -912,16 +959,16 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
-	req.Header.Set("accept", "application/json")
+	req.Request.Header.Set("accept", "application/json")
 
 	resp, err := cl.HttpClient.Do(req)
 	if err != nil {
@@ -975,12 +1022,12 @@ func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64
 func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := retryablehttp.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cl.AuthHandler.AddAuthHeader(req)
+	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
 		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}

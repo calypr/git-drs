@@ -1,5 +1,10 @@
 package hash
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // ChecksumType represents the digest method used to create the checksum
 type ChecksumType string
 
@@ -60,6 +65,28 @@ type HashInfo struct {
 	SHA512 string `json:"sha512,omitempty"`
 	CRC    string `json:"crc,omitempty"`
 	ETag   string `json:"etag,omitempty"`
+}
+
+// UnmarshalJSON accepts both the DRS map-based schema and the array-of-checksums schema.
+func (h *HashInfo) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*h = HashInfo{}
+		return nil
+	}
+
+	var mapPayload map[string]string
+	if err := json.Unmarshal(data, &mapPayload); err == nil {
+		*h = ConvertStringMapToHashInfo(mapPayload)
+		return nil
+	}
+
+	var checksumPayload []Checksum
+	if err := json.Unmarshal(data, &checksumPayload); err == nil {
+		*h = ConvertChecksumsToHashInfo(checksumPayload)
+		return nil
+	}
+
+	return fmt.Errorf("unsupported HashInfo payload: %s", string(data))
 }
 
 func ConvertStringMapToHashInfo(inputHashes map[string]string) HashInfo {

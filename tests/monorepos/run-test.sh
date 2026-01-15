@@ -239,6 +239,6 @@ for dir in */ ; do
     git lfs push --dry-run origin main | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
-    # break  # uncomment for one directory at a time testing
+    # break  # comment for one directory at a time testing
   fi
 done

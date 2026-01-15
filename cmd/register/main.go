@@ -16,7 +16,7 @@ var remote string
 var Cmd = &cobra.Command{
 	Use:   "register",
 	Short: "Register all pending DRS objects with indexd",
-	Long:  "Reads pending objects from .drs/lfs/objects/ and registers them with indexd (does not upload files)",
+	Long:  "Reads pending objects from .git/drs/lfs/objects/ and registers them with indexd (does not upload files)",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) != 0 {
 			cmd.SilenceUsage = false

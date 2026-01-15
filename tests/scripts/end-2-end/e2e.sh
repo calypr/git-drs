@@ -63,7 +63,6 @@ git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $DEFAULT
 git lfs track "*.txt"
 
 git add .gitattributes
-git add .drs
 git config credential.helper "!f() { echo username=x-oauth-basic; echo password=${TOKEN}; }; f"
 
 git branch -M main

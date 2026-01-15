@@ -184,7 +184,7 @@ git drs list-config
 git lfs pull -I "problematic-file*" --verbose
 
 # Check logs
-cat .drs/*.log
+cat .git/drs/*.log
 ```
 
 ### Configuration Issues
@@ -380,8 +380,8 @@ git lfs ls-files
 
 ```bash
 # Git DRS logs (in repository)
-ls -la .drs/
-cat .drs/*.log
+ls -la .git/drs/
+cat .git/drs/*.log
 ```
 
 ### Test Connectivity
@@ -410,7 +410,7 @@ git --version
 git drs remote list
 
 # Recent logs
-tail -50 .drs/*.log
+tail -50 .git/drs/*.log
 ```
 
 ## Prevention Best Practices

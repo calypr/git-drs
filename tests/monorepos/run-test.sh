@@ -155,7 +155,7 @@ echo "Running in `pwd`"  >&2
 # to reset git state
 if [ "$CLEAN" = "true" ]; then
   echo "Cleaning existing git state" >&2
-  rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
+  rm -rf .git .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
 else
   echo "CLEAN flag not set to true; skipping git state cleanup" >&2
 fi
@@ -176,17 +176,13 @@ else
   git drs init -t 16
   git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket cbds --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
 
-  # verify fixtures/.drs/config.yaml exists
-  if [ ! -f ".drs/config.yaml" ]; then
-    echo "error: .drs/config.yaml not found after git drs init" >&2
+  # verify fixtures/.git/drs/config.yaml exists
+  if [ ! -f ".git/drs/config.yaml" ]; then
+    echo "error: .git/drs/config.yaml not found after git drs init" >&2
     exit 1
   fi
 
   echo "Finished initializing git repository with git-drs in `pwd`" >&2
-  git add .drs
-  git commit -m "Add .drs" .drs
-  git add .gitignore
-  git commit -m "Add .gitignore" .gitignore
 
   # Create an empty .gitattributes file
   # if .gitattributes does not already exist initialize it
@@ -225,13 +221,13 @@ for dir in */ ; do
     GIT_TRACE=1 GIT_TRANSFER_TRACE=1 git push origin main 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
-    # if .drs/lfs/objects exists, log last 3 lines of tree
-    if [ ! -d ".drs/lfs/objects" ]; then
-      echo "# .drs/lfs/objects does not exist." >> lfs-console.log
+    # if .git/drs/lfs/objects exists, log last 3 lines of tree
+    if [ ! -d ".git/drs/lfs/objects" ]; then
+      echo "# .git/drs/lfs/objects does not exist." >> lfs-console.log
       echo "##########################################" >> lfs-console.log
     else
-      echo "# Last 3 lines of .drs/lfs/objects tree:" >> lfs-console.log
-      tree .drs/lfs/objects | tail -3 >> lfs-console.log
+      echo "# Last 3 lines of .git/drs/lfs/objects tree:" >> lfs-console.log
+      tree .git/drs/lfs/objects | tail -3 >> lfs-console.log
     fi
     echo "# git lfs status:" >> lfs-console.log
     git lfs status >> lfs-console.log

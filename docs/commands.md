@@ -8,7 +8,7 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ### `git drs init`
 
-Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and configures `.gitignore` patterns.
+Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks.
 
 **Usage:**
 
@@ -28,11 +28,9 @@ git drs init
 
 **What it does:**
 
-- Creates `.drs/` directory structure
+- Creates `.git/drs/` directory structure
 - Configures Git LFS custom transfer agent
-- Updates `.gitignore` to exclude DRS cache files
 - Installs Git hooks for DRS workflows
-- Stages `.gitignore` changes automatically
 
 **Note:** Run this before adding remotes.
 
@@ -167,7 +165,7 @@ git drs fetch production
 **What it does:**
 
 - Identifies remote and project from configuration
-- Transfers all DRS records for a given project from the server to the local `.drs/lfs/objects/` directory
+- Transfers all DRS records for a given project from the server to the local `.git/drs/lfs/objects/` directory
 
 ### `git drs push [remote-name]`
 
@@ -186,7 +184,7 @@ git drs push production
 
 **What it does:**
 
-- Checks local `.drs/lfs/objects/` for DRS metadata
+- Checks local `.git/drs/lfs/objects/` for DRS metadata
 - For each object, uploads file to bucket if file exists locally
 - If file doesn't exist locally (metadata only), registers metadata without upload
 - This enables cross-remote promotion workflows

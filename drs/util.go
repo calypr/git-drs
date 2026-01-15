@@ -9,7 +9,7 @@ import (
 	"github.com/calypr/git-drs/utils"
 )
 
-const DRS_DIR = ".drs"
+const DRS_DIR = ".git/drs"
 
 type DrsWalkFunc func(path string, d *DRSObject) error
 

@@ -32,7 +32,7 @@ Git DRS integrates with Git through several mechanisms:
 2. Developer: git commit -m "Add data"
 3. Git Hook: git drs precommit
    - Creates DRS object metadata
-   - Stores in .drs/ directory
+   - Stores in .git/drs/ directory
 4. Developer: git push
 5. Git Hook: git drs prepush
    - Updates DRS object metadata
@@ -115,7 +115,7 @@ utils/                 # Shared utilities
 
 ### Configuration System
 
-**Repository Configuration**: `.drs/config`
+**Repository Configuration**: `.git/drs/config.yaml`
 ```yaml
 current_server: gen3
 servers:
@@ -128,7 +128,7 @@ servers:
 
 ### DRS Object Management
 
-Objects are stored in `.drs/objects/` during pre-commit and referenced during transfers.
+Objects are stored in `.git/drs/lfs/objects/` during pre-commit and referenced during transfers.
 
 ## Development Setup
 
@@ -173,8 +173,8 @@ export PATH=$PATH:$(pwd)
 
 ### Log Locations
 
-- **Commit logs**: `.drs/git-drs.log`
-- **Transfer logs**: `.drs/git-drs.log`
+- **Commit logs**: `.git/drs/git-drs.log`
+- **Transfer logs**: `.git/drs/git-drs.log`
 
 
 ## Testing

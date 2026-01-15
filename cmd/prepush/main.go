@@ -52,7 +52,7 @@ var Cmd = &cobra.Command{
 		}
 		myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
 
-		// get the default remote from the .drs/config
+		// get the default remote from the .git/drs/config
 		var remote config.Remote
 		remote, err = cfg.GetDefaultRemote()
 		if err != nil {

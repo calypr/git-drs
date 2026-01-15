@@ -77,7 +77,7 @@ type LfsFileInfo struct {
 }
 
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
-	// Gather all objects in .drs/lfs/objects store
+	// Gather all objects in .git/drs/lfs/objects store
 	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err

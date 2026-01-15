@@ -27,7 +27,7 @@ func TestNewLoggerAndClose(t *testing.T) {
 	logger.Print("line")
 	logger.Println("another")
 
-	logPath := filepath.Join(".drs", "git-drs.log")
+	logPath := filepath.Join(".git", "drs", "git-drs.log")
 	if _, err := os.Stat(logPath); err != nil {
 		t.Fatalf("expected log file: %v", err)
 	}

@@ -156,20 +156,20 @@ func TestEndToEndGitDRSWorkflow(t *testing.T) {
 	}
 	t.Logf("git-drs add remote output: %s", output)
 
-	// Verify .drs/config.yaml exists
-	configPath := filepath.Join(".drs", "config.yaml")
+	// Verify .git/drs/config.yaml exists
+	configPath := filepath.Join(".git", "drs", "config.yaml")
 	if _, err := os.Stat(configPath); err != nil {
 		if os.IsNotExist(err) {
-			t.Fatalf(".drs/config.yaml not created in %s", repoDir)
+			t.Fatalf(".git/drs/config.yaml not created in %s", repoDir)
 		}
-		t.Fatalf("Failed to stat .drs/config.yaml in %s: %v", repoDir, err)
+		t.Fatalf("Failed to stat .git/drs/config.yaml in %s: %v", repoDir, err)
 	}
 	// Log config.yaml contents for debugging
 	configContent, err := os.ReadFile(configPath)
 	if err != nil {
-		t.Fatalf("Failed to read .drs/config.yaml: %v", err)
+		t.Fatalf("Failed to read .git/drs/config.yaml: %v", err)
 	} else {
-		t.Logf(".drs/config.yaml contents: %s", configContent)
+		t.Logf(".git/drs/config.yaml contents: %s", configContent)
 	}
 
 	cmd = exec.Command("git", "lfs", "track", "*.txt")

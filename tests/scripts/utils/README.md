@@ -1,12 +1,13 @@
 # Repository helper scripts
 
-This repository includes small helper scripts used for releasing and configuring services. The README below describes each script, requirements, and basic usage.
+This repository includes small helper scripts used for listing and cleaning indexd records and bucket items.
 
 ## Scripts
 
-\- `bump-version.sh` — Update common version locations, commit, tag, and push a new release (general purpose).
-\- `bump-go-version.sh` — Update version literals in tracked Go files, commit, tag, and push (Go-only).
-\- `create-minio-alias.sh` — Configure a MinIO\/S3 alias for `mc` using positional parameters: `alias`, `endpoint`, `access_key`, `secret_key`, optional `--insecure`.
+- `create-minio-alias.sh` — Configure a MinIO\/S3 alias for `mc` using positional parameters: `alias`, `endpoint`, `access_key`, `secret_key`, optional `--insecure`.
+- `list-indexd-sha256` — List indexd records with their did, sha256, file_name and resource.
+- `list-s3-by-sha256` — Given a list of sha256 hashes, list S3 URLs for the files.
+- `delete-s3-by-sha256` — Given a list of sha256 hashes, delete files from S3 by their sha256.
 
 ## Requirements
 
@@ -20,16 +21,6 @@ This repository includes small helper scripts used for releasing and configuring
   ./create-minio-alias.sh myminio https://play.min.io YOURACCESS YOURSECRET --insecure
 The `--insecure` flag is optional and will pass `--insecure` to `mc alias set` to skip TLS verification.
 
-## Usage examples
-
-Set a new release version (general):
-
-    ./bump-version.sh v0.5.2
-
-Set a new Go-only version:
-
-    ./bump-go-version.sh v0.5.2
-
 
 ## Notes and safety
 
@@ -39,3 +30,8 @@ Set a new Go-only version:
     - list-s3-by-sha256 to get a list of S3 URLs for the files.
     - delete-s3-by-sha256 to delete files from S3 by their sha256.
 
+## Usage
+```bash
+./list-indexd-sha256.sh <pod> <passwd> <resource> | ./delete-s3-by-sha256.sh <alias> <bucket>
+./clean-indexd.sh <pod> <passwd> <resource>
+```

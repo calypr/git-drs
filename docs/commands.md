@@ -8,7 +8,7 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ### `git drs init`
 
-Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks.
+Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and creates a `.git/drs/` directory that Git ignores automatically.
 
 **Usage:**
 

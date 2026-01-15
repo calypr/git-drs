@@ -238,7 +238,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf(
 			"configuration migration required.\n\n" +
 				"Your config has remotes but no default_remote field.\n" +
-				"Add this line to .drs/config.yaml:\n\n" +
+				"Add this line to .git/drs/config.yaml:\n\n" +
 				"  default_remote: <remote-name>\n\n" +
 				"or delete and recreate the config file by re-running\n\n" +
 				"  git drs remote add \n\n",

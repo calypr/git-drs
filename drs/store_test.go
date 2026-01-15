@@ -33,14 +33,14 @@ func setupTempRepo(t *testing.T) string {
 
 func TestGetPendingObjects(t *testing.T) {
 	setupTempRepo(t)
-	objectsDir := filepath.Join(".drs", "lfs", "objects", "aa", "bb")
+	objectsDir := filepath.Join(".git", "drs", "lfs", "objects", "aa", "bb")
 	if err := os.MkdirAll(objectsDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(objectsDir, "oid-1"), []byte(""), 0o644); err != nil {
 		t.Fatalf("write file failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(".drs", "lfs", "objects", "aa", "oid-2"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(".git", "drs", "lfs", "objects", "aa", "oid-2"), []byte(""), 0o644); err != nil {
 		t.Fatalf("write malformed file failed: %v", err)
 	}
 
@@ -59,7 +59,7 @@ func TestGetPendingObjects(t *testing.T) {
 
 func TestGetDrsLfsObjects(t *testing.T) {
 	setupTempRepo(t)
-	objectsDir := filepath.Join(".drs", "lfs", "objects", "aa", "bb")
+	objectsDir := filepath.Join(".git", "drs", "lfs", "objects", "aa", "bb")
 	if err := os.MkdirAll(objectsDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGetDrsLfsObjects(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(objectsDir, "bad-json"), []byte("{invalid"), 0o644); err != nil {
 		t.Fatalf("write invalid json failed: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(".drs", "lfs", "objects", "aa", "oid-2"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(".git", "drs", "lfs", "objects", "aa", "oid-2"), data, 0o644); err != nil {
 		t.Fatalf("write malformed file failed: %v", err)
 	}
 

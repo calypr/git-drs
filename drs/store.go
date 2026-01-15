@@ -10,13 +10,13 @@ import (
 	"github.com/calypr/git-drs/projectdir"
 )
 
-// This file contains functions that pertain to .drs/lfs/objects directory walk
+// This file contains functions that pertain to .git/drs/lfs/objects directory walk
 type PendingObject struct {
 	OID  string
 	Path string
 }
 
-// getPendingObjects walks .drs/lfs/objects/ to find all pending records
+// getPendingObjects walks .git/drs/lfs/objects/ to find all pending records
 func GetPendingObjects(logger *log.Logger) ([]*PendingObject, error) {
 	var objects []*PendingObject
 	objectsDir := projectdir.DRS_OBJS_PATH

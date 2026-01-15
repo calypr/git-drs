@@ -33,7 +33,7 @@ func setupTestRepo(t *testing.T) {
 func TestWriteAndReadDrsObject(t *testing.T) {
 	setupTestRepo(t)
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	path, err := GetObjectPath(".drs/lfs/objects", oid)
+	path, err := GetObjectPath(".git/drs/lfs/objects", oid)
 	if err != nil {
 		t.Fatalf("GetObjectPath error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestWriteAndReadDrsObject(t *testing.T) {
 }
 
 func TestGetObjectPathValidation(t *testing.T) {
-	if _, err := GetObjectPath(".drs/lfs/objects", "short"); err == nil {
+	if _, err := GetObjectPath(".git/drs/lfs/objects", "short"); err == nil {
 		t.Fatalf("expected error for invalid oid")
 	}
 }

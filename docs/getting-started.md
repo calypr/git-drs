@@ -278,7 +278,7 @@ git drs remote set staging
 
 ### View Logs
 
-- Logs location: `.drs/` directory
+- Logs location: `.git/drs/` directory
 
 ## Command Summary
 

@@ -10,26 +10,6 @@ import (
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
-func TestEnsureDrsObjectsIgnore(t *testing.T) {
-	testutils.SetupTestGitRepo(t)
-	logger := drslog.NewNoOpLogger()
-
-	if err := ensureDrsObjectsIgnore(".drs/objects", logger); err != nil {
-		t.Fatalf("ensureDrsObjectsIgnore error: %v", err)
-	}
-	content, err := os.ReadFile(".gitignore")
-	if err != nil {
-		t.Fatalf("read .gitignore: %v", err)
-	}
-	if !strings.Contains(string(content), ".drs/objects") {
-		t.Fatalf("expected ignore pattern in .gitignore")
-	}
-
-	if err := ensureDrsObjectsIgnore(".drs/objects", logger); err != nil {
-		t.Fatalf("ensureDrsObjectsIgnore second call error: %v", err)
-	}
-}
-
 func TestInstallPrePushHook(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	logger := drslog.NewNoOpLogger()

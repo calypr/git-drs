@@ -37,7 +37,7 @@ echo $DATE > data/B/simple.greeting
 echo $DATE > data/C/simple.greeting
 
 git add data/
-git add .drs/config.yaml
+git add .git/drs/config.yaml
 git commit -m "Initial commit: Add .greeting files with 'hello'"
 
 # Prompt user for remote if not set

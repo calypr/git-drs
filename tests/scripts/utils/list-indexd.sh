@@ -19,7 +19,7 @@ PARAMETERS:
 
     resource-name (optional)
         The Indexd resource path to list.
-        Defaults to: /programs/cbds/projects/monorepos
+        Example: /programs/cbds/projects/monorepos
 
 OPTIONS:
     --help
@@ -48,10 +48,10 @@ done
 # Parameters
 POD_NAME="${1:-}"
 POSTGRES_PASSWORD="${2:-}"
-RESOURCE_NAME="${3:-/programs/cbds/projects/monorepos}"
+RESOURCE_NAME="${3:-}"
 DATABASE_NAME="indexd_local"
 
-if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" ]]; then
+if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" || -z "$RESOURCE_NAME" ]]; then
     echo "Error: missing required parameters."
     echo "Run with --help for usage."
     exit 1

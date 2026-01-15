@@ -119,3 +119,11 @@ func TestVersionCommand_Output(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildVersion(t *testing.T) {
+	version := buildVersion()
+	assert.NotEmpty(t, version, "build version should not be empty")
+
+	hasSeparator := strings.Contains(version, ".") || strings.Contains(version, "-")
+	assert.True(t, hasSeparator, "version should include a separator")
+}

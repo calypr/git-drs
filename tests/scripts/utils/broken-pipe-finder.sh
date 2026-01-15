@@ -22,7 +22,7 @@ while IFS= read -r pid; do
   STARTED_PIDS+=("$pid")
 done < <(grep "START" "$1"  | awk '{print $1}' | sed 's/[][]//g' | sort -n || true)
 
-# if no started pids were found, print error to stderr and exit non\-zero
+# if no started pids were found, print error to stderr and exit non-zero
 if [ "${#STARTED_PIDS[@]}" -eq 0 ]; then
   echo "Error: no START entries found in $1" >&2
   exit 3

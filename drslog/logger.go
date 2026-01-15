@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 
 	"github.com/calypr/git-drs/projectdir"
@@ -15,6 +16,20 @@ var globalLogger *log.Logger
 var globalLogFile io.Closer
 var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
+var GIT_TRANSFER_TRACE int
+
+func init() {
+	GIT_TRANSFER_TRACE = 0
+	if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" {
+		if parsed, err := strconv.Atoi(envValue); err == nil {
+			GIT_TRANSFER_TRACE = parsed
+		}
+	}
+}
+
+func TraceEnabled() bool {
+	return GIT_TRANSFER_TRACE == 1
+}
 
 // NewLogger creates a new Logger that writes to the specified file and optionally stderr.
 // It is safe to call this multiple times; only the first successful call sets the global logger.

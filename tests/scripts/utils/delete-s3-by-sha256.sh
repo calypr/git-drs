@@ -77,8 +77,10 @@ while IFS=$' \t' read -r did hash file_name resource; do
     object_key="${PREFIX}${did}/${hash}"
     s3_url="s3://${BUCKET}/${object_key}"
 
-    #    echo "$s3_url"
-    #    echo "${MC_ALIAS}/${BUCKET}/${object_key}"
+    if [[ "${DEBUG:-}" == "1" ]]; then
+        echo "$s3_url"
+        echo "${MC_ALIAS}/${BUCKET}/${object_key}"
+    fi
     # Run mc rm and show output; exit on error
     mc rm --force "${MC_ALIAS}/${BUCKET}/${object_key}" && echo "Deleted: ${resource} ${file_name}" || echo "ERROR: Failed to delete ${MC_ALIAS}/${BUCKET}/${object_key}"
 done

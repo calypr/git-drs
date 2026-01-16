@@ -711,7 +711,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
 
-	for _, record := range records.Records {
+	for i, record := range records.Records {
 		// skip records that do not authorize this client/project
 		found := false
 		for _, a := range record.Authz {
@@ -728,7 +728,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		if err != nil {
 			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
 		}
-		out = append(out, *drsObj)
+		out[i] = *drsObj
 	}
 
 	return out, nil

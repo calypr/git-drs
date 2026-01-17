@@ -15,6 +15,17 @@ var remote string
 var checksum = false
 var pretty = false
 
+type checksumClient interface {
+	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
+}
+
+func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, error) {
+	return client.GetObjectByHash(&hash.Checksum{
+		Checksum: checksum,
+		Type:     hash.ChecksumTypeSHA256,
+	})
+}
+
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "query <drs_id>",
@@ -49,7 +60,7 @@ var Cmd = &cobra.Command{
 		var obj *drs.DRSObject
 
 		if checksum {
-			objs, err := client.GetObjectByHash(&hash.Checksum{Checksum: args[0], Type: hash.ChecksumTypeSHA256})
+			objs, err := queryByChecksum(client, args[0])
 			if err != nil {
 				return err
 			}

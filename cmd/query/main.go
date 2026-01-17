@@ -5,11 +5,26 @@ import (
 
 	"github.com/bytedance/sonic"
 	conf "github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
 var remote string
+var checksum = false
+var pretty = false
+
+type checksumClient interface {
+	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
+}
+
+func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, error) {
+	return client.GetObjectByHash(&hash.Checksum{
+		Checksum: checksum,
+		Type:     hash.ChecksumTypeSHA256,
+	})
+}
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -42,19 +57,55 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.GetObject(args[0])
-		if err != nil {
-			return err
+		var obj *drs.DRSObject
+
+		if checksum {
+			objs, err := queryByChecksum(client, args[0])
+			if err != nil {
+				return err
+			}
+			for _, obj := range objs {
+				if pretty {
+					out, err := sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
+					if err != nil {
+						return err
+					}
+					fmt.Printf("%s\n", string(out))
+				} else {
+					out, err := sonic.ConfigFastest.Marshal(obj)
+					if err != nil {
+						return err
+					}
+					fmt.Printf("%s\n", string(out))
+
+				}
+			}
+
+		} else {
+			obj, err = client.GetObject(args[0])
+			if err != nil {
+				return err
+			}
+			if pretty {
+				out, err := sonic.ConfigFastest.MarshalIndent(*obj, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s\n", string(out))
+			} else {
+				out, err := sonic.ConfigFastest.Marshal(*obj)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("%s\n", string(out))
+			}
 		}
-		out, err := sonic.ConfigFastest.MarshalIndent(*obj, "", "  ")
-		if err != nil {
-			return err
-		}
-		logger.Printf("%s\n", string(out))
 		return nil
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
+	Cmd.Flags().BoolVarP(&checksum, "checksum", "c", checksum, "Find by checksum")
+	Cmd.Flags().BoolVarP(&pretty, "pretty", "p", pretty, "Print indented JSON")
 }

@@ -207,6 +207,36 @@ This is useful when files are already in the production bucket with matching SHA
 
 **Note:** `fetch` and `push` are commonly used together. `fetch` pulls metadata from one remote, `push` registers it to another.
 
+### `git drs query`
+
+Query a DRS object by its DRS ID or SHA256 checksum.
+
+**Usage:**
+
+```bash
+# Query by DRS ID (default behavior)
+git drs query <drs-id>
+
+# Query by SHA256 checksum
+git drs query --checksum <sha256>
+```
+
+**Options:**
+
+- `--checksum`, `-c`: Treat the argument as a SHA256 checksum instead of a DRS ID.
+- `--pretty`, `-p`: Output indented JSON for easier reading.
+- `--remote`, `-r`: Target a specific remote (default: default_remote).
+
+**Examples:**
+
+```bash
+# Query by checksum and pretty-print the result
+git drs query --checksum 9f2c2db77f0a3e2b47e4b44b8ce8d4c8c3c4c0b5f4c5a2d2f9b1d0bfb0a1c2d3 --pretty
+
+# Query by DRS ID against a specific remote
+git drs query did:example:12345 --remote staging
+```
+
 ### `git drs add-url`
 
 Add a file reference via S3 URL without copying the data.

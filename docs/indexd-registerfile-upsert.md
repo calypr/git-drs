@@ -39,7 +39,8 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[RegisterFile] --> H[Prepare records for download]
+    A[RegisterFile] --> B[POST indexd register]
+    B --> H[Prepare records for download]
     H --> J[Upload to bucket]
 ```
 

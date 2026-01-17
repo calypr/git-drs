@@ -97,7 +97,7 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 		HttpClient:  retryClient,
 		SConfig:     sonic.ConfigFastest,
 		ForcePush:   forcePush,
-	}, err
+	}, nil
 }
 
 func (cl *IndexDClient) GetProjectId() string {
@@ -313,6 +313,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err 
 
 	// attempt registration up to 2 times (normal, then with force push, if necessary)
 	for attempt := 0; attempt < 2; attempt++ {
+		cl.Logger.Printf("register file attempt %d for oid: %s", attempt+1, oid)
 		var records []drs.DRSObject
 
 		// first, see if indexd record already exists for this hash
@@ -325,7 +326,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err 
 
 			// use any indexd record from the same project if it exists
 			//  * addresses edge case where user X registering in project A has access to record in project B
-			//  * but still needs to create a new record to so user Y reading the file in project A can access it
+			//  * but still needs to create a new record so that user Y reading the file in project A can access it
 			//  * even if they don't have access to project B
 			if len(records) > 0 {
 				drsObject, err = drsmap.FindMatchingRecord(records, cl.ProjectId)
@@ -354,9 +355,13 @@ func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err 
 			if err != nil {
 				// if error and force push is not enabled, retry with force push
 				if !cl.ForcePush {
+					originalForcePush := cl.ForcePush
 					cl.Logger.Printf("error saving indexd record without force push: %s; retrying with force push enabled", err)
 					cl.ForcePush = true
 					drsObject = nil
+					defer func() {
+						cl.ForcePush = originalForcePush
+					}()
 					continue
 				}
 				cl.Logger.Printf("error saving indexd record: %s", err)
@@ -424,10 +429,11 @@ func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err 
 			if err != nil {
 				return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
 			}
+			defer file.Close()
 
 			stat, err := file.Stat()
 			if err != nil {
-				return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
+				return nil, fmt.Errorf("error stating file %s: %v", file.Name(), err)
 			}
 			// TODO - Can we reuse Auth to ensure we are not repeatedly refreshing tokens?
 			if stat.Size() < 5*common.GB {

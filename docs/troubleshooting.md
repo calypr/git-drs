@@ -289,7 +289,6 @@ git drs remote list
 git drs remote set production
 
 # Option 2: Specify remote for single command
-git drs push staging
 git drs fetch production
 ```
 

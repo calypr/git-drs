@@ -109,7 +109,7 @@ func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
 	cmd := exec.Command("git", "config", "--get", "--default", defaultText, key)
 	output, err := cmd.Output()
 	if err != nil {
-		return defaultValue, fmt.Errorf("error reading git config %s: %s", key, strings.TrimSpace(string(output)))
+		return defaultValue, fmt.Errorf("error reading git config %s: %v", key, err)
 	}
 
 	value := strings.TrimSpace(string(output))
@@ -370,6 +370,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err 
 
 			// delete indexd record only if it's been registered in this repo
 			// TODO - improve this logic later if we have a better way to track this
+			// The defer function creates a closure that captures the named return variable "err", but the function returns early on line 464 within the loop without setting "err" to nil. This means if the function succeeds, the deferred cleanup could still execute because "err" might contain a value from a previous error that was later recovered from. The cleanup logic should check a more specific condition or the defer should be inside the if drsObject == nil block where the record is actually created.
 			defer func() {
 				if err != nil {
 					cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)

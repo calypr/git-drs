@@ -13,6 +13,7 @@ var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "push local objects to drs server.",
 	Long:  "push local objects to drs server. Any local files that do not have drs records are written to a bucket.",
+	Deprecated: "use `git push` (with the installed pre-push hook) for uploads and `git drs fetch` for cross-remote metadata promotion; `git drs push` will be removed in a future release",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false

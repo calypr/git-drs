@@ -173,6 +173,8 @@ git drs fetch production
 
 Push local DRS objects to server. Uploads new files and registers metadata.
 
+**Deprecated:** Use `git push` (with the installed pre-push hook) for uploads and `git drs fetch` for cross-remote metadata promotion. `git drs push` will be removed in a future release.
+
 **Usage:**
 
 ```bash

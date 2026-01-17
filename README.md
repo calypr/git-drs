@@ -96,7 +96,7 @@ For detailed setup and usage information:
 | `git lfs ls-files`     | List tracked files                    |
 | `git lfs pull`         | Download tracked files                |
 | `git drs fetch`        | Fetch metadata from DRS server        |
-| `git drs push`         | Push objects to DRS server            |
+| `git drs push`         | Push objects to DRS server (deprecated) |
 
 Use `--help` with any command for details. See [Commands Reference](docs/commands.md) for complete documentation.
 

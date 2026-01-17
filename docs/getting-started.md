@@ -120,7 +120,6 @@ git drs remote list
 git drs remote set staging
 
 # Or use specific remote for one command
-git drs push production
 git drs fetch staging
 ```
 

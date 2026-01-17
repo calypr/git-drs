@@ -8,6 +8,7 @@ import (
 	"github.com/calypr/git-drs/drs"
 )
 
+// IndexdRecord represents a simplified version of an indexd record for conversion purposes
 func indexdRecordFromDrsObject(drsObj *drs.DRSObject) (*IndexdRecord, error) {
 	indexdObj := &IndexdRecord{
 		Did:      drsObj.Id,
@@ -63,6 +64,7 @@ func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) ([]drs.Access
 	return accessMethods, nil
 }
 
+// extract authz values from DRS access methods
 func indexdAuthzFromDrsAccessMethods(accessMethods []drs.AccessMethod) []string {
 	var authz []string
 	for _, drsURL := range accessMethods {

@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -39,6 +42,8 @@ type IndexDClient struct {
 
 	HttpClient *retryablehttp.Client
 	SConfig    sonic.API
+
+	ForcePush bool
 }
 
 ////////////////////
@@ -78,6 +83,11 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 	retryClient.RetryWaitMin = 5 * time.Second
 	retryClient.RetryWaitMax = 15 * time.Second
 
+	forcePush, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	if err != nil {
+		return nil, err
+	}
+
 	return &IndexDClient{
 		Base:        baseUrl,
 		ProjectId:   projectId,
@@ -86,11 +96,29 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
 		HttpClient:  retryClient,
 		SConfig:     sonic.ConfigFastest,
+		ForcePush:   forcePush,
 	}, err
 }
 
 func (cl *IndexDClient) GetProjectId() string {
 	return cl.ProjectId
+}
+
+func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
+	defaultText := strconv.FormatBool(defaultValue)
+	cmd := exec.Command("git", "config", "--get", "--default", defaultText, key)
+	output, err := cmd.Output()
+	if err != nil {
+		return defaultValue, fmt.Errorf("error reading git config %s: %s", key, strings.TrimSpace(string(output)))
+	}
+
+	value := strings.TrimSpace(string(output))
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return defaultValue, fmt.Errorf("invalid boolean value for %s: >%q<", key, value)
+	}
+	return parsed, nil
 }
 
 // GetProfile extracts the profile from the auth handler if available
@@ -280,168 +308,202 @@ func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSO
 // This function registers a file with gen3 indexd, writes the file to the bucket,
 // and returns the successful DRS object.
 // DRS will use any matching indexd record / file that already exists
-func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
+func (cl *IndexDClient) RegisterFile(oid string) (drsObject *drs.DRSObject, err error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
-	// get all existing hashes
-	records, err := cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
-	if err != nil {
-		return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", oid, err)
-	}
+	// attempt registration up to 2 times (normal, then with force push, if necessary)
+	for attempt := 0; attempt < 2; attempt++ {
+		var records []drs.DRSObject
 
-	// use any indexd record from the same project if it exists
-	//  * addresses edge case where user X registering in project A has access to record in project B
-	//  * but still needs create a new record to so user Y reading the file in project A can access it
-	//  * even if they don't have access to project B
-	var drsObject *drs.DRSObject
-	if len(records) > 0 {
-		var err error
-		drsObject, err = drsmap.FindMatchingRecord(records, cl.ProjectId)
-		if err != nil {
-			return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
-		}
-	}
-
-	if drsObject == nil {
-		// otherwise, create indexd record
-		cl.Logger.Print("creating record: no existing indexd record for this project")
-
-		// get indexd object using drs map
-		drsObject, err = drsmap.DrsInfoFromOid(oid)
-		if err != nil {
-			return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
-		}
-
-		indexdObj, err := indexdRecordFromDrsObject(drsObject)
-		if err != nil {
-			return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
-		}
-
-		// register the record
-		drsObject, err = cl.RegisterIndexdRecord(indexdObj)
-
-		if err != nil {
-			cl.Logger.Printf("error registering indexd record: %s", err)
-			return nil, fmt.Errorf("error registering indexd record: %v", err)
-		}
-
-		// delete indexd record only if it's been registered in this repo
-		defer func() {
+		// first, see if indexd record already exists for this hash
+		if cl.ForcePush {
+			// get all existing hashes
+			records, err = cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 			if err != nil {
-				cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)
-				err = cl.DeleteIndexdRecord(drsObject.Id)
+				return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", oid, err)
+			}
+
+			// use any indexd record from the same project if it exists
+			//  * addresses edge case where user X registering in project A has access to record in project B
+			//  * but still needs to create a new record to so user Y reading the file in project A can access it
+			//  * even if they don't have access to project B
+			if len(records) > 0 {
+				drsObject, err = drsmap.FindMatchingRecord(records, cl.ProjectId)
 				if err != nil {
-					cl.Logger.Printf("error cleaning up indexd record on failed registration for oid %s: %s", oid, err)
-					cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObject.Id)
-					cl.Logger.Printf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
-					return
+					return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.ProjectId, err)
 				}
-				cl.Logger.Printf("cleaned up indexd record for oid %s", oid)
-			}
-		}()
-	}
-
-	recordsForDownload := records
-	if drsObject != nil {
-		found := false
-		for _, record := range recordsForDownload {
-			if record.Id == drsObject.Id {
-				found = true
-				break
 			}
 		}
-		if !found {
-			recordsForDownload = append(recordsForDownload, *drsObject)
+
+		if drsObject == nil {
+			// otherwise, create indexd record
+			// transform git pre push record to drs object
+			drsObject, err = drsmap.DrsInfoFromOid(oid)
+			if err != nil {
+				return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
+			}
+
+			// convert to indexd record
+			indexdObj, err := indexdRecordFromDrsObject(drsObject)
+			if err != nil {
+				return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
+			}
+
+			// save the record
+			drsObject, err = cl.RegisterIndexdRecord(indexdObj)
+			if err != nil {
+				// if error and force push is not enabled, retry with force push
+				if !cl.ForcePush {
+					cl.Logger.Printf("error saving indexd record without force push: %s; retrying with force push enabled", err)
+					cl.ForcePush = true
+					drsObject = nil
+					continue
+				}
+				cl.Logger.Printf("error saving indexd record: %s", err)
+				return nil, fmt.Errorf("error saving indexd record: %v", err)
+			}
+
+			// delete indexd record only if it's been registered in this repo
+			// TODO - improve this logic later if we have a better way to track this
+			defer func() {
+				if err != nil {
+					cl.Logger.Printf("registration incomplete, cleaning up indexd record for oid %s", oid)
+					cleanupErr := cl.DeleteIndexdRecord(drsObject.Id)
+					if cleanupErr != nil {
+						cl.Logger.Printf("error cleaning up indexd record on failed registration for oid %s: %s", oid, cleanupErr)
+						cl.Logger.Printf("please delete the indexd record manually if needed for DRS ID: %s", drsObject.Id)
+						cl.Logger.Printf("see https://uc-cdis.github.io/gen3sdk-python/_build/html/indexing.html")
+						return
+					}
+					cl.Logger.Printf("cleaned up indexd record for oid %s", oid)
+				}
+			}()
 		}
+
+		isDownloadable := false
+
+		if cl.ForcePush {
+			// TODO why is this transformed again?
+			recordsForDownload := ensureDrsObjectInRecords(records, drsObject)
+
+			// determine if file is downloadable
+			// TODO  optimize to avoid double lookup?
+			// TODO simply take drsObject as a parameter
+			isDownloadable, err = cl.isFileDownloadable(oid, recordsForDownload)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		// if file is not downloadable, then upload it to bucket
+		if !isDownloadable {
+			cl.Logger.Printf("Proceeding to upload %s", oid)
+
+			filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
+			if err != nil {
+				cl.Logger.Printf("error getting object path for oid %s: %s", oid, err)
+				return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+			}
+
+			profile, err := cl.GetProfile()
+			if err != nil {
+				return nil, fmt.Errorf("error getting profile for upload: %v", err)
+			}
+
+			// TODO - should we deprecate this gen3-client style logger in favor of drslog.Logger?
+			// TODO - or can we "wrap it" so both work together?
+			logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
+			defer closer()
+
+			g3, err := dataClient.NewGen3Interface(profile, logger)
+			if err != nil {
+				return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
+			}
+
+			file, err := os.Open(filePath)
+			if err != nil {
+				return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
+			}
+
+			stat, err := file.Stat()
+			if err != nil {
+				return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
+			}
+			// TODO - Can we reuse Auth to ensure we are not repeatedly refreshing tokens?
+			if stat.Size() < 5*common.GB {
+				err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+				if err != nil {
+					cl.Logger.Printf("error uploading single file to bucket: %s", err)
+					return nil, fmt.Errorf("error uploading single file to bucket: %s", err)
+				}
+			} else {
+				err = upload.MultipartUpload(
+					context.TODO(),
+					g3,
+					common.FileUploadRequestObject{
+						FilePath:     filePath,
+						Filename:     filepath.Base(filePath),
+						GUID:         drsObject.Id,
+						FileMetadata: common.FileMetadata{},
+						Bucket:       cl.BucketName,
+					},
+					file, false,
+				)
+				if err != nil {
+					cl.Logger.Printf("error uploading file to bucket: %s", err)
+					return nil, fmt.Errorf("error uploading file to bucket: %v", err)
+				}
+			}
+		} else {
+			cl.Logger.Print("file exists in bucket, skipping upload")
+		}
+
+		// no implicit cleanup of DRS objects, should be done manually
+
+		// return drsObject
+		return drsObject, nil
 	}
 
-	// determine if file is downloadable
-	isDownloadable := true
+	return nil, fmt.Errorf("indexd registration failed after retry for oid %s", oid)
+}
+
+func (cl *IndexDClient) isFileDownloadable(oid string, records []drs.DRSObject) (bool, error) {
+	if !cl.ForcePush {
+		cl.Logger.Printf("force push disabled; proceeding to upload oid %s", oid)
+		return false, nil
+	}
+
 	cl.Logger.Printf("checking if %s file is downloadable", oid)
-	signedUrl, err := cl.getDownloadURLFromRecords(oid, recordsForDownload)
+	signedUrl, err := cl.getDownloadURLFromRecords(oid, records)
 	if err != nil {
 		cl.Logger.Printf("error getting signed URL for file with oid %s: %s", oid, err)
-		return nil, fmt.Errorf("error getting signed URL for file with oid %s: %s", oid, err)
+		return false, fmt.Errorf("error getting signed URL for file with oid %s: %s", oid, err)
 	}
 	if signedUrl == nil {
-		isDownloadable = false
-	} else { // signedUrl exists
-		err = utils.CanDownloadFile(signedUrl.URL)
-		if err != nil {
-			isDownloadable = false
-			cl.Logger.Printf("file with oid %s does not exist in bucket: %s", oid, err)
-		} else {
-			cl.Logger.Printf("file with oid %s exists in bucket", oid)
+		return false, nil
+	}
+
+	err = utils.CanDownloadFile(signedUrl.URL)
+	if err != nil {
+		cl.Logger.Printf("file with oid %s does not exist in bucket: %s", oid, err)
+		return false, nil
+	}
+	cl.Logger.Printf("file with oid %s exists in bucket", oid)
+	return true, nil
+}
+
+func ensureDrsObjectInRecords(records []drs.DRSObject, drsObject *drs.DRSObject) []drs.DRSObject {
+	if drsObject == nil {
+		return records
+	}
+
+	for _, record := range records {
+		if record.Id == drsObject.Id {
+			return records
 		}
 	}
 
-	// if file is not downloadable, then upload it to bucket
-	if !isDownloadable {
-		cl.Logger.Printf("Proceeding to upload %s", oid)
-
-		filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
-		if err != nil {
-			cl.Logger.Printf("error getting object path for oid %s: %s", oid, err)
-			return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
-		}
-
-		profile, err := cl.GetProfile()
-		if err != nil {
-			return nil, fmt.Errorf("error getting profile for upload: %v", err)
-		}
-
-		// TODO - should we deprecate this gen3-client style logger in favor of drslog.Logger?
-		// TODO - or can we "wrap it" so both work together?
-		logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
-		defer closer()
-
-		g3, err := dataClient.NewGen3Interface(profile, logger)
-		if err != nil {
-			return nil, fmt.Errorf("error creating Gen3 interface: %v", err)
-		}
-
-		file, err := os.Open(filePath)
-		if err != nil {
-			return nil, fmt.Errorf("error opening file %s: %v", filePath, err)
-		}
-
-		stat, err := file.Stat()
-		if err != nil {
-			return nil, fmt.Errorf("Error stating file %s: %v", file.Name(), err)
-		}
-		// TODO - Can we reuse Auth to ensure we are not repeatedly refreshing tokens?
-		if stat.Size() < 5*common.GB {
-			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
-			if err != nil {
-				cl.Logger.Printf("error uploading single file to bucket: %s", err)
-				return nil, fmt.Errorf("error uploading single file to bucket: %s", err)
-			}
-		} else {
-			err = upload.MultipartUpload(
-				context.TODO(),
-				g3,
-				common.FileUploadRequestObject{
-					FilePath:     filePath,
-					Filename:     filepath.Base(filePath),
-					GUID:         drsObject.Id,
-					FileMetadata: common.FileMetadata{},
-					Bucket:       cl.BucketName,
-				},
-				file, false,
-			)
-			if err != nil {
-				cl.Logger.Printf("error uploading file to bucket: %s", err)
-				return nil, fmt.Errorf("error uploading file to bucket: %v", err)
-			}
-		}
-	} else {
-		cl.Logger.Print("file exists in bucket, skipping upload")
-	}
-
-	// no implicit cleanup of DRS objects, should be done manually
-
-	// return drsObject
-	return drsObject, nil
+	return append(records, *drsObject)
 }
 
 func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
@@ -581,7 +643,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
 		return nil, err
 	}
 
-	cl.Logger.Printf("retrieved IndexdObj: %s", string(jsonBytes))
+	cl.Logger.Printf("writing IndexdObj: %s", string(jsonBytes))
 
 	// register DRS object via /index POST
 	// (setup post request to indexd)

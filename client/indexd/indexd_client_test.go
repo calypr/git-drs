@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -372,6 +373,12 @@ func TestIndexdClient_GetProjectSample_DefaultLimit(t *testing.T) {
 }
 
 func TestIndexdClient_NewIndexDClient(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	runGit(t, repoDir, "config", "lfs.customtransfer.drs.force-push", "false")
+
 	cred := conf.Credential{APIEndpoint: "https://example.com"}
 	remote := Gen3Remote{ProjectID: "project", Bucket: "bucket"}
 	client, err := NewIndexDClient(cred, remote, drslog.NewNoOpLogger())
@@ -387,5 +394,68 @@ func TestIndexdClient_NewIndexDClient(t *testing.T) {
 	}
 	if indexd.HttpClient.HTTPClient.Timeout != 30*time.Second {
 		t.Fatalf("unexpected http timeout: %v", indexd.HttpClient.HTTPClient.Timeout)
+	}
+	if indexd.ForcePush {
+		t.Fatalf("expected force push disabled, got %v", indexd.ForcePush)
+	}
+}
+
+func TestGetLfsCustomTransferBool_DefaultValue(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	if err != nil {
+		t.Fatalf("getLfsCustomTransferBool error: %v", err)
+	}
+	if value {
+		t.Fatalf("expected default false, got %v", value)
+	}
+}
+
+func TestGetLfsCustomTransferBool_MissingKeyReturnsDefault(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	if err != nil {
+		t.Fatalf("getLfsCustomTransferBool error: %v", err)
+	}
+	if value {
+		t.Fatalf("expected false, got %v", value)
+	}
+}
+
+func initTestGitRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	return repoDir
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+}
+
+func chdirForTest(t *testing.T, dir string) func() {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd error: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir error: %v", err)
+	}
+	return func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restore Chdir error: %v", err)
+		}
 	}
 }

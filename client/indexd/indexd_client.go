@@ -77,6 +77,23 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 	retryClient := retryablehttp.NewClient()
 	retryClient.HTTPClient = httpClient
 
+	// Custom CheckRetry: do not retry when response body contains "already exists"
+	retryClient.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		if resp != nil && resp.Body != nil {
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			// restore body for downstream consumers
+			resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+			if readErr == nil {
+				if strings.Contains(string(bodyBytes), "already exists") {
+					// do not retry on "already exists" messages
+					return false, nil
+				}
+			}
+		}
+		// fallback to default policy
+		return retryablehttp.DefaultRetryPolicy(ctx, resp, err)
+	}
+
 	retryClient.Logger = logger
 	// TODO - make these configurable?
 	retryClient.RetryMax = 5
@@ -268,40 +285,60 @@ func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSO
 
 	// naively get access ID from splitting first path into :
 	accessId := drsObj.AccessMethods[0].AccessID
+	did := drsObj.Id
 
-	// get signed url
-	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", drsObj.Id, "access", accessId)
-
-	req, err := retryablehttp.NewRequest("GET", a.String(), nil)
+	accessUrl, err := cl.getDownloadURL(did, accessId)
 	if err != nil {
 		return nil, err
 	}
 
+	return &accessUrl, nil
+}
+
+// getDownloadURL gets a signed URL for the given DRS ID and access ID
+func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessURL, error) {
+	// get signed url
+	a := *cl.Base
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", did, "access", accessId)
+
+	req, err := retryablehttp.NewRequest("GET", a.String(), nil)
+	if err != nil {
+		return drs.AccessURL{}, err
+	}
+
 	err = cl.AuthHandler.AddAuthHeader(req.Request)
 	if err != nil {
-		return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
+		return drs.AccessURL{}, fmt.Errorf("error adding Gen3 auth header: %v", err)
 	}
 
 	response, err := cl.HttpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error getting signed URL: %v", err)
+		return drs.AccessURL{}, fmt.Errorf("error getting signed URL: %v", err)
 	}
-	defer response.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(response.Body)
 
 	accessUrl := drs.AccessURL{}
-	if err := cl.SConfig.NewDecoder(response.Body).Decode(&accessUrl); err != nil {
-		return nil, fmt.Errorf("unable to decode response into drs.AccessURL: %v", err)
+
+	// read full body so we can both decode and include it in any error
+	bodyBytes, readErr := io.ReadAll(response.Body)
+	if readErr != nil {
+		return drs.AccessURL{}, fmt.Errorf("unable to read response body: %v", readErr)
+	}
+
+	if err := cl.SConfig.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&accessUrl); err != nil {
+		return drs.AccessURL{}, fmt.Errorf("unable to decode response into drs.AccessURL: %v; body: %s", err, string(bodyBytes))
 	}
 
 	// check if empty
 	if accessUrl.URL == "" {
-		return nil, fmt.Errorf("signed url is empty %#v %s", accessUrl, response.Status)
+		return drs.AccessURL{}, fmt.Errorf("signed url is empty %#v %s", accessUrl, response.Status)
 	}
 
 	cl.Logger.Printf("signed url retrieved: %s", response.Status)
 
-	return &accessUrl, nil
+	return accessUrl, nil
 }
 
 // RegisterFile implements DRSClient.
@@ -350,11 +387,13 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			if err != nil {
 				return nil, fmt.Errorf("error getting indexd object for oid %s: %v", oid, err)
 			}
+			cl.Logger.Printf("DrsInfoFromOid: %v", drsObject)
 
 			indexdObj, err := indexdRecordFromDrsObject(drsObject)
 			if err != nil {
 				return nil, fmt.Errorf("error converting DRS object to indexd record: %v", err)
 			}
+			cl.Logger.Printf("indexdRecordFromDrsObject: %v", indexdObj)
 
 			drsObject, err = cl.RegisterIndexdRecord(indexdObj)
 			if err != nil {
@@ -366,6 +405,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 				return nil, fmt.Errorf("error saving indexd record: %v", err)
 			}
 			createdRecord = true
+			cl.Logger.Printf("RegisterIndexdRecord: %v", drsObject)
+
 		}
 
 		cleanupOnError := func(cause error) (*drs.DRSObject, error) {
@@ -385,10 +426,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 		isDownloadable := false
 		if cl.ForcePush {
-			// TODO why is this a list of records?
-			recordsForDownload := ensureDrsObjectInRecords(records, drsObject)
-			// TODO don't we already know this from earlier?
-			isDownloadable, err = cl.isFileDownloadable(oid, recordsForDownload)
+			isDownloadable, err = cl.isFileDownloadable(drsObject)
 			if err != nil {
 				return cleanupOnError(err)
 			}
@@ -413,6 +451,8 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			logger, closer := logs.New(profile, logs.WithBaseLogger(cl.Logger))
 			defer closer()
 
+			// Instantiate interface to Gen3
+			// TODO - Can we reuse this interface to avoid repeated config parsing and most likely repeated token refresh?
 			g3, err := dataClient.NewGen3Interface(profile, logger)
 			if err != nil {
 				return cleanupOnError(fmt.Errorf("error creating Gen3 interface: %v", err))
@@ -464,28 +504,28 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	return nil, fmt.Errorf("indexd registration failed after retry for oid %s", oid)
 }
 
-func (cl *IndexDClient) isFileDownloadable(oid string, records []drs.DRSObject) (bool, error) {
+func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, error) {
 	if !cl.ForcePush {
-		cl.Logger.Printf("force push disabled; proceeding to upload oid %s", oid)
+		cl.Logger.Printf("force push disabled; proceeding to upload oid %s", drsObject.Id)
 		return false, nil
 	}
 
-	cl.Logger.Printf("checking if %s file is downloadable", oid)
-	signedUrl, err := cl.getDownloadURLFromRecords(oid, records)
+	cl.Logger.Printf("checking if %s file is downloadable %v %v %v", drsObject.Id, drsObject.AccessMethods[0].AccessID, drsObject.AccessMethods[0].Type, drsObject.AccessMethods[0].AccessURL)
+	signedUrl, err := cl.getDownloadURL(drsObject.Id, drsObject.AccessMethods[0].Type)
 	if err != nil {
-		cl.Logger.Printf("error getting signed URL for file with oid %s: %s", oid, err)
-		return false, fmt.Errorf("error getting signed URL for file with oid %s: %s", oid, err)
+		cl.Logger.Printf("error getting signed URL for file with oid %s: %s", drsObject.Id, err)
+		return false, fmt.Errorf("error getting signed URL for file with oid %s: %s", drsObject.Id, err)
 	}
-	if signedUrl == nil {
+	if signedUrl.URL == "" {
 		return false, nil
 	}
 
 	err = utils.CanDownloadFile(signedUrl.URL)
 	if err != nil {
-		cl.Logger.Printf("file with oid %s does not exist in bucket: %s", oid, err)
+		cl.Logger.Printf("file with oid %s does not exist in bucket: %s", drsObject.Id, err)
 		return false, nil
 	}
-	cl.Logger.Printf("file with oid %s exists in bucket", oid)
+	cl.Logger.Printf("file with oid %s exists in bucket", drsObject.Id)
 	return true, nil
 }
 

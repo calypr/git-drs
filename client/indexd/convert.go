@@ -4,6 +4,7 @@ package indexd_client
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/calypr/git-drs/drs"
 )
@@ -47,9 +48,17 @@ func indexdRecordToDrsObject(indexdObj *IndexdRecord) (*drs.DRSObject, error) {
 
 func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) ([]drs.AccessMethod, error) {
 	var accessMethods []drs.AccessMethod
-	for _, url := range urls {
+	for _, urlString := range urls {
 		var method drs.AccessMethod
-		method.AccessURL = drs.AccessURL{URL: url}
+		method.AccessURL = drs.AccessURL{URL: urlString}
+
+		parsed, err := url.Parse(urlString)
+		if err != nil || parsed.Scheme == "" {
+			// default to https if no scheme or parse error
+			method.Type = "https"
+		} else {
+			method.Type = parsed.Scheme
+		}
 
 		// check if authz is null or 0-length, then error
 		if authz == nil {

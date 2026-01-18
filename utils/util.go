@@ -37,20 +37,26 @@ func DrsTopLevel() (string, error) {
 	return filepath.Join(base, DRS_DIR), nil
 }
 
+// CanDownloadFile checks if a file can be downloaded from the given signed URL
+// by issuing a ranged GET for a single byte to mimic HEAD behavior.
 func CanDownloadFile(signedURL string) error {
-	// Create an HTTP GET request
-	resp, err := http.Get(signedURL)
+	req, err := http.NewRequest("GET", signedURL, nil)
 	if err != nil {
-		return fmt.Errorf("Error while sending the request: %v\n", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Range", "bytes=0-0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error while sending the request: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Check if the response status is 200 OK
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusOK {
 		return nil
 	}
 
-	return fmt.Errorf("failed to download file, HTTP Status: %d", resp.StatusCode)
+	return fmt.Errorf("failed to access file, HTTP status: %d", resp.StatusCode)
 }
 
 func ParseEmailFromToken(tokenString string) (string, error) {

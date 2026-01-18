@@ -12,6 +12,7 @@ PROFILE_DEFAULT="calypr-dev"
 PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"
+CLONE_DEFAULT="false"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -56,6 +57,14 @@ while [ $# -gt 0 ]; do
       CLEAN="true"
       shift
       ;;
+    --clone=*)
+      CLONE="${1#*=}"
+      shift
+      ;;
+    --clone)
+      CLONE="true"
+      shift
+      ;;
     -h|--help)
       echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--git-remote NAME]" >&2
       exit 0
@@ -72,7 +81,7 @@ PROFILE="${PROFILE:-$PROFILE_DEFAULT}"
 PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
 GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 CLEAN="${CLEAN:-$CLEAN_DEFAULT}"
-
+CLONE="${CLONE:-$CLONE_DEFAULT}"
 
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
@@ -81,6 +90,7 @@ export PROFILE
 export PROGRAM
 export PROJECT
 export GIT_REMOTE
+export CLONE
 
 echo "Using CREDENTIALS_PATH=$CREDENTIALS_PATH" >&2
 echo "Using PROFILE=$PROFILE" >&2
@@ -88,6 +98,8 @@ echo "Using PROGRAM=$PROGRAM" >&2
 echo "Using PROJECT=$PROJECT" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
 echo "Using CLEAN=$CLEAN" >&2
+echo "Using CLONE=$CLONE" >&2
+
 
 if [ "$(basename "$PWD")" != "monorepos" ] || [ "$(basename "$(dirname "$PWD")")" != "tests" ]; then
   echo 'error: must run from tests/monorepos directory' >&2
@@ -158,6 +170,33 @@ if [ "$CLEAN" = "true" ]; then
   rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
 else
   echo "CLEAN flag not set to true; skipping git state cleanup" >&2
+fi
+
+if [ "$CLONE" = "true" ]; then
+  rm -rf ../clone || true
+  mkdir ../clone || true
+  cd ../clone
+  echo "Cloning remote repository into ../clone" >&2
+  # clone into current directory
+  if ! git clone "$GIT_REMOTE" .; then
+    echo "error: git clone failed" >&2
+    exit 1
+  fi
+  echo "Finished cloning remote repository into `pwd`" >&2
+  echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/file-0001.dat:" >&2
+  if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    exit 1
+  fi
+  echo "Pulling LFS objects from remote" >&2
+  git drs init
+  git lfs pull origin main
+  if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+    echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    exit 1
+  fi
+  echo "Clone and LFS pull successful" >&2
+  exit 0
 fi
 
 # init git repo if not already a git repo

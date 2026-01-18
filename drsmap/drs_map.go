@@ -266,7 +266,7 @@ func DrsUUID(projectId string, hash string) string {
 	return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
 }
 
-// creates index record from file
+// creates drsObject record from file
 func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 	// unmarshal the DRS object
 	path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
@@ -274,18 +274,18 @@ func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
 
-	indexdObjBytes, err := os.ReadFile(path)
+	drsObjBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
 	}
 
-	var indexdObj drs.DRSObject
-	err = sonic.ConfigFastest.Unmarshal(indexdObjBytes, &indexdObj)
+	var drsObject drs.DRSObject
+	err = sonic.ConfigFastest.Unmarshal(drsObjBytes, &drsObject)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
 	}
 
-	return &indexdObj, nil
+	return &drsObject, nil
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {

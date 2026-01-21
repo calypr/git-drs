@@ -3,8 +3,10 @@
 # strict
 set -euo pipefail
 # echo commands as they are executed
-set -x
-    
+if [  "${GIT_TRACE:-}" ]; then
+  set -x
+fi
+
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
@@ -214,6 +216,13 @@ else
   # Initialize drs configuration for this repo
   git drs init -t 16
   git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket cbds --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  # Set multipart-threshold to 10 (MB) for testing purposes
+  # Using a smaller threshold to force a multipart upload for testing
+  # default is 500 (MB)
+  git config --local lfs.customtransfer.drs.multipart-threshold 10
+  # Set multipart-min-chunk-size to 5 (MB) for testing purposes
+  # Using a smaller chunk size to will force a large
+  git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
 
   # verify fixtures/.drs/config.yaml exists
   if [ ! -f ".drs/config.yaml" ]; then
@@ -240,7 +249,11 @@ else
   echo "Finished init.  Force pushing to remote." >&2
   git remote -v
 
-  GIT_TRACE=1 GIT_TRANSFER_TRACE=1 git push -f origin main 2>&1 | tee lfs-console.log
+  if [ -z "${GIT_TRACE:-}" ]; then
+    echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
+    echo "# export GIT_TRACE=1 GIT_TRANSFER_TRACE=1" >&2
+  fi
+  git push -f origin main 2>&1 | tee lfs-console.log
 
   echo "Finished init.  Finished pushing to remote." >&2
   exit 0
@@ -261,7 +274,11 @@ for dir in */ ; do
     git add "$dir"
     git commit -am "Add $dir" 2>&1 | tee commit.log
     cat commit.log >> commit-aggregate.log
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1 git push origin main 2>&1 | tee lfs-console.log
+    if [ -z "${GIT_TRACE:-}" ]; then
+      echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
+      echo "# export GIT_TRACE=1 GIT_TRANSFER_TRACE=1" >&2
+    fi
+    git push origin main 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
     # if .drs/lfs/objects exists, log last 3 lines of tree

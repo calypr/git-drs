@@ -1,0 +1,119 @@
+#!/bin/bash
+# coverage-test.sh
+# Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
+set -euo pipefail
+
+# echo commands as they are executed
+if [ -z "${GIT_TRACE:-}" ]; then
+  echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
+  echo "# export GIT_TRACE=1 GIT_TRANSFER_TRACE=1" >&2
+else
+  set -x
+fi
+
+# determine the script directory and cd to its parent (project root)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+if [ -z "${SCRIPT_DIR:-}" ]; then
+  echo "error: unable to determine script directory" >&2
+  exit 1
+fi
+cd "$SCRIPT_DIR/.." || { echo "error: failed to cd to parent of $SCRIPT_DIR" >&2; exit 1; }
+
+
+# Accept named parameters (flags override environment variables)
+POD="${POD:-}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+RESOURCE="${RESOURCE:-}"
+MINIO_ALIAS="${MINIO_ALIAS:-}"
+BUCKET="${BUCKET:-}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --pod=*) POD="${1#*=}"; shift ;;
+    --pod) POD="$2"; shift 2 ;;
+    --postgres-password=*) POSTGRES_PASSWORD="${1#*=}"; shift ;;
+    --postgres-password) POSTGRES_PASSWORD="$2"; shift 2 ;;
+    --resource=*) RESOURCE="${1#*=}"; shift ;;
+    --resource) RESOURCE="$2"; shift 2 ;;
+    --minio-alias=*) MINIO_ALIAS="${1#*=}"; shift ;;
+    --minio-alias) MINIO_ALIAS="$2"; shift 2 ;;
+    --bucket=*) BUCKET="${1#*=}"; shift ;;
+    --bucket) BUCKET="$2"; shift 2 ;;
+    -h|--help)
+      echo "Usage: $0 [--pod POD] [--postgres-password PASS] [--resource RES] [--minio-alias ALIAS] [--bucket BUCKET]"
+      exit 0
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+
+UTIL_DIR="tests/scripts/utils"
+MONOREPO_DIR="tests/monorepos"
+RUN_TEST="./run-test.sh"
+
+# helpers
+err() { echo "error: $*" >&2; }
+run_and_check() {
+  echo "=== running: $* ===" >&2
+  if ! "$@"; then
+    err "command failed: $*"
+    exit 1
+  fi
+}
+
+# Validate required inputs
+if [ -z "$POD" ] || [ -z "$POSTGRES_PASSWORD" ] || [ -z "$RESOURCE" ] || [ -z "$MINIO_ALIAS" ] || [ -z "$BUCKET" ]; then
+  err "One or more required environment variables are missing. Please set: POD, POSTGRES_PASSWORD, RESOURCE, MINIO_ALIAS, BUCKET"
+  exit 1
+fi
+
+# Ensure utilities exist
+if [ ! -d "$UTIL_DIR" ]; then
+  err "utils directory not found: \`$UTIL_DIR\`"
+  exit 1
+fi
+
+pushd "$UTIL_DIR" >/dev/null
+
+# 1) Remove objects from bucket using indexd->s3 list/delete pipeline
+echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
+run_and_check ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" \| ./list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"
+echo "Bucket object removal pipeline completed." >&2
+
+# 2) Remove indexd records
+echo "Removing indexd records via \`./clean-indexd.sh $POD <POSTGRES_PASSWORD>\`" >&2
+run_and_check ./clean-indexd.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE"
+echo "Indexd cleanup completed." >&2
+
+popd >/dev/null
+
+# Ensure monorepo test runner exists
+if [ ! -d "$MONOREPO_DIR" ]; then
+  err "monorepo tests directory not found: \`$MONOREPO_DIR\`"
+  exit 1
+fi
+
+pushd "$MONOREPO_DIR" >/dev/null
+
+# Run sequence twice: (--clean, normal, --clone)
+for pass in 1 2; do
+  echo "=== Test sequence pass #$pass ===" >&2
+
+  echo "-> Running: \`$RUN_TEST --clean\`" >&2
+  run_and_check "$RUN_TEST" --clean
+
+  echo "-> Running: \`$RUN_TEST\`" >&2
+  run_and_check "$RUN_TEST"
+
+  echo "-> Running: \`$RUN_TEST --clone\`" >&2
+  run_and_check "$RUN_TEST" --clone
+
+  echo "=== Test sequence pass #$pass completed ===" >&2
+done
+
+popd >/dev/null
+
+echo "coverage-test.sh: all steps completed successfully." >&2

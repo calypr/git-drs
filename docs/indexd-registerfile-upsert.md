@@ -11,7 +11,7 @@ The Indexd `RegisterFile` flow needs toggles for:
 These toggles must be controlled per-repository using git LFS configuration (`git config` entries under `lfs.customtransfer.drs.*`). This keeps behavior in repo-local configuration and avoids coupling to remote YAML configuration.
 
 ## Decision
-Read `lfs.customtransfer.drs.force-push` from git config during Indexd client initialization. Missing values default to `false`. Invalid values fail initialization with a clear error.
+Read `lfs.customtransfer.drs.upsert` from git config during Indexd client initialization. Missing values default to `false`. Invalid values fail initialization with a clear error.
 
 ## Before
 

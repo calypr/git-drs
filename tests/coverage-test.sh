@@ -80,7 +80,10 @@ pushd "$UTIL_DIR" >/dev/null
 
 # 1) Remove objects from bucket using indexd->s3 list/delete pipeline
 echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
-run_and_check ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" \| ./list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"
+if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
+  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+  exit 1
+fi
 echo "Bucket object removal pipeline completed." >&2
 
 # 2) Remove indexd records

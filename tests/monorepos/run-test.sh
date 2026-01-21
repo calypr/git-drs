@@ -77,7 +77,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--git-remote NAME] [--upsert]" >&2
+      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--clone] [--git-remote NAME] [--upsert]" >&2
       exit 0
       ;;
     *)

@@ -221,8 +221,9 @@ else
   # default is 500 (MB)
   git config --local lfs.customtransfer.drs.multipart-threshold 10
   # Set multipart-min-chunk-size to 5 (MB) for testing purposes
-  # Using a smaller chunk size to will force a large
-  git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
+  # Using a smaller chunk size to will force a large number of parts for testing
+  # To test this, you will need to disable data_clients.OptimalChunkSize
+  # git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
 
   # verify fixtures/.drs/config.yaml exists
   if [ ! -f ".drs/config.yaml" ]; then

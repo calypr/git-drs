@@ -15,6 +15,7 @@ PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"
 CLONE_DEFAULT="false"
+UPSERT_DEFAULT="false"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -67,8 +68,16 @@ while [ $# -gt 0 ]; do
       CLONE="true"
       shift
       ;;
+    --upsert=*)
+      UPSERT="${1#*=}"
+      shift
+      ;;
+    --upsert)
+      UPSERT="true"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--git-remote NAME]" >&2
+      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--git-remote NAME] [--upsert]" >&2
       exit 0
       ;;
     *)
@@ -84,6 +93,7 @@ PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
 GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 CLEAN="${CLEAN:-$CLEAN_DEFAULT}"
 CLONE="${CLONE:-$CLONE_DEFAULT}"
+UPSERT="${UPSERT:-$UPSERT_DEFAULT}"
 
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
@@ -93,6 +103,7 @@ export PROGRAM
 export PROJECT
 export GIT_REMOTE
 export CLONE
+export UPSERT
 
 echo "Using CREDENTIALS_PATH=$CREDENTIALS_PATH" >&2
 echo "Using PROFILE=$PROFILE" >&2
@@ -101,6 +112,7 @@ echo "Using PROJECT=$PROJECT" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
 echo "Using CLEAN=$CLEAN" >&2
 echo "Using CLONE=$CLONE" >&2
+echo "Using UPSERT=$UPSERT" >&2
 
 
 if [ "$(basename "$PWD")" != "monorepos" ] || [ "$(basename "$(dirname "$PWD")")" != "tests" ]; then
@@ -220,10 +232,20 @@ else
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)
   git config --local lfs.customtransfer.drs.multipart-threshold 10
+
   # Set multipart-min-chunk-size to 5 (MB) for testing purposes
   # Using a smaller chunk size to will force a large number of parts for testing
-  # To test this, you will need to disable data_clients.OptimalChunkSize
+  # To test this, you will need to disable data_clients.OptimalChunkSize in code
+  # We used this to test a 5GB+ file upload with many parts which causes a minio error
   # git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
+
+  # Enable upsert for testing purposes, when adding files to indexd, if the object already exists, delete and re-add it
+  if [ "$UPSERT" = "true" ]; then
+    git config --local lfs.customtransfer.drs.upsert true
+    echo "UPSERT is enabled; set lfs.customtransfer.drs.upsert to true" >&2
+  else
+    echo "UPSERT is disabled; not setting lfs.customtransfer.drs.upsert" >&2
+  fi
 
   # verify fixtures/.drs/config.yaml exists
   if [ ! -f ".drs/config.yaml" ]; then

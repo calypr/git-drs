@@ -303,12 +303,7 @@ func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSO
 	}
 
 	cl.Logger.Printf("Matching record: %#v for oid %s", matchingRecord, oid)
-	// Get the DRS object for the matching record
-	drsObj, err := cl.GetObject(matchingRecord.Id)
-	if err != nil {
-		cl.Logger.Printf("error getting DRS object for matching record %s: %s", matchingRecord.Id, err)
-		return nil, fmt.Errorf("error getting DRS object for matching record %s: %v", matchingRecord.Id, err)
-	}
+	drsObj := matchingRecord
 
 	// Check if access methods exist
 	if len(drsObj.AccessMethods) == 0 {
@@ -317,10 +312,14 @@ func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSO
 	}
 
 	// naively get access ID from splitting first path into :
-	accessId := drsObj.AccessMethods[0].AccessID
+	accessType := drsObj.AccessMethods[0].Type
+	if accessType == "" {
+		cl.Logger.Printf("no accessType found in access method for DRS object %v", drsObj.AccessMethods[0])
+		return nil, fmt.Errorf("no accessType found in access method for DRS object %v", drsObj.AccessMethods[0])
+	}
 	did := drsObj.Id
 
-	accessUrl, err := cl.getDownloadURL(did, accessId)
+	accessUrl, err := cl.getDownloadURL(did, accessType)
 	if err != nil {
 		return nil, err
 	}
@@ -348,9 +347,17 @@ func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessU
 	if err != nil {
 		return drs.AccessURL{}, fmt.Errorf("error getting signed URL: %v", err)
 	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(response.Body)
+	defer func() {
+		closeErr := response.Body.Close()
+		if err == nil {
+			// If no error has happened yet, take the close error
+			err = closeErr
+		} else if closeErr != nil {
+			// If an error already exists, you can log the close error
+			// or wrap it so you don't lose the original context
+			err = fmt.Errorf("%w; additionally, body close failed: %v", err, closeErr)
+		}
+	}()
 
 	accessUrl := drs.AccessURL{}
 
@@ -360,7 +367,7 @@ func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessU
 		return drs.AccessURL{}, fmt.Errorf("unable to read response body: %v", readErr)
 	}
 
-	if err := cl.SConfig.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&accessUrl); err != nil {
+	if err := cl.SConfig.Unmarshal(bodyBytes, &accessUrl); err != nil {
 		return drs.AccessURL{}, fmt.Errorf("unable to decode response into drs.AccessURL: %v; body: %s", err, string(bodyBytes))
 	}
 

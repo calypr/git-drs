@@ -564,20 +564,6 @@ func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, erro
 	return true, nil
 }
 
-func ensureDrsObjectInRecords(records []drs.DRSObject, drsObject *drs.DRSObject) []drs.DRSObject {
-	if drsObject == nil {
-		return records
-	}
-
-	for _, record := range records {
-		if record.Id == drsObject.Id {
-			return records
-		}
-	}
-
-	return append(records, *drsObject)
-}
-
 func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) {
 
 	a := *cl.Base

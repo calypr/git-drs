@@ -43,7 +43,8 @@ type IndexDClient struct {
 	HttpClient *retryablehttp.Client
 	SConfig    sonic.API
 
-	ForcePush bool
+	Upsert             bool  // whether to force push (upsert) indexd records and file uploads
+	MultiPartThreshold int64 // threshold for multipart uploads
 }
 
 ////////////////////
@@ -100,20 +101,24 @@ func NewIndexDClient(profileConfig conf.Credential, remote Gen3Remote, logger *l
 	retryClient.RetryWaitMin = 5 * time.Second
 	retryClient.RetryWaitMax = 15 * time.Second
 
-	forcePush, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
 		return nil, err
 	}
 
+	multiPartThresholdInt, err := getLfsCustomTransferInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	var multiPartThreshold int64 = multiPartThresholdInt * common.MB // default 100 MB
+
 	return &IndexDClient{
-		Base:        baseUrl,
-		ProjectId:   projectId,
-		BucketName:  bucketName,
-		Logger:      logger,
-		AuthHandler: &RealAuthHandler{profileConfig}, // Use real auth in production
-		HttpClient:  retryClient,
-		SConfig:     sonic.ConfigFastest,
-		ForcePush:   forcePush,
+		Base:               baseUrl,
+		ProjectId:          projectId,
+		BucketName:         bucketName,
+		Logger:             logger,
+		AuthHandler:        &RealAuthHandler{profileConfig}, // Use real auth in production
+		HttpClient:         retryClient,
+		SConfig:            sonic.ConfigFastest,
+		Upsert:             upsert,
+		MultiPartThreshold: multiPartThreshold,
 	}, nil
 }
 
@@ -123,6 +128,7 @@ func (cl *IndexDClient) GetProjectId() string {
 
 func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
 	defaultText := strconv.FormatBool(defaultValue)
+	// TODO cache or get all the configs at once?
 	cmd := exec.Command("git", "config", "--get", "--default", defaultText, key)
 	output, err := cmd.Output()
 	if err != nil {
@@ -135,6 +141,33 @@ func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
 	if err != nil {
 		return defaultValue, fmt.Errorf("invalid boolean value for %s: >%q<", key, value)
 	}
+	return parsed, nil
+}
+
+func getLfsCustomTransferInt(key string, defaultValue int64) (int64, error) {
+	defaultText := strconv.FormatInt(defaultValue, 10)
+	// TODO cache or get all the configs at once?
+	cmd := exec.Command("git", "config", "--get", "--default", defaultText, key)
+	output, err := cmd.Output()
+	if err != nil {
+		return defaultValue, fmt.Errorf("error reading git config %s: %v", key, err)
+	}
+
+	value := strings.TrimSpace(string(output))
+
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return defaultValue, fmt.Errorf("invalid int value for %s: >%q<", key, value)
+	}
+
+	if parsed < 0 {
+		return defaultValue, fmt.Errorf("invalid negative int value for %s: %d", key, parsed)
+	}
+
+	if parsed == 0 || parsed > 500 {
+		return defaultValue, fmt.Errorf("invalid int value for %s: %d. Must be between 1 and 500", key, parsed)
+	}
+
 	return parsed, nil
 }
 
@@ -349,27 +382,27 @@ func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessU
 func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
-	originalForcePush := cl.ForcePush
+	originalUpsert := cl.Upsert
 	attempts := 1
-	if !originalForcePush {
+	if !originalUpsert {
 		attempts = 2
 		defer func() {
-			cl.ForcePush = originalForcePush
+			cl.Upsert = originalUpsert
 		}()
 	}
 
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt == 1 {
-			cl.ForcePush = true
+			cl.Upsert = true
 		}
-		cl.Logger.Printf("register file attempt %d for oid: %s (force push: %t)", attempt+1, oid, cl.ForcePush)
+		cl.Logger.Printf("register file attempt %d for oid: %s (force push: %t)", attempt+1, oid, cl.Upsert)
 
 		var records []drs.DRSObject
 		var err error
 		var drsObject *drs.DRSObject
 		createdRecord := false
 
-		if cl.ForcePush {
+		if cl.Upsert {
 			records, err = cl.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 			if err != nil {
 				return nil, fmt.Errorf("error querying indexd server for matches to hash %s: %v", oid, err)
@@ -397,7 +430,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 
 			drsObject, err = cl.RegisterIndexdRecord(indexdObj)
 			if err != nil {
-				if !cl.ForcePush {
+				if !cl.Upsert {
 					cl.Logger.Printf("error saving indexd record without force push: %s; retrying with force push enabled", err)
 					continue
 				}
@@ -425,7 +458,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 
 		isDownloadable := false
-		if cl.ForcePush {
+		if cl.Upsert {
 			isDownloadable, err = cl.isFileDownloadable(drsObject)
 			if err != nil {
 				return cleanupOnError(err)
@@ -470,13 +503,15 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 			}
 
 			// TODO - Can we reuse Auth to ensure we are not repeatedly refreshing tokens?
-			if stat.Size() < 5*common.GB {
+			if stat.Size() < cl.MultiPartThreshold {
+				cl.Logger.Printf("UploadSingle for small file %s", filePath)
 				err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
 				if err != nil {
 					cl.Logger.Printf("error uploading single file to bucket: %s", err)
 					return cleanupOnError(fmt.Errorf("error uploading single file to bucket: %s", err))
 				}
 			} else {
+				cl.Logger.Printf("MultipartUpload for large file %s", filePath)
 				err = upload.MultipartUpload(
 					context.TODO(),
 					g3,
@@ -505,7 +540,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 }
 
 func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, error) {
-	if !cl.ForcePush {
+	if !cl.Upsert {
 		cl.Logger.Printf("force push disabled; proceeding to upload oid %s", drsObject.Id)
 		return false, nil
 	}

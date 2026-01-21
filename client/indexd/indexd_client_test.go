@@ -16,6 +16,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -377,7 +378,8 @@ func TestIndexdClient_NewIndexDClient(t *testing.T) {
 	restore := chdirForTest(t, repoDir)
 	defer restore()
 
-	runGit(t, repoDir, "config", "lfs.customtransfer.drs.force-push", "false")
+	runGit(t, repoDir, "config", "lfs.customtransfer.drs.upsert", "false")
+	runGit(t, repoDir, "config", "lfs.customtransfer.drs.multipart-threshold", "222")
 
 	cred := conf.Credential{APIEndpoint: "https://example.com"}
 	remote := Gen3Remote{ProjectID: "project", Bucket: "bucket"}
@@ -395,8 +397,11 @@ func TestIndexdClient_NewIndexDClient(t *testing.T) {
 	if indexd.HttpClient.HTTPClient.Timeout != 30*time.Second {
 		t.Fatalf("unexpected http timeout: %v", indexd.HttpClient.HTTPClient.Timeout)
 	}
-	if indexd.ForcePush {
-		t.Fatalf("expected force push disabled, got %v", indexd.ForcePush)
+	if indexd.Upsert {
+		t.Fatalf("expected force push disabled, got %v", indexd.Upsert)
+	}
+	if indexd.MultiPartThreshold != 222*common.MB {
+		t.Fatalf("expected multipart threshold 222, got %d", indexd.MultiPartThreshold)
 	}
 }
 
@@ -405,7 +410,7 @@ func TestGetLfsCustomTransferBool_DefaultValue(t *testing.T) {
 	restore := chdirForTest(t, repoDir)
 	defer restore()
 
-	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
 		t.Fatalf("getLfsCustomTransferBool error: %v", err)
 	}
@@ -419,7 +424,7 @@ func TestGetLfsCustomTransferBool_MissingKeyReturnsDefault(t *testing.T) {
 	restore := chdirForTest(t, repoDir)
 	defer restore()
 
-	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.force-push", false)
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
 		t.Fatalf("getLfsCustomTransferBool error: %v", err)
 	}

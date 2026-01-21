@@ -7,9 +7,9 @@ set -euo pipefail
 # set -x
 
 # check parameter is a file
-if [ ! -f "$1" ]; then
+if [ "$#" -lt 1 ] || [ ! -f "${1:-}" ]; then
   echo "Usage: $0 \`<file>\`" >&2
-  echo "error: \`$1\` does not exist or is not a regular file" >&2
+  echo "error: \`${1:-}\` does not exist or is not a regular file" >&2
   exit 2
 fi
 

@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/bytedance/sonic v1.14.2
-	github.com/calypr/data-client v0.0.0-20260116155232-958f16679e8c
+	github.com/calypr/data-client v0.0.0-20260121002104-bfba83c8cd17
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
@@ -65,4 +65,4 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
 
-replace github.com/calypr/data-client => /Users/walsbr/calypr/data-client
+//replace github.com/calypr/data-client => /Users/walsbr/calypr/data-client

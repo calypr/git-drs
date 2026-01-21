@@ -147,7 +147,6 @@ for pass in 1 2; do
     run_and_check "$RUN_TEST" --clean  --bucket=$BUCKET --project=$PROJECT_ID
   fi
 
-
   # on the second pass, this will NOT replace existing indexd records
   echo "-> Running: \`$RUN_TEST\`" >&2
   run_and_check "$RUN_TEST"
@@ -160,5 +159,12 @@ for pass in 1 2; do
 done
 
 popd >/dev/null
+
+echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
+if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
+  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+  exit 1
+fi
+
 
 echo "coverage-test.sh: all steps completed successfully." >&2

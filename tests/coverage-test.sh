@@ -3,6 +3,7 @@
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
 
+
 # echo commands as they are executed
 if [ -z "${GIT_TRACE:-}" ]; then
   echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
@@ -18,6 +19,17 @@ if [ -z "${SCRIPT_DIR:-}" ]; then
   exit 1
 fi
 cd "$SCRIPT_DIR/.." || { echo "error: failed to cd to parent of $SCRIPT_DIR" >&2; exit 1; }
+
+# lint
+go vet ./...
+gofmt -s -w .
+
+# build to ensure no compile errors
+go build
+
+# unit tests
+go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') | grep FAIL && echo "unit tests failed" >&2 && exit 1
+
 
 
 # Accept named parameters (flags override environment variables)
@@ -102,14 +114,25 @@ fi
 pushd "$MONOREPO_DIR" >/dev/null
 
 # Run sequence twice: (--clean, normal, --clone)
+# The first sequence ensures a clean state, the second verifies idempotency.
+
 for pass in 1 2; do
   echo "=== Test sequence pass #$pass ===" >&2
 
-  echo "-> Running: \`$RUN_TEST --clean\`" >&2
-  run_and_check "$RUN_TEST" --clean
+  # enable --upsert only on the second pass
+  if [ "$pass" -eq 2 ]; then
+    echo "-> Running: \`$RUN_TEST --clean --upsert\`" >&2
+    run_and_check "$RUN_TEST" --clean --upsert
+  else
+    echo "-> Running: \`$RUN_TEST --clean\`" >&2
+    run_and_check "$RUN_TEST" --clean
+  fi
 
+
+  # on the second pass, this will NOT replace existing indexd records
   echo "-> Running: \`$RUN_TEST\`" >&2
   run_and_check "$RUN_TEST"
+
 
   echo "-> Running: \`$RUN_TEST --clone\`" >&2
   run_and_check "$RUN_TEST" --clone

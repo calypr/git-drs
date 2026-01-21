@@ -4,7 +4,7 @@ set -euo pipefail
 
 FILE='fixtures/TARGET-ALL-P2/sub-directory-1/file-0003.dat'
 LINE='TARGET-ALL-P2/sub-directory-1/file-0003.dat'
-TARGET_BYTES=$((20 * 1024 * 1024))  # 5 GiB
+TARGET_BYTES=$((20 * 1024 * 1024))  # 20 MiB
 
 mkdir -p "$(dirname "$FILE")"
 

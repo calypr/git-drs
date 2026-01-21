@@ -82,7 +82,13 @@ while IFS=$' \t' read -r did hash file_name resource; do
 
   # capture mc ls output, append file_name on success; on failure print error plus file_name
   if output=$(mc ls "${MC_ALIAS}/${BUCKET}/${object_key}" 2>/dev/null); then
-      printf '%s %s %s %s\n' "$output" "$file_name" "$resource" "$object_key"
+      if [[ -z "$output" ]]; then
+          printf 'ERROR: alias: %s object: %s not found or unreachable file_name:%s\n' "$MC_ALIAS" "$object_key" "$file_name"
+          exit 1
+      else
+        printf '%s %s %s %s\n' "$output" "$file_name" "$resource" "$object_key"
+      fi
+
   else
       printf 'ERROR: alias %s object %s not found or unreachable %s\n' "$MC_ALIAS" "$object_key" "$file_name"
   fi

@@ -62,6 +62,25 @@ while [ $# -gt 0 ]; do
 done
 
 
+# Derive PROJECT_ID from RESOURCE (e.g. /programs/<prog>/projects/<proj> -> <prog>-<proj>)
+_resource_clean="${RESOURCE#/}"        # drop leading slash if present
+_resource_clean="${_resource_clean%/}" # drop trailing slash if present
+
+IFS='/' read -r -a _parts <<< "$_resource_clean"
+
+_prog=""
+_proj=""
+for i in "${!_parts[@]}"; do
+  if [ "${_parts[i]}" = "programs" ] && [ $((i+1)) -lt ${#_parts[@]} ]; then
+    _prog="${_parts[i+1]}"
+  fi
+  if [ "${_parts[i]}" = "projects" ] && [ $((i+1)) -lt ${#_parts[@]} ]; then
+    _proj="${_parts[i+1]}"
+  fi
+done
+
+PROJECT_ID="${_prog}-${_proj}"
+
 UTIL_DIR="tests/scripts/utils"
 MONOREPO_DIR="tests/monorepos"
 RUN_TEST="./run-test.sh"
@@ -91,9 +110,9 @@ fi
 pushd "$UTIL_DIR" >/dev/null
 
 # 1) Remove objects from bucket using indexd->s3 list/delete pipeline
-echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
-if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
-  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./delete-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
+if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./delete-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
+  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./delete-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
   exit 1
 fi
 echo "Bucket object removal pipeline completed." >&2
@@ -122,10 +141,10 @@ for pass in 1 2; do
   # enable --upsert only on the second pass
   if [ "$pass" -eq 2 ]; then
     echo "-> Running: \`$RUN_TEST --clean --upsert\`" >&2
-    run_and_check "$RUN_TEST" --clean --upsert
+    run_and_check "$RUN_TEST" --clean --upsert  --bucket=$BUCKET --project=$PROJECT_ID
   else
     echo "-> Running: \`$RUN_TEST --clean\`" >&2
-    run_and_check "$RUN_TEST" --clean
+    run_and_check "$RUN_TEST" --clean  --bucket=$BUCKET --project=$PROJECT_ID
   fi
 
 

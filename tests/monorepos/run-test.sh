@@ -16,6 +16,7 @@ GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"
 CLONE_DEFAULT="false"
 UPSERT_DEFAULT="false"
+BUCKET_DEFAULT="cbds"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -76,6 +77,14 @@ while [ $# -gt 0 ]; do
       UPSERT="true"
       shift
       ;;
+    --bucket=*)
+      BUCKET="${1#*=}"
+      shift
+      ;;
+    --bucket)
+      BUCKET="$2"
+      shift 2
+      ;;
     -h|--help)
       echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--clone] [--git-remote NAME] [--upsert]" >&2
       exit 0
@@ -94,6 +103,7 @@ GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 CLEAN="${CLEAN:-$CLEAN_DEFAULT}"
 CLONE="${CLONE:-$CLONE_DEFAULT}"
 UPSERT="${UPSERT:-$UPSERT_DEFAULT}"
+BUCKET="${BUCKET:-$BUCKET_DEFAULT}"
 
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
@@ -227,7 +237,7 @@ else
 
   # Initialize drs configuration for this repo
   git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket cbds --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
   # Set multipart-threshold to 10 (MB) for testing purposes
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)

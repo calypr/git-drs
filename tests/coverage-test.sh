@@ -28,7 +28,7 @@ gofmt -s -w .
 go build
 
 # unit tests
-go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') | grep FAIL && echo "unit tests failed" >&2 && exit 1
+go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') || { echo "unit tests failed" >&2; exit 1; }
 
 
 

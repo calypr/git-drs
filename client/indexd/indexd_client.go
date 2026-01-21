@@ -1070,7 +1070,7 @@ func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64
 	}
 
 	//TODO: support other storage backends
-	fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, checksum))
+	fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
 
 	authzStr, err := utils.ProjectToResource(cl.GetProjectId())
 	if err != nil {

@@ -5,8 +5,8 @@ Accepted
 
 ## Context
 The Indexd `RegisterFile` flow needs toggles for:
-- whether to upsert (create) indexd records when no matching project record exists
-- whether to check bucket existence before uploading
+- whether to upsert indexd records (create when no matching project record exists, or replace by deleting and re-registering when a ma
+- whether to check bucket existence before uploading (Unimplemented, currently always checks and skips upload if already present)
 
 These toggles must be controlled per-repository using git LFS configuration (`git config` entries under `lfs.customtransfer.drs.*`). This keeps behavior in repo-local configuration and avoids coupling to remote YAML configuration.
 

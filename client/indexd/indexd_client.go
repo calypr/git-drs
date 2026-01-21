@@ -166,11 +166,7 @@ func getLfsCustomTransferInt(key string, defaultValue int64) (int64, error) {
 		return defaultValue, fmt.Errorf("invalid int value for %s: >%q<", key, value)
 	}
 
-	if parsed < 0 {
-		return defaultValue, fmt.Errorf("invalid negative int value for %s: %d", key, parsed)
-	}
-
-	if parsed == 0 || parsed > 500 {
+	if parsed < 1 || parsed > 500 {
 		return defaultValue, fmt.Errorf("invalid int value for %s: %d. Must be between 1 and 500", key, parsed)
 	}
 
@@ -333,11 +329,11 @@ func (cl *IndexDClient) getDownloadURLFromRecords(oid string, records []drs.DRSO
 	return &accessUrl, nil
 }
 
-// getDownloadURL gets a signed URL for the given DRS ID and access ID
-func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessURL, error) {
+// getDownloadURL gets a signed URL for the given DRS ID and accessType (eg s3)
+func (cl *IndexDClient) getDownloadURL(did string, accessType string) (drs.AccessURL, error) {
 	// get signed url
 	a := *cl.Base
-	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", did, "access", accessId)
+	a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", did, "access", accessType)
 
 	req, err := retryablehttp.NewRequest("GET", a.String(), nil)
 	if err != nil {
@@ -354,14 +350,8 @@ func (cl *IndexDClient) getDownloadURL(did string, accessId string) (drs.AccessU
 		return drs.AccessURL{}, fmt.Errorf("error getting signed URL: %v", err)
 	}
 	defer func() {
-		closeErr := response.Body.Close()
-		if err == nil {
-			// If no error has happened yet, take the close error
-			err = closeErr
-		} else if closeErr != nil {
-			// If an error already exists, you can log the close error
-			// or wrap it so you don't lose the original context
-			err = fmt.Errorf("%w; additionally, body close failed: %v", err, closeErr)
+		if closeErr := response.Body.Close(); closeErr != nil {
+			log.Printf("error closing response body: %v", closeErr)
 		}
 	}()
 
@@ -502,6 +492,13 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 }
 
 func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, error) {
+	if drsObject == nil {
+		return false, fmt.Errorf("drsObject is nil")
+	}
+	if len(drsObject.AccessMethods) == 0 {
+		cl.Logger.Printf("DRS object %s has no access methods; proceeding to upload", drsObject.Id)
+		return false, nil
+	}
 	cl.Logger.Printf("checking if %s file is downloadable %v %v %v", drsObject.Id, drsObject.AccessMethods[0].AccessID, drsObject.AccessMethods[0].Type, drsObject.AccessMethods[0].AccessURL)
 	signedUrl, err := cl.getDownloadURL(drsObject.Id, drsObject.AccessMethods[0].Type)
 	if err != nil {

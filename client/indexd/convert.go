@@ -53,7 +53,10 @@ func drsAccessMethodsFromIndexdURLs(urls []string, authz []string) ([]drs.Access
 		method.AccessURL = drs.AccessURL{URL: urlString}
 
 		parsed, err := url.Parse(urlString)
-		if err != nil || parsed.Scheme == "" {
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse url %q: %v", urlString, err)
+		}
+		if parsed.Scheme == "" {
 			// default to https if no scheme or parse error
 			method.Type = "https"
 		} else {

@@ -28,11 +28,16 @@ fi
 
 # Try a simple listing on the alias root to verify connectivity.
 # Suppress normal output; on failure re-run without suppression to show error details.
-if mc "${INSEC_FLAG}" ls "${ALIAS}" >/dev/null 2>&1; then
+CMD=(mc)
+if [[ -n "${INSEC_FLAG}" ]]; then
+  CMD+=("${INSEC_FLAG}")
+fi
+CMD+=(ls "${ALIAS}")
+if "${CMD[@]}" >/dev/null 2>&1; then
   echo "OK: alias '${ALIAS}' reachable"
   exit 0
 else
   echo "ERROR: alias '${ALIAS}' unreachable - showing details:"
-  mc "${INSEC_FLAG}" ls "${ALIAS}" || true
+  "${CMD[@]}" || true
   exit 3
 fi

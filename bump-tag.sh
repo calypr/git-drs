@@ -9,6 +9,15 @@ if [ -z "$LATEST_TAG" ]; then
   exit 1
 fi
 
+# check that the working directory is clean
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Working directory is not clean. Please commit or stash changes before running this script." >&2
+  exit 1
+fi
+
+# check coverage timestamp before proceeding, to ensure tests have been run recently
+tests/scripts/coverage/assert-coverage-timestamp.sh
+
 
 usage() {
   cat <<-EOF

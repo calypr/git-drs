@@ -314,7 +314,7 @@ func TestIndexdClient_BuildDrsObj(t *testing.T) {
 	if obj.Id != "did-1" || obj.Checksums.SHA256 != "sha-256" {
 		t.Fatalf("unexpected drs object: %+v", obj)
 	}
-	if len(obj.AccessMethods) != 1 || !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
+	if len(obj.AccessMethods) != 1 || !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "sha-256")) {
 		t.Fatalf("unexpected access URL: %+v", obj.AccessMethods)
 	}
 }
@@ -490,7 +490,7 @@ func TestBuildDrsObj_Success(t *testing.T) {
 	if len(obj.AccessMethods) != 1 {
 		t.Fatalf("expected 1 access method, got %d", len(obj.AccessMethods))
 	}
-	if !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
+	if !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "sha-256")) {
 		t.Fatalf("unexpected access URL: %s", obj.AccessMethods[0].AccessURL.URL)
 	}
 	if obj.AccessMethods[0].Type != "s3" {

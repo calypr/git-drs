@@ -77,7 +77,7 @@ while IFS=$' \t' read -r did hash file_name resource; do
         continue
     fi
 
-    object_key="${PREFIX}${did}/${hash}"
+    object_key="${PREFIX}${hash}"
     s3_url="s3://${BUCKET}/${object_key}"
 
   # capture mc ls output, append file_name on success; on failure print error plus file_name

@@ -16,10 +16,15 @@ on:
     # Run weekly to catch any issues with new releases
     - cron: '0 0 * * 0'
 
+permissions:
+  contents: read
+
 jobs:
   test-install-script:
     name: Test install.sh on ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -212,6 +217,8 @@ jobs:
   test-install-script-cross-arch:
     name: Test install.sh cross-architecture simulation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Check out code
@@ -292,6 +299,8 @@ jobs:
     needs: [test-install-script, test-install-script-cross-arch]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
       - name: Check test results

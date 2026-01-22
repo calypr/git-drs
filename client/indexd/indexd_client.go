@@ -776,7 +776,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	// log how many records were found
 	cl.Logger.Printf("Found %d indexd record(s) matching the hash %v", len(records.Records), records)
 
-	out := make([]drs.DRSObject, len(records.Records))
+	out := make([]drs.DRSObject, 0, len(records.Records))
 
 	// if no records found, return empty slice
 	if len(records.Records) == 0 {

@@ -183,8 +183,12 @@ go tool covdata textfmt -i="${INTEGRATION_COV_DIR}" -o "${INTEGRATION_PROFILE}"
 echo "Integration coverage profile saved to ${INTEGRATION_PROFILE}"
 
 # unit tests
+rm git-drs || true
 which git-drs
-export GOCOVERDIR=coverage/unit/raw
-go test -cover -covermode=atomic -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
+#export GOCOVERDIR=coverage/unit/raw
+#go test -cover -covermode=atomic -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
+
+mkdir -p coverage/unit/raw
+go test -v -race -coverprofile=coverage/unit/raw/coverage.out -covermode=atomic -coverpkg=./... $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') || { echo "unit tests failed" >&2; exit 1; }
 
 

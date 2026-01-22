@@ -28,7 +28,9 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error creating logger: %v", err)
 		}
 
-		myLogger.Print("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
+		if drslog.TraceEnabled() {
+			myLogger.Print("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
+		}
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -39,7 +41,9 @@ var Cmd = &cobra.Command{
 		//* The name of the remote (e.g., origin).
 		//* The remote's location/URL (e.g., github.com).
 		// Create gitRemoteName and gitRemoteLocation from args.
-		myLogger.Printf("pre-push args: %v", args)
+		if drslog.TraceEnabled() {
+			myLogger.Printf("pre-push args: %v", args)
+		}
 		var gitRemoteName, gitRemoteLocation string
 		if len(args) >= 1 {
 			gitRemoteName = args[0]
@@ -50,7 +54,9 @@ var Cmd = &cobra.Command{
 		if gitRemoteName == "" {
 			gitRemoteName = "origin"
 		}
-		myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
+		if drslog.TraceEnabled() {
+			myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
+		}
 
 		// get the default remote from the .git/drs/config
 		var remote config.Remote
@@ -75,7 +81,9 @@ var Cmd = &cobra.Command{
 		if !ok {
 			return fmt.Errorf("cli is not IndexdClient: %T", cli)
 		}
-		myLogger.Printf("Current server: %s", dc.ProjectId)
+		if drslog.TraceEnabled() {
+			myLogger.Printf("Current server: %s", dc.ProjectId)
+		}
 
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")
@@ -107,15 +115,21 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		myLogger.Printf("Preparing DRS objects for push branches: %v", branches)
+		if drslog.TraceEnabled() {
+			myLogger.Printf("Preparing DRS objects for push branches: %v", branches)
+		}
 		err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
 		if err != nil {
 			myLogger.Print("UpdateDrsObjects failed:", err)
 			return err
 		}
-		myLogger.Printf("DRS objects prepared for push!\n")
+		if drslog.TraceEnabled() {
+			myLogger.Printf("DRS objects prepared for push!\n")
+		}
 
-		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+		if drslog.TraceEnabled() {
+			myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+		}
 		return nil
 	},
 }

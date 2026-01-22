@@ -46,7 +46,9 @@ var Cmd = &cobra.Command{
 	Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		logger.Print("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
+		if drslog.TraceEnabled() {
+			logger.Print("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
+		}
 
 		// Gotta go fast — big buffer
 		scanner := bufio.NewScanner(os.Stdin)
@@ -107,7 +109,9 @@ var Cmd = &cobra.Command{
 		// Determine if upload or download
 		if initMsg.Operation == OPERATION_UPLOAD || initMsg.Operation == OPERATION_DOWNLOAD {
 			transferOperation = initMsg.Operation
-			logger.Printf("Transfer operation: %s", transferOperation)
+			if drslog.TraceEnabled() {
+				logger.Printf("Transfer operation: %s", transferOperation)
+			}
 		} else {
 			err := fmt.Errorf("invalid or missing operation in init message: %s", initMsg.Operation)
 			logger.Print(err.Error())
@@ -129,7 +133,9 @@ var Cmd = &cobra.Command{
 
 			if evt, ok := msg["event"]; ok && evt == "download" {
 				// Handle download event
-				logger.Printf("Download requested")
+				if drslog.TraceEnabled() {
+					logger.Printf("Download requested")
+				}
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
@@ -139,7 +145,9 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
 					continue
 				}
-				logger.Printf("Downloading file OID %s", downloadMsg.Oid)
+				if drslog.TraceEnabled() {
+					logger.Printf("Downloading file OID %s", downloadMsg.Oid)
+				}
 
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
@@ -173,13 +181,17 @@ var Cmd = &cobra.Command{
 				}
 
 				// send success message back
-				logger.Printf("Download for OID %s complete", downloadMsg.Oid)
+				if drslog.TraceEnabled() {
+					logger.Printf("Download for OID %s complete", downloadMsg.Oid)
+				}
 
 				lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				logger.Printf("Upload requested")
+				if drslog.TraceEnabled() {
+					logger.Printf("Upload requested")
+				}
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
@@ -189,7 +201,9 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
 					continue
 				}
-				logger.Printf("Uploading file OID %s", uploadMsg.Oid)
+				if drslog.TraceEnabled() {
+					logger.Printf("Uploading file OID %s", uploadMsg.Oid)
+				}
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
@@ -199,10 +213,14 @@ var Cmd = &cobra.Command{
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
-				logger.Printf("Upload for OID %s complete", uploadMsg.Oid)
+				if drslog.TraceEnabled() {
+					logger.Printf("Upload for OID %s complete", uploadMsg.Oid)
+				}
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
-				logger.Printf("LFS transfer complete")
+				if drslog.TraceEnabled() {
+					logger.Printf("LFS transfer complete")
+				}
 			}
 		}
 
@@ -210,7 +228,9 @@ var Cmd = &cobra.Command{
 			logger.Printf("stdin error: %s", err)
 		}
 
-		logger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+		if drslog.TraceEnabled() {
+			logger.Print("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+		}
 		return nil
 
 	},

@@ -3,7 +3,7 @@
 ---
 # NOTICE
 
-git-drs is not yet fully compliant with DRS. It currently work against Gen3's indexd system. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
+git-drs is not yet fully compliant with DRS. It currently works against Gen3's indexd system. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
 
 ---
 

@@ -702,7 +702,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 	// log how many records were found
 	cl.Logger.Printf("Found %d indexd record(s) matching the hash %v", len(records.Records), records)
 
-	out := make([]drs.DRSObject, len(records.Records))
+	out := make([]drs.DRSObject, 0, len(records.Records))
 
 	// if no records found, return empty slice
 	if len(records.Records) == 0 {
@@ -711,7 +711,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 
 	resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
 
-	for i, record := range records.Records {
+	for _, record := range records.Records {
 		// skip records that do not authorize this client/project
 		found := false
 		for _, a := range record.Authz {
@@ -728,7 +728,7 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
 		if err != nil {
 			return nil, fmt.Errorf("error converting indexd record to DRS object: %w", err)
 		}
-		out[i] = *drsObj
+		out = append(out, *drsObj)
 	}
 
 	return out, nil

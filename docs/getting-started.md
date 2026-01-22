@@ -297,6 +297,8 @@ git drs remote set staging
 
 ## Session Workflow
 
+> **Note**: You do NOT need to run `git drs init` again. Initialization is a one-time setup per Git repository clone.
+
 For each work session:
 
 1. **Refresh credentials** (if expired - credentials expire after 30 days)

@@ -46,15 +46,15 @@ git lfs install --skip-smudge
 ### Basic Usage
 
 ```bash
+# Initialize repository (one-time Git repo setup)
+git drs init
+
 # Add DRS remote
 git drs remote add gen3 production \
     --cred /path/to/credentials.json \
     --url https://calypr-public.ohsu.edu \
     --project my-project \
     --bucket my-bucket
-
-# Initialize repository
-git drs init
 
 # Track files
 git lfs track "*.bam"

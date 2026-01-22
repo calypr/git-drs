@@ -32,6 +32,18 @@ git drs init
 - Configures Git LFS custom transfer agent
 - Installs Git hooks for DRS workflows
 
+**When to run:**
+
+- **Once** after cloning a Git repository
+- **Once** after creating a new Git repository
+- **Never** needed for subsequent work sessions
+
+**You do NOT need to run `git drs init` again:**
+
+- When starting a new work session
+- After refreshing credentials
+- After pulling new changes
+
 **Note:** Run this before adding remotes.
 
 ### `git drs remote`

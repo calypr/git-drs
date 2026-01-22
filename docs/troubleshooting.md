@@ -4,6 +4,58 @@ Common issues and solutions when working with Git DRS.
 
 > **Navigation:** [Getting Started](getting-started.md) → [Commands Reference](commands.md) → **Troubleshooting**
 
+## Frequently Asked Questions
+
+### Do I need to run `git drs init` each time?
+
+**No.** `git drs init` is set up once per Git repo.
+
+**Run it once when:**
+
+- You first clone a repository
+- You create a new repository
+
+**Don't run it again:**
+
+- At the start of each work session
+- After refreshing credentials
+- After pulling updates
+
+**What it does:**
+
+- Sets up `.drs/` directory structure
+- Configures Git LFS hooks
+- Updates `.gitignore`
+
+These changes persist in your local repository. For subsequent sessions, you only need to refresh credentials if they've expired (every 30 days).
+
+### What to do if you run `git drs init` again
+
+Running `git drs init` a second time is usually harmless but unnecessary. It may re-create the `\`.git/drs/\`` directory, re-install hooks, or modify `\`.gitattributes\`` and `\`.gitignore\``. If you ran it accidentally, follow these steps:
+
+1. Inspect what changed
+   - `git status`
+   - `git diff` (or `git diff -- <file>` for a specific file, e.g. `\`.gitignore\``)
+
+2. If changes are fine
+   - No action required; commit the intended changes or leave them uncommitted.
+
+3. If you want to discard uncommitted changes
+   - Restore specific files: `git restore --staged \`.gitignore\`` && `git restore \`.gitignore\``
+   - Restore all working-tree changes: `git restore .`
+   - Or (destructive) reset everything: `git reset --hard`  \- use with caution.
+
+4. If you already committed the unintended changes
+   - Undo the last commit but keep changes staged: `git reset --soft HEAD~1`
+   - Or remove the commit and working changes: `git reset --hard HEAD~1`  \- use with caution.
+   - See the "Undo Last Commit" section above for alternatives.
+
+5. Hooks or credentials issues
+   - If hooks were replaced or credentials need refresh, run `git drs init` with the correct `--cred`/`--profile` options, or re-add the remote with `git drs remote add`.
+
+Summary: inspect with `git status`/`git diff`, then either accept, manually edit, or revert the changes using standard `git restore` / `git reset` commands.
+
+
 ## When to Use Which Tool
 
 Understanding when to use Git, Git LFS, or Git DRS commands:

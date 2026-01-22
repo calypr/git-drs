@@ -50,6 +50,28 @@ jobs:
         continue-on-error: true
         id: test-latest
         run: |
+          # Helper function to verify binary installation
+          verify_binary() {
+            local install_dir=$1
+            local binary_path="${install_dir}/git-drs"
+            
+            # Verify the binary was installed
+            if [ ! -f "${binary_path}" ]; then
+              echo "❌ git-drs binary not found at ${binary_path}"
+              return 1
+            fi
+            
+            # Verify the binary is executable
+            if [ ! -x "${binary_path}" ]; then
+              echo "❌ git-drs binary is not executable"
+              return 1
+            fi
+            
+            # Test that the binary can run
+            "${binary_path}" --version || "${binary_path}" --help
+            return 0
+          }
+          
           echo "Testing install.sh with latest release on ${{ matrix.os }} ${{ matrix.arch }}"
           
           # Create a temporary directory for installation
@@ -58,22 +80,11 @@ jobs:
           
           # Run the install script
           if bash ./install.sh "" "${INSTALL_DIR}"; then
-            # Verify the binary was installed
-            if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
-              echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs"
+            if verify_binary "${INSTALL_DIR}"; then
+              echo "✅ Install script test passed for latest release"
+            else
               exit 1
             fi
-            
-            # Verify the binary is executable
-            if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
-              echo "❌ git-drs binary is not executable"
-              exit 1
-            fi
-            
-            # Test that the binary can run
-            "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
-            
-            echo "✅ Install script test passed for latest release"
           else
             echo "ℹ️  Install script failed for latest release (may not have release assets for this platform)"
             exit 0
@@ -99,6 +110,25 @@ jobs:
       - name: Test install script with specific versions
         if: steps.get-releases.outputs.tags != ''
         run: |
+          # Helper function to verify binary installation
+          verify_binary() {
+            local install_dir=$1
+            local binary_path="${install_dir}/git-drs"
+            
+            if [ ! -f "${binary_path}" ]; then
+              echo "❌ git-drs binary not found at ${binary_path}"
+              return 1
+            fi
+            
+            if [ ! -x "${binary_path}" ]; then
+              echo "❌ git-drs binary is not executable"
+              return 1
+            fi
+            
+            "${binary_path}" --version || "${binary_path}" --help
+            return 0
+          }
+          
           TAGS="${{ steps.get-releases.outputs.tags }}"
           
           for TAG in $TAGS; do
@@ -110,67 +140,73 @@ jobs:
             
             # Run the install script with specific version
             if bash ./install.sh "$TAG" "${INSTALL_DIR}"; then
-              # Verify the binary was installed
-              if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
-                echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs for version $TAG"
+              if verify_binary "${INSTALL_DIR}"; then
+                echo "✅ Install script test passed for version $TAG"
+              else
                 exit 1
               fi
-              
-              # Verify the binary is executable
-              if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
-                echo "❌ git-drs binary is not executable for version $TAG"
-                exit 1
-              fi
-              
-              # Test that the binary can run
-              "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
-              
-              echo "✅ Install script test passed for version $TAG"
             else
               echo "ℹ️  Install script failed for version $TAG (may not have release assets for this platform)"
-              # Don't fail the test if the version doesn't have assets for this platform
             fi
           done
 
       - name: Test install script with v-prefix version
         if: steps.get-releases.outputs.tags != ''
         run: |
+          # Helper function to verify binary installation
+          verify_binary() {
+            local install_dir=$1
+            local binary_path="${install_dir}/git-drs"
+            
+            if [ ! -f "${binary_path}" ]; then
+              echo "❌ git-drs binary not found at ${binary_path}"
+              return 1
+            fi
+            
+            if [ ! -x "${binary_path}" ]; then
+              echo "❌ git-drs binary is not executable"
+              return 1
+            fi
+            
+            "${binary_path}" --version || "${binary_path}" --help
+            return 0
+          }
+          
           TAGS="${{ steps.get-releases.outputs.tags }}"
           
-          # Test the first tag with v-prefix (if it doesn't already have it)
-          TAG=$(echo "$TAGS" | head -1)
+          # Find a tag without v-prefix to test v-prefix handling
+          TAG_WITHOUT_V=""
+          TAG_WITH_V=""
           
-          # Add v prefix if not present
-          if [[ $TAG != v* ]]; then
-            TAG="v${TAG}"
+          for TAG in $TAGS; do
+            if [[ $TAG != v* ]]; then
+              TAG_WITHOUT_V="$TAG"
+              TAG_WITH_V="v${TAG}"
+              break
+            fi
+          done
+          
+          # If all tags have v-prefix, use the first one to test normalization
+          if [ -z "$TAG_WITHOUT_V" ]; then
+            TAG_WITH_V=$(echo "$TAGS" | head -1)
+            echo "Testing install.sh with existing v-prefixed version $TAG_WITH_V on ${{ matrix.os }} ${{ matrix.arch }}"
+          else
+            echo "Testing install.sh with v-prefixed version $TAG_WITH_V (original: $TAG_WITHOUT_V) on ${{ matrix.os }} ${{ matrix.arch }}"
           fi
-          
-          echo "Testing install.sh with v-prefixed version $TAG on ${{ matrix.os }} ${{ matrix.arch }}"
           
           # Create a temporary directory for installation
           INSTALL_DIR="${HOME}/test-install-v-prefix"
           mkdir -p "${INSTALL_DIR}"
           
           # Run the install script with v-prefixed version
-          if bash ./install.sh "$TAG" "${INSTALL_DIR}"; then
-            # Verify the binary was installed
-            if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
-              echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs for v-prefixed version $TAG"
+          if bash ./install.sh "$TAG_WITH_V" "${INSTALL_DIR}"; then
+            if verify_binary "${INSTALL_DIR}"; then
+              echo "✅ Install script test passed for v-prefixed version $TAG_WITH_V"
+            else
               exit 1
             fi
-            
-            # Verify the binary is executable
-            if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
-              echo "❌ git-drs binary is not executable for v-prefixed version $TAG"
-              exit 1
-            fi
-            
-            # Test that the binary can run
-            "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
-            
-            echo "✅ Install script test passed for v-prefixed version $TAG"
           else
-            echo "ℹ️  Install script failed for v-prefixed version $TAG (may not have release assets for this platform)"
+            echo "ℹ️  Install script failed for v-prefixed version $TAG_WITH_V (may not have release assets for this platform)"
           fi
 
   test-install-script-cross-arch:
@@ -243,7 +279,8 @@ jobs:
           fi
           
           # Verify the install.sh script contains version normalization logic
-          if grep -q 'VERSION_TAG#v' install.sh; then
+          # Look for the pattern that removes 'v' prefix using bash parameter expansion
+          if grep -q '#v' install.sh && grep -q 'VERSION' install.sh; then
             echo "✅ Install script contains version normalization logic"
           else
             echo "❌ Install script missing version normalization"

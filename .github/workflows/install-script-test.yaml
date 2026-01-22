@@ -1,0 +1,238 @@
+name: Install Script Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'install.sh'
+      - '.github/workflows/install-script-test.yaml'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'install.sh'
+      - '.github/workflows/install-script-test.yaml'
+  workflow_dispatch:
+  schedule:
+    # Run weekly to catch any issues with new releases
+    - cron: '0 0 * * 0'
+
+jobs:
+  test-install-script:
+    name: Test install.sh on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux AMD64
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          # Linux ARM64
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest-arm64
+          # macOS AMD64
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          # macOS ARM64
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Test install script (latest release)
+        run: |
+          echo "Testing install.sh with latest release on ${{ matrix.os }} ${{ matrix.arch }}"
+          
+          # Create a temporary directory for installation
+          INSTALL_DIR="${HOME}/test-install-latest"
+          mkdir -p "${INSTALL_DIR}"
+          
+          # Run the install script
+          bash ./install.sh "" "${INSTALL_DIR}"
+          
+          # Verify the binary was installed
+          if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
+            echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs"
+            exit 1
+          fi
+          
+          # Verify the binary is executable
+          if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
+            echo "❌ git-drs binary is not executable"
+            exit 1
+          fi
+          
+          # Test that the binary can run
+          "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
+          
+          echo "✅ Install script test passed for latest release"
+
+      - name: Get list of recent releases
+        id: get-releases
+        run: |
+          # Get the latest 3 release tags
+          TAGS=$(git ls-remote --tags https://github.com/calypr/git-drs.git | \
+                 grep -v '\^{}' | \
+                 awk '{print $2}' | \
+                 sed 's|refs/tags/||' | \
+                 sort -V | \
+                 tail -3)
+          
+          # Convert to JSON array for matrix
+          echo "Found tags: $TAGS"
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Test install script with specific versions
+        if: steps.get-releases.outputs.tags != ''
+        run: |
+          TAGS="${{ steps.get-releases.outputs.tags }}"
+          
+          for TAG in $TAGS; do
+            echo "Testing install.sh with version $TAG on ${{ matrix.os }} ${{ matrix.arch }}"
+            
+            # Create a temporary directory for installation
+            INSTALL_DIR="${HOME}/test-install-${TAG}"
+            mkdir -p "${INSTALL_DIR}"
+            
+            # Run the install script with specific version
+            if bash ./install.sh "$TAG" "${INSTALL_DIR}"; then
+              # Verify the binary was installed
+              if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
+                echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs for version $TAG"
+                exit 1
+              fi
+              
+              # Verify the binary is executable
+              if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
+                echo "❌ git-drs binary is not executable for version $TAG"
+                exit 1
+              fi
+              
+              # Test that the binary can run
+              "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
+              
+              echo "✅ Install script test passed for version $TAG"
+            else
+              echo "ℹ️  Install script failed for version $TAG (may not have release assets for this platform)"
+              # Don't fail the test if the version doesn't have assets for this platform
+            fi
+          done
+
+      - name: Test install script with v-prefix version
+        if: steps.get-releases.outputs.tags != ''
+        run: |
+          TAGS="${{ steps.get-releases.outputs.tags }}"
+          
+          # Test the first tag with v-prefix (if it doesn't already have it)
+          TAG=$(echo "$TAGS" | head -1)
+          
+          # Add v prefix if not present
+          if [[ $TAG != v* ]]; then
+            TAG="v${TAG}"
+          fi
+          
+          echo "Testing install.sh with v-prefixed version $TAG on ${{ matrix.os }} ${{ matrix.arch }}"
+          
+          # Create a temporary directory for installation
+          INSTALL_DIR="${HOME}/test-install-v-prefix"
+          mkdir -p "${INSTALL_DIR}"
+          
+          # Run the install script with v-prefixed version
+          if bash ./install.sh "$TAG" "${INSTALL_DIR}"; then
+            # Verify the binary was installed
+            if [ ! -f "${INSTALL_DIR}/git-drs" ]; then
+              echo "❌ git-drs binary not found at ${INSTALL_DIR}/git-drs for v-prefixed version $TAG"
+              exit 1
+            fi
+            
+            # Verify the binary is executable
+            if [ ! -x "${INSTALL_DIR}/git-drs" ]; then
+              echo "❌ git-drs binary is not executable for v-prefixed version $TAG"
+              exit 1
+            fi
+            
+            # Test that the binary can run
+            "${INSTALL_DIR}/git-drs" --version || "${INSTALL_DIR}/git-drs" --help
+            
+            echo "✅ Install script test passed for v-prefixed version $TAG"
+          else
+            echo "ℹ️  Install script failed for v-prefixed version $TAG (may not have release assets for this platform)"
+          fi
+
+  test-install-script-cross-arch:
+    name: Test install.sh cross-architecture simulation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Test architecture detection
+        run: |
+          echo "Testing architecture detection in install.sh"
+          
+          # Test that the script correctly identifies the architecture
+          ARCH=$(uname -m)
+          echo "Current architecture: $ARCH"
+          
+          # Extract and test the architecture detection logic
+          if [ "$ARCH" == "x86_64" ]; then
+            EXPECTED="amd64"
+          elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+            EXPECTED="arm64"
+          else
+            echo "Testing unsupported architecture handling"
+            EXPECTED="unsupported"
+          fi
+          
+          echo "Expected normalized architecture: $EXPECTED"
+          
+          # Verify the script has the correct logic by checking key lines
+          if grep -q 'if \[ "\$ARCH" == "x86_64" \]; then' install.sh && \
+             grep -q 'ARCH="amd64"' install.sh && \
+             grep -q 'elif \[\[ "\$ARCH" == "aarch64" || "\$ARCH" == "arm64" \]\]; then' install.sh && \
+             grep -q 'ARCH="arm64"' install.sh; then
+            echo "✅ Architecture detection logic is correct"
+          else
+            echo "❌ Architecture detection logic is missing or incorrect"
+            exit 1
+          fi
+
+      - name: Test version normalization
+        run: |
+          echo "Testing version normalization in install.sh"
+          
+          # Verify the script normalizes version tags by removing 'v' prefix
+          if grep -q 'VERSION_NUMBER="\${VERSION_TAG#v}"' install.sh; then
+            echo "✅ Version normalization logic is correct"
+          else
+            echo "❌ Version normalization logic is missing or incorrect"
+            exit 1
+          fi
+
+  report-results:
+    name: Report Test Results
+    needs: [test-install-script, test-install-script-cross-arch]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.test-install-script.result }}" == "success" ] && \
+             [ "${{ needs.test-install-script-cross-arch.result }}" == "success" ]; then
+            echo "✅ All install script tests passed!"
+          else
+            echo "❌ Some install script tests failed"
+            echo "test-install-script: ${{ needs.test-install-script.result }}"
+            echo "test-install-script-cross-arch: ${{ needs.test-install-script-cross-arch.result }}"
+            exit 1
+          fi

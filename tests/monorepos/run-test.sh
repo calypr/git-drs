@@ -167,15 +167,15 @@ fi
 # ensure git-drs is running from this project's build
 # run `which git-drs` and check if it's in the build directory
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ABS_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-
-GIT_DRS_EXE=$ABS_PATH/git-drs
-if [ ! -f "$GIT_DRS_EXE" ]; then
-  echo "error: git-drs executable not found at $GIT_DRS_EXE" >&2
-  exit 1
-fi
-export PATH="$ABS_PATH:$PATH"
+#SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+#ABS_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+#
+#GIT_DRS_EXE=$ABS_PATH/git-drs
+#if [ ! -f "$GIT_DRS_EXE" ]; then
+#  echo "error: git-drs executable not found at $GIT_DRS_EXE" >&2
+#  exit 1
+#fi
+#export PATH="$ABS_PATH:$PATH"
 echo "Using git-drs from: $(which git-drs)" >&2
 
 

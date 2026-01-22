@@ -3,7 +3,6 @@
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
 
-
 # echo commands as they are executed
 if [ -z "${GIT_TRACE:-}" ]; then
   echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
@@ -26,9 +25,6 @@ gofmt -s -w .
 
 # build to ensure no compile errors
 go build
-
-# unit tests
-go test -v -race -coverprofile=coverage.out -covermode=atomic -coverpkg=./... $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') || { echo "unit tests failed" >&2; exit 1; }
 
 
 
@@ -81,6 +77,13 @@ done
 
 PROJECT_ID="${_prog}-${_proj}"
 
+ROOT_DIR=$(git rev-parse --show-toplevel)
+COVERAGE_ROOT="${COVERAGE_ROOT:-${ROOT_DIR}/coverage}"
+INTEGRATION_COV_DIR="${INTEGRATION_COV_DIR:-${COVERAGE_ROOT}/integration/raw}"
+INTEGRATION_PROFILE="${INTEGRATION_PROFILE:-${COVERAGE_ROOT}/integration/coverage.out}"
+BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/coverage}"
+mkdir -p $INTEGRATION_COV_DIR
+
 UTIL_DIR="tests/scripts/utils"
 MONOREPO_DIR="tests/monorepos"
 RUN_TEST="./run-test.sh"
@@ -106,6 +109,13 @@ if [ ! -d "$UTIL_DIR" ]; then
   err "utils directory not found: \`$UTIL_DIR\`"
   exit 1
 fi
+
+# before running tests, build the executables with coverage instrumentation
+
+go build -cover -covermode=atomic -coverpkg=./... -o "${BUILD_DIR}/git-drs" .
+
+export PATH="${BUILD_DIR}:${PATH}"
+export GOCOVERDIR="${INTEGRATION_COV_DIR}"
 
 pushd "$UTIL_DIR" >/dev/null
 
@@ -168,3 +178,13 @@ fi
 
 
 echo "coverage-test.sh: all steps completed successfully." >&2
+go tool covdata textfmt -i="${INTEGRATION_COV_DIR}" -o "${INTEGRATION_PROFILE}"
+
+echo "Integration coverage profile saved to ${INTEGRATION_PROFILE}"
+
+# unit tests
+which git-drs
+export GOCOVERDIR=coverage/unit/raw
+go test -cover -covermode=atomic -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
+
+

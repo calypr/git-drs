@@ -3,6 +3,74 @@
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
 
+
+usage() {
+  cat <<-EOF
+Usage: $0 [options]
+
+Options:
+  --pod POD                 Pod name (env: POD)
+  --postgres-password PASS  Postgres password (env: POSTGRES_PASSWORD)
+  --resource RES            Resource path, e.g. /programs/<prog>/projects/<proj> (env: RESOURCE)
+  --minio-alias ALIAS       MinIO alias (env: MINIO_ALIAS)
+  --bucket BUCKET           Bucket name (env: BUCKET)
+  -h, --help                Show this help and exit
+
+Environment / defaults:
+  COVERAGE_ROOT             ${COVERAGE_ROOT:-<root>/coverage}
+  INTEGRATION_COV_DIR       ${INTEGRATION_COV_DIR:-<coverage>/integration/raw}
+  INTEGRATION_PROFILE       ${INTEGRATION_PROFILE:-<coverage>/integration/coverage.out}
+  BUILD_DIR                 ${BUILD_DIR:-<root>/build/coverage}
+
+Notes:
+  - Flags override environment variables.
+  - PROJECT_ID is derived from RESOURCE (program-project).
+  - Script must be run from repository (it cds to the project root).
+
+Example:
+  tests/coverage-test.sh --pod mypod --postgres-password secret --resource /programs/prog/projects/proj --minio-alias minio --bucket my-bucket
+
+More:
+  See:
+  - tests/monorepos/README-run-test.md for details on the monorepo test runner.
+  - tests/scripts/coverage/combine-coverage.sh for combining coverage profiles.
+  - tests/scripts/coverage/assert-coverage-timestamp.sh for verifying coverage timestamp.
+
+EOF
+  exit 0
+}
+
+
+# Accept named parameters (flags override environment variables)
+POD="${POD:-}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+RESOURCE="${RESOURCE:-}"
+MINIO_ALIAS="${MINIO_ALIAS:-}"
+BUCKET="${BUCKET:-}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+
+    --pod=*) POD="${1#*=}"; shift ;;
+    --pod) POD="$2"; shift 2 ;;
+    --postgres-password=*) POSTGRES_PASSWORD="${1#*=}"; shift ;;
+    --postgres-password) POSTGRES_PASSWORD="$2"; shift 2 ;;
+    --resource=*) RESOURCE="${1#*=}"; shift ;;
+    --resource) RESOURCE="$2"; shift 2 ;;
+    --minio-alias=*) MINIO_ALIAS="${1#*=}"; shift ;;
+    --minio-alias) MINIO_ALIAS="$2"; shift 2 ;;
+    --bucket=*) BUCKET="${1#*=}"; shift ;;
+    --bucket) BUCKET="$2"; shift 2 ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+
 # echo commands as they are executed
 if [ -z "${GIT_TRACE:-}" ]; then
   echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
@@ -25,37 +93,6 @@ gofmt -s -w .
 
 # build to ensure no compile errors
 go build
-
-
-
-# Accept named parameters (flags override environment variables)
-POD="${POD:-}"
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
-RESOURCE="${RESOURCE:-}"
-MINIO_ALIAS="${MINIO_ALIAS:-}"
-BUCKET="${BUCKET:-}"
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --pod=*) POD="${1#*=}"; shift ;;
-    --pod) POD="$2"; shift 2 ;;
-    --postgres-password=*) POSTGRES_PASSWORD="${1#*=}"; shift ;;
-    --postgres-password) POSTGRES_PASSWORD="$2"; shift 2 ;;
-    --resource=*) RESOURCE="${1#*=}"; shift ;;
-    --resource) RESOURCE="$2"; shift 2 ;;
-    --minio-alias=*) MINIO_ALIAS="${1#*=}"; shift ;;
-    --minio-alias) MINIO_ALIAS="$2"; shift 2 ;;
-    --bucket=*) BUCKET="${1#*=}"; shift ;;
-    --bucket) BUCKET="$2"; shift 2 ;;
-    -h|--help)
-      echo "Usage: $0 [--pod POD] [--postgres-password PASS] [--resource RES] [--minio-alias ALIAS] [--bucket BUCKET]"
-      exit 0
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
 
 
 # Derive PROJECT_ID from RESOURCE (e.g. /programs/<prog>/projects/<proj> -> <prog>-<proj>)

@@ -2,23 +2,4 @@
 
 Tests are currently run manually. First specify the remote that you want to use in the environment variables then run the tests, ex:
 
-These tests use the new moved calypr_admin utility. You will have to build a calypr_admin venv in order for this to work since an end to end test requires giving yourself the proper permissions to do these operations on the calypr platform
-
-The remote acts as a "profile" for the gen3 or anvil instance that you are pushing to. Multiple remotes can be configured to support multiple instances.
-
-Make sure you have the most up to date git-drs and build from source, ex: `go build . ; go install .`
-
-```
-python -m venv venv ; source venv/bin/activate
-pip install -e [wherever your calypr_admin directory is]
-
-```
-
-```
-cd to where your git-drs directory is
-export GIT_DRS_REMOTE="YOUR_REMOTE_NAME_GOES_HERE"
-export GH_PAT="YOUR_SOURCE_GH_P_ACCESS_TOKEN_GOES_HERE"
-go test ./...
-```
-
-We are currently using source.ohsu.edu so you will have to generate a source.ohsu.edu personal access token if you havent' already.
+See tests/monorepos/README-run-test.md

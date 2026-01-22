@@ -12,6 +12,19 @@ This file documents the `run-test.sh` helper script located in `tests/monorepos`
 - Validates the target Gen3 project exists via `calypr_admin`.
 - Initializes a git repo in `fixtures/`, runs `git drs init`, creates or updates `.gitattributes`, configures LFS tracking, and pushes subfolders to the remote.
 
+## setup
+Ensure you have the following prerequisites:
+
+```aiignore
+# create a test structure in tests/monorepos/fixtures/TARGET-ALL-P2
+# see tests/monorepos/create-20MB-test-file.sh, etc. for creating test files
+tests/monorepos/fixtures
+└── TARGET-ALL-P2
+    └── sub-directory-1
+        ├── file-0001.dat
+        └── file-0003.dat
+
+```
 ## Invocation
 Run from the repository path `tests/monorepos`:
 

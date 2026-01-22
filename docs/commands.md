@@ -36,8 +36,8 @@ git drs init
 
 **When to run:**
 
-- **Once** after cloning a Git repository to your local machine
-- **Once** after creating a new Git repository locally
+- **Once** after cloning a Git repository
+- **Once** after creating a new Git repository
 - **Never** needed for subsequent work sessions
 
 **You do NOT need to run `git drs init` again:**

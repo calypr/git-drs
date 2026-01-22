@@ -11,6 +11,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// printDRSObject marshals and prints a DRS object based on the pretty flag
+func printDRSObject(obj drs.DRSObject, pretty bool) error {
+	var out []byte
+	var err error
+	
+	if pretty {
+		out, err = sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
+	} else {
+		out, err = sonic.ConfigFastest.Marshal(obj)
+	}
+	
+	if err != nil {
+		return err
+	}
+	
+	fmt.Printf("%s\n", string(out))
+	return nil
+}
+
 var remote string
 var checksum = false
 var pretty = false
@@ -20,9 +39,26 @@ type checksumClient interface {
 }
 
 func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, error) {
+	// Auto-detect checksum type based on hash length
+	checksumType := hash.ChecksumTypeSHA256
+	switch len(checksum) {
+	case 32:
+		// 128-bit / 32-hex-character checksum (e.g., MD5)
+		checksumType = hash.ChecksumTypeMD5
+	case 40:
+		// 160-bit / 40-hex-character checksum (e.g., SHA1)
+		checksumType = hash.ChecksumTypeSHA1
+	case 64:
+		// 256-bit / 64-hex-character checksum (e.g., SHA256)
+		checksumType = hash.ChecksumTypeSHA256
+	case 128:
+		// 512-bit / 128-hex-character checksum (e.g., SHA512)
+		checksumType = hash.ChecksumTypeSHA512
+	}
+	
 	return client.GetObjectByHash(&hash.Checksum{
 		Checksum: checksum,
-		Type:     hash.ChecksumTypeSHA256,
+		Type:     checksumType,
 	})
 }
 
@@ -64,40 +100,18 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			for _, obj := range objs {
-				if pretty {
-					out, err := sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
-					if err != nil {
-						return err
-					}
-					fmt.Printf("%s\n", string(out))
-				} else {
-					out, err := sonic.ConfigFastest.Marshal(obj)
-					if err != nil {
-						return err
-					}
-					fmt.Printf("%s\n", string(out))
-
+			for _, drsObj := range objs {
+				if err := printDRSObject(drsObj, pretty); err != nil {
+					return err
 				}
 			}
-
 		} else {
 			obj, err = client.GetObject(args[0])
 			if err != nil {
 				return err
 			}
-			if pretty {
-				out, err := sonic.ConfigFastest.MarshalIndent(*obj, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Printf("%s\n", string(out))
-			} else {
-				out, err := sonic.ConfigFastest.Marshal(*obj)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("%s\n", string(out))
+			if err := printDRSObject(*obj, pretty); err != nil {
+				return err
 			}
 		}
 		return nil

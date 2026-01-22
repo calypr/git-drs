@@ -15,17 +15,17 @@ import (
 func printDRSObject(obj drs.DRSObject, pretty bool) error {
 	var out []byte
 	var err error
-	
+
 	if pretty {
 		out, err = sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
 	} else {
 		out, err = sonic.ConfigFastest.Marshal(obj)
 	}
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	fmt.Printf("%s\n", string(out))
 	return nil
 }
@@ -55,7 +55,7 @@ func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, e
 		// 512-bit / 128-hex-character checksum (e.g., SHA512)
 		checksumType = hash.ChecksumTypeSHA512
 	}
-	
+
 	return client.GetObjectByHash(&hash.Checksum{
 		Checksum: checksum,
 		Type:     checksumType,

@@ -63,7 +63,7 @@ Note: We've been using https://github.com/calypr/monorepo.git
 * When initializing the fixtures repo the script:
   * creates or uses branch main,
   * runs git drs init --cred ... --profile ... --bucket calypr --project "$PROGRAM-$PROJECT" ...,
-  * ensures .drs/config.yaml exists,
+  * ensures .git/drs/config.yaml exists,
   * creates .gitattributes (if missing), commits and pushes,
   * tracks and pushes each top-level fixture subfolder with git LFS
 

@@ -65,7 +65,7 @@ func TestLoadConfigMissing(t *testing.T) {
 
 func TestLoadConfigRequiresDefaultRemote(t *testing.T) {
 	repo := setupTestRepo(t)
-	configDir := filepath.Join(repo, ".drs")
+	configDir := filepath.Join(repo, ".git", "drs")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}

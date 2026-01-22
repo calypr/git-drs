@@ -191,7 +191,7 @@ echo "Running in `pwd`"  >&2
 # to reset git state
 if [ "$CLEAN" = "true" ]; then
   echo "Cleaning existing git state" >&2
-  rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
+  rm -rf .git .gitattributes .gitignore ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log || true
 else
   echo "CLEAN flag not set to true; skipping git state cleanup" >&2
 fi
@@ -214,6 +214,7 @@ if [ "$CLONE" = "true" ]; then
   fi
   echo "Pulling LFS objects from remote" >&2
   git drs init
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
   git lfs pull origin main
   if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
@@ -258,16 +259,18 @@ else
   fi
 
   # verify fixtures/.drs/config.yaml exists
-  if [ ! -f ".drs/config.yaml" ]; then
-    echo "error: .drs/config.yaml not found after git drs init" >&2
+  if [ ! -f ".git/drs/config.yaml" ]; then
+    echo "error: .git/drs/config.yaml not found after git drs init" >&2
+    exit 1
+  fi
+
+  # verify .gitignore does not exist yet
+  if [ -f ".gitignore" ]; then
+    echo "error: .gitignore unexpected after git drs init" >&2
     exit 1
   fi
 
   echo "Finished initializing git repository with git-drs in `pwd`" >&2
-  git add .drs
-  git commit -m "Add .drs" .drs
-  git add .gitignore
-  git commit -m "Add .gitignore" .gitignore
 
   # Create an empty .gitattributes file
   # if .gitattributes does not already exist initialize it

@@ -164,16 +164,7 @@ rm -rf coverage/unit
 mkdir -p coverage/unit
 go test  -cover -covermode=atomic -coverprofile=coverage/unit/coverage.out -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
 #
-
-# go test -v -race -coverprofile=coverage/unit/raw/coverage.out $(go list ./... | grep -vE 'tests/integration/calypr|client/indexd/tests') || { echo "unit tests failed" >&2; exit 1; }
-
-exit 1
-
-
-
-#go test -v -race -cover ./... || { echo "error: unit tests failed" >&2; exit 1; }
-
-exit 1
+echo "Unit tests completed successfully. Coverage profile saved to coverage/unit/coverage.out" >&2
 
 # set coverage directory for integration tests
 export GOCOVERDIR="${INTEGRATION_COV_DIR}"

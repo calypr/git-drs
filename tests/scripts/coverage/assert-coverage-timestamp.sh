@@ -8,6 +8,12 @@ if [ ! -f "$COV" ]; then
   exit 1
 fi
 
+UNIT='coverage/unit/coverage.out'
+if [ ! -f "$UNIT" ]; then
+  echo "Missing coverage file: $UNIT" >&2
+  exit 1
+fi
+
 # Find newest mtime (seconds since epoch) among .go files (ignore vendor)
 max=0
 latest_go=''
@@ -33,10 +39,25 @@ fi
 
 if [ "$cov_m" -gt "$max" ]; then
   echo "OK: $COV is newer than latest .go file ($latest_go)."
-  exit 0
 else
   echo "FAIL: $COV is NOT newer than latest .go file ($latest_go)." >&2
   echo "  $COV mtime: $(date -r "$cov_m" +'%F %T' 2>/dev/null || date -d @"$cov_m" +'%F %T' 2>/dev/null)"
+  echo "  latest .go mtime: $(date -r "$max" +'%F %T' 2>/dev/null || date -d @"$max" +'%F %T' 2>/dev/null)"
+  exit 2
+fi
+
+unit_m=$(stat -f %m "$UNIT" 2>/dev/null || stat -c %Y "$UNIT" 2>/dev/null || echo 0)
+if [ -z "$unit_m" ] || [ "$unit_m" -eq 0 ]; then
+  echo "Could not read mtime for $UNIT" >&2
+  exit 1
+fi
+
+if [ "$unit_m" -gt "$max" ]; then
+  echo "OK: $UNIT is newer than latest .go file ($latest_go)."
+  exit 0
+else
+  echo "FAIL: $UNIT is NOT newer than latest .go file ($latest_go)." >&2
+  echo "  $UNIT mtime: $(date -r "$unit_m" +'%F %T' 2>/dev/null || date -d @"$unit_m" +'%F %T' 2>/dev/null)"
   echo "  latest .go mtime: $(date -r "$max" +'%F %T' 2>/dev/null || date -d @"$max" +'%F %T' 2>/dev/null)"
   exit 2
 fi

@@ -5,11 +5,9 @@
 - Avoid logging sensitive values or high-volume details by default.
 - Keep logs stable and minimal in production usage.
 
-## Trace logging
-- Use the `GIT_TRANSFER_TRACE` environment variable to enable verbose logging.
-- The global flag is initialized on startup from `GIT_TRANSFER_TRACE` and defaults to `0`.
-- Treat trace logs as opt-in diagnostics: only emit detailed or noisy messages when `GIT_TRANSFER_TRACE=1`.
-
+## Trace logging (design proposal)
+- We intend to use the `GIT_TRANSFER_TRACE` environment variable to enable verbose logging when trace support is implemented.
+- When trace logging is available, treat trace logs as opt-in diagnostics and only emit detailed or noisy messages when explicitly enabled.
 ## What belongs in default logs
 - Errors that block normal operation.
 - User-facing warnings that require action.

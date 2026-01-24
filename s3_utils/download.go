@@ -10,6 +10,11 @@ import (
 
 // downloads a file to a specified path using a signed URL
 func DownloadSignedUrl(signedURL string, dstPath string) error {
+	return DownloadSignedUrlWithProgress(signedURL, dstPath, nil)
+}
+
+// DownloadSignedUrlWithProgress downloads a file using a signed URL and reports bytes transferred.
+func DownloadSignedUrlWithProgress(signedURL string, dstPath string, reportBytes func(int64)) error {
 	// Download the file using the signed URL
 	fileResponse, err := http.Get(signedURL)
 	if err != nil {
@@ -39,10 +44,23 @@ func DownloadSignedUrl(signedURL string, dstPath string) error {
 	}
 	defer dstFile.Close()
 
-	// Write the file content to the destination file
-	_, err = io.Copy(dstFile, fileResponse.Body)
-	if err != nil {
-		return err
+	buffer := make([]byte, 32*1024)
+	for {
+		n, readErr := fileResponse.Body.Read(buffer)
+		if n > 0 {
+			if _, writeErr := dstFile.Write(buffer[:n]); writeErr != nil {
+				return writeErr
+			}
+			if reportBytes != nil {
+				reportBytes(int64(n))
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
 	}
 
 	return nil

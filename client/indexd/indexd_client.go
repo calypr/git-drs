@@ -19,6 +19,7 @@ import (
 	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/data-client/client/logs"
+	"github.com/calypr/data-client/client/request"
 	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drs"
@@ -383,6 +384,68 @@ func (cl *IndexDClient) getDownloadURL(did string, accessType string) (drs.Acces
 // When registration fails without force push, it retries once with force push
 // enabled to reuse existing records and avoid duplicate uploads.
 func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
+	return cl.registerFileWithUploader(oid, func(drsObject *drs.DRSObject, filePath string, file *os.File, g3 dataClient.Gen3Interface) error {
+		if drsObject.Size < cl.MultiPartThreshold {
+			cl.Logger.Printf("UploadSingle size: %d path: %s", drsObject.Size, filePath)
+			err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+			if err != nil {
+				return fmt.Errorf("UploadSingle error: %s", err)
+			}
+			return nil
+		}
+		cl.Logger.Printf("MultipartUpload size: %d path: %s", drsObject.Size, filePath)
+		err := upload.MultipartUpload(
+			context.TODO(),
+			g3,
+			common.FileUploadRequestObject{
+				FilePath:     filePath,
+				Filename:     filepath.Base(filePath),
+				GUID:         drsObject.Id,
+				FileMetadata: common.FileMetadata{},
+				Bucket:       cl.BucketName,
+			},
+			file, false,
+		)
+		if err != nil {
+			return fmt.Errorf("MultipartUpload error: %s", err)
+		}
+		return nil
+	})
+}
+
+// RegisterFileWithProgress registers and uploads a file while reporting bytes transferred.
+func (cl *IndexDClient) RegisterFileWithProgress(oid string, reportBytes func(int64)) (*drs.DRSObject, error) {
+	return cl.registerFileWithUploader(oid, func(drsObject *drs.DRSObject, filePath string, file *os.File, g3 dataClient.Gen3Interface) error {
+		if drsObject.Size < cl.MultiPartThreshold {
+			cl.Logger.Printf("UploadSingle size: %d path: %s", drsObject.Size, filePath)
+			if err := cl.uploadSingleWithProgress(context.Background(), g3, file, filePath, drsObject.Id, reportBytes); err != nil {
+				return err
+			}
+			return nil
+		}
+		cl.Logger.Printf("MultipartUpload size: %d path: %s", drsObject.Size, filePath)
+		restore := withProgressDefaultClient(reportBytes)
+		defer restore()
+		err := upload.MultipartUpload(
+			context.TODO(),
+			g3,
+			common.FileUploadRequestObject{
+				FilePath:     filePath,
+				Filename:     filepath.Base(filePath),
+				GUID:         drsObject.Id,
+				FileMetadata: common.FileMetadata{},
+				Bucket:       cl.BucketName,
+			},
+			file, false,
+		)
+		if err != nil {
+			return fmt.Errorf("MultipartUpload error: %s", err)
+		}
+		return nil
+	})
+}
+
+func (cl *IndexDClient) registerFileWithUploader(oid string, uploadFile func(drsObject *drs.DRSObject, filePath string, file *os.File, g3 dataClient.Gen3Interface) error) (*drs.DRSObject, error) {
 	cl.Logger.Printf("register file started for oid: %s", oid)
 
 	// load the DRS object from oid created by prepush
@@ -463,32 +526,72 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
 		}
 	}(file)
 
-	if drsObject.Size < cl.MultiPartThreshold {
-		cl.Logger.Printf("UploadSingle size: %d path: %s", drsObject.Size, filePath)
-		err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
-		if err != nil {
-			return nil, fmt.Errorf("UploadSingle error: %s", err)
-		}
-	} else {
-		cl.Logger.Printf("MultipartUpload size: %d path: %s", drsObject.Size, filePath)
-		err = upload.MultipartUpload(
-			context.TODO(),
-			g3,
-			common.FileUploadRequestObject{
-				FilePath:     filePath,
-				Filename:     filepath.Base(filePath),
-				GUID:         drsObject.Id,
-				FileMetadata: common.FileMetadata{},
-				Bucket:       cl.BucketName,
-			},
-			file, false,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("MultipartUpload error: %s", err)
-		}
+	if err := uploadFile(drsObject, filePath, file, g3); err != nil {
+		return nil, err
 	}
 	return drsObject, nil
 
+}
+
+func (cl *IndexDClient) uploadSingleWithProgress(ctx context.Context, g3 dataClient.Gen3Interface, file *os.File, filePath string, guid string, reportBytes func(int64)) error {
+	filename := filepath.Base(filePath)
+	uploadURL, err := cl.getUploadURL(ctx, g3, guid, filename)
+	if err != nil {
+		return err
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, &progressReadCloser{ReadCloser: file, report: reportBytes})
+	if err != nil {
+		return err
+	}
+	req.ContentLength = stat.Size()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("single-part upload failed (%d): %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+func (cl *IndexDClient) getUploadURL(ctx context.Context, g3 dataClient.Gen3Interface, guid string, filename string) (string, error) {
+	endPointPostfix := common.FenceDataUploadEndpoint + "/" + guid + "?file_name=" + url.QueryEscape(filename)
+	if cl.BucketName != "" {
+		endPointPostfix += "&bucket=" + url.QueryEscape(cl.BucketName)
+	}
+
+	cred := g3.GetCredential()
+	resp, err := g3.Do(
+		ctx,
+		&request.RequestBuilder{
+			Url:     cred.APIEndpoint + endPointPostfix,
+			Headers: map[string]string{common.HeaderContentType: common.MIMEApplicationJSON},
+			Token:   cred.AccessToken,
+			Method:  http.MethodGet,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("upload error: %w", err)
+	}
+
+	msg, err := g3.ParseFenceURLResponse(resp)
+	if err != nil {
+		return "", fmt.Errorf("upload error: %w", err)
+	}
+	if msg.URL == "" {
+		return "", fmt.Errorf("upload error: error in generating presigned URL for %s", filename)
+	}
+	return msg.URL, nil
 }
 
 func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, error) {

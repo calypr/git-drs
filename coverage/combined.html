@@ -93,7 +93,7 @@
 				
 				<option value="file18">github.com/calypr/git-drs/cmd/listconfig/main.go (6.2%)</option>
 				
-				<option value="file19">github.com/calypr/git-drs/cmd/prepush/main.go (64.4%)</option>
+				<option value="file19">github.com/calypr/git-drs/cmd/prepush/main.go (70.0%)</option>
 				
 				<option value="file20">github.com/calypr/git-drs/cmd/push/main.go (0.0%)</option>
 				
@@ -115,7 +115,7 @@
 				
 				<option value="file29">github.com/calypr/git-drs/cmd/root.go (100.0%)</option>
 				
-				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (45.5%)</option>
+				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (49.6%)</option>
 				
 				<option value="file31">github.com/calypr/git-drs/cmd/transferref/main.go (0.0%)</option>
 				
@@ -135,7 +135,7 @@
 				
 				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (65.0%)</option>
 				
-				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (40.4%)</option>
+				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.3%)</option>
 				
 				<option value="file41">github.com/calypr/git-drs/drsmap/lfs_utils.go (94.1%)</option>
 				
@@ -3347,11 +3347,9 @@ var Cmd = &amp;cobra.Command{
                         return fmt.Errorf("error creating logger: %v", err)
                 }</span>
 
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
-                }</span>
+                <span class="cov10" title="4">myLogger.Debug("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
 
-                <span class="cov10" title="4">cfg, err := config.LoadConfig()
+                cfg, err := config.LoadConfig()
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("error getting config: %v", err)
                 }</span>
@@ -3360,10 +3358,8 @@ var Cmd = &amp;cobra.Command{
                 //* The name of the remote (e.g., origin).
                 //* The remote's location/URL (e.g., github.com).
                 // Create gitRemoteName and gitRemoteLocation from args.
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("pre-push args: %v", args))
-                }</span>
-                <span class="cov10" title="4">var gitRemoteName, gitRemoteLocation string
+                <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("pre-push args: %v", args))
+                var gitRemoteName, gitRemoteLocation string
                 if len(args) &gt;= 1 </span><span class="cov10" title="4">{
                         gitRemoteName = args[0]
                 }</span>
@@ -3373,12 +3369,10 @@ var Cmd = &amp;cobra.Command{
                 <span class="cov10" title="4">if gitRemoteName == "" </span><span class="cov0" title="0">{
                         gitRemoteName = "origin"
                 }</span>
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation))
-                }</span>
+                <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation))
 
                 // get the default remote from the .git/drs/config
-                <span class="cov10" title="4">var remote config.Remote
+                var remote config.Remote
                 remote, err = cfg.GetDefaultRemote()
                 if err != nil </span><span class="cov0" title="0">{
                         myLogger.Debug(fmt.Sprintf("Warning. Error getting default remote: %v", err))
@@ -3400,12 +3394,10 @@ var Cmd = &amp;cobra.Command{
                 if !ok </span><span class="cov0" title="0">{
                         return fmt.Errorf("cli is not IndexdClient: %T", cli)
                 }</span>
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("Current server: %s", dc.ProjectId))
-                }</span>
+                <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("Current server: %s", dc.ProjectId))
 
                 // Buffer stdin to a temp file and invoke `git lfs pre-push &lt;remote&gt; &lt;url&gt;` with same args and stdin.
-                <span class="cov10" title="4">tmp, err := os.CreateTemp("", "prepush-stdin-*")
+                tmp, err := os.CreateTemp("", "prepush-stdin-*")
                 if err != nil </span><span class="cov0" title="0">{
                         myLogger.Debug(fmt.Sprintf("error creating temp file for stdin: %v", err))
                         return err
@@ -3434,22 +3426,16 @@ var Cmd = &amp;cobra.Command{
                         return err
                 }</span>
 
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
-                }</span>
-                <span class="cov10" title="4">err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
+                <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
+                err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
                 if err != nil </span><span class="cov0" title="0">{
                         myLogger.Debug(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
                         return err
                 }</span>
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug("DRS objects prepared for push!")
-                }</span>
+                <span class="cov10" title="4">myLogger.Debug("DRS objects prepared for push!")
 
-                <span class="cov10" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
-                }</span>
-                <span class="cov10" title="4">return nil</span>
+                myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+                return nil</span>
         },
 }
 
@@ -4275,12 +4261,10 @@ var Cmd = &amp;cobra.Command{
         Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
         RunE: func(cmd *cobra.Command, args []string) error <span class="cov9" title="32">{
                 logger := drslog.GetLogger()
-                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
-                }</span>
+                logger.Debug("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
                 // Gotta go fast — big buffer
-                <span class="cov9" title="32">scanner := bufio.NewScanner(os.Stdin)
+                scanner := bufio.NewScanner(os.Stdin)
                 const maxCapacity = 10 * 1024 * 1024 // 10 MB
                 buf := make([]byte, 0, 64*1024)
                 scanner.Buffer(buf, maxCapacity)
@@ -4338,10 +4322,8 @@ var Cmd = &amp;cobra.Command{
                 // Determine if upload or download
                 <span class="cov9" title="32">if initMsg.Operation == OPERATION_UPLOAD || initMsg.Operation == OPERATION_DOWNLOAD </span><span class="cov9" title="32">{
                         transferOperation = initMsg.Operation
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Transfer operation: %s", transferOperation))
-                        }</span>
-                } else<span class="cov0" title="0"> {
+                        logger.Debug(fmt.Sprintf("Transfer operation: %s", transferOperation))
+                }</span> else<span class="cov0" title="0"> {
                         err := fmt.Errorf("invalid or missing operation in init message: %s", initMsg.Operation)
                         logger.Debug(err.Error())
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
@@ -4362,24 +4344,20 @@ var Cmd = &amp;cobra.Command{
 
                         <span class="cov10" title="40">if evt, ok := msg["event"]; ok &amp;&amp; evt == "download" </span><span class="cov4" title="4">{
                                 // Handle download event
-                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug("Download requested")
-                                }</span>
+                                logger.Debug("Download requested")
 
                                 // get download message
-                                <span class="cov4" title="4">var downloadMsg lfs.DownloadMessage
+                                var downloadMsg lfs.DownloadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;downloadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing downloadMessage: %v", err)
                                         logger.Debug(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
                                         continue</span>
                                 }
-                                <span class="cov4" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
-                                }</span>
+                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
 
                                 // get signed url
-                                <span class="cov4" title="4">accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
+                                accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
                                         logger.Debug(errMsg)
@@ -4410,30 +4388,24 @@ var Cmd = &amp;cobra.Command{
                                 }
 
                                 // send success message back
-                                <span class="cov4" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
-                                }</span>
+                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
-                                <span class="cov4" title="4">lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)</span>
+                                lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)</span>
 
                         } else<span class="cov9" title="36"> if evt, ok := msg["event"]; ok &amp;&amp; evt == "upload" </span><span class="cov4" title="4">{
                                 // Handle upload event
-                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug("Upload requested")
-                                }</span>
+                                logger.Debug("Upload requested")
 
                                 // create UploadMessage from the received message
-                                <span class="cov4" title="4">var uploadMsg lfs.UploadMessage
+                                var uploadMsg lfs.UploadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;uploadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing UploadMessage: %v", err)
                                         logger.Debug(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
-                                <span class="cov4" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-                                }</span>
-                                <span class="cov4" title="4">drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+                                drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error registering file: %v\n", err)
                                         logger.Debug(errMsg)
@@ -4442,25 +4414,19 @@ var Cmd = &amp;cobra.Command{
                                 }
                                 // send success message back
                                 <span class="cov4" title="4">lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
-                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
-                                }</span>
+                                logger.Debug(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))</span>
 
                         } else<span class="cov9" title="32"> if evt, ok := msg["event"]; ok &amp;&amp; evt == "terminate" </span><span class="cov9" title="32">{
-                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug("LFS transfer complete")
-                                }</span>
-                        }
+                                logger.Debug("LFS transfer complete")
+                        }</span>
                 }
 
                 <span class="cov9" title="32">if err := scanner.Err(); err != nil </span><span class="cov0" title="0">{
                         logger.Debug(fmt.Sprintf("stdin error: %s", err))
                 }</span>
 
-                <span class="cov9" title="32">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
-                }</span>
-                <span class="cov9" title="32">return nil</span>
+                <span class="cov9" title="32">logger.Debug("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+                return nil</span>
 
         },
 }
@@ -5570,7 +5536,7 @@ var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
 var GIT_TRANSFER_TRACE int
 
-func init() <span class="cov7" title="58">{
+func init() <span class="cov10" title="56">{
         GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
@@ -5579,35 +5545,35 @@ func init() <span class="cov7" title="58">{
         }
 }
 
-func TraceEnabled() bool <span class="cov10" title="247">{
+func TraceEnabled() bool <span class="cov9" title="49">{
         return GIT_TRANSFER_TRACE == 1
 }</span>
 
 // NewLogger creates a new Logger that writes to the specified file and optionally stderr.
 // It is safe to call this multiple times; only the first successful call sets the global logger.
-func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov7" title="49">{
+func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov9" title="49">{
         var writers []io.Writer
 
-        if filename == "" </span><span class="cov7" title="49">{
+        if filename == "" </span><span class="cov9" title="49">{
                 //create drs dir if it doesn't exist
                 if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
 
-                <span class="cov7" title="49">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span> // Assuming transfer.log is a variable
+                <span class="cov9" title="49">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span> // Assuming transfer.log is a variable
         }
 
-        <span class="cov7" title="49">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        <span class="cov9" title="49">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov7" title="49">writers = append(writers, file)
+        <span class="cov9" title="49">writers = append(writers, file)
 
-        if logToStderr </span><span class="cov7" title="44">{
+        if logToStderr </span><span class="cov9" title="44">{
                 writers = append(writers, os.Stderr)
         }</span>
 
-        <span class="cov7" title="49">multiWriter := io.MultiWriter(writers...)
+        <span class="cov9" title="49">multiWriter := io.MultiWriter(writers...)
 
         handler := slog.NewTextHandler(multiWriter, &amp;slog.HandlerOptions{
                 AddSource: true,
@@ -5623,13 +5589,13 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span cl
         return globalLogger, nil</span>
 }
 
-func GetLogger() *slog.Logger <span class="cov7" title="41">{
-        globalLoggerOnce.Do(func() </span><span class="cov7" title="41">{
+func GetLogger() *slog.Logger <span class="cov9" title="41">{
+        globalLoggerOnce.Do(func() </span><span class="cov9" title="41">{
                 if globalLogger == nil </span><span class="cov0" title="0">{
                         globalLogger = NewNoOpLogger()
                 }</span>
         })
-        <span class="cov7" title="41">return globalLogger</span>
+        <span class="cov9" title="41">return globalLogger</span>
 }
 
 // Close closes the log file if open.
@@ -5646,30 +5612,30 @@ func Close() error <span class="cov1" title="1">{
 }
 
 // NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).
-func NewNoOpLogger() *slog.Logger <span class="cov5" title="13">{
+func NewNoOpLogger() *slog.Logger <span class="cov6" title="13">{
         handler := slog.NewTextHandler(io.Discard, &amp;slog.HandlerOptions{
                 Level: slog.LevelDebug,
         })
         return slog.New(handler)
 }</span>
 
-func resolveLogLevel() slog.Level <span class="cov7" title="49">{
+func resolveLogLevel() slog.Level <span class="cov9" title="49">{
         if TraceEnabled() </span><span class="cov0" title="0">{
                 return slog.LevelDebug
         }</span>
 
-        <span class="cov7" title="49">level, ok := readLogLevelFromGitConfig()
+        <span class="cov9" title="49">level, ok := readLogLevelFromGitConfig()
         if ok </span><span class="cov0" title="0">{
                 return level
         }</span>
 
-        <span class="cov7" title="49">return slog.LevelDebug</span>
+        <span class="cov9" title="49">return slog.LevelDebug</span>
 }
 
-func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov7" title="49">{
+func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov9" title="49">{
         cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
         output, err := cmd.Output()
-        if err != nil </span><span class="cov7" title="49">{
+        if err != nil </span><span class="cov9" title="49">{
                 return slog.LevelDebug, false
         }</span>
 
@@ -5721,7 +5687,6 @@ import (
         "github.com/calypr/git-drs/client"
         "github.com/calypr/git-drs/drs"
         "github.com/calypr/git-drs/drs/hash"
-        "github.com/calypr/git-drs/drslog"
         "github.com/calypr/git-drs/projectdir"
         "github.com/calypr/git-drs/utils"
         "github.com/google/uuid"
@@ -5736,18 +5701,16 @@ type LfsDryRunSpec struct {
 }
 
 // RunLfsPushDryRun executes: git lfs push --dry-run &lt;remote&gt; &lt;ref&gt;
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) <span class="cov3" title="4">{
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) <span class="cov5" title="4">{
         if spec.Remote == "" || spec.Ref == "" </span><span class="cov0" title="0">{
                 return "", errors.New("missing remote or ref")
         }</span>
 
         // Debug-print the command to stderr
-        <span class="cov3" title="4">fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
-        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
-        }</span>
+        <span class="cov5" title="4">fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
+        logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
 
-        <span class="cov3" title="4">cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
+        cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
         cmd.Dir = repoDir
 
         var stdout, stderr bytes.Buffer
@@ -5763,7 +5726,7 @@ func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, l
                 }</span>
                 <span class="cov0" title="0">return out, fmt.Errorf("git lfs push --dry-run failed: %s", msg)</span>
         }
-        <span class="cov3" title="4">return out, nil</span>
+        <span class="cov5" title="4">return out, nil</span>
 }
 
 // output of git lfs ls-files
@@ -5830,15 +5793,11 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
         <span class="cov0" title="0">for drsObjKey := range outobjs </span><span class="cov0" title="0">{
                 val, ok := drsLfsObjs[drsObjKey]
                 if !ok </span><span class="cov0" title="0">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                myLogger.Debug(fmt.Sprintf("Drs record not found in sha256 map %s", drsObjKey))
-                        }</span>
-                }
+                        myLogger.Debug(fmt.Sprintf("Drs record not found in sha256 map %s", drsObjKey))
+                }</span>
                 <span class="cov0" title="0">if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) </span><span class="cov0" title="0">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                myLogger.Debug(fmt.Sprintf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name))
-                        }</span>
-                        <span class="cov0" title="0">_, err = drsClient.RegisterRecord(val)
+                        myLogger.Debug(fmt.Sprintf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name))
+                        _, err = drsClient.RegisterRecord(val)
                         if err != nil </span><span class="cov0" title="0">{
                                 return err
                         }</span>
@@ -5861,10 +5820,8 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
         <span class="cov0" title="0">writtenObjs := 0
         for drsObj := range objChan </span><span class="cov0" title="0">{
                 if drsObj.Object == nil </span><span class="cov0" title="0">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("OBJ is nil: %#v, continuing...", drsObj))
-                        }</span>
-                        <span class="cov0" title="0">continue</span>
+                        logger.Debug(fmt.Sprintf("OBJ is nil: %#v, continuing...", drsObj))
+                        continue</span>
                 }
                 <span class="cov0" title="0">sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
                 if len(sumMap) == 0 </span><span class="cov0" title="0">{
@@ -5890,49 +5847,43 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
                         }</span>
                 }
         }
-        <span class="cov0" title="0">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
-        }</span>
-        <span class="cov0" title="0">return nil</span>
+        <span class="cov0" title="0">logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
+        return nil</span>
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov3" title="4">{
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov5" title="4">{
 
-        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                logger.Debug("Update to DRS objects started")
-        }</span>
+        logger.Debug("Update to DRS objects started")
 
         // get all lfs files
-        <span class="cov3" title="4">lfsFiles, err := GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+        lfsFiles, err := GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error getting all LFS files: %v", err)
         }</span>
 
         // get project
-        <span class="cov3" title="4">projectId := drsClient.GetProjectId()
+        <span class="cov5" title="4">projectId := drsClient.GetProjectId()
         if projectId == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("no project configured: %v", err)
         }</span>
 
         // create a DRS object for each LFS file
         // which will be used at push-time
-        <span class="cov3" title="4">for _, file := range lfsFiles </span><span class="cov3" title="4">{
+        <span class="cov5" title="4">for _, file := range lfsFiles </span><span class="cov5" title="4">{
                 // check if indexd object already prepared, skip if so
                 drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
                 }</span>
-                <span class="cov3" title="4">if _, err := os.Stat(drsObjPath); err == nil </span><span class="cov0" title="0">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath))
-                        }</span>
-                        <span class="cov0" title="0">continue</span>
+                <span class="cov5" title="4">if _, err := os.Stat(drsObjPath); err == nil </span><span class="cov0" title="0">{
+                        logger.Debug(fmt.Sprintf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath))
+                        continue</span>
                 }
 
                 // if file is in cache, hasn't been committed to git or pushed to indexd
                 // create a local DRS object for it
                 // TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-                <span class="cov3" title="4">drsId := DrsUUID(projectId, file.Oid)
+                <span class="cov5" title="4">drsId := DrsUUID(projectId, file.Oid)
                 // logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
                 // get file info needed to create indexd record
@@ -5940,81 +5891,79 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
                 }</span>
-                <span class="cov3" title="4">if _, err := os.Stat(path); os.IsNotExist(err) </span><span class="cov0" title="0">{
+                <span class="cov5" title="4">if _, err := os.Stat(path); os.IsNotExist(err) </span><span class="cov0" title="0">{
                         return fmt.Errorf("error: File %s does not exist in LFS objects path %s. Aborting", file.Name, path)
                 }</span>
 
-                <span class="cov3" title="4">drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
+                <span class="cov5" title="4">drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
                 }</span>
 
                 // write drs objects to DRS_OBJS_PATH
-                <span class="cov3" title="4">err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
+                <span class="cov5" title="4">err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
                 }</span>
-                <span class="cov3" title="4">if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))
-                }</span>
+                <span class="cov5" title="4">logger.Debug(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))</span>
         }
 
-        <span class="cov3" title="4">return nil</span>
+        <span class="cov5" title="4">return nil</span>
 }
 
-func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov4" title="5">{
+func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov5" title="4">{
         // get object bytes
         indexdObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
         }</span>
-        <span class="cov4" title="5">if err := os.MkdirAll(filepath.Dir(drsObjPath), 0755); err != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="4">if err := os.MkdirAll(filepath.Dir(drsObjPath), 0755); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error creating directory for %s: %v", drsObjPath, err)
         }</span>
 
         // write indexd obj to file as json
-        <span class="cov4" title="5">err = os.WriteFile(drsObjPath, indexdObjBytes, 0644)
+        <span class="cov5" title="4">err = os.WriteFile(drsObjPath, indexdObjBytes, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error writing %s: %v", drsObjPath, err)
         }</span>
-        <span class="cov4" title="5">return nil</span>
+        <span class="cov5" title="4">return nil</span>
 }
 
-func DrsUUID(projectId string, hash string) string <span class="cov10" title="114">{
+func DrsUUID(projectId string, hash string) string <span class="cov5" title="4">{
         // create UUID based on project ID and hash
         hashStr := fmt.Sprintf("%s:%s", projectId, hash)
         return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
 }</span>
 
 // creates drsObject record from file
-func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov4" title="5">{
+func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov5" title="4">{
         // unmarshal the DRS object
         path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov4" title="5">drsObjBytes, err := os.ReadFile(path)
+        <span class="cov5" title="4">drsObjBytes, err := os.ReadFile(path)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov4" title="5">var drsObject drs.DRSObject
+        <span class="cov5" title="4">var drsObject drs.DRSObject
         err = sonic.ConfigFastest.Unmarshal(drsObjBytes, &amp;drsObject)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov4" title="5">return &amp;drsObject, nil</span>
+        <span class="cov5" title="4">return &amp;drsObject, nil</span>
 }
 
-func GetObjectPath(basePath string, oid string) (string, error) <span class="cov6" title="22">{
+func GetObjectPath(basePath string, oid string) (string, error) <span class="cov10" title="18">{
         // check that oid is a valid sha256 hash
-        if len(oid) != 64 </span><span class="cov1" title="1">{
+        if len(oid) != 64 </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
         }</span>
 
-        <span class="cov6" title="21">return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil</span>
+        <span class="cov10" title="18">return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil</span>
 }
 
 ////////////////
@@ -6090,17 +6039,17 @@ func GetRepoNameFromGit(remote string) (string, error) <span class="cov0" title=
         return repoName, nil</span>
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) <span class="cov3" title="4">{
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) <span class="cov5" title="4">{
         if logger == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("logger is required")
         }</span>
-        <span class="cov3" title="4">repoDir, err := os.Getwd()
+        <span class="cov5" title="4">repoDir, err := os.Getwd()
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
         // no timeout for now
-        <span class="cov3" title="4">ctx := context.Background()
+        <span class="cov5" title="4">ctx := context.Background()
         // If needed, can re-enable timeout
         // Set a timeout context for git commands, 3 minutes should be enough
         //ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
@@ -6109,19 +6058,15 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
         if gitRemoteName == "" </span><span class="cov0" title="0">{
                 gitRemoteName = "origin"
         }</span>
-        <span class="cov3" title="4">if gitRemoteLocation != "" </span><span class="cov3" title="4">{
-                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation))
-                }</span>
-        } else<span class="cov0" title="0"> {
-                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Using git remote %s for LFS dry-run", gitRemoteName))
-                }</span>
-        }
+        <span class="cov5" title="4">if gitRemoteLocation != "" </span><span class="cov5" title="4">{
+                logger.Debug(fmt.Sprintf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation))
+        }</span> else<span class="cov0" title="0"> {
+                logger.Debug(fmt.Sprintf("Using git remote %s for LFS dry-run", gitRemoteName))
+        }</span>
 
-        <span class="cov3" title="4">refs := buildLfsRefs(branches)
+        <span class="cov5" title="4">refs := buildLfsRefs(branches)
         lfsFileMap := make(map[string]LfsFileInfo)
-        for _, ref := range refs </span><span class="cov3" title="4">{
+        for _, ref := range refs </span><span class="cov5" title="4">{
                 spec := LfsDryRunSpec{
                         Remote: gitRemoteName,
                         Ref:    ref,
@@ -6131,124 +6076,110 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
                         return nil, err
                 }</span>
 
-                <span class="cov3" title="4">if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil </span><span class="cov0" title="0">{
+                <span class="cov5" title="4">if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
         }
 
-        <span class="cov3" title="4">return lfsFileMap, nil</span>
+        <span class="cov5" title="4">return lfsFileMap, nil</span>
 }
 
-func buildLfsRefs(branches []string) []string <span class="cov3" title="4">{
+func buildLfsRefs(branches []string) []string <span class="cov5" title="4">{
         if len(branches) == 0 </span><span class="cov0" title="0">{
                 return []string{"HEAD"}
         }</span>
-        <span class="cov3" title="4">refs := make([]string, 0, len(branches))
+        <span class="cov5" title="4">refs := make([]string, 0, len(branches))
         seen := make(map[string]struct{})
-        for _, branch := range branches </span><span class="cov3" title="4">{
+        for _, branch := range branches </span><span class="cov5" title="4">{
                 branch = strings.TrimSpace(branch)
                 if branch == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov3" title="4">ref := branch
-                if branch != "HEAD" &amp;&amp; !strings.HasPrefix(branch, "refs/") </span><span class="cov3" title="4">{
+                <span class="cov5" title="4">ref := branch
+                if branch != "HEAD" &amp;&amp; !strings.HasPrefix(branch, "refs/") </span><span class="cov5" title="4">{
                         ref = fmt.Sprintf("refs/heads/%s", branch)
                 }</span>
-                <span class="cov3" title="4">if _, ok := seen[ref]; ok </span><span class="cov0" title="0">{
+                <span class="cov5" title="4">if _, ok := seen[ref]; ok </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov3" title="4">seen[ref] = struct{}{}
+                <span class="cov5" title="4">seen[ref] = struct{}{}
                 refs = append(refs, ref)</span>
         }
-        <span class="cov3" title="4">if len(refs) == 0 </span><span class="cov0" title="0">{
+        <span class="cov5" title="4">if len(refs) == 0 </span><span class="cov0" title="0">{
                 return []string{"HEAD"}
         }</span>
-        <span class="cov3" title="4">return refs</span>
+        <span class="cov5" title="4">return refs</span>
 }
 
-func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error <span class="cov3" title="4">{
+func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error <span class="cov5" title="4">{
         // Log when dry-run returns no output to help with debugging
         if strings.TrimSpace(out) == "" </span><span class="cov0" title="0">{
-                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                        logger.Debug("No LFS files to push (dry-run returned no output)")
-                }</span>
-                <span class="cov0" title="0">return nil</span>
-        }
+                logger.Debug("No LFS files to push (dry-run returned no output)")
+                return nil
+        }</span>
 
         // accept lowercase or uppercase hex
-        <span class="cov3" title="4">sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
+        <span class="cov5" title="4">sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 
-        for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") </span><span class="cov4" title="6">{
+        for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") </span><span class="cov6" title="6">{
                 line = strings.TrimSpace(line)
                 if line == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov4" title="6">parts := strings.Fields(line)
+                <span class="cov6" title="6">parts := strings.Fields(line)
                 if len(parts) &lt; 2 </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov4" title="6">oid := parts[1]
+                <span class="cov6" title="6">oid := parts[1]
                 path := parts[len(parts)-1]
 
                 // Validate OID looks like a SHA256 hex string.
                 if !sha256Re.MatchString(oid) </span><span class="cov0" title="0">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("skipping LFS line with invalid oid %q: %q", oid, line))
-                        }</span>
-                        <span class="cov0" title="0">continue</span>
+                        logger.Debug(fmt.Sprintf("skipping LFS line with invalid oid %q: %q", oid, line))
+                        continue</span>
                 }
 
                 // see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
-                <span class="cov4" title="6">if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" &amp;&amp; strings.Contains(path, ".gitattributes") </span><span class="cov2" title="2">{
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("skipping empty LFS pointer for %s", path))
-                        }</span>
-                        <span class="cov2" title="2">continue</span>
+                <span class="cov6" title="6">if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" &amp;&amp; strings.Contains(path, ".gitattributes") </span><span class="cov3" title="2">{
+                        logger.Debug(fmt.Sprintf("skipping empty LFS pointer for %s", path))
+                        continue</span>
                 }
                 // Remove a trailing parenthetical suffix from p, e.g.:
                 // "path/to/file.dat (100 KB)" -&gt; "path/to/file.dat"
-                <span class="cov3" title="4">if idx := strings.LastIndex(path, " ("); idx != -1 &amp;&amp; strings.HasSuffix(path, ")") </span><span class="cov0" title="0">{
+                <span class="cov5" title="4">if idx := strings.LastIndex(path, " ("); idx != -1 &amp;&amp; strings.HasSuffix(path, ")") </span><span class="cov0" title="0">{
                         path = strings.TrimSpace(path[:idx])
                 }</span>
-                <span class="cov3" title="4">size := int64(0)
+                <span class="cov5" title="4">size := int64(0)
                 absPath := path
-                if repoDir != "" &amp;&amp; !filepath.IsAbs(path) </span><span class="cov3" title="4">{
+                if repoDir != "" &amp;&amp; !filepath.IsAbs(path) </span><span class="cov5" title="4">{
                         absPath = filepath.Join(repoDir, path)
                 }</span>
-                <span class="cov3" title="4">if stat, err := os.Stat(absPath); err == nil </span><span class="cov3" title="4">{
+                <span class="cov5" title="4">if stat, err := os.Stat(absPath); err == nil </span><span class="cov5" title="4">{
                         size = stat.Size()
                 }</span> else<span class="cov0" title="0"> {
-                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("could not stat file %s: %v", path, err))
+                        logger.Debug(fmt.Sprintf("could not stat file %s: %v", path, err))
+                        if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil </span><span class="cov0" title="0">{
+                                logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
                         }</span>
-                        <span class="cov0" title="0">if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil </span><span class="cov0" title="0">{
-                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
-                                }</span>
-                        }
                         <span class="cov0" title="0">continue</span>
                 }
 
                 // If the file is small, read it and detect LFS pointer signature.
                 // Pointer files are textual and include the LFS spec version + an oid line.
-                <span class="cov3" title="4">if size &gt; 0 &amp;&amp; size &lt; 2048 </span><span class="cov2" title="2">{
-                        if data, readErr := os.ReadFile(absPath); readErr == nil </span><span class="cov2" title="2">{
+                <span class="cov5" title="4">if size &gt; 0 &amp;&amp; size &lt; 2048 </span><span class="cov3" title="2">{
+                        if data, readErr := os.ReadFile(absPath); readErr == nil </span><span class="cov3" title="2">{
                                 s := strings.TrimSpace(string(data))
                                 if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") &amp;&amp; strings.Contains(s, "oid sha256:") </span><span class="cov0" title="0">{
-                                        if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                                logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
+                                        logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
+                                        if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil </span><span class="cov0" title="0">{
+                                                logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
                                         }</span>
-                                        <span class="cov0" title="0">if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil </span><span class="cov0" title="0">{
-                                                if drslog.TraceEnabled() </span><span class="cov0" title="0">{
-                                                        logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
-                                                }</span>
-                                        }
                                         <span class="cov0" title="0">continue</span>
                                 }
                         }
                 }
 
-                <span class="cov3" title="4">lfsFileMap[path] = LfsFileInfo{
+                <span class="cov5" title="4">lfsFileMap[path] = LfsFileInfo{
                         Name:    path,
                         Size:    size,
                         OidType: "sha256",
@@ -6258,7 +6189,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                 //logger.Printf("GetAllLfsFiles added LFS file %s", path)
         }
 
-        <span class="cov3" title="4">return nil</span>
+        <span class="cov5" title="4">return nil</span>
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI
@@ -6289,26 +6220,26 @@ func CreateCustomPath(baseDir, drsURI string) (string, error) <span class="cov0"
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov4" title="5">{
-        if len(records) == 0 </span><span class="cov1" title="1">{
+func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov5" title="4">{
+        if len(records) == 0 </span><span class="cov0" title="0">{
                 return nil, nil
         }</span>
 
         // Convert project ID to resource path format for comparison
-        <span class="cov3" title="4">expectedAuthz, err := utils.ProjectToResource(projectId)
+        <span class="cov5" title="4">expectedAuthz, err := utils.ProjectToResource(projectId)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
         }</span>
 
         // Get the first record with matching authz if exists
 
-        <span class="cov3" title="4">for _, record := range records </span><span class="cov3" title="4">{
-                for _, access := range record.AccessMethods </span><span class="cov3" title="4">{
+        <span class="cov5" title="4">for _, record := range records </span><span class="cov5" title="4">{
+                for _, access := range record.AccessMethods </span><span class="cov5" title="4">{
                         // assert access has Authorizations
                         if access.Authorizations == nil </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("access method for record %v missing authorizations", record)
                         }</span>
-                        <span class="cov3" title="4">if access.Authorizations.Value == expectedAuthz </span><span class="cov3" title="4">{
+                        <span class="cov5" title="4">if access.Authorizations.Value == expectedAuthz </span><span class="cov5" title="4">{
                                 return &amp;record, nil
                         }</span>
                 }

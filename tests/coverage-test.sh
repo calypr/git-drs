@@ -220,6 +220,17 @@ for pass in 1 2; do
   echo "=== Test sequence pass #$pass completed ===" >&2
 done
 
+# run some commands to increase coverage of git-drs internals
+echo "Running additional git-drs commands to increase coverage..." >&2
+cd fixtures
+git drs list-project cbds-monorepos
+git drs list-project dummy-proj  || true
+git drs    query  ed289cbc-0069-5164-850f-77e3849025ce
+git drs    query  dummy-id || true
+git drs remote list
+
+
+
 popd >/dev/null
 
 echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2

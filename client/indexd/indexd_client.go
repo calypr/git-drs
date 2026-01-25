@@ -424,9 +424,7 @@ func (cl *IndexDClient) RegisterFileWithProgress(oid string, reportBytes func(in
 			return nil
 		}
 		cl.Logger.Printf("MultipartUpload size: %d path: %s", drsObject.Size, filePath)
-		restore := withProgressDefaultClient(reportBytes)
-		defer restore()
-		err := upload.MultipartUpload(
+		err := multipartUploadWithProgress(
 			context.TODO(),
 			g3,
 			common.FileUploadRequestObject{
@@ -436,7 +434,8 @@ func (cl *IndexDClient) RegisterFileWithProgress(oid string, reportBytes func(in
 				FileMetadata: common.FileMetadata{},
 				Bucket:       cl.BucketName,
 			},
-			file, false,
+			file,
+			reportBytes,
 		)
 		if err != nil {
 			return fmt.Errorf("MultipartUpload error: %s", err)

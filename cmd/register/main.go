@@ -37,7 +37,7 @@ var Cmd = &cobra.Command{
 
 		remoteName, err := cfg.GetRemoteOrDefault(remote)
 		if err != nil {
-			logger.Printf("Error getting remote: %v", err)
+			logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
 			return err
 		}
 
@@ -57,11 +57,11 @@ var Cmd = &cobra.Command{
 		}
 
 		if len(pendingObjects) == 0 {
-			logger.Println("No pending objects to register")
+			logger.Debug("No pending objects to register")
 			return nil
 		}
 
-		logger.Printf("Found %d pending object(s) to register", len(pendingObjects))
+		logger.Debug(fmt.Sprintf("Found %d pending object(s) to register", len(pendingObjects)))
 
 		registeredCount := 0
 		skippedCount := 0
@@ -69,12 +69,12 @@ var Cmd = &cobra.Command{
 
 		// Register each pending object with indexd
 		for _, obj := range pendingObjects {
-			logger.Printf("Processing %s (OID: %s)", obj.Path, obj.OID)
+			logger.Debug(fmt.Sprintf("Processing %s (OID: %s)", obj.Path, obj.OID))
 
 			// Read the IndexdRecord from disk
 			indexdObj, err := drsmap.DrsInfoFromOid(obj.OID)
 			if err != nil {
-				logger.Printf("Error reading DRS object for %s: %v", obj.Path, err)
+				logger.Debug(fmt.Sprintf("Error reading DRS object for %s: %v", obj.Path, err))
 				errorCount++
 				continue
 			}
@@ -82,7 +82,7 @@ var Cmd = &cobra.Command{
 			// Check if records with this hash already exist in indexd
 			records, err := cli.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: obj.OID})
 			if err != nil {
-				logger.Printf("Error querying indexd for %s: %v", obj.Path, err)
+				logger.Debug(fmt.Sprintf("Error querying indexd for %s: %v", obj.Path, err))
 				errorCount++
 				continue
 			}
@@ -97,7 +97,7 @@ var Cmd = &cobra.Command{
 			}
 
 			if alreadyExists {
-				logger.Printf("Record for %s (DID: %s) already exists in indexd, skipping", obj.Path, indexdObj.Id)
+				logger.Debug(fmt.Sprintf("Record for %s (DID: %s) already exists in indexd, skipping", obj.Path, indexdObj.Id))
 				skippedCount++
 				continue
 			}
@@ -105,18 +105,18 @@ var Cmd = &cobra.Command{
 			// Register the indexd record
 			_, err = icli.RegisterRecord(indexdObj)
 			if err != nil {
-				logger.Printf("Error registering %s with indexd: %v", obj.Path, err)
+				logger.Debug(fmt.Sprintf("Error registering %s with indexd: %v", obj.Path, err))
 				errorCount++
 				continue
 			}
 
-			logger.Printf("Successfully registered %s with DID %s", obj.Path, indexdObj.Id)
+			logger.Debug(fmt.Sprintf("Successfully registered %s with DID %s", obj.Path, indexdObj.Id))
 			registeredCount++
 		}
 
 		// Summary
-		logger.Printf("Registration complete: %d registered, %d skipped, %d errors",
-			registeredCount, skippedCount, errorCount)
+		logger.Debug(fmt.Sprintf("Registration complete: %d registered, %d skipped, %d errors",
+			registeredCount, skippedCount, errorCount))
 
 		if errorCount > 0 {
 			return fmt.Errorf("completed with %d error(s)", errorCount)

@@ -2,7 +2,7 @@ package anvil_client
 
 import (
 	"io"
-	"log"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -30,7 +30,8 @@ func TestAnvilRemoteAccessors(t *testing.T) {
 
 func TestAnvilRemoteGetClientNotImplemented(t *testing.T) {
 	remote := AnvilRemote{}
-	client, err := remote.GetClient(map[string]string{}, log.New(io.Discard, "", 0))
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	client, err := remote.GetClient(map[string]string{}, logger)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

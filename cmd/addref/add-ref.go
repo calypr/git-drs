@@ -24,7 +24,7 @@ var Cmd = &cobra.Command{
 
 		logger := drslog.GetLogger()
 
-		logger.Printf("Adding reference to DRS object %s to %s\n", drsUri, dstPath)
+		logger.Debug(fmt.Sprintf("Adding reference to DRS object %s to %s", drsUri, dstPath))
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -33,7 +33,7 @@ var Cmd = &cobra.Command{
 
 		remoteName, err := cfg.GetRemoteOrDefault(remote)
 		if err != nil {
-			logger.Printf("Error getting remote: %v", err)
+			logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
 			return err
 		}
 

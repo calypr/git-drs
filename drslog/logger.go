@@ -1,18 +1,19 @@
 package drslog
 
 import (
-	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/calypr/git-drs/projectdir"
 )
 
-var globalLogger *log.Logger
+var globalLogger *slog.Logger
 var globalLogFile io.Closer
 var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
@@ -33,7 +34,7 @@ func TraceEnabled() bool {
 
 // NewLogger creates a new Logger that writes to the specified file and optionally stderr.
 // It is safe to call this multiple times; only the first successful call sets the global logger.
-func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
+func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 	var writers []io.Writer
 
 	if filename == "" {
@@ -57,10 +58,11 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 
 	multiWriter := io.MultiWriter(writers...)
 
-	// Create the core logger with Lshortfile for better debugging
-	// Prefix log entries with PID for easier tracing in multi-process scenarios
-	prefix := fmt.Sprintf("[%d] ", os.Getpid())
-	core := log.New(multiWriter, prefix, log.LstdFlags|log.Lshortfile)
+	handler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     resolveLogLevel(),
+	})
+	core := slog.New(handler).With("pid", os.Getpid())
 
 	globalLoggerMu.Lock()
 	globalLogFile = file
@@ -70,7 +72,7 @@ func NewLogger(filename string, logToStderr bool) (*log.Logger, error) {
 	return globalLogger, nil
 }
 
-func GetLogger() *log.Logger {
+func GetLogger() *slog.Logger {
 	globalLoggerOnce.Do(func() {
 		if globalLogger == nil {
 			globalLogger = NewNoOpLogger()
@@ -93,6 +95,56 @@ func Close() error {
 }
 
 // NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).
-func NewNoOpLogger() *log.Logger {
-	return log.New(io.Discard, "", 0)
+func NewNoOpLogger() *slog.Logger {
+	handler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
+	return slog.New(handler)
+}
+
+func resolveLogLevel() slog.Level {
+	if TraceEnabled() {
+		return slog.LevelDebug
+	}
+
+	level, ok := readLogLevelFromGitConfig()
+	if ok {
+		return level
+	}
+
+	return slog.LevelDebug
+}
+
+func readLogLevelFromGitConfig() (slog.Level, bool) {
+	cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return slog.LevelDebug, false
+	}
+
+	value := strings.TrimSpace(string(output))
+	if value == "" {
+		return slog.LevelDebug, false
+	}
+
+	parsed, ok := parseLogLevel(value)
+	if !ok {
+		return slog.LevelDebug, false
+	}
+	return parsed, true
+}
+
+func parseLogLevel(value string) (slog.Level, bool) {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "DEBUG":
+		return slog.LevelDebug, true
+	case "INFO":
+		return slog.LevelInfo, true
+	case "WARN", "WARNING":
+		return slog.LevelWarn, true
+	case "ERROR":
+		return slog.LevelError, true
+	default:
+		return slog.LevelDebug, false
+	}
 }

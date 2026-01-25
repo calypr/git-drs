@@ -46,7 +46,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Printf("\nerror creating DRS client: %s", err)
+			logger.Debug(fmt.Sprintf("\nerror creating DRS client: %s", err))
 			return err
 		}
 
@@ -75,7 +75,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("\nerror downloading file object ID %s: %s", oid, err)
 		}
 
-		logger.Print("file downloaded")
+		logger.Debug("file downloaded")
 
 		return nil
 	},

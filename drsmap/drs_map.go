@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +33,7 @@ type LfsDryRunSpec struct {
 }
 
 // RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *log.Logger) (string, error) {
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) {
 	if spec.Remote == "" || spec.Ref == "" {
 		return "", errors.New("missing remote or ref")
 	}
@@ -41,7 +41,7 @@ func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, l
 	// Debug-print the command to stderr
 	fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
 	if drslog.TraceEnabled() {
-		logger.Printf("running command: %v", fullCmd)
+		logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
@@ -79,7 +79,7 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
 	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
 	if err != nil {
@@ -128,12 +128,12 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error
 		val, ok := drsLfsObjs[drsObjKey]
 		if !ok {
 			if drslog.TraceEnabled() {
-				myLogger.Printf("Drs record not found in sha256 map %s", drsObjKey)
+				myLogger.Debug(fmt.Sprintf("Drs record not found in sha256 map %s", drsObjKey))
 			}
 		}
 		if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
 			if drslog.TraceEnabled() {
-				myLogger.Printf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name)
+				myLogger.Debug(fmt.Sprintf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name))
 			}
 			_, err = drsClient.RegisterRecord(val)
 			if err != nil {
@@ -150,7 +150,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *log.Logger) error
 	return nil
 }
 
-func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error {
+func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error {
 	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
 	if err != nil {
 		return err
@@ -159,7 +159,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 	for drsObj := range objChan {
 		if drsObj.Object == nil {
 			if drslog.TraceEnabled() {
-				logger.Printf("OBJ is nil: %#v, continuing...", drsObj)
+				logger.Debug(fmt.Sprintf("OBJ is nil: %#v, continuing...", drsObj))
 			}
 			continue
 		}
@@ -188,15 +188,15 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *log.Logger) error 
 		}
 	}
 	if drslog.TraceEnabled() {
-		logger.Printf("Wrote %d new objs to object store", writtenObjs)
+		logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
 	}
 	return nil
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
 
 	if drslog.TraceEnabled() {
-		logger.Print("Update to DRS objects started")
+		logger.Debug("Update to DRS objects started")
 	}
 
 	// get all lfs files
@@ -221,7 +221,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
 		}
 		if _, err := os.Stat(drsObjPath); err == nil {
 			if drslog.TraceEnabled() {
-				logger.Printf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath)
+				logger.Debug(fmt.Sprintf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath))
 			}
 			continue
 		}
@@ -252,7 +252,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
 			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 		}
 		if drslog.TraceEnabled() {
-			logger.Printf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id)
+			logger.Debug(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))
 		}
 	}
 
@@ -387,7 +387,7 @@ func GetRepoNameFromGit(remote string) (string, error) {
 	return repoName, nil
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *log.Logger) (map[string]LfsFileInfo, error) {
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
@@ -408,11 +408,11 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
 	}
 	if gitRemoteLocation != "" {
 		if drslog.TraceEnabled() {
-			logger.Printf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation)
+			logger.Debug(fmt.Sprintf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation))
 		}
 	} else {
 		if drslog.TraceEnabled() {
-			logger.Printf("Using git remote %s for LFS dry-run", gitRemoteName)
+			logger.Debug(fmt.Sprintf("Using git remote %s for LFS dry-run", gitRemoteName))
 		}
 	}
 
@@ -463,11 +463,11 @@ func buildLfsRefs(branches []string) []string {
 	return refs
 }
 
-func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
 	// Log when dry-run returns no output to help with debugging
 	if strings.TrimSpace(out) == "" {
 		if drslog.TraceEnabled() {
-			logger.Printf("No LFS files to push (dry-run returned no output)")
+			logger.Debug("No LFS files to push (dry-run returned no output)")
 		}
 		return nil
 	}
@@ -490,7 +490,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap m
 		// Validate OID looks like a SHA256 hex string.
 		if !sha256Re.MatchString(oid) {
 			if drslog.TraceEnabled() {
-				logger.Printf("skipping LFS line with invalid oid %q: %q", oid, line)
+				logger.Debug(fmt.Sprintf("skipping LFS line with invalid oid %q: %q", oid, line))
 			}
 			continue
 		}
@@ -498,7 +498,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap m
 		// see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
 		if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" && strings.Contains(path, ".gitattributes") {
 			if drslog.TraceEnabled() {
-				logger.Printf("skipping empty LFS pointer for %s", path)
+				logger.Debug(fmt.Sprintf("skipping empty LFS pointer for %s", path))
 			}
 			continue
 		}
@@ -516,11 +516,11 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap m
 			size = stat.Size()
 		} else {
 			if drslog.TraceEnabled() {
-				logger.Printf("could not stat file %s: %v", path, err)
+				logger.Debug(fmt.Sprintf("could not stat file %s: %v", path, err))
 			}
 			if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil {
 				if drslog.TraceEnabled() {
-					logger.Printf("error writing to stderr for %s: %v", path, fmtErr)
+					logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
 				}
 			}
 			continue
@@ -533,11 +533,11 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *log.Logger, lfsFileMap m
 				s := strings.TrimSpace(string(data))
 				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
 					if drslog.TraceEnabled() {
-						logger.Printf("WARNING: Detected upload of lfs pointer file %s skipping", path)
+						logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
 					}
 					if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil {
 						if drslog.TraceEnabled() {
-							logger.Printf("error writing to stderr for %s: %v", path, fprintfErr)
+							logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
 						}
 					}
 					continue

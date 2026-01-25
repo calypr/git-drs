@@ -2,7 +2,7 @@ package initialize
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,7 +49,7 @@ var Cmd = &cobra.Command{
 		// load the config
 		_, err = config.LoadConfig()
 		if err != nil {
-			logg.Printf("We should probably fix this: %v", err)
+			logg.Debug(fmt.Sprintf("We should probably fix this: %v", err))
 			return fmt.Errorf("error: unable to load config file: %v", err)
 		}
 
@@ -67,8 +67,8 @@ var Cmd = &cobra.Command{
 		}
 
 		// final logs
-		logg.Print("Git DRS initialized")
-		logg.Printf("Using %d concurrent transfers", transfers)
+		logg.Debug("Git DRS initialized")
+		logg.Debug(fmt.Sprintf("Using %d concurrent transfers", transfers))
 		return nil
 	},
 }
@@ -98,7 +98,7 @@ func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
 }
 
-func installPrePushHook(logger *log.Logger) error {
+func installPrePushHook(logger *slog.Logger) error {
 	cmd := exec.Command("git", "rev-parse", "--git-dir")
 	cmdOut, err := cmd.Output()
 	if err != nil {
@@ -141,7 +141,7 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 		if err := os.Remove(hookPath); err != nil {
 			return fmt.Errorf("unable to remove hook after backing up: %w", err)
 		}
-		logger.Printf("pre-push hook updated; backup written to %s", backupPath)
+		logger.Debug(fmt.Sprintf("pre-push hook updated; backup written to %s", backupPath))
 	}
 	// If there was an error other than expected not existing, return it
 	if err != nil && !os.IsNotExist(err) {
@@ -152,6 +152,6 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 	if err != nil {
 		return fmt.Errorf("unable to write pre-push hook: %w", err)
 	}
-	logger.Print("pre-push hook installed")
+	logger.Debug("pre-push hook installed")
 	return nil
 }

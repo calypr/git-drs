@@ -46,7 +46,7 @@ var Cmd = &cobra.Command{
 	Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
-		logger.Debug("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
+		logger.Info("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
 		// Gotta go fast — big buffer
 		scanner := bufio.NewScanner(os.Stdin)
@@ -139,7 +139,7 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
 					continue
 				}
-				logger.Debug(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
+				logger.Info(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
 
 				// get signed url
 				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
@@ -173,7 +173,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// send success message back
-				logger.Debug(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
 				lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)
 
@@ -189,7 +189,7 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
 					continue
 				}
-				logger.Debug(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
@@ -199,10 +199,10 @@ var Cmd = &cobra.Command{
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
-				logger.Debug(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
+				logger.Info(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
-				logger.Debug("LFS transfer complete")
+				logger.Info("LFS transfer terminate received.")
 			}
 		}
 
@@ -210,7 +210,7 @@ var Cmd = &cobra.Command{
 			logger.Error(fmt.Sprintf("stdin error: %s", err))
 		}
 
-		logger.Debug("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+		logger.Info("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
 		return nil
 
 	},

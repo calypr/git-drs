@@ -135,7 +135,7 @@
 				
 				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (65.0%)</option>
 				
-				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.3%)</option>
+				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.9%)</option>
 				
 				<option value="file41">github.com/calypr/git-drs/drsmap/lfs_utils.go (94.1%)</option>
 				
@@ -4261,7 +4261,7 @@ var Cmd = &amp;cobra.Command{
         Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
         RunE: func(cmd *cobra.Command, args []string) error <span class="cov9" title="32">{
                 logger := drslog.GetLogger()
-                logger.Debug("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
+                logger.Info("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
                 // Gotta go fast — big buffer
                 scanner := bufio.NewScanner(os.Stdin)
@@ -4354,7 +4354,7 @@ var Cmd = &amp;cobra.Command{
                                         lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
                                         continue</span>
                                 }
-                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
+                                <span class="cov4" title="4">logger.Info(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
 
                                 // get signed url
                                 accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
@@ -4388,7 +4388,7 @@ var Cmd = &amp;cobra.Command{
                                 }
 
                                 // send success message back
-                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+                                <span class="cov4" title="4">logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
                                 lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)</span>
 
@@ -4404,7 +4404,7 @@ var Cmd = &amp;cobra.Command{
                                         lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
-                                <span class="cov4" title="4">logger.Debug(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+                                <span class="cov4" title="4">logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
                                 drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error registering file: %v\n", err)
@@ -4414,10 +4414,10 @@ var Cmd = &amp;cobra.Command{
                                 }
                                 // send success message back
                                 <span class="cov4" title="4">lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
-                                logger.Debug(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))</span>
+                                logger.Info(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))</span>
 
                         } else<span class="cov9" title="32"> if evt, ok := msg["event"]; ok &amp;&amp; evt == "terminate" </span><span class="cov9" title="32">{
-                                logger.Debug("LFS transfer complete")
+                                logger.Info("LFS transfer terminate received.")
                         }</span>
                 }
 
@@ -4425,7 +4425,7 @@ var Cmd = &amp;cobra.Command{
                         logger.Error(fmt.Sprintf("stdin error: %s", err))
                 }</span>
 
-                <span class="cov9" title="32">logger.Debug("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
+                <span class="cov9" title="32">logger.Info("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
                 return nil</span>
 
         },
@@ -6158,10 +6158,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                         size = stat.Size()
                 }</span> else<span class="cov0" title="0"> {
                         logger.Error(fmt.Sprintf("could not stat file %s: %v", path, err))
-                        if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil </span><span class="cov0" title="0">{
-                                logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
-                        }</span>
-                        <span class="cov0" title="0">continue</span>
+                        continue</span>
                 }
 
                 // If the file is small, read it and detect LFS pointer signature.
@@ -6170,11 +6167,8 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                         if data, readErr := os.ReadFile(absPath); readErr == nil </span><span class="cov3" title="2">{
                                 s := strings.TrimSpace(string(data))
                                 if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") &amp;&amp; strings.Contains(s, "oid sha256:") </span><span class="cov0" title="0">{
-                                        logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
-                                        if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil </span><span class="cov0" title="0">{
-                                                logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
-                                        }</span>
-                                        <span class="cov0" title="0">continue</span>
+                                        logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
+                                        continue</span>
                                 }
                         }
                 }

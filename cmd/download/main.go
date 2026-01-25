@@ -46,7 +46,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Debug(fmt.Sprintf("\nerror creating DRS client: %s", err))
+			logger.Error(fmt.Sprintf("\nerror creating DRS client: %s", err))
 			return err
 		}
 

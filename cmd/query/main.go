@@ -84,7 +84,7 @@ var Cmd = &cobra.Command{
 
 		remoteName, err := config.GetRemoteOrDefault(remote)
 		if err != nil {
-			logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
+			logger.Error(fmt.Sprintf("Error getting remote: %v", err))
 			return err
 		}
 

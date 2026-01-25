@@ -2292,7 +2292,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">remoteName, err := cfg.GetRemoteOrDefault(remote)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
+                        logger.Error(fmt.Sprintf("Error getting remote: %v", err))
                         return err
                 }</span>
 
@@ -2600,7 +2600,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">drsClient, err := cfg.GetRemoteClient(remoteName, logger)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("error creating indexd client: %s", err))
+                        logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
                         return err
                 }</span>
 
@@ -2700,7 +2700,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">drsClient, err := cfg.GetRemoteClient(remoteName, logger)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("error creating indexd client: %s", err))
+                        logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
                         return err
                 }</span>
 
@@ -2814,7 +2814,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">drsClient, err := cfg.GetRemoteClient(remoteName, logger)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("\nerror creating DRS client: %s", err))
+                        logger.Error(fmt.Sprintf("\nerror creating DRS client: %s", err))
                         return err
                 }</span>
 
@@ -2891,14 +2891,14 @@ var Cmd = &amp;cobra.Command{
                 }</span> else<span class="cov0" title="0"> {
                         remote, err = cfg.GetDefaultRemote()
                         if err != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
+                                logger.Error(fmt.Sprintf("Error getting remote: %v", err))
                                 return err
                         }</span>
                 }
 
                 <span class="cov0" title="0">drsClient, err := cfg.GetRemoteClient(remote, logger)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("\nerror creating DRS client: %s", err))
+                        logger.Error(fmt.Sprintf("\nerror creating DRS client: %s", err))
                         return err
                 }</span>
 
@@ -3625,7 +3625,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">remoteName, err := config.GetRemoteOrDefault(remote)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
+                        logger.Error(fmt.Sprintf("Error getting remote: %v", err))
                         return err
                 }</span>
 
@@ -3705,7 +3705,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">remoteName, err := cfg.GetRemoteOrDefault(remote)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error getting remote: %v", err))
+                        logger.Error(fmt.Sprintf("Error getting remote: %v", err))
                         return err
                 }</span>
 
@@ -3742,7 +3742,7 @@ var Cmd = &amp;cobra.Command{
                         // Read the IndexdRecord from disk
                         indexdObj, err := drsmap.DrsInfoFromOid(obj.OID)
                         if err != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Error reading DRS object for %s: %v", obj.Path, err))
+                                logger.Error(fmt.Sprintf("Error reading DRS object for %s: %v", obj.Path, err))
                                 errorCount++
                                 continue</span>
                         }
@@ -3750,7 +3750,7 @@ var Cmd = &amp;cobra.Command{
                         // Check if records with this hash already exist in indexd
                         <span class="cov0" title="0">records, err := cli.GetObjectByHash(&amp;hash.Checksum{Type: "sha256", Checksum: obj.OID})
                         if err != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Error querying indexd for %s: %v", obj.Path, err))
+                                logger.Error(fmt.Sprintf("Error querying indexd for %s: %v", obj.Path, err))
                                 errorCount++
                                 continue</span>
                         }
@@ -3773,7 +3773,7 @@ var Cmd = &amp;cobra.Command{
                         // Register the indexd record
                         <span class="cov0" title="0">_, err = icli.RegisterRecord(indexdObj)
                         if err != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("Error registering %s with indexd: %v", obj.Path, err))
+                                logger.Error(fmt.Sprintf("Error registering %s with indexd: %v", obj.Path, err))
                                 errorCount++
                                 continue</span>
                         }
@@ -4273,7 +4273,7 @@ var Cmd = &amp;cobra.Command{
                 // Read init message
                 if !scanner.Scan() </span><span class="cov0" title="0">{
                         err := fmt.Errorf("failed to read initial message from stdin")
-                        logger.Debug(fmt.Sprintf("Error: %v", err))
+                        logger.Error(fmt.Sprintf("Error: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
@@ -4282,14 +4282,14 @@ var Cmd = &amp;cobra.Command{
                 copy(initBytes, scanner.Bytes())
                 var initMsg lfs.InitMessage
                 if err := sConfig.Unmarshal(initBytes, &amp;initMsg); err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error decoding initial JSON message: %v", err))
+                        logger.Error(fmt.Sprintf("Error decoding initial JSON message: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
 
                 <span class="cov9" title="32">if initMsg.Event != "init" </span><span class="cov0" title="0">{
                         err := fmt.Errorf("protocol error: expected 'init' message, got '%s'", initMsg.Event)
-                        logger.Debug(fmt.Sprintf("Error: %v", err))
+                        logger.Error(fmt.Sprintf("Error: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
@@ -4299,7 +4299,7 @@ var Cmd = &amp;cobra.Command{
                 // Load config first
                 cfg, err := config.LoadConfig()
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error loading config: %v", err))
+                        logger.Error(fmt.Sprintf("Error loading config: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
@@ -4307,14 +4307,14 @@ var Cmd = &amp;cobra.Command{
                 // Determine remote
                 <span class="cov9" title="32">remote, err := cfg.GetDefaultRemote()
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
+                        logger.Error(fmt.Sprintf("Error getting default remote: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
 
                 <span class="cov9" title="32">drsClient, err = cfg.GetRemoteClient(remote, logger)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error creating DRS client: %v", err))
+                        logger.Error(fmt.Sprintf("Error creating DRS client: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
@@ -4325,12 +4325,12 @@ var Cmd = &amp;cobra.Command{
                         logger.Debug(fmt.Sprintf("Transfer operation: %s", transferOperation))
                 }</span> else<span class="cov0" title="0"> {
                         err := fmt.Errorf("invalid or missing operation in init message: %s", initMsg.Operation)
-                        logger.Debug(err.Error())
+                        logger.Error(err.Error())
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
                         return err
                 }</span>
                 <span class="cov9" title="32">if err := streamEncoder.Encode(map[string]any{}); err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error sending init acknowledgment: %v", err))
+                        logger.Error(fmt.Sprintf("Error sending init acknowledgment: %v", err))
                         return err
                 }</span>
 
@@ -4338,7 +4338,7 @@ var Cmd = &amp;cobra.Command{
                         var msg map[string]any
                         err := sConfig.Unmarshal(scanner.Bytes(), &amp;msg)
                         if err != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("error decoding JSON: %s", err))
+                                logger.Error(fmt.Sprintf("error decoding JSON: %s", err))
                                 continue</span>
                         }
 
@@ -4350,7 +4350,7 @@ var Cmd = &amp;cobra.Command{
                                 var downloadMsg lfs.DownloadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;downloadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing downloadMessage: %v", err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
                                         continue</span>
                                 }
@@ -4360,13 +4360,13 @@ var Cmd = &amp;cobra.Command{
                                 accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
                                         continue</span>
                                 }
                                 <span class="cov4" title="4">if accessUrl.URL == "" </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Unable to get access URL for OID %s", downloadMsg.Oid)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
@@ -4375,14 +4375,14 @@ var Cmd = &amp;cobra.Command{
                                 <span class="cov4" title="4">dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, downloadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
                                 <span class="cov4" title="4">err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
                                         continue</span>
                                 }
@@ -4400,7 +4400,7 @@ var Cmd = &amp;cobra.Command{
                                 var uploadMsg lfs.UploadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;uploadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing UploadMessage: %v", err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
@@ -4408,7 +4408,7 @@ var Cmd = &amp;cobra.Command{
                                 drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error registering file: %v\n", err)
-                                        logger.Debug(errMsg)
+                                        logger.Error(errMsg)
                                         lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
                                         continue</span>
                                 }
@@ -4422,7 +4422,7 @@ var Cmd = &amp;cobra.Command{
                 }
 
                 <span class="cov9" title="32">if err := scanner.Err(); err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("stdin error: %s", err))
+                        logger.Error(fmt.Sprintf("stdin error: %s", err))
                 }</span>
 
                 <span class="cov9" title="32">logger.Debug("~~~~~~~~~~~~~ COMPLETED: custom transfer ~~~~~~~~~~~~~")
@@ -5392,7 +5392,7 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) <span 
 
         <span class="cov1" title="1">err := filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error </span><span class="cov10" title="6">{
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error accessing path %s: %v", path, err))
+                        logger.Error(fmt.Sprintf("Error accessing path %s: %v", path, err))
                         return err
                 }</span>
                 <span class="cov10" title="6">if info.IsDir() </span><span class="cov6" title="3">{
@@ -5409,12 +5409,12 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) <span 
                 }</span>
                 <span class="cov4" title="2">data, err := os.ReadFile(path)
                 if err != nil </span><span class="cov0" title="0">{
-                        logger.Debug(fmt.Sprintf("Error reading file %s: %v", path, err))
+                        logger.Error(fmt.Sprintf("Error reading file %s: %v", path, err))
                         return err
                 }</span>
                 <span class="cov4" title="2">var drsObject DRSObject
                 if err := sonic.ConfigFastest.Unmarshal(data, &amp;drsObject); err != nil </span><span class="cov1" title="1">{
-                        logger.Debug(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
+                        logger.Error(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
                         return nil
                 }</span>
 
@@ -6157,9 +6157,9 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                 <span class="cov5" title="4">if stat, err := os.Stat(absPath); err == nil </span><span class="cov5" title="4">{
                         size = stat.Size()
                 }</span> else<span class="cov0" title="0"> {
-                        logger.Debug(fmt.Sprintf("could not stat file %s: %v", path, err))
+                        logger.Error(fmt.Sprintf("could not stat file %s: %v", path, err))
                         if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil </span><span class="cov0" title="0">{
-                                logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
+                                logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
                         }</span>
                         <span class="cov0" title="0">continue</span>
                 }
@@ -6172,7 +6172,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                                 if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") &amp;&amp; strings.Contains(s, "oid sha256:") </span><span class="cov0" title="0">{
                                         logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
                                         if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil </span><span class="cov0" title="0">{
-                                                logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
+                                                logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
                                         }</span>
                                         <span class="cov0" title="0">continue</span>
                                 }

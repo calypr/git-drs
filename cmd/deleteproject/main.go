@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Debug(fmt.Sprintf("error creating indexd client: %s", err))
+			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
 			return err
 		}
 

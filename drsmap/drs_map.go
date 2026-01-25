@@ -488,9 +488,9 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
 		if stat, err := os.Stat(absPath); err == nil {
 			size = stat.Size()
 		} else {
-			logger.Debug(fmt.Sprintf("could not stat file %s: %v", path, err))
+			logger.Error(fmt.Sprintf("could not stat file %s: %v", path, err))
 			if _, fmtErr := fmt.Fprintf(os.Stderr, "could not stat file %s: %v\n", path, err); fmtErr != nil {
-				logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
+				logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fmtErr))
 			}
 			continue
 		}
@@ -503,7 +503,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
 				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
 					logger.Debug(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
 					if _, fprintfErr := fmt.Fprintf(os.Stderr, "WARNING: Detected upload of lfs pointer file %s\n", path); fprintfErr != nil {
-						logger.Debug(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
+						logger.Error(fmt.Sprintf("error writing to stderr for %s: %v", path, fprintfErr))
 					}
 					continue
 				}

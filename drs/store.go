@@ -64,7 +64,7 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) {
 
 	err := filepath.Walk(objectsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			logger.Debug(fmt.Sprintf("Error accessing path %s: %v", path, err))
+			logger.Error(fmt.Sprintf("Error accessing path %s: %v", path, err))
 			return err
 		}
 		if info.IsDir() {
@@ -81,12 +81,12 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) {
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			logger.Debug(fmt.Sprintf("Error reading file %s: %v", path, err))
+			logger.Error(fmt.Sprintf("Error reading file %s: %v", path, err))
 			return err
 		}
 		var drsObject DRSObject
 		if err := sonic.ConfigFastest.Unmarshal(data, &drsObject); err != nil {
-			logger.Debug(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
+			logger.Error(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
 			return nil
 		}
 

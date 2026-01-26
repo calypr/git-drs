@@ -67,7 +67,7 @@
 				
 				<option value="file5">github.com/calypr/git-drs/client/indexd/gen3_remote.go (35.7%)</option>
 				
-				<option value="file6">github.com/calypr/git-drs/client/indexd/indexd_client.go (39.0%)</option>
+				<option value="file6">github.com/calypr/git-drs/client/indexd/indexd_client.go (39.8%)</option>
 				
 				<option value="file7">github.com/calypr/git-drs/client/indexd/records.go (100.0%)</option>
 				
@@ -115,7 +115,7 @@
 				
 				<option value="file29">github.com/calypr/git-drs/cmd/root.go (100.0%)</option>
 				
-				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (29.3%)</option>
+				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (47.7%)</option>
 				
 				<option value="file31">github.com/calypr/git-drs/cmd/transferref/main.go (0.0%)</option>
 				
@@ -1318,12 +1318,12 @@ func (cl *IndexDClient) getDownloadURL(did string, accessType string) (drs.Acces
 // is not already available in the bucket, and returns the resulting DRS object.
 // When registration fails without force push, it retries once with force push
 // enabled to reuse existing records and avoid duplicate uploads.
-func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) <span class="cov4" title="4">{
+func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.<span class="cov0" title="0">ProgressCallback) (*drs.DRSObject, error) {
         cl.Logger.Debug(fmt.Sprintf("register file started for oid: %s", oid))
 
         // load the DRS object from oid created by prepush
         drsObject, err := drsmap.DrsInfoFromOid(oid)
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span></span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error getting drs object for oid %s: %v", oid, err)
         }</span>
 
@@ -4263,7 +4263,7 @@ var Cmd = &amp;cobra.Command{
         Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
         Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism<span class="cov0" title="0"> to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
         RunE: func(cmd *cobra.Command, args []string) error {
-                logger := drslog.GetLogger()
+                logger := drslog.GetLogge</span>r()
                 logger.Info("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
                 // Gotta go fast — big buffer
@@ -4274,7 +4274,7 @@ var Cmd = &amp;cobra.Command{
                 streamEncoder := encoder.NewStreamEncoder(os.Stdout)
 
                 // Read init messag</span>e
-                if !scanner.Scan() </span>{
+                if !scanner.Scan() </span><span class="cov0" title="0">{
                         err := fmt.Errorf("failed to read initial message from stdin")
                         logger.Error(fmt.Sprintf("Error: %v", err))
                         lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
@@ -4390,7 +4390,12 @@ var Cmd = &amp;cobra.Command{
                                         continue</span>
                                 }
 
-                                <span class="cov4" title="4">lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
+                                <span class="cov4" title="4">_ = GitLFSProgressCallback(streamEncoder)(common.ProgressEvent{
+                                        Event:          "progress",
+                                        Oid:            downloadMsg.Oid,
+                                        BytesSoFar:     downloadMsg.Size,
+                                        BytesSinceLast: downloadMsg.Size,
+                                })
 
                                 // send success message back
                                 logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
@@ -4438,8 +4443,9 @@ var Cmd = &amp;cobra.Command{
 
 // GitLFSProgressCallback returns a ProgressCallback that logs progress events
 // using the provided streamEncoder. It always returns nil (no error).
-func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov4" title="4">{
-        return func(e common.ProgressEvent) error </span><span class="cov2" title="2">{
+func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov6" title="8">{
+        return func(e common.ProgressEvent) error </span><span class="cov5" title="7">{
+                fmt.Fprintln(os.Stderr, "GitLFSProgressCallback progress callback started", e)
                 lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
                 return nil
         }</span>
@@ -6851,7 +6857,7 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
         encoder.Encode(completeResponse)
 }</span>
 
-func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov8" title="7">{
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov9" title="8">{
         progressResponse := ProgressResponse{
                 Event:          "progress",
                 Oid:            oid,

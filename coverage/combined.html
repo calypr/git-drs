@@ -61,7 +61,7 @@
 				
 				<option value="file2">github.com/calypr/git-drs/client/indexd/add_url.go (47.4%)</option>
 				
-				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (83.3%)</option>
+				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (52.4%)</option>
 				
 				<option value="file4">github.com/calypr/git-drs/client/indexd/convert.go (86.5%)</option>
 				
@@ -131,9 +131,9 @@
 				
 				<option value="file37">github.com/calypr/git-drs/drs/util.go (80.0%)</option>
 				
-				<option value="file38">github.com/calypr/git-drs/drslog/compat.go (100.0%)</option>
+				<option value="file38">github.com/calypr/git-drs/drslog/compat.go (55.6%)</option>
 				
-				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (43.9%)</option>
+				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (44.6%)</option>
 				
 				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.9%)</option>
 				
@@ -743,28 +743,28 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error <span class=
         needRefresh := false
         if err != nil </span><span class="cov0" title="0">{
                 needRefresh = true
-        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov1" title="1">{
+        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov0" title="0">{
                 needRefresh = true
         }</span>
 
-        <span class="cov9" title="23">if needRefresh </span><span class="cov1" title="1">{
+        <span class="cov9" title="23">if needRefresh </span><span class="cov0" title="0">{
                 logger, closer := logs.New(cred.Profile)
                 defer closer()
 
                 if err != nil </span><span class="cov0" title="0">{
                         logger.Printf("failed to get access token expiration, attempting token refresh: %v", err)
                 }</span>
-                <span class="cov1" title="1">conf := conf.NewConfigure(logger)
+                <span class="cov0" title="0">conf := conf.NewConfigure(logger)
                 r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)
                 f, ok := r.(*api.Functions)
                 if !ok </span><span class="cov0" title="0">{
                         return fmt.Errorf("Function interface is not of type api.Functions")
                 }</span>
-                <span class="cov1" title="1">err = f.NewAccessToken(ctx)
+                <span class="cov0" title="0">err = f.NewAccessToken(ctx)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov1" title="1">cred.AccessToken = f.Cred.AccessToken
+                <span class="cov0" title="0">cred.AccessToken = f.Cred.AccessToken
                 err = conf.Save(cred)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
@@ -4467,14 +4467,14 @@ var Cmd = &amp;cobra.Command{
                 //setup logging to file for debugging
                 myLogger := drslog.GetLogger()
 
-                myLogger.Debug("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
+                myLogger.Info("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
 
                 scanner := bufio.NewScanner(os.Stdin)
                 encoder := encoder.NewStreamEncoder(os.Stdout)
 
                 cfg, err := config.LoadConfig()
                 if err != nil </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
+                        myLogger.Error(fmt.Sprintf("Error loading config: %v", err))
                         return err
                 }</span>
 
@@ -4483,7 +4483,7 @@ var Cmd = &amp;cobra.Command{
                 // Read the first (init) message outside the main loop
                 if !scanner.Scan() </span><span class="cov0" title="0">{
                         err := fmt.Errorf("failed to read initial message from stdin")
-                        myLogger.Debug(fmt.Sprintf("Error: %s", err))
+                        myLogger.Error(fmt.Sprintf("Error: %s", err))
                         // No OID yet, so pass empty string
                         lfs.WriteErrorMessage(encoder, "", 400, err.Error())
                         return err
@@ -4491,7 +4491,7 @@ var Cmd = &amp;cobra.Command{
 
                 <span class="cov0" title="0">var initMsg map[string]any
                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;initMsg); err != nil </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("error decoding initial JSON message: %s", err))
+                        myLogger.Error(fmt.Sprintf("error decoding initial JSON message: %s", err))
                         return err
                 }</span>
 
@@ -4500,7 +4500,7 @@ var Cmd = &amp;cobra.Command{
                         // if no remote name specified, use default remote
                         defaultRemote, err := cfg.GetDefaultRemote()
                         if err != nil </span><span class="cov0" title="0">{
-                                myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
+                                myLogger.Error(fmt.Sprintf("Error getting default remote: %v", err))
                                 lfs.WriteErrorMessage(encoder, "", 400, err.Error())
                                 return err
                         }</span>
@@ -4511,14 +4511,14 @@ var Cmd = &amp;cobra.Command{
                         encoder.Encode(struct{}{})</span>
                 } else<span class="cov0" title="0"> {
                         err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
-                        myLogger.Debug(fmt.Sprintf("Error: %s", err))
+                        myLogger.Error(fmt.Sprintf("Error: %s", err))
                         lfs.WriteErrorMessage(encoder, "", 400, err.Error())
                         return err
                 }</span>
 
                 <span class="cov0" title="0">drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
                 if err != nil </span><span class="cov0" title="0">{
-                        myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
+                        myLogger.Error(fmt.Sprintf("Error creating indexd client: %s", err))
                         lfs.WriteErrorMessage(encoder, "", 400, err.Error())
                         return err
                 }</span>
@@ -4548,7 +4548,7 @@ var Cmd = &amp;cobra.Command{
                                 var downloadMsg lfs.DownloadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;downloadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
-                                        myLogger.Debug(errMsg)
+                                        myLogger.Error(errMsg)
                                         lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
                                         continue</span>
                                 }
@@ -4557,7 +4557,7 @@ var Cmd = &amp;cobra.Command{
                                 <span class="cov0" title="0">dstPath, err := downloadFile(config.Remote(remoteName), downloadMsg.Oid)
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
-                                        myLogger.Debug(errMsg)
+                                        myLogger.Error(errMsg)
                                         lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 500, errMsg)
                                         continue</span>
                                 }
@@ -4574,14 +4574,14 @@ var Cmd = &amp;cobra.Command{
                                 encoder.Encode(completeMsg)</span>
                         } else<span class="cov0" title="0"> if evt, ok := msg["event"]; ok &amp;&amp; evt == "upload" </span><span class="cov0" title="0">{
                                 // Handle upload event
-                                myLogger.Debug(fmt.Sprintf("Handling upload event: %s", msg))
-                                myLogger.Debug("skipping upload, just registering existing DRS object")
+                                myLogger.Info(fmt.Sprintf("Handling upload event: %s", msg))
+                                myLogger.Info("skipping upload, just registering existing DRS object")
 
                                 // create UploadMessage from the received message
                                 var uploadMsg lfs.UploadMessage
                                 if err := sConfig.Unmarshal(scanner.Bytes(), &amp;uploadMsg); err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
-                                        myLogger.Debug(errMsg)
+                                        myLogger.Error(errMsg)
                                         lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)
                                 }</span>
                                 <span class="cov0" title="0">myLogger.Debug(fmt.Sprintf("Got UploadMessage: %+v", uploadMsg))
@@ -4591,7 +4591,7 @@ var Cmd = &amp;cobra.Command{
                                         Event: "complete",
                                         Oid:   uploadMsg.Oid,
                                 }
-                                myLogger.Debug(fmt.Sprintf("Complete message: %+v", completeMsg))
+                                myLogger.Info(fmt.Sprintf("Complete message: %+v", completeMsg))
                                 encoder.Encode(completeMsg)</span>
                         } else<span class="cov0" title="0"> if evt, ok := msg["event"]; ok &amp;&amp; evt == "terminate" </span><span class="cov0" title="0">{
                                 // Handle terminate event
@@ -4603,7 +4603,7 @@ var Cmd = &amp;cobra.Command{
                         myLogger.Debug(fmt.Sprintf("stdin error: %s", err))
                 }</span>
 
-                <span class="cov0" title="0">myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
+                <span class="cov0" title="0">myLogger.Info("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
 
                 return nil</span>
         },
@@ -5506,16 +5506,36 @@ type slogWriter struct {
         logger *slog.Logger
 }
 
+// Write implements io.Writer and is invoked by t<span class="cov0" title="0">he standard library log functions
+// (for example, the logger returned by AsStdLogger). Documented calls inside:
+//
+</span>//   - `string(p)`
+//</span>     Converts the incoming byte slice to a string for processing.
+/<span class="cov0" title="0">/
+</span>//   - `strings.TrimSpace(...)`
+//     Removes leading/trailing whitespace (including trailing newlines) so that
+//     empty or whitespace-only log lines are dropped.
+//
+//   - `w.logger.Info(...)`
+//     Emits the trimmed message to the wrapped `slog.Logger` at Info level.
+//
+//   - `len(p)`
+//     Returned to satisfy the io.Writer contract; indicates the number of bytes
+//     "written". This implementation never returns an error.
+//
+// Note: This implementation deliberately ignores write errors and drops messages
+// that are empty after trimming.
 func (w slogWriter) Write(p []byte) (int, error) <span class="cov7" title="28">{
         message := strings.TrimSpace(string(p))
         if message != "" </span><span class="cov7" title="28">{
-                w.logger.Debug(message)
+                w.logger.Info(message)
         }</span>
         <span class="cov7" title="28">return len(p), nil</span>
 }
 </pre>
 		
-		<pre class="file" id="file39" style="display: none">package drslog
+		<pre class="file" id="file39" style="display: none">// go
+package drslog
 
 import (
         "io"
@@ -5535,50 +5555,92 @@ var globalLogger *slog.Logger
 var globalLogFile io.Closer
 var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
-var GIT_TRANSFER_TRACE int
-var modulePa<span class="cov0" title="0">thSuffixOnce sync.Once
+var GIT_TRAN<span class="cov0" title="0">SFER_TRACE int
+var modulePathSuffixOnce sync.Once
 var modulePathSuffixValue string
-var repoRootOnce sync.Once
+</span>var repoRootOnce sync.Once
 </span>var repoRootValue string
-</span>
-fun</span>c init() <span class="cov6" title="56">{
-        GIT_TRANSFER_TRACE = 0
+
+</span>// init initializes package-level settings from the environment.
+//
+// Documented calls inside:
+//   - os.Getenv("GIT_TRA<span class="cov0" title="0">NSFER_TRACE")
+//     Reads environment variable to optionally enable trace logging.
+/</span>/   - strconv.Atoi(envValue)
+//     Parses the numeric env value.
+//
+// Side-effects:
+// - sets package variable GIT_TRANSFER_TRACE.
+// Typical callers:
+// - runtime automatically invokes init(); no external callers needed.
+func init() {
+</span>        GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
                         GIT_TRANSFER_TRACE = parsed
                 }</span>
-        </span>}
+        }
 }
 
-func TraceEnabled() bool <span class="cov5" title="49">{
+// TraceEnabled returns whether transfer trace logging is enabled.
+//
+// Documented calls inside:
+// - reads package variable GIT_TRANSFER_TRACE.
+// Typical callers:
+// - logging setup and callsites that want to be verbose only when trace is enabled.
+func TraceEnabled() bool <span class="cov6" title="48">{
         return GIT_TRANSFER_TRACE == 1
 }</span>
 
-// NewLogger create</span><span class="cov0" title="0">s a new Logger that writes to the specified file and optionally stderr.
-// It is safe to call this multiple times; only the first successful call sets the global logger.
-func NewLogger(filename string, logToStderr bool) (*slog.Logge</span><span class="cov0" title="0">r, error) {
+// NewLogger creates and installs a global slog.Logger that writes to the specified file
+// and optionally to stderr. It is safe to call multiple times; the first successful call
+// establishes the global logger.
+//
+// Documented calls inside:
+//   - projectdir.DRS_DIR usage
+//     Uses projectdir.DRS_DIR to create log directory.
+//   - os.MkdirAll(projectdir.DRS_DIR, 0755)
+//     Ensures the directory exists; returns error on failure.
+//   - filepath.Join(projectdir.DRS_DIR, "git-drs.log")
+//     Constructs default filename when none provided.
+//   - os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+//     Opens/creates the log file (returns *os.File).
+//   - io.MultiWriter(writers...)
+//     Combines file and optionally os.Stderr into a single Writer.
+//   - slog.NewTextHandler(multiWriter, &amp;slog.HandlerOptions{...})
+//     Creates the text handler for slog that writes to the combined writer.
+//   - slog.New(handler).With("pid", os.Getpid())
+//     Builds the logger and attaches pid attribute.
+//   - globalLoggerMu.Lock()/Unlock()
+//     Protects globalLogFile and globalLogger assignment.
+//
+// Side-effects:
+// - sets package-level globalLogger and globalLogFile.
+// Typical callers:
+// - application startup code that wants to initialize logging (e.g. main).
+func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov6" title="48">{
         var writers []io.Writer
 
-</span>        if filename == "" </span><span class="cov5" title="49">{
-                //create drs dir if it doesn't exist
+        if filename == "" </span><span class="cov6" title="48">{
+                // create drs dir if it doesn't exist
                 if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
 
-                <span class="cov5" title="48">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span> // Assuming transfer.log is a variable
+                <span class="cov6" title="48">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span>
         }
 
-        <span class="cov5" title="48">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        <span class="cov6" title="48">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="48">writers = append(writers, file)
+        <span class="cov6" title="48">writers = append(writers, file)
 
-        if logToStderr </span><span class="cov5" title="44">{
+        if logToStderr </span><span class="cov6" title="44">{
                 writers = append(writers, os.Stderr)
         }</span>
 
-        <span class="cov5" title="48">multiWriter := io.MultiWriter(writers...)
+        <span class="cov6" title="48">multiWriter := io.MultiWriter(writers...)
 
         handler := slog.NewTextHandler(multiWriter, &amp;slog.HandlerOptions{
                 AddSource:   true,
@@ -5595,16 +5657,37 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logge</span><span class
         return globalLogger, nil</span>
 }
 
-func GetLogger() *slog.Logger <span class="cov5" title="40">{
-        globalLoggerOnce.Do(func() </span><span class="cov5" title="40">{
+// GetLogger returns the global logger, initializing a no-op logger on first access.
+//
+// Documented calls inside:
+//   - globalLoggerOnce.Do(func() { ... })
+//     Ensures initialization runs only once.
+//   - NewNoOpLogger()
+//     Creates a logger that discards output if no global logger was set.
+//
+// Typical callers:
+// - any package code that needs access to the package-level logger.
+func GetLogger() *slog.Logger <span class="cov6" title="40">{
+        globalLoggerOnce.Do(func() </span><span class="cov6" title="40">{
                 if globalLogger == nil </span><span class="cov0" title="0">{
                         globalLogger = NewNoOpLogger()
                 }</span>
         })
-        <span class="cov5" title="40">return globalLogger</span>
+        <span class="cov6" title="40">return globalLogger</span>
 }
 
-// Close closes the log file if open.
+// Close closes the active log file if one was opened.
+//
+// Documented calls inside:
+//   - globalLoggerMu.Lock()/Unlock()
+//     Protects access to globalLogFile.
+//   - globalLogFile.Close()
+//     Closes the underlying file and returns any error.
+//
+// Side-effects:
+// - sets globalLogFile to nil.
+// Typical callers:
+// - application shutdown code or tests that want to release file handles.
 func Close() error <span class="cov0" title="0">{
         globalLoggerMu.Lock()
         defer globalLoggerMu.Unlock()
@@ -5617,7 +5700,17 @@ func Close() error <span class="cov0" title="0">{
         <span class="cov0" title="0">return nil</span>
 }
 
-// NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).
+// NewNoOpLogger returns a logger that discards all output.
+//
+// Documented calls inside:
+//   - slog.NewTextHandler(io.Discard, &amp;slog.HandlerOptions{Level: slog.LevelDebug})
+//     Creates a text handler writing to io.Discard.
+//   - slog.New(handler)
+//     Builds the logger.
+//
+// Typical callers:
+// - GetLogger on first access when no global logger was configured.
+// - tests that need a deterministic logger that produces no output.
 func NewNoOpLogger() *slog.Logger <span class="cov0" title="0">{
         handler := slog.NewTextHandler(io.Discard, &amp;slog.HandlerOptions{
                 Level: slog.LevelDebug,
@@ -5625,38 +5718,75 @@ func NewNoOpLogger() *slog.Logger <span class="cov0" title="0">{
         return slog.New(handler)
 }</span>
 
-func resolveLogLevel() slog.Level <span class="cov5" title="48">{
+// resolveLogLevel determines the effective log level.
+//
+// Documented calls inside:
+//   - TraceEnabled()
+//     If trace is enabled, returns Debug level immediately.
+//   - readLogLevelFromGitConfig()
+//     Attempts to read configured level from git config; returns level and ok.
+//   - defaults to slog.LevelInfo when nothing else matches.
+//
+// Typical callers:
+// - NewLogger -&gt; used when creating slog.HandlerOptions.Level.
+func resolveLogLevel() slog.Level <span class="cov6" title="48">{
         if TraceEnabled() </span><span class="cov0" title="0">{
                 return slog.LevelDebug
         }</span>
 
-        <span class="cov5" title="48">level, ok := readLogLevelFromGitConfig()
+        <span class="cov6" title="48">level, ok := readLogLevelFromGitConfig()
         if ok </span><span class="cov0" title="0">{
                 return level
         }</span>
 
-        <span class="cov5" title="48">return slog.LevelDebug</span>
+        <span class="cov6" title="48">return slog.LevelInfo</span>
 }
 
-func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov5" title="48">{
+// readLogLevelFromGitConfig queries git configuration for a custom log level.
+//
+// Documented calls inside:
+//   - exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
+//     Constructs the command to query git config.
+//   - cmd.Output()
+//     Executes the command and returns raw output or an error.
+//   - strings.TrimSpace(string(output))
+//     Trims whitespace/newlines from git output.
+//   - parseLogLevel(value)
+//     Parses the trimmed value into a slog.Level.
+//
+// Behavior:
+// - On any error or empty output, returns (slog.LevelInfo, false) to indicate no valid config was found.
+// Typical callers:
+// - resolveLogLevel when initializing a logger.
+func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov6" title="48">{
         cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
         output, err := cmd.Output()
-        if err != nil </span><span class="cov5" title="48">{
-                return slog.LevelDebug, false
+        if err != nil </span><span class="cov6" title="48">{
+                return slog.LevelInfo, false
         }</span>
 
         <span class="cov0" title="0">value := strings.TrimSpace(string(output))
         if value == "" </span><span class="cov0" title="0">{
-                return slog.LevelDebug, false
+                return slog.LevelInfo, false
         }</span>
 
         <span class="cov0" title="0">parsed, ok := parseLogLevel(value)
         if !ok </span><span class="cov0" title="0">{
-                return slog.LevelDebug, false
+                return slog.LevelInfo, false
         }</span>
         <span class="cov0" title="0">return parsed, true</span>
 }
 
+// parseLogLevel maps textual level names to slog.Level.
+//
+// Documented calls inside:
+//   - strings.ToUpper(strings.TrimSpace(value))
+//     Normalizes the input for comparison.
+//   - switch on normalized value to return corresponding slog.Level constants.
+//
+// Typical callers:
+// - readLogLevelFromGitConfig
+// - resolveLogLevel indirectly.
 func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0">{
         switch strings.ToUpper(strings.TrimSpace(value)) </span>{
         case "DEBUG":<span class="cov0" title="0">
@@ -5672,25 +5802,61 @@ func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0"
         }
 }
 
-func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="1288">{
-        if attr.Key != slog.SourceKey </span><span class="cov9" title="978">{
+// replaceSourceAttr rewrites the slog.Source attr to a shorter path suitable for logs.
+//
+// Documented calls inside:
+//   - attr.Key comparison with slog.SourceKey
+//     Determines whether the attribute is the source attribute.
+//   - attr.Value.Any().(*slog.Source)
+//     Retrieves and type-asserts the attribute value to *slog.Source.
+//   - formatSourcePath(source.File)
+//     Formats the file path according to module or repo root heuristics.
+//   - attr.Value = slog.AnyValue(source)
+//     Replaces attribute value with modified source.
+//
+// Typical callers:
+// - passed as ReplaceAttr to slog.HandlerOptions in NewLogger.
+func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="608">{
+        if attr.Key != slog.SourceKey </span><span class="cov9" title="468">{
                 return attr
         }</span>
-        <span class="cov8" title="310">source, ok := attr.Value.Any().(*slog.Source)
+        <span class="cov7" title="140">source, ok := attr.Value.Any().(*slog.Source)
         if !ok || source == nil </span><span class="cov0" title="0">{
                 return attr
         }</span>
-        <span class="cov8" title="310">source.File = formatSourcePath(source.File)
+        <span class="cov7" title="140">source.File = formatSourcePath(source.File)
         attr.Value = slog.AnyValue(source)
         return attr</span>
 }
 
-func formatSourcePath(path string) string <span class="cov8" title="310">{
+// formatSourcePath shortens file paths using module suffix or repo root heuristics.
+//
+// Documented calls inside:
+//   - filepath.ToSlash(path)
+//     Normalizes OS-specific separators to forward slashes.
+//   - modulePathSuffix()
+//     Gets the module path suffix (derived from build info).
+//   - strings.TrimPrefix(filepath.ToSlash(moduleSuffix), "/")
+//     Normalizes module suffix.
+//   - strings.Index(pathSlash, "/"+moduleSuffixSlash+"/")
+//     Searches for module suffix within the path to trim leading segments.
+//   - strings.HasPrefix(pathSlash, moduleSuffixSlash+"/")
+//     Handles case where path already starts with module suffix.
+//   - repoRootPath()
+//     Attempts to resolve the repository root (by locating go.mod).
+//   - strings.HasPrefix(pathSlash, repoRootSlash+"/")
+//     Trims repository-root prefix to produce a relative path.
+//   - filepath.ToSlash(filepath.Join(moduleSuffix, rel))
+//     Reconstructs path when combining module suffix and relative path.
+//
+// Typical callers:
+// - replaceSourceAttr when rewriting source file paths for log output.
+func formatSourcePath(path string) string <span class="cov7" title="140">{
         pathSlash := filepath.ToSlash(path)
         moduleSuffix := modulePathSuffix()
-        if moduleSuffix != "" </span><span class="cov8" title="310">{
+        if moduleSuffix != "" </span><span class="cov7" title="140">{
                 moduleSuffixSlash := strings.TrimPrefix(filepath.ToSlash(moduleSuffix), "/")
-                if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx &gt;= 0 </span><span class="cov8" title="310">{
+                if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx &gt;= 0 </span><span class="cov7" title="140">{
                         return pathSlash[idx+1:]
                 }</span>
                 <span class="cov0" title="0">if strings.HasPrefix(pathSlash, moduleSuffixSlash+"/") </span><span class="cov0" title="0">{
@@ -5711,18 +5877,44 @@ func formatSourcePath(path string) string <span class="cov8" title="310">{
         <span class="cov0" title="0">return pathSlash</span>
 }
 
-func modulePathSuffix() string <span class="cov8" title="310">{
-        modulePathSuffixOnce.Do(func() </span><span class="cov5" title="44">{
-                if info, ok := debug.ReadBuildInfo(); ok &amp;&amp; info.Main.Path != "" </span><span class="cov5" title="44">{
+// modulePathSuffix returns the module path suffix derived from build info.
+//
+// Documented calls inside:
+//   - runtime/debug.ReadBuildInfo()
+//     Reads build info at runtime; used to extract Main.Path.
+//   - strings.Split(info.Main.Path, "/")
+//     Splits module path to drop the first element (typically hostname).
+//
+// Side-effects:
+// - caches computed value via modulePathSuffixOnce.
+// Typical callers:
+// - formatSourcePath to help shorten file paths.
+func modulePathSuffix() string <span class="cov7" title="140">{
+        modulePathSuffixOnce.Do(func() </span><span class="cov5" title="32">{
+                if info, ok := debug.ReadBuildInfo(); ok &amp;&amp; info.Main.Path != "" </span><span class="cov5" title="32">{
                         parts := strings.Split(info.Main.Path, "/")
-                        if len(parts) &gt; 1 </span><span class="cov5" title="44">{
+                        if len(parts) &gt; 1 </span><span class="cov5" title="32">{
                                 modulePathSuffixValue = strings.Join(parts[1:], "/")
                         }</span>
                 }
         })
-        <span class="cov8" title="310">return modulePathSuffixValue</span>
+        <span class="cov7" title="140">return modulePathSuffixValue</span>
 }
 
+// repoRootPath attempts to locate the repository root by searching for go.mod upward.
+//
+// Documented calls inside:
+//   - os.Getwd()
+//     Retrieves current working directory as a starting point.
+//   - os.Stat(filepath.Join(dir, "go.mod"))
+//     Checks for presence of go.mod in each directory while walking up.
+//   - filepath.Dir(dir)
+//     Moves up one directory level on each iteration.
+//
+// Side-effects:
+// - caches resolved repo root via repoRootOnce.
+// Typical callers:
+// - formatSourcePath when computing shorter file paths for logs.
 func repoRootPath() string <span class="cov0" title="0">{
         repoRootOnce.Do(func() </span><span class="cov0" title="0">{
                 cwd, err := os.Getwd()

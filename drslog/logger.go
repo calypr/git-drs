@@ -25,6 +25,14 @@ var modulePathSuffixValue string
 var repoRootOnce sync.Once
 var repoRootValue string
 
+const (
+	levelDebugStr   = "DEBUG"
+	levelInfoStr    = "INFO"
+	levelWarnStr    = "WARN"
+	levelWarningStr = "WARNING"
+	levelErrorStr   = "ERROR"
+)
+
 // init initializes package-level settings from the environment.
 //
 // Documented calls inside:
@@ -251,15 +259,16 @@ func readLogLevelFromGitConfig() (slog.Level, bool) {
 // Typical callers:
 // - readLogLevelFromGitConfig
 // - resolveLogLevel indirectly.
+
 func parseLogLevel(value string) (slog.Level, bool) {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
-	case "DEBUG":
+	case levelDebugStr:
 		return slog.LevelDebug, true
-	case "INFO":
+	case levelInfoStr:
 		return slog.LevelInfo, true
-	case "WARN", "WARNING":
+	case levelWarnStr, levelWarningStr:
 		return slog.LevelWarn, true
-	case "ERROR":
+	case levelErrorStr:
 		return slog.LevelError, true
 	default:
 		return slog.LevelDebug, false

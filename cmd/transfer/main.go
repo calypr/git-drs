@@ -193,7 +193,11 @@ var Cmd = &cobra.Command{
 					continue
 				}
 				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+<<<<<<< HEAD
 				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, GitLFSProgressCallback(streamEncoder))
+=======
+				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+>>>>>>> 5814afbe (chore/simplify-register-file (#167))
 				if err != nil {
 					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
 					logger.Error(errMsg)

@@ -383,7 +383,11 @@ func (cl *IndexDClient) getDownloadURL(did string, accessType string) (drs.Acces
 // is not already available in the bucket, and returns the resulting DRS object.
 // When registration fails without force push, it retries once with force push
 // enabled to reuse existing records and avoid duplicate uploads.
+<<<<<<< HEAD
 func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) {
+=======
+func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) {
+>>>>>>> 5814afbe (chore/simplify-register-file (#167))
 	cl.Logger.Debug(fmt.Sprintf("register file started for oid: %s", oid))
 
 	// load the DRS object from oid created by prepush
@@ -466,7 +470,11 @@ func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.Progres
 
 	if drsObject.Size < cl.MultiPartThreshold {
 		cl.Logger.Debug(fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
+<<<<<<< HEAD
 		err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, drsObject.Checksums.SHA256, filePath, cl.BucketName, false, progressCallback)
+=======
+		err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+>>>>>>> 5814afbe (chore/simplify-register-file (#167))
 		if err != nil {
 			return nil, fmt.Errorf("UploadSingle error: %s", err)
 		}
@@ -479,10 +487,15 @@ func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.Progres
 				FilePath:     filePath,
 				Filename:     filepath.Base(filePath),
 				GUID:         drsObject.Id,
+<<<<<<< HEAD
 				OID:          drsObject.Checksums.SHA256,
 				FileMetadata: common.FileMetadata{},
 				Bucket:       cl.BucketName,
 				Progress:     progressCallback,
+=======
+				FileMetadata: common.FileMetadata{},
+				Bucket:       cl.BucketName,
+>>>>>>> 5814afbe (chore/simplify-register-file (#167))
 			},
 			file, false,
 		)

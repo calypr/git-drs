@@ -141,7 +141,8 @@ fi
 # Commit, tag and push
 git commit -m "chore(release): bump to ${NEW_TAG}" || echo "No changes to commit"
 git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG}"
-git push origin "${BRANCH}"
-git push origin "${NEW_TAG}"
+echo "Created tag. Please push tag ${NEW_TAG} on branch ${BRANCH}."
 
-echo "Created and pushed tag ${NEW_TAG} on branch ${BRANCH}."
+echo git push origin "${BRANCH}"
+echo git push origin "${NEW_TAG}"
+

@@ -74,7 +74,7 @@ while IFS=$' \t' read -r did hash file_name resource; do
         continue
     fi
 
-    object_key="${PREFIX}${did}/${hash}"
+    object_key="${PREFIX}${hash}"
     s3_url="s3://${BUCKET}/${object_key}"
 
     if [[ "${DEBUG:-}" == "1" ]]; then
@@ -88,6 +88,5 @@ while IFS=$' \t' read -r did hash file_name resource; do
         echo "ERROR: Failed to delete ${MC_ALIAS}/${BUCKET}/${object_key}"
     fi
 done
-
 
 

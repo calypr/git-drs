@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Printf("error creating indexd client: %s", err)
+			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
 			return err
 		}
 
@@ -88,13 +88,13 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching records
-		logger.Printf("Deleting all records for project %s...", projectId)
+		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
 		err = drsClient.DeleteRecordsByProject(projectId)
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}
 
-		logger.Printf("Successfully deleted all records for project %s", projectId)
+		logger.Debug(fmt.Sprintf("Successfully deleted all records for project %s", projectId))
 		return nil
 	},
 }

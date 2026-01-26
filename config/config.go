@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +51,7 @@ type DRSRemote interface {
 	GetProjectId() string
 	GetEndpoint() string
 	GetBucketName() string
-	GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error)
+	GetClient(params map[string]string, logger *slog.Logger) (client.DRSClient, error)
 }
 
 type RemoteSelect struct {
@@ -65,7 +65,7 @@ type Config struct {
 	Remotes       map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
-func (c Config) GetRemoteClient(remote Remote, logger *log.Logger) (client.DRSClient, error) {
+func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)

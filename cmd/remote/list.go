@@ -22,7 +22,7 @@ var ListCmd = &cobra.Command{
 		logg := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			logg.Printf("Error loading config: %s", err)
+			logg.Debug(fmt.Sprintf("Error loading config: %s", err))
 			return err
 		}
 

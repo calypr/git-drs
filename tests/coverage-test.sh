@@ -169,6 +169,9 @@ echo "Unit tests completed successfully. Coverage profile saved to coverage/unit
 # set coverage directory for integration tests
 export GOCOVERDIR="${INTEGRATION_COV_DIR}"
 
+rm -rf coverage/integration/raw
+mkdir -p coverage/integration/raw
+
 pushd "$UTIL_DIR" >/dev/null
 
 # 1) Remove objects from bucket using indexd->s3 list/delete pipeline

@@ -133,7 +133,7 @@
 				
 				<option value="file38">github.com/calypr/git-drs/drslog/compat.go (55.6%)</option>
 				
-				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (44.6%)</option>
+				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (43.5%)</option>
 				
 				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.9%)</option>
 				
@@ -5561,20 +5561,28 @@ var modulePathSuffixValue string
 </span>var repoRootOnce sync.Once
 </span>var repoRootValue string
 
-</span>// init initializes package-level settings from the environment.
+</span>const (
+        levelDebugStr   = "DEBUG"
+        levelInfoStr    = "INFO"
+        levelWarnStr    = "WARN"<span class="cov0" title="0">
+        levelWarningStr = "WARNING"
+        </span>levelErrorStr   = "ERROR"
+)
+
+// init initializes package-level settings from the environment.
 //
 // Documented calls inside:
-//   - os.Getenv("GIT_TRA<span class="cov0" title="0">NSFER_TRACE")
-//     Reads environment variable to optionally enable trace logging.
-/</span>/   - strconv.Atoi(envValue)
+//   - os.Getenv("GIT_TRANSFER_TRACE")
+//     Reads enviro</span><span class="cov0" title="0">nment variable to optionally enable trace logging.
+//   - strconv.Atoi(envValue)
 //     Parses the numeric env value.
-//
-// Side-effects:
+</span>//
+// </span>Side-effects:
 // - sets package variable GIT_TRANSFER_TRACE.
-// Typical callers:
-// - runtime automatically invokes init(); no external callers needed.
-func init() {
-</span>        GIT_TRANSFER_TRACE = 0
+//<span class="cov0" title="0"> Typical callers:
+</span>// - runtime automatically invokes init(); no external callers needed.
+func init() <span class="cov6" title="56">{
+        GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
                         GIT_TRANSFER_TRACE = parsed
@@ -5787,15 +5795,16 @@ func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov6" title="48
 // Typical callers:
 // - readLogLevelFromGitConfig
 // - resolveLogLevel indirectly.
+
 func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0">{
         switch strings.ToUpper(strings.TrimSpace(value)) </span>{
-        case "DEBUG":<span class="cov0" title="0">
+        case levelDebugStr:<span class="cov0" title="0">
                 return slog.LevelDebug, true</span>
-        case "INFO":<span class="cov0" title="0">
+        case levelInfoStr:<span class="cov0" title="0">
                 return slog.LevelInfo, true</span>
-        case "WARN", "WARNING":<span class="cov0" title="0">
+        case levelWarnStr, levelWarningStr:<span class="cov0" title="0">
                 return slog.LevelWarn, true</span>
-        case "ERROR":<span class="cov0" title="0">
+        case levelErrorStr:<span class="cov0" title="0">
                 return slog.LevelError, true</span>
         default:<span class="cov0" title="0">
                 return slog.LevelDebug, false</span>

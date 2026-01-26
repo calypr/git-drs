@@ -47,7 +47,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Printf("error creating indexd client: %s", err)
+			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
 			return err
 		}
 
@@ -95,7 +95,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}
 
-		logger.Printf("Successfully deleted record for OID %s", oid)
+		logger.Debug(fmt.Sprintf("Successfully deleted record for OID %s", oid))
 		return nil
 	},
 }

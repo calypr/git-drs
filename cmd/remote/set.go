@@ -49,7 +49,7 @@ var SetCmd = &cobra.Command{
 			return fmt.Errorf("failed to save config: %w", err)
 		}
 
-		logger.Printf("Default remote set to: %s", remoteName)
+		logger.Debug(fmt.Sprintf("Default remote set to: %s", remoteName))
 		return nil
 	},
 }

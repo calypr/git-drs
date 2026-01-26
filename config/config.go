@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +51,7 @@ type DRSRemote interface {
 	GetProjectId() string
 	GetEndpoint() string
 	GetBucketName() string
-	GetClient(params map[string]string, logger *log.Logger) (client.DRSClient, error)
+	GetClient(params map[string]string, logger *slog.Logger) (client.DRSClient, error)
 }
 
 type RemoteSelect struct {
@@ -65,7 +65,7 @@ type Config struct {
 	Remotes       map[Remote]RemoteSelect `yaml:"remotes"`
 }
 
-func (c Config) GetRemoteClient(remote Remote, logger *log.Logger) (client.DRSClient, error) {
+func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
@@ -238,7 +238,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf(
 			"configuration migration required.\n\n" +
 				"Your config has remotes but no default_remote field.\n" +
-				"Add this line to .drs/config.yaml:\n\n" +
+				"Add this line to .git/drs/config.yaml:\n\n" +
 				"  default_remote: <remote-name>\n\n" +
 				"or delete and recreate the config file by re-running\n\n" +
 				"  git drs remote add \n\n",

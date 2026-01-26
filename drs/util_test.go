@@ -11,7 +11,7 @@ import (
 
 func TestObjectWalk(t *testing.T) {
 	setupTempRepo(t)
-	baseDir := filepath.Join(".drs", "objects")
+	baseDir := filepath.Join(".git", "drs", "objects")
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}

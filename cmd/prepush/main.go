@@ -28,7 +28,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error creating logger: %v", err)
 		}
 
-		myLogger.Print("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
+		myLogger.Debug("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
 		//* The name of the remote (e.g., origin).
 		//* The remote's location/URL (e.g., github.com).
 		// Create gitRemoteName and gitRemoteLocation from args.
-		myLogger.Printf("pre-push args: %v", args)
+		myLogger.Debug(fmt.Sprintf("pre-push args: %v", args))
 		var gitRemoteName, gitRemoteLocation string
 		if len(args) >= 1 {
 			gitRemoteName = args[0]
@@ -50,13 +50,13 @@ var Cmd = &cobra.Command{
 		if gitRemoteName == "" {
 			gitRemoteName = "origin"
 		}
-		myLogger.Printf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation)
+		myLogger.Debug(fmt.Sprintf("git remote name: %s, git remote location: %s", gitRemoteName, gitRemoteLocation))
 
-		// get the default remote from the .drs/config
+		// get the default remote from the .git/drs/config
 		var remote config.Remote
 		remote, err = cfg.GetDefaultRemote()
 		if err != nil {
-			myLogger.Printf("Warning. Error getting default remote: %v", err)
+			myLogger.Debug(fmt.Sprintf("Warning. Error getting default remote: %v", err))
 			// Print warning to stderr and return success (exit 0)
 			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting default remote:", err)
 			return nil
@@ -67,7 +67,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			// Print warning to stderr and return success (exit 0)
 			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-			myLogger.Printf("Warning. Skipping DRS preparation. Error getting remote client: %v", err)
+			myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
 			return nil
 		}
 
@@ -75,12 +75,12 @@ var Cmd = &cobra.Command{
 		if !ok {
 			return fmt.Errorf("cli is not IndexdClient: %T", cli)
 		}
-		myLogger.Printf("Current server: %s", dc.ProjectId)
+		myLogger.Debug(fmt.Sprintf("Current server: %s", dc.ProjectId))
 
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")
 		if err != nil {
-			myLogger.Printf("error creating temp file for stdin: %v", err)
+			myLogger.Debug(fmt.Sprintf("error creating temp file for stdin: %v", err))
 			return err
 		}
 		defer func() {
@@ -90,32 +90,32 @@ var Cmd = &cobra.Command{
 
 		// Copy all of stdin into the temp file.
 		if _, err := io.Copy(tmp, os.Stdin); err != nil {
-			myLogger.Printf("error buffering stdin: %v", err)
+			myLogger.Debug(fmt.Sprintf("error buffering stdin: %v", err))
 			return err
 		}
 
 		// Rewind to start so the child process can read it.
 		if _, err := tmp.Seek(0, 0); err != nil {
-			myLogger.Printf("error seeking temp stdin: %v", err)
+			myLogger.Debug(fmt.Sprintf("error seeking temp stdin: %v", err))
 			return err
 		}
 
 		// read the temp file and get a list of all unique local branches being pushed
 		branches, err := readPushedBranches(tmp)
 		if err != nil {
-			myLogger.Printf("error reading pushed branches: %v", err)
+			myLogger.Debug(fmt.Sprintf("error reading pushed branches: %v", err))
 			return err
 		}
 
-		myLogger.Printf("Preparing DRS objects for push branches: %v", branches)
+		myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
 		err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
 		if err != nil {
-			myLogger.Print("UpdateDrsObjects failed:", err)
+			myLogger.Debug(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 			return err
 		}
-		myLogger.Printf("DRS objects prepared for push!\n")
+		myLogger.Debug("DRS objects prepared for push!")
 
-		myLogger.Print("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+		myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 		return nil
 	},
 }

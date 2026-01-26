@@ -1,7 +1,7 @@
 package s3_utils
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -56,7 +56,7 @@ func (r *CustomEndpointResolver) ResolveEndpoint(service, region string) (aws.En
 type AddURLConfig struct {
 	S3Client   *s3.Client
 	HttpClient *http.Client
-	Logger     *log.Logger
+	Logger     *slog.Logger
 }
 
 // AddURLOption is a functional option for configuring AddURL
@@ -77,7 +77,7 @@ func WithHTTPClient(client *http.Client) AddURLOption {
 }
 
 // WithLogger provides a custom logger to AddURL
-func WithLogger(logger *log.Logger) AddURLOption {
+func WithLogger(logger *slog.Logger) AddURLOption {
 	return func(cfg *AddURLConfig) {
 		cfg.Logger = logger
 	}

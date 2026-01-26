@@ -83,7 +83,7 @@ var Cmd = &cobra.Command{
 
 		client, err := conf.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Printf("Client failed")
+			logger.Debug("Client failed")
 			return err
 		}
 		objChan, err := client.ListObjects()

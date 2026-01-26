@@ -67,7 +67,7 @@
 				
 				<option value="file5">github.com/calypr/git-drs/client/indexd/gen3_remote.go (71.4%)</option>
 				
-				<option value="file6">github.com/calypr/git-drs/client/indexd/indexd_client.go (67.3%)</option>
+				<option value="file6">github.com/calypr/git-drs/client/indexd/indexd_client.go (39.8%)</option>
 				
 				<option value="file7">github.com/calypr/git-drs/client/indexd/records.go (100.0%)</option>
 				
@@ -115,7 +115,7 @@
 				
 				<option value="file29">github.com/calypr/git-drs/cmd/root.go (100.0%)</option>
 				
-				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (49.6%)</option>
+				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (47.7%)</option>
 				
 				<option value="file31">github.com/calypr/git-drs/cmd/transferref/main.go (0.0%)</option>
 				
@@ -1318,12 +1318,12 @@ func (cl *IndexDClient) getDownloadURL(did string, accessType string) (drs.Acces
 // is not already available in the bucket, and returns the resulting DRS object.
 // When registration fails without force push, it retries once with force push
 // enabled to reuse existing records and avoid duplicate uploads.
-func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) <span class="cov4" title="4">{
+func (cl *IndexDClient) RegisterFile(oid string, progressCallback common.<span class="cov0" title="0">ProgressCallback) (*drs.DRSObject, error) {
         cl.Logger.Debug(fmt.Sprintf("register file started for oid: %s", oid))
 
         // load the DRS object from oid created by prepush
         drsObject, err := drsmap.DrsInfoFromOid(oid)
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span></span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error getting drs object for oid %s: %v", oid, err)
         }</span>
 
@@ -1401,7 +1401,7 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) <span c
 
         <span class="cov2" title="2">if drsObject.Size &lt; cl.MultiPartThreshold </span><span class="cov1" title="1">{
                 cl.Logger.Debug(fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
-                err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, filePath, cl.BucketName, false)
+                err := upload.UploadSingle(context.Background(), g3.GetCredential().Profile, drsObject.Id, drsObject.Checksums.SHA256, filePath, cl.BucketName, false, progressCallback)
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("UploadSingle error: %s", err)
                 }</span>
@@ -1414,8 +1414,10 @@ func (cl *IndexDClient) RegisterFile(oid string) (*drs.DRSObject, error) <span c
                                 FilePath:     filePath,
                                 Filename:     filepath.Base(filePath),
                                 GUID:         drsObject.Id,
+                                OID:          drsObject.Checksums.SHA256,
                                 FileMetadata: common.FileMetadata{},
                                 Bucket:       cl.BucketName,
+                                Progress:     progressCallback,
                         },
                         file, false,
                 )
@@ -1454,7 +1456,7 @@ func (cl *IndexDClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, erro
         return true, nil</span>
 }
 
-func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) <span class="cov1" title="1">{
+func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) <span class="cov0" title="0">{
 
         a := *cl.Base
         a.Path = filepath.Join(a.Path, "ga4gh/drs/v1/objects", id)
@@ -1464,30 +1466,30 @@ func (cl *IndexDClient) GetObject(id string) (*drs.DRSObject, error) <span class
                 return nil, err
         }</span>
 
-        <span class="cov1" title="1">err = cl.AuthHandler.AddAuthHeader(req.Request)
+        <span class="cov0" title="0">err = cl.AuthHandler.AddAuthHeader(req.Request)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
         }</span>
 
-        <span class="cov1" title="1">response, err := cl.HttpClient.Do(req)
+        <span class="cov0" title="0">response, err := cl.HttpClient.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">defer response.Body.Close()
+        <span class="cov0" title="0">defer response.Body.Close()
 
         if response.Status == "404" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("%s not found", id)
         }</span>
 
-        <span class="cov1" title="1">in := drs.OutputObject{}
+        <span class="cov0" title="0">in := drs.OutputObject{}
         if err := cl.SConfig.NewDecoder(response.Body).Decode(&amp;in); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">return drs.ConvertOutputObjectToDRSObject(&amp;in), nil</span>
+        <span class="cov0" title="0">return drs.ConvertOutputObjectToDRSObject(&amp;in), nil</span>
 
 }
 
-func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) <span class="cov2" title="2">{
+func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObjectResult, error) <span class="cov0" title="0">{
         const PAGESIZE = 50
         pageNum := 0
 
@@ -1497,26 +1499,26 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
                 return nil, err
         }</span>
 
-        <span class="cov2" title="2">a := *cl.Base
+        <span class="cov0" title="0">a := *cl.Base
         a.Path = filepath.Join(a.Path, "index/index")
 
         out := make(chan drs.DRSObjectResult, PAGESIZE)
 
-        go func() </span><span class="cov2" title="2">{
+        go func() </span><span class="cov0" title="0">{
                 defer close(out)
 
                 // This will hold all errors encountered during the loop
                 var resultErrors *multierror.Error
                 active := true
 
-                for active </span><span class="cov4" title="4">{
+                for active </span><span class="cov0" title="0">{
                         req, err := retryablehttp.NewRequest("GET", a.String(), nil)
                         if err != nil </span><span class="cov0" title="0">{
                                 resultErrors = multierror.Append(resultErrors, fmt.Errorf("request creation: %w", err))
                                 break</span>
                         }
 
-                        <span class="cov4" title="4">q := req.URL.Query()
+                        <span class="cov0" title="0">q := req.URL.Query()
                         q.Add("authz", resourcePath)
                         q.Add("limit", fmt.Sprintf("%d", PAGESIZE))
                         q.Add("page", fmt.Sprintf("%d", pageNum))
@@ -1527,14 +1529,14 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
                                 break</span>
                         }
 
-                        <span class="cov4" title="4">response, err := cl.HttpClient.Do(req)
+                        <span class="cov0" title="0">response, err := cl.HttpClient.Do(req)
                         if err != nil </span><span class="cov0" title="0">{
                                 resultErrors = multierror.Append(resultErrors, fmt.Errorf("http call: %w", err))
                                 break</span>
                         }
 
                         // Read body and close immediately
-                        <span class="cov3" title="3">body, err := io.ReadAll(response.Body)
+                        <span class="cov0" title="0">body, err := io.ReadAll(response.Body)
                         response.Body.Close()
 
                         if err != nil </span><span class="cov0" title="0">{
@@ -1542,45 +1544,45 @@ func (cl *IndexDClient) ListObjectsByProject(projectId string) (chan drs.DRSObje
                                 break</span>
                         }
 
-                        <span class="cov3" title="3">if response.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                        <span class="cov0" title="0">if response.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
                                 resultErrors = multierror.Append(resultErrors, fmt.Errorf("api error %d: %s", response.StatusCode, string(body)))
                                 break</span>
                         }
 
-                        <span class="cov3" title="3">page := &amp;ListRecords{}
+                        <span class="cov0" title="0">page := &amp;ListRecords{}
                         if err := cl.SConfig.Unmarshal(body, &amp;page); err != nil </span><span class="cov0" title="0">{
                                 resultErrors = multierror.Append(resultErrors, fmt.Errorf("unmarshal: %w", err))
                                 break</span>
                         }
 
-                        <span class="cov3" title="3">if len(page.Records) == 0 </span><span class="cov1" title="1">{
+                        <span class="cov0" title="0">if len(page.Records) == 0 </span><span class="cov0" title="0">{
                                 active = false
                         }</span>
 
-                        <span class="cov3" title="3">for _, elem := range page.Records </span><span class="cov2" title="2">{
+                        <span class="cov0" title="0">for _, elem := range page.Records </span><span class="cov0" title="0">{
                                 drsObj, err := elem.ToIndexdRecord().ToDrsObject()
                                 if err != nil </span><span class="cov0" title="0">{
                                         // Append and keep going, or break if this is fatal
                                         resultErrors = multierror.Append(resultErrors, err)
                                         continue</span>
                                 }
-                                <span class="cov2" title="2">out &lt;- drs.DRSObjectResult{Object: drsObj}</span>
+                                <span class="cov0" title="0">out &lt;- drs.DRSObjectResult{Object: drsObj}</span>
                         }
-                        <span class="cov3" title="3">pageNum++</span>
+                        <span class="cov0" title="0">pageNum++</span>
                 }
 
                 // If we accumulated any errors, send the final concatenated result
-                <span class="cov1" title="1">if resultErrors != nil </span><span class="cov0" title="0">{
+                <span class="cov0" title="0">if resultErrors != nil </span><span class="cov0" title="0">{
                         out &lt;- drs.DRSObjectResult{Error: resultErrors.ErrorOrNil()}
                 }</span>
         }()
 
-        <span class="cov2" title="2">return out, nil</span>
+        <span class="cov0" title="0">return out, nil</span>
 }
 
 // given indexd record, constructs a new indexd record
 // implements /index/index POST
-func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSObject, error) <span class="cov5" title="7">{
+func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSObject, error) <span class="cov5" title="6">{
         indexdObjForm := IndexdRecordForm{
                 IndexdRecord: *indexdObj,
                 Form:         "object",
@@ -1591,7 +1593,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
                 return nil, err
         }</span>
 
-        <span class="cov5" title="7">cl.Logger.Debug(fmt.Sprintf("writing IndexdObj: %s", string(jsonBytes)))
+        <span class="cov5" title="6">cl.Logger.Debug(fmt.Sprintf("writing IndexdObj: %s", string(jsonBytes)))
 
         // register DRS object via /index POST
         // (setup post request to indexd)
@@ -1603,7 +1605,7 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
                 return nil, err
         }</span>
         // set Content-Type header for JSON
-        <span class="cov5" title="7">req.Header.Set("accept", "application/json")
+        <span class="cov5" title="6">req.Header.Set("accept", "application/json")
         req.Header.Set("Content-Type", "application/json")
 
         // add auth token
@@ -1612,12 +1614,12 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
                 return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
         }</span>
 
-        <span class="cov5" title="7">cl.Logger.Debug(fmt.Sprintf("POST request created for indexd: %s", endpt.String()))
+        <span class="cov5" title="6">cl.Logger.Debug(fmt.Sprintf("POST request created for indexd: %s", endpt.String()))
         response, err := cl.HttpClient.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="7">defer response.Body.Close()
+        <span class="cov5" title="6">defer response.Body.Close()
 
         // check and see if the response status is OK
         drsId := indexdObjForm.Did
@@ -1625,14 +1627,14 @@ func (cl *IndexDClient) RegisterIndexdRecord(indexdObj *IndexdRecord) (*drs.DRSO
                 body, _ := io.ReadAll(response.Body)
                 return nil, fmt.Errorf("failed to register DRS ID %s: %s", drsId, body)
         }</span>
-        <span class="cov4" title="5">cl.Logger.Debug(fmt.Sprintf("POST successful: %s", response.Status))
+        <span class="cov4" title="4">cl.Logger.Debug(fmt.Sprintf("POST successful: %s", response.Status))
 
         // removed re-query return DRS object (was missing access method authorization anyway)
         drsObj, err := indexdRecordToDrsObject(indexdObj)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error converting indexd record to DRS object: %w %v", err, indexdObj)
         }</span>
-        <span class="cov4" title="5">return drsObj, nil</span>
+        <span class="cov4" title="4">return drsObj, nil</span>
 }
 
 // implements /index{did}?rev={rev} DELETE
@@ -1674,7 +1676,7 @@ func (cl *IndexDClient) DeleteIndexdRecord(did string) error <span class="cov0" 
 }
 
 // implements /index/index?hash={hashType}:{hash} GET
-func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, error) <span class="cov4" title="5">{
+func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, error) <span class="cov4" title="4">{
         // setup get request to indexd
         url := fmt.Sprintf("%s/index/index?hash=%s:%s", cl.Base.String(), sum.Type, sum.Checksum)
         cl.Logger.Debug(fmt.Sprintf("Querying indexd at %s", url))
@@ -1683,20 +1685,20 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
                 cl.Logger.Debug(fmt.Sprintf("http.NewRequest Error: %s", err))
                 return nil, err
         }</span>
-        <span class="cov4" title="5">cl.Logger.Debug(fmt.Sprintf("Looking for files with hash %s:%s", sum.Type, sum.Checksum))
+        <span class="cov4" title="4">cl.Logger.Debug(fmt.Sprintf("Looking for files with hash %s:%s", sum.Type, sum.Checksum))
 
         err = cl.AuthHandler.AddAuthHeader(req.Request)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("unable to add authentication when searching for object: %s:%s. More on the error: %v", sum.Type, sum.Checksum, err)
         }</span>
-        <span class="cov4" title="5">req.Header.Set("accept", "application/json")
+        <span class="cov4" title="4">req.Header.Set("accept", "application/json")
 
         // run request and do checks
         resp, err := cl.HttpClient.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("unable to check if server has files with hash %s:%s: %v", sum.Type, sum.Checksum, err)
         }</span>
-        <span class="cov4" title="5">defer resp.Body.Close()
+        <span class="cov4" title="4">defer resp.Body.Close()
 
         if resp.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
                 body, _ := io.ReadAll(resp.Body)
@@ -1704,13 +1706,13 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
         }</span>
 
         // unmarshal response body
-        <span class="cov4" title="5">records := ListRecords{}
+        <span class="cov4" title="4">records := ListRecords{}
         err = cl.SConfig.NewDecoder(resp.Body).Decode(&amp;records)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error unmarshaling (%s:%s): %v", sum.Type, sum.Checksum, err)
         }</span>
         // log how many records were found
-        <span class="cov4" title="5">cl.Logger.Debug(fmt.Sprintf("Found %d indexd record(s) matching the hash %v", len(records.Records), records))
+        <span class="cov4" title="4">cl.Logger.Debug(fmt.Sprintf("Found %d indexd record(s) matching the hash %v", len(records.Records), records))
 
         out := make([]drs.DRSObject, 0, len(records.Records))
 
@@ -1719,18 +1721,18 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
                 return out, nil
         }</span>
 
-        <span class="cov4" title="5">resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
+        <span class="cov4" title="4">resourcePath, _ := utils.ProjectToResource(cl.GetProjectId())
 
-        for _, record := range records.Records </span><span class="cov7" title="13">{
+        for _, record := range records.Records </span><span class="cov7" title="12">{
                 // skip records that do not authorize this client/project
                 found := false
-                for _, a := range record.Authz </span><span class="cov7" title="13">{
+                for _, a := range record.Authz </span><span class="cov7" title="12">{
                         if a == resourcePath </span><span class="cov4" title="4">{
                                 found = true
                                 break</span>
                         }
                 }
-                <span class="cov7" title="13">if !found </span><span class="cov6" title="9">{
+                <span class="cov7" title="12">if !found </span><span class="cov6" title="8">{
                         continue</span>
                 }
 
@@ -1741,17 +1743,17 @@ func (cl *IndexDClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, er
                 <span class="cov4" title="4">out = append(out, *drsObj)</span>
         }
 
-        <span class="cov4" title="5">return out, nil</span>
+        <span class="cov4" title="4">return out, nil</span>
 }
 
 // GetProjectSample retrieves a sample of DRS objects for a given project (limit: 1 by default)
 // Returns up to 'limit' records for preview purposes before destructive operations
-func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRSObject, error) <span class="cov1" title="1">{
-        if limit &lt;= 0 </span><span class="cov1" title="1">{
+func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRSObject, error) <span class="cov0" title="0">{
+        if limit &lt;= 0 </span><span class="cov0" title="0">{
                 limit = 1
         }</span>
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("Getting sample DRS objects from indexd for project %s (limit: %d)", projectId, limit))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("Getting sample DRS objects from indexd for project %s (limit: %d)", projectId, limit))
 
         // Reuse ListObjectsByProject and collect first 'limit' results
         objChan, err := cl.ListObjectsByProject(projectId)
@@ -1759,30 +1761,30 @@ func (cl *IndexDClient) GetProjectSample(projectId string, limit int) ([]drs.DRS
                 return nil, err
         }</span>
 
-        <span class="cov1" title="1">result := make([]drs.DRSObject, 0, limit)
-        for objResult := range objChan </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">result := make([]drs.DRSObject, 0, limit)
+        for objResult := range objChan </span><span class="cov0" title="0">{
                 if objResult.Error != nil </span><span class="cov0" title="0">{
                         return nil, objResult.Error
                 }</span>
-                <span class="cov1" title="1">result = append(result, *objResult.Object)
+                <span class="cov0" title="0">result = append(result, *objResult.Object)
 
                 // Stop after collecting enough samples
-                if len(result) &gt;= limit </span><span class="cov1" title="1">{
+                if len(result) &gt;= limit </span><span class="cov0" title="0">{
                         // Drain remaining results to avoid goroutine leak
-                        go func() </span><span class="cov1" title="1">{
+                        go func() </span><span class="cov0" title="0">{
                                 for range objChan </span>{<span class="cov0" title="0">
                                 }</span>
                         }()
-                        <span class="cov1" title="1">break</span>
+                        <span class="cov0" title="0">break</span>
                 }
         }
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("Retrieved %d sample record(s)", len(result)))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("Retrieved %d sample record(s)", len(result)))
         return result, nil</span>
 }
 
 // implements /index/index?authz={resource_path}&amp;start={start}&amp;limit={limit} GET
-func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span class="cov1" title="1">{
+func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span class="cov0" title="0">{
 
         cl.Logger.Debug("Getting DRS objects from indexd")
 
@@ -1794,10 +1796,10 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span cl
         LIMIT := 50
         pageNum := 0
 
-        go func() </span><span class="cov1" title="1">{
+        go func() </span><span class="cov0" title="0">{
                 defer close(out)
                 active := true
-                for active </span><span class="cov2" title="2">{
+                for active </span><span class="cov0" title="0">{
                         // setup request
                         req, err := retryablehttp.NewRequest("GET", a.String(), nil)
                         if err != nil </span><span class="cov0" title="0">{
@@ -1806,7 +1808,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span cl
                                 return
                         }</span>
 
-                        <span class="cov2" title="2">q := req.URL.Query()
+                        <span class="cov0" title="0">q := req.URL.Query()
                         q.Add("limit", fmt.Sprintf("%d", LIMIT))
                         q.Add("page", fmt.Sprintf("%d", pageNum))
                         req.URL.RawQuery = q.Encode()
@@ -1819,7 +1821,7 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span cl
                         }</span>
 
                         // execute request with error checking
-                        <span class="cov2" title="2">response, err := cl.HttpClient.Do(req)
+                        <span class="cov0" title="0">response, err := cl.HttpClient.Do(req)
 
                         if err != nil </span><span class="cov0" title="0">{
                                 cl.Logger.Debug(fmt.Sprintf("error: %s", err))
@@ -1827,44 +1829,44 @@ func (cl *IndexDClient) ListObjects() (chan drs.DRSObjectResult, error) <span cl
                                 return
                         }</span>
 
-                        <span class="cov2" title="2">defer response.Body.Close()
+                        <span class="cov0" title="0">defer response.Body.Close()
                         body, err := io.ReadAll(response.Body)
                         if err != nil </span><span class="cov0" title="0">{
                                 cl.Logger.Debug(fmt.Sprintf("error: %s", err))
                                 out &lt;- drs.DRSObjectResult{Error: err}
                                 return
                         }</span>
-                        <span class="cov2" title="2">if response.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
+                        <span class="cov0" title="0">if response.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
                                 cl.Logger.Debug(fmt.Sprintf("%d: check that your credentials are valid \nfull message: %s", response.StatusCode, body))
                                 out &lt;- drs.DRSObjectResult{Error: fmt.Errorf("%d: check your credentials are valid, \nfull message: %s", response.StatusCode, body)}
                                 return
                         }</span>
 
                         // return page of DRS objects
-                        <span class="cov2" title="2">page := &amp;drs.DRSPage{}
+                        <span class="cov0" title="0">page := &amp;drs.DRSPage{}
                         err = cl.SConfig.Unmarshal(body, &amp;page)
                         if err != nil </span><span class="cov0" title="0">{
                                 cl.Logger.Debug(fmt.Sprintf("error: %s (%s)", err, body))
                                 out &lt;- drs.DRSObjectResult{Error: err}
                                 return
                         }</span>
-                        <span class="cov2" title="2">for _, elem := range page.DRSObjects </span><span class="cov1" title="1">{
+                        <span class="cov0" title="0">for _, elem := range page.DRSObjects </span><span class="cov0" title="0">{
                                 out &lt;- drs.DRSObjectResult{Object: &amp;elem}
                         }</span>
-                        <span class="cov2" title="2">if len(page.DRSObjects) == 0 </span><span class="cov1" title="1">{
+                        <span class="cov0" title="0">if len(page.DRSObjects) == 0 </span><span class="cov0" title="0">{
                                 active = false
                         }</span>
-                        <span class="cov2" title="2">pageNum++</span>
+                        <span class="cov0" title="0">pageNum++</span>
                 }
 
-                <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("total pages retrieved: %d", pageNum))</span>
+                <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("total pages retrieved: %d", pageNum))</span>
         }()
-        <span class="cov1" title="1">return out, nil</span>
+        <span class="cov0" title="0">return out, nil</span>
 }
 
 // UpdateRecord updates an existing indexd record by GUID using the PUT /index/index/{guid} endpoint
 // Supports updating: URLs, name (file_name), description (metadata), version, and authz
-func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) <span class="cov1" title="1">{
+func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) <span class="cov0" title="0">{
         // Get current revision from existing record
         record, err := cl.GetIndexdRecordByDID(did)
         if err != nil </span><span class="cov0" title="0">{
@@ -1872,7 +1874,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
         }</span>
 
         // Build update payload starting with existing record values
-        <span class="cov1" title="1">updatePayload := UpdateInputInfo{
+        <span class="cov0" title="0">updatePayload := UpdateInputInfo{
                 URLs:     record.URLs,
                 FileName: record.FileName,
                 Version:  record.Version,
@@ -1883,13 +1885,13 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
 
         // Apply updates from updateInfo
         // Update URLs by appending new access methods (deduplicated)
-        if len(updateInfo.AccessMethods) &gt; 0 </span><span class="cov1" title="1">{
+        if len(updateInfo.AccessMethods) &gt; 0 </span><span class="cov0" title="0">{
                 // Collect new URLs from access methods
                 newURLs := make([]string, 0, len(updateInfo.AccessMethods))
-                for _, a := range updateInfo.AccessMethods </span><span class="cov1" title="1">{
+                for _, a := range updateInfo.AccessMethods </span><span class="cov0" title="0">{
                         newURLs = append(newURLs, a.AccessURL.URL)
                 }</span>
-                <span class="cov1" title="1">updatePayload.URLs = utils.AddUnique(updatePayload.URLs, newURLs)
+                <span class="cov0" title="0">updatePayload.URLs = utils.AddUnique(updatePayload.URLs, newURLs)
 
                 // Append authz from access methods (deduplicated)
                 authz := indexdAuthzFromDrsAccessMethods(updateInfo.AccessMethods)
@@ -1897,29 +1899,29 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
         }
 
         // Update name (maps to file_name in indexd)
-        <span class="cov1" title="1">if updateInfo.Name != "" </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">if updateInfo.Name != "" </span><span class="cov0" title="0">{
                 updatePayload.FileName = updateInfo.Name
         }</span>
 
         // Update version
-        <span class="cov1" title="1">if updateInfo.Version != "" </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">if updateInfo.Version != "" </span><span class="cov0" title="0">{
                 updatePayload.Version = updateInfo.Version
         }</span>
 
         // Update description (stored in metadata)
-        <span class="cov1" title="1">if updateInfo.Description != "" </span><span class="cov1" title="1">{
-                if updatePayload.Metadata == nil </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">if updateInfo.Description != "" </span><span class="cov0" title="0">{
+                if updatePayload.Metadata == nil </span><span class="cov0" title="0">{
                         updatePayload.Metadata = make(map[string]any)
                 }</span>
-                <span class="cov1" title="1">updatePayload.Metadata["description"] = updateInfo.Description</span>
+                <span class="cov0" title="0">updatePayload.Metadata["description"] = updateInfo.Description</span>
         }
 
-        <span class="cov1" title="1">jsonBytes, err := cl.SConfig.Marshal(updatePayload)
+        <span class="cov0" title="0">jsonBytes, err := cl.SConfig.Marshal(updatePayload)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error marshaling indexd object form: %v", err)
         }</span>
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("Prepared updated indexd object for DID %s: %s", did, string(jsonBytes)))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("Prepared updated indexd object for DID %s: %s", did, string(jsonBytes)))
 
         // prepare URL
         updateURL := fmt.Sprintf("%s/index/index/%s?rev=%s", cl.Base.String(), did, record.Rev)
@@ -1930,7 +1932,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
         }</span>
 
         // Set required headers
-        <span class="cov1" title="1">req.Header.Set("accept", "application/json")
+        <span class="cov0" title="0">req.Header.Set("accept", "application/json")
         req.Header.Set("Content-Type", "application/json")
 
         err = cl.AuthHandler.AddAuthHeader(req.Request)
@@ -1938,14 +1940,14 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
                 return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
         }</span>
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("PUT request created for indexd update: %s", updateURL))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("PUT request created for indexd update: %s", updateURL))
 
         // Execute the request
         response, err := cl.HttpClient.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error executing PUT request: %v", err)
         }</span>
-        <span class="cov1" title="1">defer response.Body.Close()
+        <span class="cov0" title="0">defer response.Body.Close()
 
         // Check response status
         if response.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
@@ -1953,7 +1955,7 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
                 return nil, fmt.Errorf("failed to update indexd record %s: status %d, body: %s", did, response.StatusCode, string(body))
         }</span>
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("PUT request successful: %s", response.Status))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("PUT request successful: %s", response.Status))
 
         // Query and return the updated DRS object
         updatedDrsObj, err := cl.GetObject(did)
@@ -1961,12 +1963,12 @@ func (cl *IndexDClient) UpdateRecord(updateInfo *drs.DRSObject, did string) (*dr
                 return nil, fmt.Errorf("error retrieving updated DRS object: %v", err)
         }</span>
 
-        <span class="cov1" title="1">cl.Logger.Debug(fmt.Sprintf("Successfully updated and retrieved DRS object: %s", did))
+        <span class="cov0" title="0">cl.Logger.Debug(fmt.Sprintf("Successfully updated and retrieved DRS object: %s", did))
         return updatedDrsObj, nil</span>
 }
 
 // Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)
-func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) <span class="cov2" title="2">{
+func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) <span class="cov0" title="0">{
         url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)
 
         req, err := retryablehttp.NewRequest("GET", url, nil)
@@ -1974,45 +1976,45 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) <s
                 return nil, err
         }</span>
 
-        <span class="cov2" title="2">err = cl.AuthHandler.AddAuthHeader(req.Request)
+        <span class="cov0" title="0">err = cl.AuthHandler.AddAuthHeader(req.Request)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error adding Gen3 auth header: %v", err)
         }</span>
-        <span class="cov2" title="2">req.Request.Header.Set("accept", "application/json")
+        <span class="cov0" title="0">req.Request.Header.Set("accept", "application/json")
 
         resp, err := cl.HttpClient.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov2" title="2">defer resp.Body.Close()
+        <span class="cov0" title="0">defer resp.Body.Close()
 
         if resp.StatusCode != http.StatusOK </span><span class="cov0" title="0">{
                 body, _ := io.ReadAll(resp.Body)
                 return nil, fmt.Errorf("failed to get record: status %d, body: %s", resp.StatusCode, string(body))
         }</span>
 
-        <span class="cov2" title="2">record := &amp;OutputInfo{}
+        <span class="cov0" title="0">record := &amp;OutputInfo{}
         if err := cl.SConfig.NewDecoder(resp.Body).Decode(record); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error decoding response body: %v", err)
         }</span>
 
-        <span class="cov2" title="2">return record, nil</span>
+        <span class="cov0" title="0">return record, nil</span>
 }
 
-func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) <span class="cov5" title="7">{
+func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) <span class="cov4" title="4">{
         bucket := cl.BucketName
-        if bucket == "" </span><span class="cov1" title="1">{
+        if bucket == "" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error: bucket name is empty in config file")
         }</span>
 
         //TODO: support other storage backends
-        <span class="cov5" title="6">fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
+        <span class="cov4" title="4">fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
 
         authzStr, err := utils.ProjectToResource(cl.GetProjectId())
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="6">authorizations := drs.Authorizations{
+        <span class="cov4" title="4">authorizations := drs.Authorizations{
                 Value: authzStr,
         }
 
@@ -4222,6 +4224,7 @@ import (
 
         "github.com/bytedance/sonic"
         "github.com/bytedance/sonic/encoder"
+        "github.com/calypr/data-client/client/common"
         "github.com/calypr/git-drs/client"
         "github.com/calypr/git-drs/config"
         "github.com/calypr/git-drs/drslog"
@@ -4258,9 +4261,9 @@ const (
 var Cmd = &amp;cobra.Command{
         Use:   "transfer",
         Short: "[RUN VIA GIT LFS] register LFS files into gen3 during git push",
-        Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
-        RunE: func(cmd *cobra.Command, args []string) error <span class="cov9" title="32">{
-                logger := drslog.GetLogger()
+        Long:  `[RUN VIA GIT LFS] git-lfs transfer mechanism<span class="cov0" title="0"> to register LFS files up to gen3 during git push. For new files, creates an indexd record and uploads to the bucket`,
+        RunE: func(cmd *cobra.Command, args []string) error {
+                logger := drslog.GetLogge</span>r()
                 logger.Info("~~~~~~~~~~~~~ START: drs transfer ~~~~~~~~~~~~~")
 
                 // Gotta go fast — big buffer
@@ -4270,7 +4273,7 @@ var Cmd = &amp;cobra.Command{
                 scanner.Buffer(buf, maxCapacity)
                 streamEncoder := encoder.NewStreamEncoder(os.Stdout)
 
-                // Read init message
+                // Read init messag</span>e
                 if !scanner.Scan() </span><span class="cov0" title="0">{
                         err := fmt.Errorf("failed to read initial message from stdin")
                         logger.Error(fmt.Sprintf("Error: %v", err))
@@ -4387,8 +4390,15 @@ var Cmd = &amp;cobra.Command{
                                         continue</span>
                                 }
 
+                                <span class="cov4" title="4">_ = GitLFSProgressCallback(streamEncoder)(common.ProgressEvent{
+                                        Event:          "progress",
+                                        Oid:            downloadMsg.Oid,
+                                        BytesSoFar:     downloadMsg.Size,
+                                        BytesSinceLast: downloadMsg.Size,
+                                })
+
                                 // send success message back
-                                <span class="cov4" title="4">logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+                                logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
                                 lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)</span>
 
@@ -4405,7 +4415,7 @@ var Cmd = &amp;cobra.Command{
                                         continue</span>
                                 }
                                 <span class="cov4" title="4">logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-                                drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+                                drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, GitLFSProgressCallback(streamEncoder))
                                 if err != nil </span><span class="cov0" title="0">{
                                         errMsg := fmt.Sprintf("Error registering file: %v\n", err)
                                         logger.Error(errMsg)
@@ -4429,6 +4439,16 @@ var Cmd = &amp;cobra.Command{
                 return nil</span>
 
         },
+}
+
+// GitLFSProgressCallback returns a ProgressCallback that logs progress events
+// using the provided streamEncoder. It always returns nil (no error).
+func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov6" title="8">{
+        return func(e common.ProgressEvent) error </span><span class="cov5" title="7">{
+                fmt.Fprintln(os.Stderr, "GitLFSProgressCallback progress callback started", e)
+                lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
+                return nil
+        }</span>
 }
 </pre>
 		
@@ -6083,7 +6103,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
                         }</span>
 
                 } else<span class="cov0" title="0"> {
-                        _, err = drsClient.RegisterFile(drsObjKey)
+                        _, err = drsClient.RegisterFile(drsObjKey, nil)
                         if err != nil </span><span class="cov0" title="0">{
                                 return err
                         }</span>
@@ -6835,6 +6855,16 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
                 Path:  path,
         }
         encoder.Encode(completeResponse)
+}</span>
+
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov9" title="8">{
+        progressResponse := ProgressResponse{
+                Event:          "progress",
+                Oid:            oid,
+                BytesSoFar:     bytesSoFar,
+                BytesSinceLast: bytesSinceLast,
+        }
+        encoder.Encode(progressResponse)
 }</span>
 </pre>
 		

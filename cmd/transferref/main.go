@@ -33,14 +33,14 @@ var Cmd = &cobra.Command{
 		//setup logging to file for debugging
 		myLogger := drslog.GetLogger()
 
-		myLogger.Debug("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
+		myLogger.Info("~~~~~~~~~~~~~ START: custom anvil transfer ~~~~~~~~~~~~~")
 
 		scanner := bufio.NewScanner(os.Stdin)
 		encoder := encoder.NewStreamEncoder(os.Stdout)
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
+			myLogger.Error(fmt.Sprintf("Error loading config: %v", err))
 			return err
 		}
 
@@ -49,7 +49,7 @@ var Cmd = &cobra.Command{
 		// Read the first (init) message outside the main loop
 		if !scanner.Scan() {
 			err := fmt.Errorf("failed to read initial message from stdin")
-			myLogger.Debug(fmt.Sprintf("Error: %s", err))
+			myLogger.Error(fmt.Sprintf("Error: %s", err))
 			// No OID yet, so pass empty string
 			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
@@ -57,7 +57,7 @@ var Cmd = &cobra.Command{
 
 		var initMsg map[string]any
 		if err := sConfig.Unmarshal(scanner.Bytes(), &initMsg); err != nil {
-			myLogger.Debug(fmt.Sprintf("error decoding initial JSON message: %s", err))
+			myLogger.Error(fmt.Sprintf("error decoding initial JSON message: %s", err))
 			return err
 		}
 
@@ -66,7 +66,7 @@ var Cmd = &cobra.Command{
 			// if no remote name specified, use default remote
 			defaultRemote, err := cfg.GetDefaultRemote()
 			if err != nil {
-				myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
+				myLogger.Error(fmt.Sprintf("Error getting default remote: %v", err))
 				lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 				return err
 			}
@@ -77,14 +77,14 @@ var Cmd = &cobra.Command{
 			encoder.Encode(struct{}{})
 		} else {
 			err := fmt.Errorf("protocol error: expected 'init' message, got '%v'", initMsg["event"])
-			myLogger.Debug(fmt.Sprintf("Error: %s", err))
+			myLogger.Error(fmt.Sprintf("Error: %s", err))
 			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
 
 		drsClient, err = cfg.GetRemoteClient(config.Remote(remoteName), myLogger)
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
+			myLogger.Error(fmt.Sprintf("Error creating indexd client: %s", err))
 			lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 			return err
 		}
@@ -114,7 +114,7 @@ var Cmd = &cobra.Command{
 				var downloadMsg lfs.DownloadMessage
 				if err := sConfig.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
-					myLogger.Debug(errMsg)
+					myLogger.Error(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
@@ -123,7 +123,7 @@ var Cmd = &cobra.Command{
 				dstPath, err := downloadFile(config.Remote(remoteName), downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v\n", downloadMsg.Oid, err)
-					myLogger.Debug(errMsg)
+					myLogger.Error(errMsg)
 					lfs.WriteErrorMessage(encoder, downloadMsg.Oid, 500, errMsg)
 					continue
 				}
@@ -140,14 +140,14 @@ var Cmd = &cobra.Command{
 				encoder.Encode(completeMsg)
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				myLogger.Debug(fmt.Sprintf("Handling upload event: %s", msg))
-				myLogger.Debug("skipping upload, just registering existing DRS object")
+				myLogger.Info(fmt.Sprintf("Handling upload event: %s", msg))
+				myLogger.Info("skipping upload, just registering existing DRS object")
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage
 				if err := sConfig.Unmarshal(scanner.Bytes(), &uploadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing UploadMessage: %v\n", err)
-					myLogger.Debug(errMsg)
+					myLogger.Error(errMsg)
 					lfs.WriteErrorMessage(encoder, uploadMsg.Oid, 400, errMsg)
 				}
 				myLogger.Debug(fmt.Sprintf("Got UploadMessage: %+v", uploadMsg))
@@ -157,7 +157,7 @@ var Cmd = &cobra.Command{
 					Event: "complete",
 					Oid:   uploadMsg.Oid,
 				}
-				myLogger.Debug(fmt.Sprintf("Complete message: %+v", completeMsg))
+				myLogger.Info(fmt.Sprintf("Complete message: %+v", completeMsg))
 				encoder.Encode(completeMsg)
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				// Handle terminate event
@@ -169,7 +169,7 @@ var Cmd = &cobra.Command{
 			myLogger.Debug(fmt.Sprintf("stdin error: %s", err))
 		}
 
-		myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
+		myLogger.Info("~~~~~~~~~~~~~ COMPLETED: custom anvil transfer ~~~~~~~~~~~~~")
 
 		return nil
 	},

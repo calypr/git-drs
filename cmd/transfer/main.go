@@ -173,12 +173,7 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				_ = GitLFSProgressCallback(streamEncoder)(common.ProgressEvent{
-					Event:          "progress",
-					Oid:            downloadMsg.Oid,
-					BytesSoFar:     downloadMsg.Size,
-					BytesSinceLast: downloadMsg.Size,
-				})
+				lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
 
 				// send success message back
 				logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
@@ -228,7 +223,6 @@ var Cmd = &cobra.Command{
 // using the provided streamEncoder. It always returns nil (no error).
 func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback {
 	return func(e common.ProgressEvent) error {
-		fmt.Fprintln(os.Stderr, "GitLFSProgressCallback progress callback started", e)
 		lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
 		return nil
 	}

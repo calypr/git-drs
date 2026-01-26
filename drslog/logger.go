@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,10 @@ var globalLogFile io.Closer
 var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
 var GIT_TRANSFER_TRACE int
+var modulePathSuffixOnce sync.Once
+var modulePathSuffixValue string
+var repoRootOnce sync.Once
+var repoRootValue string
 
 func init() {
 	GIT_TRANSFER_TRACE = 0
@@ -59,8 +64,9 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 	multiWriter := io.MultiWriter(writers...)
 
 	handler := slog.NewTextHandler(multiWriter, &slog.HandlerOptions{
-		AddSource: true,
-		Level:     resolveLogLevel(),
+		AddSource:   true,
+		Level:       resolveLogLevel(),
+		ReplaceAttr: replaceSourceAttr,
 	})
 	core := slog.New(handler).With("pid", os.Getpid())
 
@@ -147,4 +153,77 @@ func parseLogLevel(value string) (slog.Level, bool) {
 	default:
 		return slog.LevelDebug, false
 	}
+}
+
+func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr {
+	if attr.Key != slog.SourceKey {
+		return attr
+	}
+	source, ok := attr.Value.Any().(*slog.Source)
+	if !ok || source == nil {
+		return attr
+	}
+	source.File = formatSourcePath(source.File)
+	attr.Value = slog.AnyValue(source)
+	return attr
+}
+
+func formatSourcePath(path string) string {
+	pathSlash := filepath.ToSlash(path)
+	moduleSuffix := modulePathSuffix()
+	if moduleSuffix != "" {
+		moduleSuffixSlash := strings.TrimPrefix(filepath.ToSlash(moduleSuffix), "/")
+		if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx >= 0 {
+			return pathSlash[idx+1:]
+		}
+		if strings.HasPrefix(pathSlash, moduleSuffixSlash+"/") {
+			return pathSlash
+		}
+	}
+	repoRoot := repoRootPath()
+	if repoRoot != "" {
+		repoRootSlash := filepath.ToSlash(repoRoot)
+		if strings.HasPrefix(pathSlash, repoRootSlash+"/") {
+			rel := strings.TrimPrefix(pathSlash, repoRootSlash+"/")
+			if moduleSuffix != "" {
+				return filepath.ToSlash(filepath.Join(moduleSuffix, rel))
+			}
+			return rel
+		}
+	}
+	return pathSlash
+}
+
+func modulePathSuffix() string {
+	modulePathSuffixOnce.Do(func() {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Path != "" {
+			parts := strings.Split(info.Main.Path, "/")
+			if len(parts) > 1 {
+				modulePathSuffixValue = strings.Join(parts[1:], "/")
+			}
+		}
+	})
+	return modulePathSuffixValue
+}
+
+func repoRootPath() string {
+	repoRootOnce.Do(func() {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		dir := cwd
+		for {
+			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+				repoRootValue = dir
+				return
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				return
+			}
+			dir = parent
+		}
+	})
+	return repoRootValue
 }

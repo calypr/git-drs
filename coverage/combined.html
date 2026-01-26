@@ -61,7 +61,7 @@
 				
 				<option value="file2">github.com/calypr/git-drs/client/indexd/add_url.go (47.4%)</option>
 				
-				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (52.4%)</option>
+				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (83.3%)</option>
 				
 				<option value="file4">github.com/calypr/git-drs/client/indexd/convert.go (86.5%)</option>
 				
@@ -133,7 +133,7 @@
 				
 				<option value="file38">github.com/calypr/git-drs/drslog/compat.go (100.0%)</option>
 				
-				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (65.0%)</option>
+				<option value="file39">github.com/calypr/git-drs/drslog/logger.go (43.9%)</option>
 				
 				<option value="file40">github.com/calypr/git-drs/drsmap/drs_map.go (42.9%)</option>
 				
@@ -743,28 +743,28 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error <span class=
         needRefresh := false
         if err != nil </span><span class="cov0" title="0">{
                 needRefresh = true
-        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov0" title="0">{
+        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov1" title="1">{
                 needRefresh = true
         }</span>
 
-        <span class="cov9" title="23">if needRefresh </span><span class="cov0" title="0">{
+        <span class="cov9" title="23">if needRefresh </span><span class="cov1" title="1">{
                 logger, closer := logs.New(cred.Profile)
                 defer closer()
 
                 if err != nil </span><span class="cov0" title="0">{
                         logger.Printf("failed to get access token expiration, attempting token refresh: %v", err)
                 }</span>
-                <span class="cov0" title="0">conf := conf.NewConfigure(logger)
+                <span class="cov1" title="1">conf := conf.NewConfigure(logger)
                 r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)
                 f, ok := r.(*api.Functions)
                 if !ok </span><span class="cov0" title="0">{
                         return fmt.Errorf("Function interface is not of type api.Functions")
                 }</span>
-                <span class="cov0" title="0">err = f.NewAccessToken(ctx)
+                <span class="cov1" title="1">err = f.NewAccessToken(ctx)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov0" title="0">cred.AccessToken = f.Cred.AccessToken
+                <span class="cov1" title="1">cred.AccessToken = f.Cred.AccessToken
                 err = conf.Save(cred)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
@@ -5523,6 +5523,7 @@ import (
         "os"
         "os/exec"
         "path/filepath"
+        "runtime/debug"
         "strconv"
         "strings"
         "sync"
@@ -5535,49 +5536,54 @@ var globalLogFile io.Closer
 var globalLoggerOnce sync.Once
 var globalLoggerMu sync.RWMutex
 var GIT_TRANSFER_TRACE int
-
-func init() <span class="cov10" title="56">{
+var modulePa<span class="cov0" title="0">thSuffixOnce sync.Once
+var modulePathSuffixValue string
+var repoRootOnce sync.Once
+</span>var repoRootValue string
+</span>
+fun</span>c init() <span class="cov6" title="56">{
         GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
                         GIT_TRANSFER_TRACE = parsed
                 }</span>
-        }
+        </span>}
 }
 
-func TraceEnabled() bool <span class="cov9" title="49">{
+func TraceEnabled() bool <span class="cov5" title="49">{
         return GIT_TRANSFER_TRACE == 1
 }</span>
 
-// NewLogger creates a new Logger that writes to the specified file and optionally stderr.
+// NewLogger create</span><span class="cov0" title="0">s a new Logger that writes to the specified file and optionally stderr.
 // It is safe to call this multiple times; only the first successful call sets the global logger.
-func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov9" title="49">{
+func NewLogger(filename string, logToStderr bool) (*slog.Logge</span><span class="cov0" title="0">r, error) {
         var writers []io.Writer
 
-        if filename == "" </span><span class="cov9" title="49">{
+</span>        if filename == "" </span><span class="cov5" title="49">{
                 //create drs dir if it doesn't exist
                 if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
 
-                <span class="cov9" title="49">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span> // Assuming transfer.log is a variable
+                <span class="cov5" title="48">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span> // Assuming transfer.log is a variable
         }
 
-        <span class="cov9" title="49">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        <span class="cov5" title="48">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov9" title="49">writers = append(writers, file)
+        <span class="cov5" title="48">writers = append(writers, file)
 
-        if logToStderr </span><span class="cov9" title="44">{
+        if logToStderr </span><span class="cov5" title="44">{
                 writers = append(writers, os.Stderr)
         }</span>
 
-        <span class="cov9" title="49">multiWriter := io.MultiWriter(writers...)
+        <span class="cov5" title="48">multiWriter := io.MultiWriter(writers...)
 
         handler := slog.NewTextHandler(multiWriter, &amp;slog.HandlerOptions{
-                AddSource: true,
-                Level:     resolveLogLevel(),
+                AddSource:   true,
+                Level:       resolveLogLevel(),
+                ReplaceAttr: replaceSourceAttr,
         })
         core := slog.New(handler).With("pid", os.Getpid())
 
@@ -5589,20 +5595,20 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span cl
         return globalLogger, nil</span>
 }
 
-func GetLogger() *slog.Logger <span class="cov9" title="41">{
-        globalLoggerOnce.Do(func() </span><span class="cov9" title="41">{
+func GetLogger() *slog.Logger <span class="cov5" title="40">{
+        globalLoggerOnce.Do(func() </span><span class="cov5" title="40">{
                 if globalLogger == nil </span><span class="cov0" title="0">{
                         globalLogger = NewNoOpLogger()
                 }</span>
         })
-        <span class="cov9" title="41">return globalLogger</span>
+        <span class="cov5" title="40">return globalLogger</span>
 }
 
 // Close closes the log file if open.
-func Close() error <span class="cov1" title="1">{
+func Close() error <span class="cov0" title="0">{
         globalLoggerMu.Lock()
         defer globalLoggerMu.Unlock()
-        if globalLogFile != nil </span><span class="cov1" title="1">{
+        if globalLogFile != nil </span><span class="cov0" title="0">{
                 err := globalLogFile.Close()
 
                 globalLogFile = nil
@@ -5612,30 +5618,30 @@ func Close() error <span class="cov1" title="1">{
 }
 
 // NewNoOpLogger returns a logger that discards all output (useful for testing or fallback).
-func NewNoOpLogger() *slog.Logger <span class="cov6" title="13">{
+func NewNoOpLogger() *slog.Logger <span class="cov0" title="0">{
         handler := slog.NewTextHandler(io.Discard, &amp;slog.HandlerOptions{
                 Level: slog.LevelDebug,
         })
         return slog.New(handler)
 }</span>
 
-func resolveLogLevel() slog.Level <span class="cov9" title="49">{
+func resolveLogLevel() slog.Level <span class="cov5" title="48">{
         if TraceEnabled() </span><span class="cov0" title="0">{
                 return slog.LevelDebug
         }</span>
 
-        <span class="cov9" title="49">level, ok := readLogLevelFromGitConfig()
+        <span class="cov5" title="48">level, ok := readLogLevelFromGitConfig()
         if ok </span><span class="cov0" title="0">{
                 return level
         }</span>
 
-        <span class="cov9" title="49">return slog.LevelDebug</span>
+        <span class="cov5" title="48">return slog.LevelDebug</span>
 }
 
-func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov9" title="49">{
+func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov5" title="48">{
         cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
         output, err := cmd.Output()
-        if err != nil </span><span class="cov9" title="49">{
+        if err != nil </span><span class="cov5" title="48">{
                 return slog.LevelDebug, false
         }</span>
 
@@ -5664,6 +5670,79 @@ func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0"
         default:<span class="cov0" title="0">
                 return slog.LevelDebug, false</span>
         }
+}
+
+func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="1288">{
+        if attr.Key != slog.SourceKey </span><span class="cov9" title="978">{
+                return attr
+        }</span>
+        <span class="cov8" title="310">source, ok := attr.Value.Any().(*slog.Source)
+        if !ok || source == nil </span><span class="cov0" title="0">{
+                return attr
+        }</span>
+        <span class="cov8" title="310">source.File = formatSourcePath(source.File)
+        attr.Value = slog.AnyValue(source)
+        return attr</span>
+}
+
+func formatSourcePath(path string) string <span class="cov8" title="310">{
+        pathSlash := filepath.ToSlash(path)
+        moduleSuffix := modulePathSuffix()
+        if moduleSuffix != "" </span><span class="cov8" title="310">{
+                moduleSuffixSlash := strings.TrimPrefix(filepath.ToSlash(moduleSuffix), "/")
+                if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx &gt;= 0 </span><span class="cov8" title="310">{
+                        return pathSlash[idx+1:]
+                }</span>
+                <span class="cov0" title="0">if strings.HasPrefix(pathSlash, moduleSuffixSlash+"/") </span><span class="cov0" title="0">{
+                        return pathSlash
+                }</span>
+        }
+        <span class="cov0" title="0">repoRoot := repoRootPath()
+        if repoRoot != "" </span><span class="cov0" title="0">{
+                repoRootSlash := filepath.ToSlash(repoRoot)
+                if strings.HasPrefix(pathSlash, repoRootSlash+"/") </span><span class="cov0" title="0">{
+                        rel := strings.TrimPrefix(pathSlash, repoRootSlash+"/")
+                        if moduleSuffix != "" </span><span class="cov0" title="0">{
+                                return filepath.ToSlash(filepath.Join(moduleSuffix, rel))
+                        }</span>
+                        <span class="cov0" title="0">return rel</span>
+                }
+        }
+        <span class="cov0" title="0">return pathSlash</span>
+}
+
+func modulePathSuffix() string <span class="cov8" title="310">{
+        modulePathSuffixOnce.Do(func() </span><span class="cov5" title="44">{
+                if info, ok := debug.ReadBuildInfo(); ok &amp;&amp; info.Main.Path != "" </span><span class="cov5" title="44">{
+                        parts := strings.Split(info.Main.Path, "/")
+                        if len(parts) &gt; 1 </span><span class="cov5" title="44">{
+                                modulePathSuffixValue = strings.Join(parts[1:], "/")
+                        }</span>
+                }
+        })
+        <span class="cov8" title="310">return modulePathSuffixValue</span>
+}
+
+func repoRootPath() string <span class="cov0" title="0">{
+        repoRootOnce.Do(func() </span><span class="cov0" title="0">{
+                cwd, err := os.Getwd()
+                if err != nil </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov0" title="0">dir := cwd
+                for </span><span class="cov0" title="0">{
+                        if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil </span><span class="cov0" title="0">{
+                                repoRootValue = dir
+                                return
+                        }</span>
+                        <span class="cov0" title="0">parent := filepath.Dir(dir)
+                        if parent == dir </span><span class="cov0" title="0">{
+                                return
+                        }</span>
+                        <span class="cov0" title="0">dir = parent</span>
+                }
+        })
+        <span class="cov0" title="0">return repoRootValue</span>
 }
 </pre>
 		

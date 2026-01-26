@@ -115,7 +115,7 @@
 				
 				<option value="file29">github.com/calypr/git-drs/cmd/root.go (100.0%)</option>
 				
-				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (47.7%)</option>
+				<option value="file30">github.com/calypr/git-drs/cmd/transfer/main.go (47.2%)</option>
 				
 				<option value="file31">github.com/calypr/git-drs/cmd/transferref/main.go (0.0%)</option>
 				
@@ -4390,12 +4390,7 @@ var Cmd = &amp;cobra.Command{
                                         continue</span>
                                 }
 
-                                <span class="cov4" title="4">_ = GitLFSProgressCallback(streamEncoder)(common.ProgressEvent{
-                                        Event:          "progress",
-                                        Oid:            downloadMsg.Oid,
-                                        BytesSoFar:     downloadMsg.Size,
-                                        BytesSinceLast: downloadMsg.Size,
-                                })
+                                <span class="cov4" title="4">lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
 
                                 // send success message back
                                 logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
@@ -4443,9 +4438,8 @@ var Cmd = &amp;cobra.Command{
 
 // GitLFSProgressCallback returns a ProgressCallback that logs progress events
 // using the provided streamEncoder. It always returns nil (no error).
-func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov6" title="8">{
-        return func(e common.ProgressEvent) error </span><span class="cov5" title="7">{
-                fmt.Fprintln(os.Stderr, "GitLFSProgressCallback progress callback started", e)
+func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov4" title="4">{
+        return func(e common.ProgressEvent) error </span><span class="cov3" title="3">{
                 lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
                 return nil
         }</span>

@@ -7,6 +7,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -172,6 +173,13 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
+				_ = GitLFSProgressCallback(streamEncoder)(common.ProgressEvent{
+					Event:          "progress",
+					Oid:            downloadMsg.Oid,
+					BytesSoFar:     downloadMsg.Size,
+					BytesSinceLast: downloadMsg.Size,
+				})
+
 				// send success message back
 				logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
@@ -190,7 +198,7 @@ var Cmd = &cobra.Command{
 					continue
 				}
 				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, GitLFSProgressCallback(streamEncoder))
 				if err != nil {
 					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
 					logger.Error(errMsg)
@@ -214,4 +222,14 @@ var Cmd = &cobra.Command{
 		return nil
 
 	},
+}
+
+// GitLFSProgressCallback returns a ProgressCallback that logs progress events
+// using the provided streamEncoder. It always returns nil (no error).
+func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback {
+	return func(e common.ProgressEvent) error {
+		fmt.Fprintln(os.Stderr, "GitLFSProgressCallback progress callback started", e)
+		lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
+		return nil
+	}
 }

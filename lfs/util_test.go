@@ -1,4 +1,4 @@
-package drs
+package lfs
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/indexd"
+	drs "github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 )
 
@@ -16,7 +16,7 @@ func TestObjectWalk(t *testing.T) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
-	obj := indexd.DRSObject{
+	obj := drs.DRSObject{
 		Id:        "object-1",
 		Name:      "object-name",
 		Checksums: hash.HashInfo{SHA256: "sha-256"},
@@ -32,7 +32,7 @@ func TestObjectWalk(t *testing.T) {
 
 	var seenPath string
 	var seenID string
-	err = ObjectWalk(func(path string, d *indexd.DRSObject) error {
+	err = ObjectWalk(func(path string, d *drs.DRSObject) error {
 		seenPath = path
 		if d != nil {
 			seenID = d.Id

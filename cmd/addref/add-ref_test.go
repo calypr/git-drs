@@ -1,11 +1,11 @@
-package drsmap
+package addref
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	drs "github.com/calypr/data-client/indexd"
+	"github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 )
 

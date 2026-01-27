@@ -18,7 +18,7 @@ import (
 	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
-	localDrs "github.com/calypr/git-drs/drs"
+	localLfs "github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -78,7 +78,7 @@ type LfsFileInfo struct {
 
 func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client dataClient.Gen3Interface, bucketName string, upsert bool, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
-	drsLfsObjs, err := localDrs.GetDrsLfsObjects(myLogger)
+	drsLfsObjs, err := localLfs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
 	}

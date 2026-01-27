@@ -112,3 +112,13 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
 	}
 	encoder.Encode(completeResponse)
 }
+
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) {
+	progressResponse := ProgressResponse{
+		Event:          "progress",
+		Oid:            oid,
+		BytesSoFar:     bytesSoFar,
+		BytesSinceLast: bytesSinceLast,
+	}
+	encoder.Encode(progressResponse)
+}

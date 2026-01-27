@@ -134,7 +134,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 			}
 
 		} else {
-			_, err = drsClient.RegisterFile(drsObjKey)
+			_, err = drsClient.RegisterFile(drsObjKey, nil)
 			if err != nil {
 				return err
 			}

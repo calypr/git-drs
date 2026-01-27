@@ -4439,7 +4439,7 @@ var Cmd = &amp;cobra.Command{
 // GitLFSProgressCallback returns a ProgressCallback that logs progress events
 // using the provided streamEncoder. It always returns nil (no error).
 func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback <span class="cov4" title="4">{
-        return func(e common.ProgressEvent) error </span><span class="cov3" title="3">{
+        return func(e common.ProgressEvent) error </span><span class="cov2" title="2">{
                 lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
                 return nil
         }</span>
@@ -6851,7 +6851,7 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
         encoder.Encode(completeResponse)
 }</span>
 
-func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov9" title="8">{
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov8" title="7">{
         progressResponse := ProgressResponse{
                 Event:          "progress",
                 Oid:            oid,

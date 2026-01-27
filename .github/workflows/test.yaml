@@ -18,9 +18,6 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Restore file modification times
-      run: ./tests/scripts/git-restore-mtime.sh
-
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
@@ -28,6 +25,7 @@ jobs:
 
     - name: Check uploaded coverage files
       run: |
+        tests/scripts/git-restore-mtime.sh
         tests/scripts/coverage/assert-coverage-timestamp.sh 
 
     - name: Upload coverage reports as artifact

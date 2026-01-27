@@ -1043,7 +1043,7 @@ github.com/calypr/git-drs/cmd/transfer/main.go:212.3,212.39 1 32
 github.com/calypr/git-drs/cmd/transfer/main.go:212.39,214.4 1 0
 github.com/calypr/git-drs/cmd/transfer/main.go:216.3,217.13 2 32
 github.com/calypr/git-drs/cmd/transfer/main.go:224.91,225.44 1 4
-github.com/calypr/git-drs/cmd/transfer/main.go:225.44,228.3 2 3
+github.com/calypr/git-drs/cmd/transfer/main.go:225.44,228.3 2 2
 github.com/calypr/git-drs/cmd/transferref/main.go:32.54,42.17 6 0
 github.com/calypr/git-drs/cmd/transferref/main.go:42.17,45.4 2 0
 github.com/calypr/git-drs/cmd/transferref/main.go:47.3,50.22 2 0
@@ -1619,7 +1619,7 @@ github.com/calypr/git-drs/internal/testutils/output.go:33.2,38.15 4 5
 github.com/calypr/git-drs/lfs/messages.go:82.85,91.2 2 1
 github.com/calypr/git-drs/lfs/messages.go:93.93,104.2 2 1
 github.com/calypr/git-drs/lfs/messages.go:106.84,114.2 2 9
-github.com/calypr/git-drs/lfs/messages.go:116.111,124.2 2 8
+github.com/calypr/git-drs/lfs/messages.go:116.111,124.2 2 7
 github.com/calypr/git-drs/s3_utils/download.go:12.64,15.16 2 6
 github.com/calypr/git-drs/s3_utils/download.go:15.16,17.3 1 0
 github.com/calypr/git-drs/s3_utils/download.go:18.2,21.46 2 6

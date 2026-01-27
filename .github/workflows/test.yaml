@@ -18,6 +18,9 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Restore file modification times
+      run: ./tests/scripts/git-restore-mtime.sh
+
     - name: Set up Go
       uses: actions/setup-go@v5
       with:

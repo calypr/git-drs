@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	anvil_client "github.com/calypr/git-drs/client/anvil"
+	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -119,5 +120,91 @@ func TestGetRemoteOrDefault(t *testing.T) {
 	}
 	if remote, err := cfg.GetRemoteOrDefault("other"); err != nil || remote != Remote("other") {
 		t.Fatalf("expected provided remote, got %s (%v)", remote, err)
+	}
+}
+
+func TestConfig_AddRemote(t *testing.T) {
+	cfg := &Config{
+		Remotes: make(map[Remote]RemoteSelect),
+	}
+
+	remoteName := Remote("test-remote")
+	// Using Gen3 as example
+	cfg.Remotes[remoteName] = RemoteSelect{
+		Gen3: &indexd_client.Gen3Remote{},
+	}
+
+	if len(cfg.Remotes) != 1 {
+		t.Errorf("Expected 1 remote, got %d", len(cfg.Remotes))
+	}
+}
+
+func TestConfig_FindRemote(t *testing.T) {
+	remote1 := Remote("remote1")
+	remote2 := Remote("remote2")
+
+	cfg := &Config{
+		Remotes: map[Remote]RemoteSelect{
+			remote1: {Gen3: &indexd_client.Gen3Remote{}},
+			remote2: {Anvil: &anvil_client.AnvilRemote{}},
+		},
+	}
+
+	var foundName Remote
+	var foundSelect RemoteSelect
+
+	for name, sel := range cfg.Remotes {
+		if name == "remote2" {
+			foundName = name
+			foundSelect = sel
+			break
+		}
+	}
+
+	if foundName == "" {
+		t.Error("Expected to find remote2")
+	}
+	if foundSelect.Anvil == nil {
+		t.Error("Expected found remote to have Anvil config")
+	}
+}
+
+func TestRemote_Validation(t *testing.T) {
+	// IsValidRemoteType test
+	tests := []struct {
+		name    string
+		mode    string
+		isValid bool
+	}{
+		{"valid gen3", "gen3", true},
+		{"valid anvil", "anvil", true},
+		{"invalid", "foo", false},
+		{"empty", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := IsValidRemoteType(tt.mode)
+			valid := err == nil
+			if valid != tt.isValid {
+				t.Errorf("IsValidRemoteType(%q) = %v, want %v", tt.mode, valid, tt.isValid)
+			}
+		})
+	}
+}
+
+func TestConfig_MultipleRemotes(t *testing.T) {
+	cfg := &Config{
+		Remotes: make(map[Remote]RemoteSelect),
+	}
+
+	remotes := []Remote{"origin", "backup", "anvil"}
+
+	for _, r := range remotes {
+		cfg.Remotes[r] = RemoteSelect{Gen3: &indexd_client.Gen3Remote{}}
+	}
+
+	if len(cfg.Remotes) != 3 {
+		t.Errorf("Expected 3 remotes, got %d", len(cfg.Remotes))
 	}
 }

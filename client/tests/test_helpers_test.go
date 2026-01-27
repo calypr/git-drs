@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/calypr/data-client/conf"
-	indexd_client "github.com/calypr/data-client/indexd"
+	"github.com/calypr/data-client/indexd"
 	"github.com/calypr/data-client/logs"
-	"github.com/hashicorp/go-retryablehttp"
+	"github.com/calypr/data-client/request"
 )
 
 //////////////////////////
@@ -24,33 +24,23 @@ const (
 // CLIENT BUILDERS      //
 //////////////////////////
 
-// testIndexdClient creates an IndexdClient pointing to a mock server with real auth handler
-func testIndexdClient(baseURL string) *indexd_client.IndexDClient {
-	url, _ := url.Parse(baseURL)
-	return &indexd_client.IndexDClient{
-		Base:        url,
-		ProjectId:   "test-project",
-		BucketName:  "test-bucket",
-		Logger:      logs.NewNoOpLogger(),
-		AuthHandler: &indexd_client.RealAuthHandler{Cred: conf.Credential{Profile: "test-remote"}},
-		HttpClient:  &retryablehttp.Client{},
-		SConfig:     nil, // standard json doesn't use this
-	}
+// testIndexdClient creates an IndexdClient pointing to a mock server
+func testIndexdClient(baseURL string) indexd.IndexdInterface {
+	cred := &conf.Credential{APIEndpoint: baseURL, Profile: "test-remote", AccessToken: "test-token"}
+	logger, _ := logs.New("test")
+	config := conf.NewConfigure(logger.Logger)
+	req := request.NewRequestInterface(logger.Logger, cred, config)
+	return indexd.NewIndexdClient(req, cred, logger.Logger)
 }
 
 // testIndexdClientWithMockAuth creates an IndexdClient with mocked authentication for testing
 // This helper enables testing client methods without requiring Gen3 credentials or config files
-func testIndexdClientWithMockAuth(baseURL string) *indexd_client.IndexDClient {
-	url, _ := url.Parse(baseURL)
-	return &indexd_client.IndexDClient{
-		Base:        url,
-		ProjectId:   "test-project",
-		BucketName:  "test-bucket",
-		Logger:      logs.NewNoOpLogger(),
-		AuthHandler: &MockAuthHandler{},
-		HttpClient:  &retryablehttp.Client{},
-		SConfig:     nil, // standard json doesn't use this
-	}
+func testIndexdClientWithMockAuth(baseURL string) indexd.IndexdInterface {
+	cred := &conf.Credential{APIEndpoint: baseURL, Profile: "test-remote", AccessToken: "mock-token"}
+	logger, _ := logs.New("test")
+	config := conf.NewConfigure(logger.Logger)
+	req := request.NewRequestInterface(logger.Logger, cred, config)
+	return indexd.NewIndexdClient(req, cred, logger.Logger)
 }
 
 //////////////////////////

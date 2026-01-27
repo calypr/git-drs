@@ -22,12 +22,6 @@ jobs:
     - name: Restore file timestamps
       uses: chetan/git-restore-mtime-action@v2 # Restores modification times
 
-    - name: Show timestamps of files
-      run: |
-        find . -name "*.go" | xargs ls -l
-        find . -name "*.sh" | xargs ls -l
-        find . -name "*.out" | xargs ls -l
-
     - name: Check uploaded coverage files
       run: |
         tests/scripts/coverage/assert-coverage-timestamp.sh 

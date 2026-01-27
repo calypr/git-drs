@@ -19,8 +19,13 @@ jobs:
         submodules: recursive
         fetch-depth: 0 # Fetch all history for accurate timestamps
 
-    - name: Restore file timestamps
-      uses: chetan/git-restore-mtime-action@v2 # Restores modification times
+    - name: Restore file modification times
+      run: ./tests/scripts/git-restore-mtime.sh
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
 
     - name: Check uploaded coverage files
       run: |

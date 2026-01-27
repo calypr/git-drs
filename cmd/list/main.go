@@ -1,14 +1,15 @@
 package list
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
@@ -86,7 +87,7 @@ var Cmd = &cobra.Command{
 			logger.Debug("Client failed")
 			return err
 		}
-		objChan, err := client.ListObjects()
+		objChan, err := client.ListObjects(context.Background())
 		if err != nil {
 			return err
 		}
@@ -140,7 +141,7 @@ var ListProjectCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		objChan, err := client.ListObjectsByProject(args[0])
+		objChan, err := client.ListObjectsByProject(context.Background(), args[0])
 		if err != nil {
 			return err
 		}

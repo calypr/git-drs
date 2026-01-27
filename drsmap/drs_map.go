@@ -1,7 +1,5 @@
 package drsmap
 
-// Utilities to map between Git LFS files and DRS objects
-
 import (
 	"bytes"
 	"context"
@@ -15,15 +13,17 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
+	dataClient "github.com/calypr/data-client/g3client"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	localDrs "github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
-// NAMESPACE is the UUID namespace used for generating DRS UUIDs
 var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
 
 type LfsDryRunSpec struct {
@@ -76,9 +76,9 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client dataClient.Gen3Interface, bucketName string, upsert bool, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
-	drsLfsObjs, err := drs.GetDrsLfsObjects(myLogger)
+	drsLfsObjs, err := localDrs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 
 	outobjs := map[string]*drs.DRSObject{}
 	for _, sum := range sums {
-		records, err := drsClient.GetObjectByHash(sum)
+		records, err := drsClient.GetObjectByHash(context.Background(), sum)
 		if err != nil {
 			return err
 		}
@@ -128,13 +128,25 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 		}
 		if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
 			myLogger.Debug(fmt.Sprintf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name))
-			_, err = drsClient.RegisterRecord(val)
+			_, err = drsClient.RegisterRecord(context.Background(), val)
 			if err != nil {
 				return err
 			}
 
 		} else {
-			_, err = drsClient.RegisterFile(drsObjKey, nil)
+			filePath, err := GetObjectPath(projectdir.LFS_OBJS_PATH, drsObjKey)
+			if err != nil {
+				return err
+			}
+
+			_, err = upload.RegisterAndUploadFile(
+				context.Background(),
+				gen3Client,
+				val,
+				filePath,
+				bucketName,
+				upsert,
+			)
 			if err != nil {
 				return err
 			}
@@ -144,7 +156,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 }
 
 func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error {
-	objChan, err := drsClient.ListObjectsByProject(drsClient.GetProjectId())
+	objChan, err := drsClient.ListObjectsByProject(context.Background(), drsClient.GetProjectId())
 	if err != nil {
 		return err
 	}

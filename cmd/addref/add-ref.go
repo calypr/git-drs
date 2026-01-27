@@ -1,12 +1,13 @@
 package addref
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs/hash"
+	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
@@ -42,7 +43,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.GetObject(drsUri)
+		obj, err := client.GetObject(context.Background(), drsUri)
 		if err != nil {
 			return err
 		}

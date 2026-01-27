@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 
 	"github.com/bytedance/sonic"
+	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/git-drs/utils"
 )
 
 const DRS_DIR = ".git/drs"
 
-type DrsWalkFunc func(path string, d *DRSObject) error
+type DrsWalkFunc func(path string, d *drs.DRSObject) error
 
 func BaseDir() (string, error) {
 	gitTopLevel, err := utils.GitTopLevel()
@@ -31,7 +32,7 @@ func (d *dirWalker) call(path string, dir fs.DirEntry, cErr error) error {
 	if err != nil {
 		return nil
 	}
-	obj := DRSObject{}
+	obj := drs.DRSObject{}
 	err = sonic.ConfigFastest.Unmarshal(data, &obj)
 	if err != nil {
 		return err

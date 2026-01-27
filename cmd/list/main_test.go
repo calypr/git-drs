@@ -3,8 +3,8 @@ package list
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 )
 
 func TestGetChecksumPos(t *testing.T) {

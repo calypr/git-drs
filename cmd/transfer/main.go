@@ -8,9 +8,8 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	"github.com/calypr/data-client/upload"
+	"github.com/calypr/data-client/common"
 	"github.com/calypr/git-drs/client"
-	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
@@ -195,49 +194,15 @@ var Cmd = &cobra.Command{
 					continue
 				}
 				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-
-				drsObject, err := drsmap.DrsInfoFromOid(uploadMsg.Oid)
+				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, GitLFSProgressCallback(streamEncoder))
 				if err != nil {
-					errMsg := fmt.Sprintf("error getting drs object for oid %s: %v", uploadMsg.Oid, err)
-					logger.Error(errMsg)
-					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
-					continue
-				}
-
-				filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, uploadMsg.Oid)
-				if err != nil {
-					errMsg := fmt.Sprintf("error getting object path for oid %s: %v", uploadMsg.Oid, err)
-					logger.Error(errMsg)
-					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
-					continue
-				}
-
-				// Extract necessary components from drsClient (assumed to be GitDrsIdxdClient)
-				icli, ok := drsClient.(*indexdCl.GitDrsIdxdClient)
-				if !ok {
-					errMsg := fmt.Sprintf("remote client is not an *indexdCl.GitDrsIdxdClient (got %T)", drsClient)
-					logger.Error(errMsg)
-					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
-					continue
-				}
-
-				res, err := upload.RegisterAndUploadFile(
-					context.Background(),
-					icli.GetGen3Interface(),
-					drsObject,
-					filePath,
-					icli.GetBucketName(),
-					icli.GetUpsert(),
-				)
-
-				if err != nil {
-					errMsg := fmt.Sprintf("Error registering/uploading file: %v\n", err)
+					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
 					logger.Error(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
 					continue
 				}
 				// send success message back
-				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, res.Name)
+				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
 				logger.Info(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
@@ -255,11 +220,11 @@ var Cmd = &cobra.Command{
 	},
 }
 
-// GitLFSProgressCallback returns a ProgressCallback that logs progress events
-// using the provided streamEncoder. It always returns nil (no error).
+// GitLFSProgressCallback returns a ProgressCallback that sends progress events
+// to git-lfs via the streamEncoder
 func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback {
-	return func(e common.ProgressEvent) error {
-		lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
+	return func(event common.ProgressEvent) error {
+		lfs.WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
 		return nil
 	}
 }

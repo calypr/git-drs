@@ -7,9 +7,9 @@ import (
 	hash "github.com/calypr/data-client/indexd/hash"
 	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	drs "github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	localLfs "github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get all pending objects
-		pendingObjects, err := drs.GetPendingObjects(logger)
+		pendingObjects, err := localLfs.GetPendingObjects(logger)
 		if err != nil {
 			return fmt.Errorf("error reading pending objects: %v", err)
 		}

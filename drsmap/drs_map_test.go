@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	drs "github.com/calypr/data-client/indexd"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 )
 
 func setupTestRepo(t *testing.T) {

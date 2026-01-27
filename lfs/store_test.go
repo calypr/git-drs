@@ -1,4 +1,4 @@
-package drs
+package lfs
 
 import (
 	"os"
@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/indexd"
+	drs "github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/drslog"
 )
@@ -64,7 +64,7 @@ func TestGetDrsLfsObjects(t *testing.T) {
 	if err := os.MkdirAll(objectsDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
-	payload := indexd.DRSObject{
+	payload := drs.DRSObject{
 		Id:        "object-1",
 		Name:      "object-one",
 		Checksums: hash.HashInfo{SHA256: "sha-256-value"},

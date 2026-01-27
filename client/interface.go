@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 
+	"github.com/calypr/data-client/common"
 	drs "github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/s3_utils"
@@ -46,6 +47,9 @@ type DRSClient interface {
 
 	// Register a DRS object directly in indexd
 	RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error)
+
+	// Put file into object storage and obtain a DRS record pointing to it
+	RegisterFile(oid string, progressCallback common.ProgressCallback) (*drs.DRSObject, error)
 
 	// Update a DRS record and return the updated record
 	// Fields allowed: URLs, authz, name, version, description

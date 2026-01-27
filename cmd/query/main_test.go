@@ -14,7 +14,7 @@ type fakeChecksumClient struct {
 	err      error
 }
 
-func (f *fakeChecksumClient) GetObjectByHash(context.Background(), sum *hash.Checksum) ([]drs.DRSObject, error) {
+func (f *fakeChecksumClient) GetObjectByHash(ctx context.Context, sum *hash.Checksum) ([]drs.DRSObject, error) {
 	f.received = sum
 	return f.objects, f.err
 }

@@ -2,6 +2,7 @@ package indexd_client
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,11 +13,11 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	dataClient "github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
+	dataClient "github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/indexd"
-	drs "github.com/calypr/data-client/indexd"
+	drs "github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/logs"
 )
@@ -66,9 +67,9 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 				m.mu.Unlock()
 				w.WriteHeader(http.StatusOK)
 				if page == 0 {
-					_ = encoder.NewStreamEncoder(w).Encode(indexd.DRSPage{DRSObjects: []indexd.DRSObject{sampleDataClientDRSObject()}})
+					_ = encoder.NewStreamEncoder(w).Encode(drs.DRSPage{DRSObjects: []drs.DRSObject{sampleDataClientDRSObject()}})
 				} else {
-					_ = encoder.NewStreamEncoder(w).Encode(indexd.DRSPage{DRSObjects: []indexd.DRSObject{}})
+					_ = encoder.NewStreamEncoder(w).Encode(drs.DRSPage{DRSObjects: []drs.DRSObject{}})
 				}
 				return
 			}
@@ -108,24 +109,24 @@ func sampleDataClientOutputInfo() indexd.OutputInfo {
 		FileName: "file.txt",
 		URLs:     []string{"s3://bucket/key"},
 		Authz:    []string{"/programs/test/projects/proj"},
-		Hashes:   indexd.HashInfo{SHA256: "sha-256"},
+		Hashes:   hash.HashInfo{SHA256: "sha-256"},
 		Size:     123,
 	}
 }
 
-func sampleDataClientDRSObject() indexd.DRSObject {
-	return indexd.DRSObject{
+func sampleDataClientDRSObject() drs.DRSObject {
+	return drs.DRSObject{
 		Id:   "did-1",
 		Name: "file.txt",
 		Size: 123,
-		Checksums: indexd.HashInfo{
+		Checksums: hash.HashInfo{
 			SHA256: "sha-256",
 		},
-		AccessMethods: []indexd.AccessMethod{
+		AccessMethods: []drs.AccessMethod{
 			{
 				Type:           "s3",
-				AccessURL:      indexd.AccessURL{URL: "s3://bucket/key"},
-				Authorizations: &indexd.Authorizations{Value: "/programs/test/projects/proj"},
+				AccessURL:      drs.AccessURL{URL: "s3://bucket/key"},
+				Authorizations: &drs.Authorizations{Value: "/programs/test/projects/proj"},
 			},
 		},
 	}
@@ -136,7 +137,7 @@ func sampleOutputObject() indexd.OutputObject {
 		Id:   "did-1",
 		Name: "file.txt",
 		Size: 123,
-		Checksums: []indexd.Checksum{
+		Checksums: []hash.Checksum{
 			{Checksum: "sha-256", Type: hash.ChecksumTypeSHA256},
 		},
 	}
@@ -176,7 +177,7 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 
 	client := newTestClient(server)
 
-	records, err := client.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: "sha-256"})
+	records, err := client.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: "sha-256"})
 	if err != nil {
 		t.Fatalf("GetObjectByHash error: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 		t.Fatalf("unexpected records: %+v", records)
 	}
 
-	objChan, err := client.ListObjectsByProject("test-proj")
+	objChan, err := client.ListObjectsByProject(context.Background(), "test-proj")
 	if err != nil {
 		t.Fatalf("ListObjectsByProject error: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 		t.Fatalf("expected object from ListObjectsByProject")
 	}
 
-	listChan, err := client.ListObjects()
+	listChan, err := client.ListObjects(context.Background())
 	if err != nil {
 		t.Fatalf("ListObjects error: %v", err)
 	}
@@ -240,7 +241,7 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 		},
 	}
 
-	obj, err := client.RegisterRecord(drsObj)
+	obj, err := client.RegisterRecord(context.Background(), drsObj)
 	if err != nil {
 		t.Fatalf("RegisterRecord error: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 		},
 	}
 
-	_, err = client.UpdateRecord(update, "did-1")
+	_, err = client.UpdateRecord(context.Background(), update, "did-1")
 	if err != nil {
 		t.Fatalf("UpdateRecord error: %v", err)
 	}
@@ -282,7 +283,7 @@ func TestIndexdClient_GetObject(t *testing.T) {
 
 	client := newTestClient(server)
 
-	record, err := client.GetObject("did-1")
+	record, err := client.GetObject(context.Background(), "did-1")
 	if err != nil {
 		t.Fatalf("GetObject error: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestIndexdClient_GetProjectSample(t *testing.T) {
 
 	client := newTestClient(server)
 
-	sample, err := client.GetProjectSample("test-proj", 1)
+	sample, err := client.GetProjectSample(context.Background(), "test-proj", 1)
 	if err != nil {
 		t.Fatalf("GetProjectSample error: %v", err)
 	}

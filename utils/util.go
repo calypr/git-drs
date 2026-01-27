@@ -109,3 +109,16 @@ func ParseS3URL(s3url string) (string, string, error) {
 	}
 	return trimmed[:slashIndex], trimmed[slashIndex+1:], nil
 }
+
+// IsValidSHA256 checks if a string is a valid SHA-256 hash
+func IsValidSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
+}

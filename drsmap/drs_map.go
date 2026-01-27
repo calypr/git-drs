@@ -24,6 +24,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// execCommand is a variable to allow mocking in tests
+var execCommand = exec.Command
+var execCommandContext = exec.CommandContext
+
 var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
 
 type LfsDryRunSpec struct {
@@ -41,7 +45,7 @@ func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, l
 	fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
 	logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
 
-	cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
+	cmd := execCommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
 	cmd.Dir = repoDir
 
 	var stdout, stderr bytes.Buffer
@@ -317,7 +321,7 @@ func GetObjectPath(basePath string, oid string) (string, error) {
 // Returns true and file info if it's an LFS file, false otherwise
 func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
 	// Use git lfs ls-files -I to check if specific file is LFS tracked
-	cmd := exec.Command("git", "lfs", "ls-files", "-I", fileName, "--json")
+	cmd := execCommand("git", "lfs", "ls-files", "-I", fileName, "--json")
 	out, err := cmd.Output()
 	if err != nil {
 		// If git lfs ls-files returns error, the file is not LFS tracked

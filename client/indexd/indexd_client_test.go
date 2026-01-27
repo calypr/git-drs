@@ -92,6 +92,15 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 			m.mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 			return
+		case r.Method == http.MethodGet && strings.Contains(path, "/access/"):
+			// Handle GetDownloadURL: /ga4gh/drs/v1/objects/{id}/access/{access_id}
+			// Respond with AccessURL
+			resp := map[string]string{
+				"url": "https://bucket.s3.amazonaws.com/key",
+			}
+			w.WriteHeader(http.StatusOK)
+			_ = encoder.NewStreamEncoder(w).Encode(resp)
+			return
 		}
 		w.WriteHeader(http.StatusNotFound)
 	}

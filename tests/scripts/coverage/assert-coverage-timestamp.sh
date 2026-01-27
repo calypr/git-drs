@@ -18,7 +18,8 @@ fi
 max=0
 latest_go=''
 while IFS= read -r -d '' f; do
-  m=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || echo 0)
+  m_raw=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null || printf 0)
+  m=$(printf '%s\n' "$m_raw" | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+$/){print $i; exit}}')
   if [ -z "$m" ] || [ "$m" -eq 0 ]; then continue; fi
   if [ "$m" -gt "$max" ]; then
     max=$m

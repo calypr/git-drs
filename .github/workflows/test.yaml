@@ -26,7 +26,6 @@ jobs:
 
     - name: Check uploaded coverage files
       run: |
-        tests/scripts/git-restore-mtime.sh
         tests/scripts/coverage/assert-coverage-timestamp.sh 
 
     - name: Upload coverage reports as artifact

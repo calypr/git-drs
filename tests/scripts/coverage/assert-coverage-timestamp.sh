@@ -65,7 +65,7 @@ if [ -z "$unit_m" ] || [ "$unit_m" -eq 0 ]; then
   exit 1
 fi
 
-if [ "$unit_m" -gt "$max" ]; then
+if [ "$unit_m" -ge "$max" ]; then
   echo "OK: $UNIT is newer than latest .go file ($latest_go)."
   exit 0
 else

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd"
+	hash "github.com/calypr/data-client/indexd/hash"
 )
 
 func TestCreateLfsPointer(t *testing.T) {

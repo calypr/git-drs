@@ -2,12 +2,15 @@ package transfer
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
+	indexdCl "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
@@ -142,7 +145,7 @@ var Cmd = &cobra.Command{
 				logger.Info(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
 
 				// get signed url
-				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
+				accessUrl, err := drsClient.GetDownloadURL(context.Background(), downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
 					logger.Error(errMsg)
@@ -190,15 +193,49 @@ var Cmd = &cobra.Command{
 					continue
 				}
 				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid)
+
+				drsObject, err := drsmap.DrsInfoFromOid(uploadMsg.Oid)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
+					errMsg := fmt.Sprintf("error getting drs object for oid %s: %v", uploadMsg.Oid, err)
+					logger.Error(errMsg)
+					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
+					continue
+				}
+
+				filePath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, uploadMsg.Oid)
+				if err != nil {
+					errMsg := fmt.Sprintf("error getting object path for oid %s: %v", uploadMsg.Oid, err)
+					logger.Error(errMsg)
+					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
+					continue
+				}
+
+				// Extract necessary components from drsClient (assumed to be GitDrsIdxdClient)
+				icli, ok := drsClient.(*indexdCl.GitDrsIdxdClient)
+				if !ok {
+					errMsg := fmt.Sprintf("remote client is not an *indexdCl.GitDrsIdxdClient (got %T)", drsClient)
+					logger.Error(errMsg)
+					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
+					continue
+				}
+
+				res, err := upload.RegisterAndUploadFile(
+					context.Background(),
+					icli.GetGen3Interface(),
+					drsObject,
+					filePath,
+					icli.GetBucketName(),
+					icli.GetUpsert(),
+				)
+
+				if err != nil {
+					errMsg := fmt.Sprintf("Error registering/uploading file: %v\n", err)
 					logger.Error(errMsg)
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
 					continue
 				}
 				// send success message back
-				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
+				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, res.Name)
 				logger.Info(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {

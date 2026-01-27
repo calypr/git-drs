@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/calypr/git-drs/config"
@@ -51,7 +52,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// get signed url
-		accessUrl, err := drsClient.GetDownloadURL(oid)
+		accessUrl, err := drsClient.GetDownloadURL(context.Background(), oid)
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
 		}

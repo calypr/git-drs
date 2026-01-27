@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 )
 
 func CreateLfsPointer(drsObj *drs.DRSObject, dst string) error {

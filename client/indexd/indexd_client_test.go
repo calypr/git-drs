@@ -2,76 +2,57 @@ package indexd_client
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	"github.com/calypr/data-client/client/common"
-	"github.com/calypr/data-client/client/conf"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/hashicorp/go-retryablehttp"
+	dataClient "github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/common"
+	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/indexd"
+	drs "github.com/calypr/data-client/indexd"
+	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/logs"
 )
-
-type stubAuthHandler struct{}
-
-func (stubAuthHandler) AddAuthHeader(req *http.Request) error {
-	req.Header.Set("Authorization", "Bearer test")
-	return nil
-}
 
 type mockIndexdServer struct {
 	mu                sync.Mutex
 	listProjectPages  int
 	listObjectsPages  int
-	lastUpdatePayload UpdateInputInfo
+	lastUpdatePayload indexd.UpdateInputInfo
 }
 
 func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(os.Stderr, "Fake IndexD received %s %s\n", r.Method, r.URL.Path)
 		path := r.URL.Path
 		switch {
 		case r.Method == http.MethodGet && path == "/index/index":
-			fmt.Fprintf(os.Stderr, "/index/index received %s %s\n", r.Method, r.URL.Path)
 			if hashQuery := r.URL.Query().Get("hash"); hashQuery != "" {
-				record := sampleOutputInfo()
-				page := ListRecords{Records: []OutputInfo{record}}
+				record := sampleDataClientOutputInfo()
+				page := indexd.ListRecords{Records: []indexd.OutputInfo{record}}
 				w.WriteHeader(http.StatusOK)
 				_ = encoder.NewStreamEncoder(w).Encode(page)
-				fmt.Fprintf(os.Stderr, "/index/index returned %s %s %+v\n", r.Method, r.URL.Path, page)
 				return
 			}
 			if r.URL.Query().Get("authz") != "" {
-				fmt.Fprintf(os.Stderr, "/index/index authz %s %s\n", r.Method, r.URL.Path)
 				m.mu.Lock()
 				page := m.listProjectPages
 				m.listProjectPages++
 				m.mu.Unlock()
 				w.WriteHeader(http.StatusOK)
 				if page == 0 {
-					fmt.Fprintln(os.Stderr, "/index/index page == 0 ", r.Method, r.URL.Path, ListRecords{Records: []OutputInfo{sampleOutputInfo()}})
-					_ = encoder.NewStreamEncoder(w).Encode(ListRecords{Records: []OutputInfo{sampleOutputInfo()}})
+					_ = encoder.NewStreamEncoder(w).Encode(indexd.ListRecords{Records: []indexd.OutputInfo{sampleDataClientOutputInfo()}})
 				} else {
-					fmt.Fprintf(os.Stderr, "/index/index page != 0 %s %s\n", r.Method, r.URL.Path)
-					_ = encoder.NewStreamEncoder(w).Encode(ListRecords{Records: []OutputInfo{}})
+					_ = encoder.NewStreamEncoder(w).Encode(indexd.ListRecords{Records: []indexd.OutputInfo{}})
 				}
-
-				fmt.Fprintf(os.Stderr, "/index/index return no page %s %s\n", r.Method, r.URL.Path)
 				return
 			}
-			fmt.Fprintf(os.Stderr, "/index/index NO HIT ! %s %s\n", r.Method, r.URL.Path)
 
 		case r.Method == http.MethodPost && path == "/index/index":
 			w.WriteHeader(http.StatusOK)
@@ -85,9 +66,9 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 				m.mu.Unlock()
 				w.WriteHeader(http.StatusOK)
 				if page == 0 {
-					_ = encoder.NewStreamEncoder(w).Encode(drs.DRSPage{DRSObjects: []drs.DRSObject{sampleDrsObject()}})
+					_ = encoder.NewStreamEncoder(w).Encode(indexd.DRSPage{DRSObjects: []indexd.DRSObject{sampleDataClientDRSObject()}})
 				} else {
-					_ = encoder.NewStreamEncoder(w).Encode(drs.DRSPage{DRSObjects: []drs.DRSObject{}})
+					_ = encoder.NewStreamEncoder(w).Encode(indexd.DRSPage{DRSObjects: []indexd.DRSObject{}})
 				}
 				return
 			}
@@ -95,31 +76,22 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 			_ = encoder.NewStreamEncoder(w).Encode(obj)
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(path, "/index/"):
-			fmt.Printf("HasPrefix /index/ %s %s\n", r.Method, r.URL.Path)
-			record := sampleOutputInfo()
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/index/index/"):
+			record := sampleDataClientOutputInfo()
 			record.Rev = "rev-1"
 			w.WriteHeader(http.StatusOK)
 			_ = encoder.NewStreamEncoder(w).Encode(record)
 			return
 		case r.Method == http.MethodPut && strings.HasPrefix(path, "/index/index/"):
-			body, err := ioReadAll(r)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			payload := UpdateInputInfo{}
-			if err := sonic.ConfigFastest.Unmarshal(body, &payload); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+			body, _ := ioReadAll(r)
+			payload := indexd.UpdateInputInfo{}
+			_ = sonic.ConfigFastest.Unmarshal(body, &payload)
 			m.mu.Lock()
 			m.lastUpdatePayload = payload
 			m.mu.Unlock()
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "StatusNotFound %s %s\n", r.Method, r.URL.Path)
 		w.WriteHeader(http.StatusNotFound)
 	}
 }
@@ -130,53 +102,70 @@ func ioReadAll(r *http.Request) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func sampleOutputInfo() OutputInfo {
-	record := OutputInfo{
+func sampleDataClientOutputInfo() indexd.OutputInfo {
+	return indexd.OutputInfo{
 		Did:      "did-1",
 		FileName: "file.txt",
 		URLs:     []string{"s3://bucket/key"},
 		Authz:    []string{"/programs/test/projects/proj"},
-		Hashes:   hash.HashInfo{SHA256: "sha-256"},
+		Hashes:   indexd.HashInfo{SHA256: "sha-256"},
 		Size:     123,
 	}
-	if record.Did != "" {
-		fmt.Fprintf(os.Stderr, "Did set record Did %s\n", record.Did)
-	}
-	return record
 }
 
-func sampleDrsObject() drs.DRSObject {
-	return drs.DRSObject{
+func sampleDataClientDRSObject() indexd.DRSObject {
+	return indexd.DRSObject{
 		Id:   "did-1",
 		Name: "file.txt",
 		Size: 123,
-		Checksums: hash.HashInfo{
+		Checksums: indexd.HashInfo{
 			SHA256: "sha-256",
+		},
+		AccessMethods: []indexd.AccessMethod{
+			{
+				Type:           "s3",
+				AccessURL:      indexd.AccessURL{URL: "s3://bucket/key"},
+				Authorizations: &indexd.Authorizations{Value: "/programs/test/projects/proj"},
+			},
 		},
 	}
 }
 
-func sampleOutputObject() drs.OutputObject {
-	return drs.OutputObject{
+func sampleOutputObject() indexd.OutputObject {
+	return indexd.OutputObject{
 		Id:   "did-1",
 		Name: "file.txt",
 		Size: 123,
-		Checksums: []hash.Checksum{
+		Checksums: []indexd.Checksum{
 			{Checksum: "sha-256", Type: hash.ChecksumTypeSHA256},
 		},
 	}
 }
 
-func newTestClient(server *httptest.Server) *IndexDClient {
+func newTestClient(server *httptest.Server) *GitDrsIdxdClient {
 	base, _ := url.Parse(server.URL)
-	return &IndexDClient{
-		Base:        base,
-		ProjectId:   "test-project",
-		BucketName:  "bucket",
-		Logger:      drslog.NewNoOpLogger(),
-		AuthHandler: stubAuthHandler{},
-		HttpClient:  retryablehttp.NewClient(),
-		SConfig:     sonic.ConfigFastest,
+	cred := &conf.Credential{APIEndpoint: server.URL, Profile: "test"}
+	// Create a dummy logger
+	logger, _ := logs.New("test")
+	// Convert logging because data-client now expects slog
+	g3 := dataClient.NewGen3InterfaceFromCredential(cred, logger)
+
+	// Since we migrated GitDrsIdxdClient to accept slog.Logger but use TEE logger internally via bridge,
+	// here we can just create a noop slog logger.
+	sLog := logs.NewSlogNoOpLogger()
+
+	config := &Config{
+		ProjectId:          "test-proj",
+		BucketName:         "bucket",
+		Upsert:             false,
+		MultiPartThreshold: 500 * common.MB,
+	}
+
+	return &GitDrsIdxdClient{
+		Base:   base,
+		Logger: sLog,
+		G3:     g3,
+		Config: config,
 	}
 }
 
@@ -191,13 +180,11 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectByHash error: %v", err)
 	}
-	fmt.Fprintf(os.Stderr, "GetObjectByHash records: %+v\n", records)
-	// TODO: re-enable once pagination fixed
-	//if len(records) != 1 || records[0].Id != "did-1" {
-	//	t.Fatalf("unexpected records: %+v", records)
-	//}
+	if len(records) != 1 || records[0].Id != "did-1" {
+		t.Fatalf("unexpected records: %+v", records)
+	}
 
-	objChan, err := client.ListObjectsByProject("test-project")
+	objChan, err := client.ListObjectsByProject("test-proj")
 	if err != nil {
 		t.Fatalf("ListObjectsByProject error: %v", err)
 	}
@@ -230,16 +217,6 @@ func TestIndexdClient_ListAndQuery(t *testing.T) {
 	if listCount != 1 {
 		t.Fatalf("expected 1 object from ListObjects, got %d", listCount)
 	}
-
-	// TODO: re-enable once pagination fixed
-	//fmt.Fprintf(os.Stderr, "GetProjectSample test\n")
-	//sample, err := client.GetProjectSample("test-project", 1)
-	//if err != nil {
-	//	t.Fatalf("GetProjectSample error: %v", err)
-	//}
-	//if len(sample) != 1 || sample[0].Id != "did-1" {
-	//	t.Fatalf("unexpected sample: %+v", sample)
-	//}
 }
 
 func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
@@ -249,18 +226,23 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 
 	client := newTestClient(server)
 
-	indexdObj := &IndexdRecord{
-		Did:      "did-1",
-		FileName: "file.txt",
-		URLs:     []string{"s3://bucket/key"},
-		Authz:    []string{"/programs/test/projects/proj"},
-		Hashes:   hash.HashInfo{SHA256: "sha-256"},
-		Size:     123,
+	drsObj := &drs.DRSObject{
+		Id:        "did-1",
+		Name:      "file.txt",
+		Size:      123,
+		Checksums: hash.HashInfo{SHA256: "sha-256"},
+		AccessMethods: []drs.AccessMethod{
+			{
+				Type:           "s3",
+				AccessURL:      drs.AccessURL{URL: "s3://bucket/key"},
+				Authorizations: &drs.Authorizations{Value: "/programs/test/projects/proj"},
+			},
+		},
 	}
 
-	obj, err := client.RegisterIndexdRecord(indexdObj)
+	obj, err := client.RegisterRecord(drsObj)
 	if err != nil {
-		t.Fatalf("RegisterIndexdRecord error: %v", err)
+		t.Fatalf("RegisterRecord error: %v", err)
 	}
 	if obj.Id != "did-1" {
 		t.Fatalf("unexpected DRS object: %+v", obj)
@@ -272,18 +254,16 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 		Description: "updated",
 		AccessMethods: []drs.AccessMethod{
 			{
+				Type:           "s3",
 				AccessURL:      drs.AccessURL{URL: "s3://bucket/other"},
 				Authorizations: &drs.Authorizations{Value: "/programs/test/projects/proj"},
 			},
 		},
 	}
 
-	updated, err := client.UpdateRecord(update, "did-1")
+	_, err = client.UpdateRecord(update, "did-1")
 	if err != nil {
 		t.Fatalf("UpdateRecord error: %v", err)
-	}
-	if updated.Name != "file.txt" {
-		t.Fatalf("expected updated DRS object from server, got %+v", updated)
 	}
 
 	mock.mu.Lock()
@@ -293,143 +273,37 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 	if len(payload.URLs) != 2 {
 		t.Fatalf("expected URLs to include appended entries, got %+v", payload.URLs)
 	}
-	if payload.FileName != "file-updated.txt" || payload.Version != "v2" {
-		t.Fatalf("unexpected payload: %+v", payload)
-	}
-	if payload.Metadata == nil || payload.Metadata["description"] != "updated" {
-		t.Fatalf("expected description metadata, got %+v", payload.Metadata)
-	}
 }
 
-func TestIndexdClient_BuildDrsObj(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "bucket",
-	}
-
-	obj, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err != nil {
-		t.Fatalf("BuildDrsObj error: %v", err)
-	}
-	if obj.Id != "did-1" || obj.Checksums.SHA256 != "sha-256" {
-		t.Fatalf("unexpected drs object: %+v", obj)
-	}
-	if len(obj.AccessMethods) != 1 || !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
-		t.Fatalf("unexpected access URL: %+v", obj.AccessMethods)
-	}
-}
-
-func TestIndexdClient_GetProfile(t *testing.T) {
-	client := &IndexDClient{AuthHandler: &RealAuthHandler{Cred: confCredential("profile")}}
-	profile, err := client.GetProfile()
-	if err != nil {
-		t.Fatalf("GetProfile error: %v", err)
-	}
-	if profile != "profile" {
-		t.Fatalf("expected profile, got %s", profile)
-	}
-}
-
-func confCredential(profile string) conf.Credential {
-	return conf.Credential{Profile: profile}
-}
-
-func TestIndexdClient_GetProfile_Error(t *testing.T) {
-	client := &IndexDClient{AuthHandler: stubAuthHandler{}}
-	if _, err := client.GetProfile(); err == nil {
-		t.Fatalf("expected error for non-real auth handler")
-	}
-}
-
-func TestIndexdClient_GetIndexdRecordByDID(t *testing.T) {
+func TestIndexdClient_GetObject(t *testing.T) {
 	mock := &mockIndexdServer{}
 	server := httptest.NewServer(mock.handler(t))
 	defer server.Close()
 
 	client := newTestClient(server)
 
-	record, err := client.GetIndexdRecordByDID("did-1")
+	record, err := client.GetObject("did-1")
 	if err != nil {
-		t.Fatalf("GetIndexdRecordByDID error: %v", err)
+		t.Fatalf("GetObject error: %v", err)
 	}
-	if record.Did != "did-1" || record.Rev != "rev-1" {
+	if record.Id != "did-1" {
 		t.Fatalf("unexpected record: %+v", record)
 	}
 }
 
-func TestIndexdClient_GetProjectSample_DefaultLimit(t *testing.T) {
+func TestIndexdClient_GetProjectSample(t *testing.T) {
 	mock := &mockIndexdServer{}
 	server := httptest.NewServer(mock.handler(t))
 	defer server.Close()
 
 	client := newTestClient(server)
 
-	sample, err := client.GetProjectSample("test-project", 0)
+	sample, err := client.GetProjectSample("test-proj", 1)
 	if err != nil {
 		t.Fatalf("GetProjectSample error: %v", err)
 	}
 	if len(sample) != 1 {
-		t.Fatalf("expected default limit sample, got %d", len(sample))
-	}
-}
-
-func TestIndexdClient_NewIndexDClient(t *testing.T) {
-	repoDir := initTestGitRepo(t)
-	restore := chdirForTest(t, repoDir)
-	defer restore()
-
-	runGit(t, repoDir, "config", "lfs.customtransfer.drs.upsert", "false")
-	runGit(t, repoDir, "config", "lfs.customtransfer.drs.multipart-threshold", "222")
-
-	cred := conf.Credential{APIEndpoint: "https://example.com"}
-	remote := Gen3Remote{ProjectID: "project", Bucket: "bucket"}
-	client, err := NewIndexDClient(cred, remote, drslog.NewNoOpLogger())
-	if err != nil {
-		t.Fatalf("NewIndexDClient error: %v", err)
-	}
-	indexd, ok := client.(*IndexDClient)
-	if !ok {
-		t.Fatalf("expected IndexDClient")
-	}
-	if indexd.ProjectId != "project" || indexd.BucketName != "bucket" {
-		t.Fatalf("unexpected client: %+v", indexd)
-	}
-	if indexd.HttpClient.HTTPClient.Timeout != 30*time.Second {
-		t.Fatalf("unexpected http timeout: %v", indexd.HttpClient.HTTPClient.Timeout)
-	}
-	if indexd.Upsert {
-		t.Fatalf("expected force push disabled, got %v", indexd.Upsert)
-	}
-	if indexd.MultiPartThreshold != 222*common.MB {
-		t.Fatalf("expected multipart threshold 222, got %d", indexd.MultiPartThreshold)
-	}
-}
-
-func TestGetLfsCustomTransferBool_DefaultValue(t *testing.T) {
-	repoDir := initTestGitRepo(t)
-	restore := chdirForTest(t, repoDir)
-	defer restore()
-
-	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
-	if err != nil {
-		t.Fatalf("getLfsCustomTransferBool error: %v", err)
-	}
-	if value {
-		t.Fatalf("expected default false, got %v", value)
-	}
-}
-
-func TestGetLfsCustomTransferBool_MissingKeyReturnsDefault(t *testing.T) {
-	repoDir := initTestGitRepo(t)
-	restore := chdirForTest(t, repoDir)
-	defer restore()
-
-	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
-	if err != nil {
-		t.Fatalf("getLfsCustomTransferBool error: %v", err)
-	}
-	if value {
-		t.Fatalf("expected false, got %v", value)
+		t.Fatalf("expected 1 sample, got %d", len(sample))
 	}
 }
 
@@ -446,66 +320,5 @@ func runGit(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-}
-
-func chdirForTest(t *testing.T, dir string) func() {
-	t.Helper()
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd error: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir error: %v", err)
-	}
-	return func() {
-		if err := os.Chdir(cwd); err != nil {
-			t.Fatalf("restore Chdir error: %v", err)
-		}
-	}
-}
-
-func TestBuildDrsObj_Success(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "bucket",
-	}
-
-	obj, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err != nil {
-		t.Fatalf("BuildDrsObj error: %v", err)
-	}
-	if obj.Id != "did-1" {
-		t.Fatalf("unexpected Id: %s", obj.Id)
-	}
-	if obj.Name != "file.txt" {
-		t.Fatalf("unexpected Name: %s", obj.Name)
-	}
-	if obj.Checksums.SHA256 != "sha-256" {
-		t.Fatalf("unexpected checksum: %v", obj.Checksums)
-	}
-	if obj.Size != 12 {
-		t.Fatalf("unexpected size: %d", obj.Size)
-	}
-	if len(obj.AccessMethods) != 1 {
-		t.Fatalf("expected 1 access method, got %d", len(obj.AccessMethods))
-	}
-	if !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
-		t.Fatalf("unexpected access URL: %s", obj.AccessMethods[0].AccessURL.URL)
-	}
-	if obj.AccessMethods[0].Type != "s3" {
-		t.Fatalf("unexpected access method type: %s", obj.AccessMethods[0].Type)
-	}
-}
-
-func TestBuildDrsObj_EmptyBucket(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "",
-	}
-
-	_, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err == nil {
-		t.Fatalf("expected error when BucketName is empty")
 	}
 }

@@ -68,14 +68,13 @@ var Cmd = &cobra.Command{
 			// Print warning to stderr and return success (exit 0)
 			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
 			myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
-			return nil
+			// Check for GitDrsIdxdClient
 		}
-
-		dc, ok := cli.(*indexd_client.IndexDClient)
+		dc, ok := cli.(*indexd_client.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("cli is not IndexdClient: %T", cli)
 		}
-		myLogger.Debug(fmt.Sprintf("Current server: %s", dc.ProjectId))
+		myLogger.Debug(fmt.Sprintf("Current server: %s", dc.Config.ProjectId))
 
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")

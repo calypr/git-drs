@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/calypr/data-client/client/conf"
+	"github.com/calypr/data-client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -56,7 +56,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
-	configure := conf.NewConfigure(drslog.AsStdLogger(logg))
+	configure := conf.NewConfigure(logg)
 	switch {
 	case fenceToken != "":
 		accessToken = fenceToken

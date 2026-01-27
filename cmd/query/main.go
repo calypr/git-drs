@@ -1,12 +1,13 @@
 package query
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/bytedance/sonic"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 	conf "github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,7 @@ var checksum = false
 var pretty = false
 
 type checksumClient interface {
-	GetObjectByHash(hash *hash.Checksum) ([]drs.DRSObject, error)
+	GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error)
 }
 
 func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, error) {
@@ -56,7 +57,7 @@ func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, e
 		checksumType = hash.ChecksumTypeSHA512
 	}
 
-	return client.GetObjectByHash(&hash.Checksum{
+	return client.GetObjectByHash(context.Background(), &hash.Checksum{
 		Checksum: checksum,
 		Type:     checksumType,
 	})
@@ -106,7 +107,7 @@ var Cmd = &cobra.Command{
 				}
 			}
 		} else {
-			obj, err = client.GetObject(args[0])
+			obj, err = client.GetObject(context.Background(), args[0])
 			if err != nil {
 				return err
 			}

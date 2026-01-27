@@ -1,11 +1,12 @@
 package delete
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs/hash"
+	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/utils"
@@ -52,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+		records, err := drsClient.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -90,7 +91,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(oid)
+		err = drsClient.DeleteRecord(context.Background(), oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

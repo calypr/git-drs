@@ -1,6 +1,7 @@
 package deleteproject
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -43,14 +44,14 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Cast to IndexDClient to access GetProjectSample
-		indexdClient, ok := drsClient.(*indexdCl.IndexDClient)
+		// Cast to GitDrsIdxdClient to access GetProjectSample
+		indexdClient, ok := drsClient.(*indexdCl.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("client is not an IndexDClient, cannot proceed with delete-project")
 		}
 
 		// Get a sample record to show the user what will be deleted
-		sampleRecords, err := indexdClient.GetProjectSample(projectId, 1)
+		sampleRecords, err := indexdClient.GetProjectSample(context.Background(), projectId, 1)
 		if err != nil {
 			return fmt.Errorf("error getting sample records for project %s: %v", projectId, err)
 		}
@@ -89,7 +90,7 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		err = drsClient.DeleteRecordsByProject(projectId)
+		err = drsClient.DeleteRecordsByProject(context.Background(), projectId)
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}

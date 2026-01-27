@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
+	drs "github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/git-drs/projectdir"
 )
 
@@ -54,8 +55,8 @@ func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) {
 	return objects, nil
 }
 
-func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) {
-	objects := map[string]*DRSObject{}
+func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
+	objects := map[string]*drs.DRSObject{}
 	objectsDir := projectdir.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		logger.Debug(fmt.Sprintf("DRS objects directory not found: %s", objectsDir))
@@ -84,7 +85,7 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) {
 			logger.Error(fmt.Sprintf("Error reading file %s: %v", path, err))
 			return err
 		}
-		var drsObject DRSObject
+		var drsObject drs.DRSObject
 		if err := sonic.ConfigFastest.Unmarshal(data, &drsObject); err != nil {
 			logger.Error(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
 			return nil

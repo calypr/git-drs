@@ -1,10 +1,11 @@
 package query
 
 import (
+	"context"
 	"testing"
 
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 )
 
 type fakeChecksumClient struct {
@@ -13,7 +14,7 @@ type fakeChecksumClient struct {
 	err      error
 }
 
-func (f *fakeChecksumClient) GetObjectByHash(sum *hash.Checksum) ([]drs.DRSObject, error) {
+func (f *fakeChecksumClient) GetObjectByHash(context.Background(), sum *hash.Checksum) ([]drs.DRSObject, error) {
 	f.received = sum
 	return f.objects, f.err
 }

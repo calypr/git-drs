@@ -1,6 +1,7 @@
 package transferref
 
 import (
+	"context"
 	"bufio"
 	"fmt"
 	"os"
@@ -226,7 +227,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 	if drsUri == "" {
 		return "", fmt.Errorf("error: file %s does not contain a valid DRS URI in the second line", filePath)
 	}
-	drsObj, err := drsClient.GetObject(drsUri)
+	drsObj, err := drsClient.GetObject(context.Background(), drsUri)
 	if err != nil {
 		return "", fmt.Errorf("error fetching DRS object for URI %s: %v", drsUri, err)
 	}

@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // progressReader wraps an io.ReadCloser and periodically writes progress to stderr.
@@ -94,6 +97,39 @@ func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, e
 	raw := strings.TrimSpace(input.S3URL)
 	if raw == "" {
 		return nil, fmt.Errorf("AgentFetchReader: InspectInput.S3URL is empty")
+	}
+
+	useSignedFetch := strings.TrimSpace(input.AWSAccessKey) != "" ||
+		strings.TrimSpace(input.AWSSecretKey) != "" ||
+		strings.TrimSpace(input.AWSRegion) != ""
+	if useSignedFetch {
+		if strings.TrimSpace(input.AWSAccessKey) == "" || strings.TrimSpace(input.AWSSecretKey) == "" || strings.TrimSpace(input.AWSRegion) == "" {
+			return nil, fmt.Errorf("AgentFetchReader: AWSAccessKey, AWSSecretKey, and AWSRegion are required for signed fetch")
+		}
+
+		bucket, key, err := parseS3URL(raw)
+		if err != nil {
+			return nil, fmt.Errorf("AgentFetchReader: parse s3 url %q: %w", raw, err)
+		}
+
+		s3Client, err := newS3Client(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("AgentFetchReader: init s3 client: %w", err)
+		}
+
+		out, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("AgentFetchReader: s3 GetObject failed (bucket=%q key=%q): %w", bucket, key, err)
+		}
+		if out.Body == nil {
+			return nil, fmt.Errorf("AgentFetchReader: response body is nil for s3://%s/%s", bucket, key)
+		}
+
+		label := fmt.Sprintf("fetch s3://%s/%s", bucket, key)
+		return newProgressReader(out.Body, label), nil
 	}
 
 	u, err := url.Parse(raw)

@@ -1,4 +1,4 @@
-package transferref
+package transferref_test
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/projectdir"
 )
@@ -64,7 +65,7 @@ func TestTransferRefCmd_Init(t *testing.T) {
 	}()
 
 	// Execute RunE via Cmd
-	err := Cmd.RunE(Cmd, []string{})
+	err := transferref.Cmd.RunE(transferref.Cmd, []string{})
 	w.Close()
 
 	if err != nil {
@@ -114,7 +115,7 @@ func TestTransferRefCmd_Download(t *testing.T) {
 		wIn.Close()
 	}()
 
-	err := Cmd.RunE(Cmd, []string{})
+	err := transferref.Cmd.RunE(transferref.Cmd, []string{})
 	w.Close()
 
 	if err != nil {

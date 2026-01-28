@@ -1,8 +1,8 @@
 package transferref
 
 import (
-	"context"
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"

@@ -2,47 +2,38 @@ package list
 
 import (
 	"testing"
+
+	"github.com/calypr/git-drs/internal/testutils"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestListCommand_Args(t *testing.T) {
-	tests := []struct {
-		name string
-		args []string
-	}{
-		{"no args", []string{}},
-		{"with project", []string{"project1"}},
-		{"with flags", []string{"-v", "project1"}},
-	}
+func TestListCmdArgs(t *testing.T) {
+	err := Cmd.Args(Cmd, []string{})
+	assert.NoError(t, err)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if len(tt.args) >= 0 {
-				t.Logf("Args count: %d", len(tt.args))
-			}
-		})
-	}
+	err = Cmd.Args(Cmd, []string{"extra"})
+	assert.Error(t, err)
 }
 
-func TestListCommand_Flags(t *testing.T) {
-	flags := []string{"-v", "--verbose", "-h", "--help"}
+func TestListProjectCmdArgs(t *testing.T) {
+	err := ListProjectCmd.Args(ListProjectCmd, []string{"project-id"})
+	assert.NoError(t, err)
 
-	for _, flag := range flags {
-		t.Run(flag, func(t *testing.T) {
-			if len(flag) > 0 {
-				t.Logf("Flag: %s", flag)
-			}
-		})
-	}
+	err = ListProjectCmd.Args(ListProjectCmd, []string{})
+	assert.Error(t, err)
 }
 
-func TestListCommand_ProjectValidation(t *testing.T) {
-	projects := []string{"project1", "project-2", "project_3"}
+func TestListRun_Error(t *testing.T) {
+	_ = testutils.SetupTestGitRepo(t)
+	// No config
+	err := Cmd.RunE(Cmd, []string{})
+	assert.Error(t, err)
+}
 
-	for _, proj := range projects {
-		t.Run(proj, func(t *testing.T) {
-			if len(proj) > 0 {
-				t.Logf("Project: %s", proj)
-			}
-		})
-	}
+func TestListRun_InvalidRemote(t *testing.T) {
+	tmpDir := testutils.SetupTestGitRepo(t)
+	testutils.CreateDefaultTestConfig(t, tmpDir)
+	remote = "invalid"
+	err := Cmd.RunE(Cmd, []string{})
+	assert.Error(t, err)
 }

@@ -72,6 +72,7 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 	t.Helper()
 
 	testConfig := &config.Config{
+		DefaultRemote: config.Remote(config.ORIGIN),
 		Remotes: map[config.Remote]config.RemoteSelect{
 			config.Remote(config.ORIGIN): {
 				Gen3: &indexd.Gen3Remote{

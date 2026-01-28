@@ -1,4 +1,4 @@
-package deleteproject_test
+package deleteproject
 
 import (
 	"testing"

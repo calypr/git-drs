@@ -1,4 +1,4 @@
-package transfer_test
+package transfer
 
 import (
 	"testing"

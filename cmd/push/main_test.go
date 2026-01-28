@@ -1,4 +1,4 @@
-package push_test
+package push
 
 import (
 	"testing"

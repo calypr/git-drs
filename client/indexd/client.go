@@ -1,4 +1,4 @@
-package indexd_client
+package indexd
 
 import (
 	"context"
@@ -9,12 +9,14 @@ import (
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
-	dataClient "github.com/calypr/data-client/g3client"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/utils"
 )
 
 // Config holds configuration parameters for the GitDrsIdxdClient.
@@ -28,7 +30,7 @@ type Config struct {
 type GitDrsIdxdClient struct {
 	Base   *url.URL
 	Logger *slog.Logger
-	G3     dataClient.Gen3Interface
+	G3     g3client.Gen3Interface
 	Config *Config
 }
 
@@ -53,7 +55,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	// Note: closer is ignored here
 	_ = closer
 
-	g3 := dataClient.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
+	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
 
 	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
@@ -96,27 +98,58 @@ func (cl *GitDrsIdxdClient) ListObjectsByProject(ctx context.Context, projectId 
 	return cl.G3.Indexd().ListObjectsByProject(ctx, projectId)
 }
 
-func (cl *GitDrsIdxdClient) GetDownloadURL(ctx context.Context, did string) (*drs.AccessURL, error) {
-	// Delegate fully to data-client if possible?
-	// data-client has GetDownloadURL but it might need accessType.
-	// The wrapper logic here to get object first to find accessType is specific logic.
-	// Ideally data-client's GetDownloadURL handles this or we keep this logic here.
+func (cl *GitDrsIdxdClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
+	cl.Logger.Debug(fmt.Sprintf("Try to get download url for file OID %s", oid))
 
-	// First get the object to find access methods
-	obj, err := cl.GetObject(ctx, did)
+	// get the DRS object using the OID
+	records, err := cl.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+	if err != nil {
+		cl.Logger.Debug(fmt.Sprintf("error getting DRS object for OID %s: %s", oid, err))
+		return nil, fmt.Errorf("error getting DRS object for OID %s: %v", oid, err)
+	}
+	return cl.getDownloadURLFromRecords(ctx, oid, records)
+}
+
+func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
+	if len(records) == 0 {
+		cl.Logger.Debug(fmt.Sprintf("no DRS object found for OID %s", oid))
+		return nil, fmt.Errorf("no DRS object found for OID %s", oid)
+	}
+
+	// Find a record that matches the client's project ID
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.Config.ProjectId)
+	if err != nil {
+		cl.Logger.Debug(fmt.Sprintf("error finding matching record for project %s: %s", cl.Config.ProjectId, err))
+		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.Config.ProjectId, err)
+	}
+	if matchingRecord == nil {
+		cl.Logger.Debug(fmt.Sprintf("no matching record found for project %s", cl.Config.ProjectId))
+		return nil, fmt.Errorf("no matching record found for project %s", cl.Config.ProjectId)
+	}
+
+	cl.Logger.Debug(fmt.Sprintf("Matching record: %#v for oid %s", matchingRecord, oid))
+	drsObj := matchingRecord
+
+	// Check if access methods exist
+	if len(drsObj.AccessMethods) == 0 {
+		cl.Logger.Debug(fmt.Sprintf("no access methods available for DRS object %s", drsObj.Id))
+		return nil, fmt.Errorf("no access methods available for DRS object %s", drsObj.Id)
+	}
+
+	// naively get access ID from splitting first path into :
+	accessType := drsObj.AccessMethods[0].Type
+	if accessType == "" {
+		cl.Logger.Debug(fmt.Sprintf("no accessType found in access method for DRS object %v", drsObj.AccessMethods[0]))
+		return nil, fmt.Errorf("no accessType found in access method for DRS object %v", drsObj.AccessMethods[0])
+	}
+	did := drsObj.Id
+
+	accessUrl, err := cl.G3.Indexd().GetDownloadURL(ctx, did, accessType)
 	if err != nil {
 		return nil, err
 	}
-	if len(obj.AccessMethods) == 0 {
-		return nil, fmt.Errorf("no access methods for %s", did)
-	}
 
-	accessType := obj.AccessMethods[0].Type
-	res, err := cl.G3.Indexd().GetDownloadURL(ctx, did, accessType)
-	if err != nil {
-		return nil, err
-	}
-	return &drs.AccessURL{URL: res.URL, Headers: res.Headers}, nil
+	return &drs.AccessURL{URL: accessUrl.URL, Headers: accessUrl.Headers}, nil
 }
 
 func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Checksum) ([]drs.DRSObject, error) {
@@ -124,14 +157,15 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 	if err != nil {
 		return nil, err
 	}
-	out := make([]drs.DRSObject, len(res))
-	for i, o := range res {
-		out[i] = o
-	}
+
 	// Filter by project ID logic is git-drs specific business logic (ensure we only see our project's files)
-	resourcePath, _ := drs.ProjectToResource(cl.Config.ProjectId)
+	resourcePath, err := utils.ProjectToResource(cl.Config.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
 	filtered := make([]drs.DRSObject, 0)
-	for _, o := range out {
+	for _, o := range res {
 		found := false
 		for _, am := range o.AccessMethods {
 			if am.Authorizations != nil && am.Authorizations.Value == resourcePath {
@@ -170,7 +204,7 @@ func (c *GitDrsIdxdClient) BuildDrsObj(fileName string, checksum string, size in
 	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.ProjectId)
 }
 
-func (cl *GitDrsIdxdClient) GetGen3Interface() dataClient.Gen3Interface {
+func (cl *GitDrsIdxdClient) GetGen3Interface() g3client.Gen3Interface {
 	return cl.G3
 }
 

@@ -13,12 +13,12 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	dataClient "github.com/calypr/data-client/g3client"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
-	localLfs "github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -80,9 +80,9 @@ type LfsFileInfo struct {
 	Version    string `json:"version"`
 }
 
-func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client dataClient.Gen3Interface, bucketName string, upsert bool, myLogger *slog.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client g3client.Gen3Interface, bucketName string, upsert bool, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
-	drsLfsObjs, err := localLfs.GetDrsLfsObjects(myLogger)
+	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
 	}

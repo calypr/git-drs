@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/stretchr/testify/require"
@@ -74,7 +74,7 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 	testConfig := &config.Config{
 		Remotes: map[config.Remote]config.RemoteSelect{
 			config.Remote(config.ORIGIN): {
-				Gen3: &indexd_client.Gen3Remote{
+				Gen3: &indexd.Gen3Remote{
 					Endpoint:  "https://test.gen3.org",
 					ProjectID: "test-project",
 					Bucket:    "test",

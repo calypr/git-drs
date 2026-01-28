@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
@@ -70,7 +70,7 @@ var Cmd = &cobra.Command{
 			myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
 			// Check for GitDrsIdxdClient
 		}
-		dc, ok := cli.(*indexd_client.GitDrsIdxdClient)
+		dc, ok := cli.(*indexd.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("cli is not IndexdClient: %T", cli)
 		}

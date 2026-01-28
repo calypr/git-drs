@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/hash"
 )
 
 func TestCreateLfsPointer(t *testing.T) {

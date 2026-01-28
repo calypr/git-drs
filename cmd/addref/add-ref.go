@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"

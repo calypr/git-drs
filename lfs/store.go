@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	drs "github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/git-drs/projectdir"
 )
 

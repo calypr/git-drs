@@ -1,4 +1,4 @@
-package indexd_client
+package indexd
 
 import (
 	"log/slog"

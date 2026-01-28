@@ -1,4 +1,4 @@
-package indexd_client
+package indexd
 
 import (
 	"bytes"
@@ -15,10 +15,10 @@ import (
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
-	dataClient "github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/indexd"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/logs"
 )
 
@@ -158,7 +158,7 @@ func newTestClient(server *httptest.Server) *GitDrsIdxdClient {
 	// Create a dummy logger
 	logger, _ := logs.New("test")
 	// Convert logging because data-client now expects slog
-	g3 := dataClient.NewGen3InterfaceFromCredential(cred, logger)
+	g3 := g3client.NewGen3InterfaceFromCredential(cred, logger)
 
 	// Since we migrated GitDrsIdxdClient to accept slog.Logger but use TEE logger internally via bridge,
 	// here we can just create a noop slog logger.

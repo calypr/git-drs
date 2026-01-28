@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
-	conf "github.com/calypr/git-drs/config"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
@@ -78,7 +78,7 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
-		config, err := conf.LoadConfig()
+		config, err := config.LoadConfig()
 		if err != nil {
 			return err
 		}

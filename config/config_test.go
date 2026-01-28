@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	anvil_client "github.com/calypr/git-drs/client/anvil"
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"gopkg.in/yaml.v3"
 )
 
@@ -131,7 +131,7 @@ func TestConfig_AddRemote(t *testing.T) {
 	remoteName := Remote("test-remote")
 	// Using Gen3 as example
 	cfg.Remotes[remoteName] = RemoteSelect{
-		Gen3: &indexd_client.Gen3Remote{},
+		Gen3: &indexd.Gen3Remote{},
 	}
 
 	if len(cfg.Remotes) != 1 {
@@ -145,7 +145,7 @@ func TestConfig_FindRemote(t *testing.T) {
 
 	cfg := &Config{
 		Remotes: map[Remote]RemoteSelect{
-			remote1: {Gen3: &indexd_client.Gen3Remote{}},
+			remote1: {Gen3: &indexd.Gen3Remote{}},
 			remote2: {Anvil: &anvil_client.AnvilRemote{}},
 		},
 	}
@@ -201,7 +201,7 @@ func TestConfig_MultipleRemotes(t *testing.T) {
 	remotes := []Remote{"origin", "backup", "anvil"}
 
 	for _, r := range remotes {
-		cfg.Remotes[r] = RemoteSelect{Gen3: &indexd_client.Gen3Remote{}}
+		cfg.Remotes[r] = RemoteSelect{Gen3: &indexd.Gen3Remote{}}
 	}
 
 	if len(cfg.Remotes) != 3 {

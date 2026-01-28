@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 )
 
 type fakeChecksumClient struct {

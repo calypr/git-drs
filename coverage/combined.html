@@ -75,11 +75,11 @@
 				
 				<option value="file9">github.com/calypr/git-drs/cmd/addref/add-ref.go (3.3%)</option>
 				
-				<option value="file10">github.com/calypr/git-drs/cmd/addurl/lfss3/agent_fetch_reader.go (0.0%)</option>
+				<option value="file10">github.com/calypr/git-drs/cmd/addurl/lfss3/agent_fetch_reader.go (42.4%)</option>
 				
-				<option value="file11">github.com/calypr/git-drs/cmd/addurl/lfss3/inspect.go (0.0%)</option>
+				<option value="file11">github.com/calypr/git-drs/cmd/addurl/lfss3/inspect.go (54.9%)</option>
 				
-				<option value="file12">github.com/calypr/git-drs/cmd/addurl/main.go (4.2%)</option>
+				<option value="file12">github.com/calypr/git-drs/cmd/addurl/main.go (64.8%)</option>
 				
 				<option value="file13">github.com/calypr/git-drs/cmd/cache/create-cache.go (0.0%)</option>
 				
@@ -2332,7 +2332,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 }</span>
 </pre>
@@ -2365,7 +2365,7 @@ type progressReader struct {
         ticker time.Duration
 }
 
-func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class="cov0" title="0">{
+func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class="cov8" title="1">{
         p := &amp;progressReader{
                 rc:     rc,
                 label:  label,
@@ -2375,11 +2375,11 @@ func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class
                 ticker: 500 * time.Millisecond,
         }
 
-        go func() </span><span class="cov0" title="0">{
+        go func() </span><span class="cov8" title="1">{
                 t := time.NewTicker(p.ticker)
                 defer t.Stop()
                 var last int64
-                for </span><span class="cov0" title="0">{
+                for </span><span class="cov8" title="1">{
                         select </span>{
                         case &lt;-t.C:<span class="cov0" title="0">
                                 total := atomic.LoadInt64(&amp;p.total)
@@ -2391,7 +2391,7 @@ func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class
                                 // \r to overwrite the same line like git pull; no newline until done
                                 <span class="cov0" title="0">fmt.Fprintf(os.Stderr, "\r%s: %d bytes (%.1f KiB/s)", p.label, total, rate/1024)
                                 last = total</span>
-                        case &lt;-p.quit:<span class="cov0" title="0">
+                        case &lt;-p.quit:<span class="cov8" title="1">
                                 // final line (replace same line, then newline)
                                 total := atomic.LoadInt64(&amp;p.total)
                                 _ = last // in case we want to use last for something later
@@ -2402,18 +2402,18 @@ func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class
                 }
         }()
 
-        <span class="cov0" title="0">return p</span>
+        <span class="cov8" title="1">return p</span>
 }
 
-func (p *progressReader) Read(b []byte) (int, error) <span class="cov0" title="0">{
+func (p *progressReader) Read(b []byte) (int, error) <span class="cov8" title="1">{
         n, err := p.rc.Read(b)
-        if n &gt; 0 </span><span class="cov0" title="0">{
+        if n &gt; 0 </span><span class="cov8" title="1">{
                 atomic.AddInt64(&amp;p.total, int64(n))
         }</span>
-        <span class="cov0" title="0">return n, err</span>
+        <span class="cov8" title="1">return n, err</span>
 }
 
-func (p *progressReader) Close() error <span class="cov0" title="0">{
+func (p *progressReader) Close() error <span class="cov8" title="1">{
         // Close underlying reader first, then stop progress goroutine and wait for completion.
         err := p.rc.Close()
         close(p.quit)
@@ -2425,46 +2425,46 @@ func (p *progressReader) Close() error <span class="cov0" title="0">{
 // It accepts `s3://bucket/key` URLs and converts them to HTTPS URLs. If `input.AWSEndpoint`
 // is set it will use that endpoint in path-style (endpoint/bucket/key); otherwise it
 // uses the default virtual-hosted AWS form: https://{bucket}.s3.amazonaws.com/{key}.
-func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, error) <span class="cov0" title="0">{
+func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, error) <span class="cov8" title="1">{
         if ctx == nil </span><span class="cov0" title="0">{
                 ctx = context.Background()
         }</span>
 
-        <span class="cov0" title="0">raw := strings.TrimSpace(input.S3URL)
+        <span class="cov8" title="1">raw := strings.TrimSpace(input.S3URL)
         if raw == "" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("AgentFetchReader: InspectInput.S3URL is empty")
         }</span>
 
-        <span class="cov0" title="0">useSignedFetch := strings.TrimSpace(input.AWSAccessKey) != "" ||
+        <span class="cov8" title="1">useSignedFetch := strings.TrimSpace(input.AWSAccessKey) != "" ||
                 strings.TrimSpace(input.AWSSecretKey) != "" ||
                 strings.TrimSpace(input.AWSRegion) != ""
-        if useSignedFetch </span><span class="cov0" title="0">{
+        if useSignedFetch </span><span class="cov8" title="1">{
                 if strings.TrimSpace(input.AWSAccessKey) == "" || strings.TrimSpace(input.AWSSecretKey) == "" || strings.TrimSpace(input.AWSRegion) == "" </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("AgentFetchReader: AWSAccessKey, AWSSecretKey, and AWSRegion are required for signed fetch")
                 }</span>
 
-                <span class="cov0" title="0">bucket, key, err := parseS3URL(raw)
+                <span class="cov8" title="1">bucket, key, err := parseS3URL(raw)
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("AgentFetchReader: parse s3 url %q: %w", raw, err)
                 }</span>
 
-                <span class="cov0" title="0">s3Client, err := newS3Client(ctx, input)
+                <span class="cov8" title="1">s3Client, err := newS3Client(ctx, input)
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("AgentFetchReader: init s3 client: %w", err)
                 }</span>
 
-                <span class="cov0" title="0">out, err := s3Client.GetObject(ctx, &amp;s3.GetObjectInput{
+                <span class="cov8" title="1">out, err := s3Client.GetObject(ctx, &amp;s3.GetObjectInput{
                         Bucket: aws.String(bucket),
                         Key:    aws.String(key),
                 })
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("AgentFetchReader: s3 GetObject failed (bucket=%q key=%q): %w", bucket, key, err)
                 }</span>
-                <span class="cov0" title="0">if out.Body == nil </span><span class="cov0" title="0">{
+                <span class="cov8" title="1">if out.Body == nil </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("AgentFetchReader: response body is nil for s3://%s/%s", bucket, key)
                 }</span>
 
-                <span class="cov0" title="0">label := fmt.Sprintf("fetch s3://%s/%s", bucket, key)
+                <span class="cov8" title="1">label := fmt.Sprintf("fetch s3://%s/%s", bucket, key)
                 return newProgressReader(out.Body, label), nil</span>
         }
 
@@ -2547,6 +2547,7 @@ import (
         "fmt"
         "net/http"
         "net/url"
+        "os"
         "os/exec"
         "path"
         "path/filepath"
@@ -2590,52 +2591,52 @@ type InspectResult struct {
         LastModTime time.Time
 }
 
-// InspectS3ForLFS does all 3 requeste</span><span class="cov0" title="0">d tasks.
-func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, error) {
-        i</span>f strings.TrimSpace(in.S3URL) == "" </span><span class="cov0" title="0">{
-                return nil, errors.New("S3URL is required")
-        }</span>
-        <span class="cov0" title="0">if strings.TrimSpace(in.AWSRegion) == "" </span><span class="cov0" title="0">{
+</span>// InspectS3ForLFS does all 3 requested tasks.
+fu</span>nc InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, error) <span class="cov1" title="1">{
+        if strings.TrimSpace(in.S3URL) == "" </span>{
+</span>                return nil, errors.New("S3URL is required")
+        }</span></span>
+        <span class="cov1" title="1">if strings.TrimSpace(in.AWSRegion) == "" </span><span class="cov0" title="0">{
                 return nil, errors.New("AWSRegion is required")
         }</span>
-        <span class="cov0" title="0">if in.AWSAccessKey == "" || in.AWSSecretKey == "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if in.AWSAccessKey == "" || in.AWSSecretKey == "" </span><span class="cov0" title="0">{
                 return nil, errors.New("AWSAccessKey and AWSSecretKey are required")
         }</span>
 
         // 1) Determine Git LFS storage root.
-        <span class="cov0" title="0">gitCommonDir, err := gitRevParseGitCommonDir(ctx)
+        <span class="cov1" title="1">gitCommonDir, err := gitRevParseGitCommonDir(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov0" title="0">lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
+        <span class="cov1" title="1">lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov0" title="0">if lfsRoot == "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if lfsRoot == "" </span><span class="cov0" title="0">{
                 lfsRoot = filepath.Join(gitCommonDir, "lfs")
         }</span>
 
         // 2) Parse S3 URL + derive working tree filename.
-        <span class="cov0" title="0">bucket, key, err := parseS3URL(in.S3URL)
+        <span class="cov1" title="1">bucket, key, err := parseS3URL(in.S3URL)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov0" title="0">worktreeName := strings.TrimSpace(in.WorktreeName)
+        <span class="cov1" title="1">worktreeName := strings.TrimSpace(in.WorktreeName)
         if worktreeName == "" </span><span class="cov0" title="0">{
                 worktreeName = path.Base(key)
                 if worktreeName == "." || worktreeName == "/" || worktreeName == "" </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("could not derive worktree name from key %q", key)
                 }</span>
-        } else<span class="cov0" title="0"> if worktreeName == "." || worktreeName == "/" </span><span class="cov0" title="0">{
+        } else<span class="cov1" title="1"> if worktreeName == "." || worktreeName == "/" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid worktree name override %q", worktreeName)
         }</span>
 
         // 3) HEAD on S3 to determine size and meta.SHA256.
-        <span class="cov0" title="0">s3Client, err := newS3Client(ctx, in)
+        <span class="cov1" title="1">s3Client, err := newS3Client(ctx, in)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov0" title="0">head, err := s3Client.HeadObject(ctx, &amp;s3.HeadObjectInput{
+        <span class="cov1" title="1">head, err := s3Client.HeadObject(ctx, &amp;s3.HeadObjectInput{
                 Bucket: aws.String(bucket),
                 Key:    aws.String(key),
         })
@@ -2643,7 +2644,7 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
                 return nil, fmt.Errorf("s3 HeadObject failed (bucket=%q key=%q): %w", bucket, key, err)
         }</span>
 
-        <span class="cov0" title="0">metaSHA := extractSHA256FromMetadata(head.Metadata)
+        <span class="cov1" title="1">metaSHA := extractSHA256FromMetadata(head.Metadata)
 
         // Optional: validate provided SHA256 against metadata if both exist.
         expected := normalizeSHA256(in.SHA256)
@@ -2651,22 +2652,22 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
                 return nil, fmt.Errorf("sha256 mismatch: expected=%s head.meta=%s", expected, metaSHA)
         }</span>
 
-        <span class="cov0" title="0">var lm time.Time
-        if head.LastModified != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">var lm time.Time
+        if head.LastModified != nil </span><span class="cov1" title="1">{
                 lm = *head.LastModified
         }</span>
 
-        <span class="cov0" title="0">if head.ContentLength == nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if head.ContentLength == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("s3 HeadObject missing ContentLength (bucket=%q key=%q)", bucket, key)
         }</span>
-        <span class="cov0" title="0">sizeBytes := *head.ContentLength
+        <span class="cov1" title="1">sizeBytes := *head.ContentLength
 
         var etag string
-        if head.ETag != nil </span><span class="cov0" title="0">{
+        if head.ETag != nil </span><span class="cov1" title="1">{
                 etag = strings.Trim(*head.ETag, `"`)
         }</span>
 
-        <span class="cov0" title="0">out := &amp;InspectResult{
+        <span class="cov1" title="1">out := &amp;InspectResult{
                 GitCommonDir: gitCommonDir,
                 LFSRoot:      lfsRoot,
                 Bucket:       bucket,
@@ -2684,23 +2685,23 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 // --- Git helpers ---
 //
 
-func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="cov0" title="0">{
+func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="cov1" title="1">{
         out, err := runGit(ctx, "rev-parse", "--git-common-dir")
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("git rev-parse --git-common-dir failed: %w", err)
         }</span>
-        <span class="cov0" title="0">dir := strings.TrimSpace(out)
+        <span class="cov1" title="1">dir := strings.TrimSpace(out)
         if dir == "" </span><span class="cov0" title="0">{
                 return "", errors.New("git rev-parse returned empty --git-common-dir")
         }</span>
         // If relative, resolve it against current working directory.
-        <span class="cov0" title="0">if !filepath.IsAbs(dir) </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if !filepath.IsAbs(dir) </span><span class="cov1" title="1">{
                 abs, err := filepath.Abs(dir)
-                if err == nil </span><span class="cov0" title="0">{
+                if err == nil </span><span class="cov1" title="1">{
                         dir = abs
                 }</span>
         }
-        <span class="cov0" title="0">return dir, nil</span>
+        <span class="cov1" title="1">return dir, nil</span>
 }
 
 // resolveLFSRoot implements:
@@ -2708,20 +2709,20 @@ func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="c
 //   - if relative: resolve relative to GitCommonDir (this is how git-lfs treats it in practice)
 //
 // - else: &lt;GitCommonDir&gt;/lfs
-func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) <span class="cov0" title="0">{
+func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) <span class="cov1" title="1">{
         // NOTE: git config --get returns exit status 1 if key not found.
         out, err := runGitAllowMissing(ctx, "config", "--get", "lfs.storage")
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("git config --get lfs.storage failed: %w", err)
         }</span>
-        <span class="cov0" title="0">val := strings.TrimSpace(out)
+        <span class="cov1" title="1">val := strings.TrimSpace(out)
 
-        if val == "" </span><span class="cov0" title="0">{
+        if val == "" </span><span class="cov1" title="1">{
                 return filepath.Clean(filepath.Join(gitCommonDir, "lfs")), nil
         }</span>
 
         // Expand ~ if present (nice-to-have).
-        <span class="cov0" title="0">if strings.HasPrefix(val, "~"+string(filepath.Separator)) || val == "~" </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if strings.HasPrefix(val, "~") &amp;&amp; (len(val) == 1 || val[1] == '/' || val[1] == '\\') </span><span class="cov0" title="0">{
                 home, herr := userHomeDir()
                 if herr == nil &amp;&amp; home != "" </span><span class="cov0" title="0">{
                         val = filepath.Join(home, strings.TrimPrefix(val, "~"))
@@ -2734,23 +2735,23 @@ func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) <s
         <span class="cov0" title="0">return filepath.Clean(val), nil</span>
 }
 
-func runGit(ctx context.Context, args ...string) (string, error) <span class="cov0" title="0">{
+func runGit(ctx context.Context, args ...string) (string, error) <span class="cov1" title="1">{
         cmd := exec.CommandContext(ctx, "git", args...)
         b, err := cmd.CombinedOutput()
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(b)))
         }</span>
-        <span class="cov0" title="0">return string(b), nil</span>
+        <span class="cov1" title="1">return string(b), nil</span>
 }
 
 // runGitAllowMissing treats "key not found" as empty output, not an error.
-func runGitAllowMissing(ctx context.Context, args ...string) (string, error) <span class="cov0" title="0">{
+func runGitAllowMissing(ctx context.Context, args ...string) (string, error) <span class="cov1" title="1">{
         cmd := exec.CommandContext(ctx, "git", args...)
         b, err := cmd.CombinedOutput()
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span><span class="cov1" title="1">{
                 // "git config --get missing.key" exits 1 with empty output.
                 s := strings.TrimSpace(string(b))
-                if s == "" </span><span class="cov0" title="0">{
+                if s == "" </span><span class="cov1" title="1">{
                         return "", nil
                 }</span>
                 <span class="cov0" title="0">return "", fmt.Errorf("%v: %s", err, s)</span>
@@ -2763,6 +2764,9 @@ func userHomeDir() (string, error) <span class="cov0" title="0">{
         if runtime.GOOS == "windows" </span><span class="cov0" title="0">{
                 // Not your target, but safe fallback.
                 return "", errors.New("home expansion not supported on windows in this helper")
+        }</span>
+        <span class="cov0" title="0">if home := strings.TrimSpace(os.Getenv("HOME")); home != "" </span><span class="cov0" title="0">{
+                return home, nil
         }</span>
         // macOS/Linux
         <span class="cov0" title="0">out, err := exec.Command("sh", "-lc", "printf %s \"$HOME\"").CombinedOutput()
@@ -2780,14 +2784,14 @@ var virtualHostedRE = regexp.MustCompile(`^(.+?)\.s3(?:[.-]|$)`)
 
 // parseS3URL parses s3://bucket/key, virtual-hosted HTTPS (bucket.s3.../key)
 // and path-style HTTPS (s3.../bucket/key). Returns bucket and key.
-func parseS3URL(raw string) (string, string, error) <span class="cov0" title="0">{
+func parseS3URL(raw string) (string, string, error) <span class="cov10" title="2">{
         u, err := url.Parse(raw)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", err
         }</span>
 
-        <span class="cov0" title="0">switch u.Scheme </span>{
-        case "s3":<span class="cov0" title="0">
+        <span class="cov10" title="2">switch u.Scheme </span>{
+        case "s3":<span class="cov10" title="2">
                 bucket := u.Host
                 key := strings.TrimPrefix(u.Path, "/")
                 return bucket, key, nil</span>
@@ -2818,7 +2822,7 @@ func parseS3URL(raw string) (string, string, error) <span class="cov0" title="0"
         }
 }
 
-func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span class="cov0" title="0">{
+func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span class="cov10" title="2">{
         creds := credentials.NewStaticCredentialsProvider(in.AWSAccessKey, in.AWSSecretKey, "")
 
         // Custom HTTP client is useful for S3-compatible endpoints.
@@ -2840,16 +2844,16 @@ func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span
                 return nil, fmt.Errorf("aws config init failed: %w", err)
         }</span>
 
-        <span class="cov0" title="0">opts := []func(*s3.Options){}
-        if strings.TrimSpace(in.AWSEndpoint) != "" </span><span class="cov0" title="0">{
+        <span class="cov10" title="2">opts := []func(*s3.Options){}
+        if strings.TrimSpace(in.AWSEndpoint) != "" </span><span class="cov10" title="2">{
                 ep := strings.TrimRight(in.AWSEndpoint, "/")
-                opts = append(opts, func(o *s3.Options) </span><span class="cov0" title="0">{
+                opts = append(opts, func(o *s3.Options) </span><span class="cov10" title="2">{
                         o.UsePathStyle = true // usually required for Ceph/MinIO/custom endpoints
                         o.BaseEndpoint = aws.String(ep)
                 }</span>)
         }
 
-        <span class="cov0" title="0">return s3.NewFromConfig(cfg, opts...), nil</span>
+        <span class="cov10" title="2">return s3.NewFromConfig(cfg, opts...), nil</span>
 }
 
 //
@@ -2858,11 +2862,11 @@ func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span
 
 var sha256HexRe = regexp.MustCompile(`(?i)^[0-9a-f]{64}$`)
 
-func normalizeSHA256(s string) string <span class="cov0" title="0">{
+func normalizeSHA256(s string) string <span class="cov1" title="1">{
         s = strings.TrimSpace(s)
         s = strings.TrimPrefix(strings.ToLower(s), "sha256:")
         s = strings.TrimSpace(s)
-        if s == "" </span><span class="cov0" title="0">{
+        if s == "" </span><span class="cov1" title="1">{
                 return ""
         }</span>
         <span class="cov0" title="0">if !sha256HexRe.MatchString(s) </span><span class="cov0" title="0">{
@@ -2873,8 +2877,8 @@ func normalizeSHA256(s string) string <span class="cov0" title="0">{
         <span class="cov0" title="0">return strings.ToLower(s)</span>
 }
 
-func extractSHA256FromMetadata(md map[string]string) string <span class="cov0" title="0">{
-        if md == nil </span><span class="cov0" title="0">{
+func extractSHA256FromMetadata(md map[string]string) string <span class="cov1" title="1">{
+        if md == nil </span><span class="cov1" title="1">{
                 return ""
         }</span>
 
@@ -2909,13 +2913,13 @@ func extractSHA256FromMetadata(md map[string]string) string <span class="cov0" t
 
 // IsLFSTracked returns true if the given path is tracked by Git LFS
 // (i.e. has `filter=lfs` via git attributes).
-func IsLFSTracked(path string) (bool, error) <span class="cov0" title="0">{
+func IsLFSTracked(path string) (bool, error) <span class="cov1" title="1">{
         if path == "" </span><span class="cov0" title="0">{
                 return false, fmt.Errorf("path is empty")
         }</span>
 
         // Git prefers forward slashes, even on macOS/Linux
-        <span class="cov0" title="0">cleanPath := filepath.ToSlash(path)
+        <span class="cov1" title="1">cleanPath := filepath.ToSlash(path)
 
         cmd := exec.Command(
                 "git",
@@ -2938,12 +2942,12 @@ func IsLFSTracked(path string) (bool, error) <span class="cov0" title="0">{
         // path: filter: unspecified
         //
         // Format is stable and documented.
-        <span class="cov0" title="0">fields := strings.Split(out.String(), ":")
+        <span class="cov1" title="1">fields := strings.Split(out.String(), ":")
         if len(fields) &lt; 3 </span><span class="cov0" title="0">{
                 return false, nil
         }</span>
 
-        <span class="cov0" title="0">value := strings.TrimSpace(fields[2])
+        <span class="cov1" title="1">value := strings.TrimSpace(fields[2])
         return value == "lfs", nil</span>
 }
 </pre>
@@ -2967,62 +2971,74 @@ import (
         "github.com/calypr/git-drs/s3_utils"
 )
 
-</span>var Cmd = &amp;cobra.Command{
-        Us</span>e:   "add-url &lt;s3-url&gt; [path]",
-        S<span class="cov0" title="0">hort: "Add</span> a file to the Git DRS repo using an S3 URL",
-        Args: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
-                if len(args) &lt; 1 || len(args) &gt; 2 </span><span class="cov0" title="0">{
-                        return errors.New("usage: add-url &lt;s3-url&gt; [path]")
-                }</span>
-                <span class="cov0" title="0">return nil</span><span class="cov0" title="0">
-        },
-        RunE: runAddURL,
+</span>var (
+        in</span>spectS3ForLFS  = lfss3.InspectS3ForLFS
+        i<span class="cov0" title="0">sLFSTracke</span>d     = lfss3.IsLFSTracked
+        agentFetchReader = lfss3.AgentFetchReader
+)
+
+var Cmd = NewCommand()
+
+func NewCommand() *cobra.Command {
+        cmd := &amp;cobra.Command{
+                Use:   "add-url &lt;s3-url&gt; [path]",
+                Short: "Add a file to the Git DRS repo using an S3 URL",
+                Args: func(cmd *cobra.Command, args []string) error {
+                        if len(args) &lt; 1 || len(args) &gt; 2 {
+                                return errors.New("usage: add-url &lt;s3-url&gt; [path]")
+                        }
+                        return nil
+                },
+                RunE: runAddURL,
+        }
+        addFlags(cmd)
+        return cmd
 }
 
-func init() {
-        Cmd.Flags().String(
+func addFlags(cmd *cobra.Command) {
+        cmd.Flags().String(
                 s3_utils.AWS_KEY_FLAG_NAME,
                 os.Getenv(s3_utils.AWS_KEY_ENV_VAR),
                 "AWS access key",
         )
 
-        Cmd.Flags().String(
+        </span></span></span></span></span></span>cmd.Flags().String(
                 s3_utils.AWS_SECRET_FLAG_NAME,
                 os.Getenv(s3_utils.AWS_SECRET_ENV_VAR),
                 "AWS secret key",
         )
 
-        Cmd.Flags().String(
+        cmd.Flags().String(
                 s3_utils.AWS_REGION_FLAG_NAME,
                 os.Getenv(s3_utils.AWS_REGION_ENV_VAR),
                 "AWS S3 region",
         )
 
-        </span>Cmd.Flags().String(
+        cmd.Flags().String(
                 s3_utils.AWS_ENDPOINT_URL_FLAG_NAME,
                 os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR),
                 "AWS S3 endpoint (optional, for Ceph/MinIO)",
         )
 
         // New flag: optional expected SHA256
-        Cmd.Flags().String(
+        cmd.Flags().String(
                 "sha256",
                 "",
                 "Expected SHA256 checksum (optional)",
         )
 }</span>
 
-func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov0" title="0">{
+func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov1" title="1">{
         ctx := cmd.Context()
         if ctx == nil </span><span class="cov0" title="0">{
                 ctx = context.Background()
         }</span>
 
-        <span class="cov0" title="0">s3URL := args[0]
+        <span class="cov1" title="1">s3URL := args[0]
 
         // Determine path: use provided optional arg, otherwise derive from URL path
         var pathArg string
-        if len(args) == 2 </span><span class="cov0" title="0">{
+        if len(args) == 2 </span><span class="cov1" title="1">{
                 pathArg = args[1]
         }</span> else<span class="cov0" title="0"> {
                 u, perr := url.Parse(s3URL)
@@ -3032,36 +3048,36 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov0"
                 <span class="cov0" title="0">pathArg = strings.TrimPrefix(u.Path, "/")</span>
         }
 
-        <span class="cov0" title="0">sha256Param, ferr := cmd.Flags().GetString("sha256")
+        <span class="cov1" title="1">sha256Param, ferr := cmd.Flags().GetString("sha256")
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag sha256: %w", ferr)
         }</span>
 
-        <span class="cov0" title="0">awsKey, ferr := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
+        <span class="cov1" title="1">awsKey, ferr := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_KEY_FLAG_NAME, ferr)
         }</span>
-        <span class="cov0" title="0">awsSecret, ferr := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
+        <span class="cov1" title="1">awsSecret, ferr := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_SECRET_FLAG_NAME, ferr)
         }</span>
-        <span class="cov0" title="0">awsRegion, ferr := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
+        <span class="cov1" title="1">awsRegion, ferr := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_REGION_FLAG_NAME, ferr)
         }</span>
-        <span class="cov0" title="0">awsEndpoint, ferr := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
+        <span class="cov1" title="1">awsEndpoint, ferr := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, ferr)
         }</span>
 
-        <span class="cov0" title="0">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
                 return errors.New("AWS credentials must be provided via flags or environment variables")
         }</span>
-        <span class="cov0" title="0">if awsRegion == "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if awsRegion == "" </span><span class="cov0" title="0">{
                 return errors.New("AWS region must be provided via flag or environment variable")
         }</span>
 
-        <span class="cov0" title="0">s3Input := lfss3.InspectInput{
+        <span class="cov1" title="1">s3Input := lfss3.InspectInput{
                 S3URL:        s3URL,
                 AWSAccessKey: awsKey,
                 AWSSecretKey: awsSecret,
@@ -3070,17 +3086,17 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov0"
                 SHA256:       sha256Param,
                 WorktreeName: pathArg,
         }
-        info, err := lfss3.InspectS3ForLFS(ctx, s3Input)
+        info, err := inspectS3ForLFS(ctx, s3Input)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov0" title="0">isLFSTracked, err := lfss3.IsLFSTracked(pathArg)
+        <span class="cov1" title="1">isLFSTracked, err := isLFSTracked(pathArg)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("check LFS tracking for %s: %w", pathArg, err)
         }</span>
 
-        <span class="cov0" title="0">if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
+        <span class="cov1" title="1">if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
 Resolved Git LFS info
 ---------------------
 Git common dir : %s
@@ -3118,17 +3134,17 @@ tracked by LFS : %v
         }</span>
 
         // 2) object destination
-        <span class="cov0" title="0">etag := info.ETag
+        <span class="cov1" title="1">etag := info.ETag
         subdir1, subdir2 := "xx", "yy"
-        if len(etag) &gt;= 4 </span><span class="cov0" title="0">{
+        if len(etag) &gt;= 4 </span><span class="cov1" title="1">{
                 subdir1 = etag[0:2]
                 subdir2 = etag[2:4]
         }</span>
-        <span class="cov0" title="0">objName := etag
+        <span class="cov1" title="1">objName := etag
         if objName == "" </span><span class="cov0" title="0">{
                 objName = "unknown-etag"
         }</span>
-        <span class="cov0" title="0">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+        <span class="cov1" title="1">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
         tmpObj := filepath.Join(tmpDir, objName)
 
         // 3) fetch bytes -&gt; tmp, compute sha+count
@@ -3138,12 +3154,12 @@ tracked by LFS : %v
                 return fmt.Errorf("mkdir %s: %w", tmpDir, err)
         }</span>
 
-        <span class="cov0" title="0">f, err := os.Create(tmpObj)
+        <span class="cov1" title="1">f, err := os.Create(tmpObj)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("create %s: %w", tmpObj, err)
         }</span>
         // ensure any leftover file is closed and error propagated via named return
-        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
                 if f != nil </span><span class="cov0" title="0">{
                         if cerr := f.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close tmp file: %w", cerr)
@@ -3151,15 +3167,15 @@ tracked by LFS : %v
                 }
         }()
 
-        <span class="cov0" title="0">h := sha256.New()
+        <span class="cov1" title="1">h := sha256.New()
 
         var reader io.ReadCloser
-        reader, err = lfss3.AgentFetchReader(ctx, s3Input)
+        reader, err = agentFetchReader(ctx, s3Input)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("fetch reader: %w", err)
         }</span>
         // ensure close on any early return; propagate close error via named return
-        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
                 if reader != nil </span><span class="cov0" title="0">{
                         if cerr := reader.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close reader: %w", cerr)
@@ -3167,16 +3183,16 @@ tracked by LFS : %v
                 }
         }()
 
-        <span class="cov0" title="0">n, err := io.Copy(io.MultiWriter(f, h), reader)
+        <span class="cov1" title="1">n, err := io.Copy(io.MultiWriter(f, h), reader)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
         }</span>
 
         // explicitly close reader and handle error
-        <span class="cov0" title="0">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("close reader: %w", cerr)
         }</span>
-        <span class="cov0" title="0">reader = nil
+        <span class="cov1" title="1">reader = nil
 
         // ensure data is flushed to disk
         if err = f.Sync(); err != nil </span><span class="cov0" title="0">{
@@ -3184,10 +3200,10 @@ tracked by LFS : %v
         }</span>
 
         // explicitly close tmp file before rename
-        <span class="cov0" title="0">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("close %s: %w", tmpObj, cerr)
         }</span>
-        <span class="cov0" title="0">f = nil
+        <span class="cov1" title="1">f = nil
 
         // use n (bytes written) to avoid unused var warnings
         _ = n
@@ -3199,7 +3215,7 @@ tracked by LFS : %v
                 return fmt.Errorf("sha256Param mismatch: expected %s got %s", sha256Param, computedSHA)
         }</span>
 
-        <span class="cov0" title="0">oid := computedSHA
+        <span class="cov1" title="1">oid := computedSHA
         dstDir := filepath.Join(info.LFSRoot, "objects", oid[0:2], oid[2:4])
         dstObj := filepath.Join(dstDir, oid)
 
@@ -3207,12 +3223,12 @@ tracked by LFS : %v
                 return fmt.Errorf("mkdir %s: %w", dstDir, err)
         }</span>
 
-        <span class="cov0" title="0">if err = os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if err = os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
         }</span>
 
         // 5) write pointer file in working tree
-        <span class="cov0" title="0">pointer := fmt.Sprintf(
+        <span class="cov1" title="1">pointer := fmt.Sprintf(
                 "version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
                 oid, info.SizeBytes,
         )
@@ -3220,24 +3236,24 @@ tracked by LFS : %v
         if pathArg == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("empty worktree path")
         }</span>
-        <span class="cov0" title="0">safePath := filepath.Clean(pathArg)
+        <span class="cov1" title="1">safePath := filepath.Clean(pathArg)
         dir := filepath.Dir(safePath)
-        if dir != "." &amp;&amp; dir != "/" </span><span class="cov0" title="0">{
+        if dir != "." &amp;&amp; dir != "/" </span><span class="cov1" title="1">{
                 if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("mkdir %s: %w", dir, err)
                 }</span>
         }
-        <span class="cov0" title="0">if err = os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if err = os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write %s: %w", safePath, err)
         }</span>
 
-        <span class="cov0" title="0">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("stderr write: %w", err)
         }</span>
-        <span class="cov0" title="0">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("stderr write: %w", err)
         }</span>
-        <span class="cov0" title="0">return nil</span>
+        <span class="cov1" title="1">return nil</span>
 }
 </pre>
 		
@@ -3442,7 +3458,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
         Cmd.Flags().BoolVar(&amp;confirmFlag, "confirm", false, "skip interactive confirmation prompt")
 }</span>
@@ -3549,7 +3565,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
         Cmd.Flags().StringVar(&amp;confirmFlag, "confirm", "", "skip interactive confirmation by providing the project_id (e.g., --confirm my-project)")
 }</span>
@@ -3638,7 +3654,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
         Cmd.Flags().StringVarP(&amp;dstPath, "dst", "d", "", "Destination path to save the downloaded file")
 }</span>
@@ -3787,7 +3803,7 @@ func initGitConfig() error <span class="cov4" title="5">{
                 {"lfs.customtransfer.drs.concurrenttransfers", strconv.Itoa(transfers)},
         }
 
-        for _, args := range configs </span><span class="cov9" title="30">{
+        for _, args := range configs </span><span class="cov8" title="30">{
                 cmd := exec.Command("git", "config", args[0], args[1])
                 if cmdOut, err := cmd.Output(); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("unable to set git config %s: %s", args[0], cmdOut)
@@ -3797,7 +3813,7 @@ func initGitConfig() error <span class="cov4" title="5">{
         <span class="cov4" title="5">return nil</span>
 }
 
-func init() <span class="cov10" title="45">{
+func init() <span class="cov10" title="46">{
         Cmd.Flags().IntVarP(&amp;transfers, "transfers", "t", 4, "Number of concurrent transfers")
 }</span>
 
@@ -4041,7 +4057,7 @@ var ListProjectCmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="45">{
+func init() <span class="cov10" title="46">{
         ListProjectCmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
         ListProjectCmd.Flags().StringVarP(&amp;outFile, "out", "o", outFile, "File path to save output to")
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
@@ -4101,7 +4117,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="45">{
+func init() <span class="cov10" title="46">{
         Cmd.Flags().BoolVarP(&amp;jsonOutput, "json", "j", false, "output in JSON format")
 }</span>
 </pre>
@@ -4448,7 +4464,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="45">{
+func init() <span class="cov10" title="46">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
         Cmd.Flags().BoolVarP(&amp;checksum, "checksum", "c", checksum, "Find by checksum")
         Cmd.Flags().BoolVarP(&amp;pretty, "pretty", "p", pretty, "Print indented JSON")
@@ -4583,7 +4599,7 @@ var Cmd = &amp;cobra.Command{
         },
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.Flags().StringVarP(&amp;remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 }</span>
 </pre>
@@ -4790,7 +4806,7 @@ var Cmd = &amp;cobra.Command{
         Short: "add server access for git-drs",
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Gen3Cmd.Flags().StringVar(&amp;server, "server", "gen3", "Options for DRS server: gen3 or anvil")
         Gen3Cmd.Flags().StringVar(&amp;apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
         Gen3Cmd.Flags().StringVar(&amp;bucket, "bucket", "", "[gen3] Specify the bucket name")
@@ -4878,7 +4894,7 @@ var Cmd = &amp;cobra.Command{
         Short: "Manage remote DRS server configs",
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         Cmd.AddCommand(add.Cmd)
         Cmd.AddCommand(ListCmd)
         Cmd.AddCommand(SetCmd)
@@ -4971,12 +4987,12 @@ var RootCmd = &amp;cobra.Command{
         Use:   "git-drs",
         Short: "Git DRS - Git-LFS file management for DRS servers",
         Long:  "Git DRS provides the benefits of Git-LFS file management using DRS for seamless integration with Gen3 servers",
-        PersistentPreRun: func(cmd *cobra.Command, args []string) {<span class="cov10" title="44">
+        PersistentPreRun: func(cmd *cobra.Command, args []string) {<span class="cov10" title="45">
                 //pre-run code can go here
         }</span>,
 }
 
-func init() <span class="cov10" title="44">{
+func init() <span class="cov10" title="45">{
         RootCmd.AddCommand(addref.Cmd)
         RootCmd.AddCommand(cache.Cmd)
         RootCmd.AddCommand(delete.Cmd)
@@ -6382,7 +6398,7 @@ const (
 // - sets package variable GIT_TRANSFER_TRACE.
 // Typical callers:
 // - runtime automatically invokes init(); no external callers needed.
-func init() <span class="cov6" title="55">{
+func init() <span class="cov6" title="56">{
         GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
@@ -6397,7 +6413,7 @@ func init() <span class="cov6" title="55">{
 // - reads package variable GIT_TRANSFER_TRACE.
 // Typical callers:
 // - logging setup and callsites that want to be verbose only when trace is enabled.
-func TraceEnabled() bool <span class="cov6" title="49">{
+func TraceEnabled() bool <span class="cov6" title="50">{
         return GIT_TRANSFER_TRACE == 1
 }</span>
 
@@ -6427,29 +6443,29 @@ func TraceEnabled() bool <span class="cov6" title="49">{
 // - sets package-level globalLogger and globalLogFile.
 // Typical callers:
 // - application startup code that wants to initialize logging (e.g. main).
-func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov6" title="49">{
+func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) <span class="cov6" title="50">{
         var writers []io.Writer
 
-        if filename == "" </span><span class="cov6" title="49">{
+        if filename == "" </span><span class="cov6" title="50">{
                 // create drs dir if it doesn't exist
                 if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
 
-                <span class="cov6" title="49">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span>
+                <span class="cov6" title="50">filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")</span>
         }
 
-        <span class="cov6" title="49">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+        <span class="cov6" title="50">file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov6" title="49">writers = append(writers, file)
+        <span class="cov6" title="50">writers = append(writers, file)
 
-        if logToStderr </span><span class="cov6" title="44">{
+        if logToStderr </span><span class="cov6" title="45">{
                 writers = append(writers, os.Stderr)
         }</span>
 
-        <span class="cov6" title="49">multiWriter := io.MultiWriter(writers...)
+        <span class="cov6" title="50">multiWriter := io.MultiWriter(writers...)
 
         handler := slog.NewTextHandler(multiWriter, &amp;slog.HandlerOptions{
                 AddSource:   true,
@@ -6538,17 +6554,17 @@ func NewNoOpLogger() *slog.Logger <span class="cov4" title="13">{
 //
 // Typical callers:
 // - NewLogger -&gt; used when creating slog.HandlerOptions.Level.
-func resolveLogLevel() slog.Level <span class="cov6" title="49">{
+func resolveLogLevel() slog.Level <span class="cov6" title="50">{
         if TraceEnabled() </span><span class="cov0" title="0">{
                 return slog.LevelDebug
         }</span>
 
-        <span class="cov6" title="49">level, ok := readLogLevelFromGitConfig()
+        <span class="cov6" title="50">level, ok := readLogLevelFromGitConfig()
         if ok </span><span class="cov0" title="0">{
                 return level
         }</span>
 
-        <span class="cov6" title="49">return slog.LevelInfo</span>
+        <span class="cov6" title="50">return slog.LevelInfo</span>
 }
 
 // readLogLevelFromGitConfig queries git configuration for a custom log level.
@@ -6567,10 +6583,10 @@ func resolveLogLevel() slog.Level <span class="cov6" title="49">{
 // - On any error or empty output, returns (slog.LevelInfo, false) to indicate no valid config was found.
 // Typical callers:
 // - resolveLogLevel when initializing a logger.
-func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov6" title="49">{
+func readLogLevelFromGitConfig() (slog.Level, bool) <span class="cov6" title="50">{
         cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
         output, err := cmd.Output()
-        if err != nil </span><span class="cov6" title="49">{
+        if err != nil </span><span class="cov6" title="50">{
                 return slog.LevelInfo, false
         }</span>
 
@@ -6626,8 +6642,8 @@ func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0"
 //
 // Typical callers:
 // - passed as ReplaceAttr to slog.HandlerOptions in NewLogger.
-func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="609">{
-        if attr.Key != slog.SourceKey </span><span class="cov9" title="469">{
+func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="610">{
+        if attr.Key != slog.SourceKey </span><span class="cov9" title="470">{
                 return attr
         }</span>
         <span class="cov7" title="140">source, ok := attr.Value.Any().(*slog.Source)
@@ -7377,7 +7393,7 @@ import (
         "github.com/calypr/git-drs/drslog"
 )
 
-func main() <span class="cov10" title="44">{
+func main() <span class="cov10" title="45">{
 
         _, err := drslog.NewLogger("", true)
         if err != nil </span><span class="cov0" title="0">{
@@ -7385,7 +7401,7 @@ func main() <span class="cov10" title="44">{
                 os.Exit(1)
         }</span>
 
-        <span class="cov10" title="44">if err := cmd.RootCmd.Execute(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov10" title="45">if err := cmd.RootCmd.Execute(); err != nil </span><span class="cov0" title="0">{
                 drslog.Close() // closes log file if there was one
                 os.Exit(1)
         }</span>

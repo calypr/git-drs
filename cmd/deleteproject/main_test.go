@@ -7,9 +7,9 @@ import (
 )
 
 func TestDeleteProjectCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "deleteproject")
+	testutils.RunCmdMainTest(t, "deleteproject")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }

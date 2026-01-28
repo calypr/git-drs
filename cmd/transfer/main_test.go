@@ -7,9 +7,9 @@ import (
 )
 
 func TestTransferCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "transfer")
+	testutils.RunCmdMainTest(t, "transfer")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }

@@ -133,6 +133,15 @@ func getRepo() (*git.Repository, error) {
 	return gitrepo.GetRepo()
 }
 
+func (c Config) ConfigPath() (string, error) {
+	return getConfigPath()
+}
+
+// updates and git adds a Git DRS config file
+// this should handle three cases:
+// 1. create a new config file if it does not exist / is empty
+// 2. return an error if the config file is invalid
+// 3. update the existing config file, making sure to combine the new serversMap with the existing one
 // UpdateRemote updates and saves configuration using go-git
 func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	repo, err := getRepo()

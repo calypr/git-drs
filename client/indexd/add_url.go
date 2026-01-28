@@ -22,6 +22,7 @@ import (
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
 

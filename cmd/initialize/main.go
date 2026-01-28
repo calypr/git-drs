@@ -66,6 +66,11 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error installing pre-push hook: %v", err)
 		}
+		// install pre-commit hook
+		err = installPreCommitHook(logg)
+		if err != nil {
+			return fmt.Errorf("error installing pre-commit hook: %v", err)
+		}
 
 		// final logs
 		logg.Debug("Git DRS initialized")
@@ -153,5 +158,51 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 		return fmt.Errorf("unable to write pre-push hook: %w", err)
 	}
 	logger.Debug("pre-push hook installed")
+	return nil
+}
+
+func installPreCommitHook(logger *slog.Logger) error {
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	cmdOut, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("unable to locate git directory: %w", err)
+	}
+	gitDir := strings.TrimSpace(string(cmdOut))
+	hooksDir := filepath.Join(gitDir, "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("unable to create hooks directory: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	hookBody := `
+# .git/hooks/pre-commit
+exec git drs precommit
+`
+	hookScript := "#!/bin/sh\n" + hookBody
+
+	existingContent, err := os.ReadFile(hookPath)
+	if err == nil {
+		// there is an existing hook, rename it, and let the user know
+		// Backup existing hook with timestamp
+		timestamp := time.Now().Format("20060102T150405")
+		backupPath := hookPath + "." + timestamp
+		if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
+			return fmt.Errorf("unable to back up existing pre-commit hook: %w", err)
+		}
+		if err := os.Remove(hookPath); err != nil {
+			return fmt.Errorf("unable to remove hook after backing up: %w", err)
+		}
+		logger.Debug(fmt.Sprintf("pre-commit hook updated; backup written to %s", backupPath))
+	}
+	// If there was an error other than expected not existing, return it
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("unable to read pre-commit hook: %w", err)
+	}
+
+	err = os.WriteFile(hookPath, []byte(hookScript), 0755)
+	if err != nil {
+		return fmt.Errorf("unable to write pre-commit hook: %w", err)
+	}
+	logger.Debug("pre-commit hook installed")
 	return nil
 }

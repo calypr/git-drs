@@ -168,8 +168,18 @@ tracked by LFS : %v
 	}
 
 	// 2) object destination
-	tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", info.ETag[0:2], info.ETag[2:4])
-	tmpObj := filepath.Join(tmpDir, info.ETag)
+	etag := info.ETag
+	subdir1, subdir2 := "xx", "yy"
+	if len(etag) >= 4 {
+		subdir1 = etag[0:2]
+		subdir2 = etag[2:4]
+	}
+	objName := etag
+	if objName == "" {
+		objName = "unknown-etag"
+	}
+	tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+	tmpObj := filepath.Join(tmpDir, objName)
 
 	// 3) fetch bytes -> tmp, compute sha+count
 

@@ -118,15 +118,25 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 		lm = *head.LastModified
 	}
 
+	if head.ContentLength == nil {
+		return nil, fmt.Errorf("s3 HeadObject missing ContentLength (bucket=%q key=%q)", bucket, key)
+	}
+	sizeBytes := *head.ContentLength
+
+	var etag string
+	if head.ETag != nil {
+		etag = strings.Trim(*head.ETag, `"`)
+	}
+
 	out := &InspectResult{
 		GitCommonDir: gitCommonDir,
 		LFSRoot:      lfsRoot,
 		Bucket:       bucket,
 		Key:          key,
 		WorktreeName: worktreeName,
-		SizeBytes:    *head.ContentLength,
+		SizeBytes:    sizeBytes,
 		MetaSHA256:   metaSHA,
-		ETag:         strings.Trim(*head.ETag, `"`),
+		ETag:         etag,
 		LastModTime:  lm,
 	}
 	return out, nil

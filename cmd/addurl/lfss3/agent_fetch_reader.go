@@ -151,10 +151,8 @@ func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, e
 	}
 
 	if resp.Body == nil {
-		_ = resp.Body.Close()
 		return nil, fmt.Errorf("AgentFetchReader: response body is nil for %s", s3url)
 	}
-
 	// wrap response body with progress reporting that writes to stderr
 	label := fmt.Sprintf("fetch %s", s3url)
 	return newProgressReader(resp.Body, label), nil

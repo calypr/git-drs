@@ -55,11 +55,7 @@ func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser {
 			case <-p.quit:
 				// final line (replace same line, then newline)
 				total := atomic.LoadInt64(&p.total)
-				if total == last {
-					fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
-				} else {
-					fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
-				}
+				fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
 				close(p.done)
 				return
 			}

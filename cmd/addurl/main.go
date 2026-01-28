@@ -17,45 +17,57 @@ import (
 	"github.com/calypr/git-drs/s3_utils"
 )
 
-var Cmd = &cobra.Command{
-	Use:   "add-url <s3-url> [path]",
-	Short: "Add a file to the Git DRS repo using an S3 URL",
-	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) < 1 || len(args) > 2 {
-			return errors.New("usage: add-url <s3-url> [path]")
-		}
-		return nil
-	},
-	RunE: runAddURL,
+var (
+	inspectS3ForLFS  = lfss3.InspectS3ForLFS
+	isLFSTracked     = lfss3.IsLFSTracked
+	agentFetchReader = lfss3.AgentFetchReader
+)
+
+var Cmd = NewCommand()
+
+func NewCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add-url <s3-url> [path]",
+		Short: "Add a file to the Git DRS repo using an S3 URL",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 1 || len(args) > 2 {
+				return errors.New("usage: add-url <s3-url> [path]")
+			}
+			return nil
+		},
+		RunE: runAddURL,
+	}
+	addFlags(cmd)
+	return cmd
 }
 
-func init() {
-	Cmd.Flags().String(
+func addFlags(cmd *cobra.Command) {
+	cmd.Flags().String(
 		s3_utils.AWS_KEY_FLAG_NAME,
 		os.Getenv(s3_utils.AWS_KEY_ENV_VAR),
 		"AWS access key",
 	)
 
-	Cmd.Flags().String(
+	cmd.Flags().String(
 		s3_utils.AWS_SECRET_FLAG_NAME,
 		os.Getenv(s3_utils.AWS_SECRET_ENV_VAR),
 		"AWS secret key",
 	)
 
-	Cmd.Flags().String(
+	cmd.Flags().String(
 		s3_utils.AWS_REGION_FLAG_NAME,
 		os.Getenv(s3_utils.AWS_REGION_ENV_VAR),
 		"AWS S3 region",
 	)
 
-	Cmd.Flags().String(
+	cmd.Flags().String(
 		s3_utils.AWS_ENDPOINT_URL_FLAG_NAME,
 		os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR),
 		"AWS S3 endpoint (optional, for Ceph/MinIO)",
 	)
 
 	// New flag: optional expected SHA256
-	Cmd.Flags().String(
+	cmd.Flags().String(
 		"sha256",
 		"",
 		"Expected SHA256 checksum (optional)",
@@ -120,12 +132,12 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 		SHA256:       sha256Param,
 		WorktreeName: pathArg,
 	}
-	info, err := lfss3.InspectS3ForLFS(ctx, s3Input)
+	info, err := inspectS3ForLFS(ctx, s3Input)
 	if err != nil {
 		return err
 	}
 
-	isLFSTracked, err := lfss3.IsLFSTracked(pathArg)
+	isLFSTracked, err := isLFSTracked(pathArg)
 	if err != nil {
 		return fmt.Errorf("check LFS tracking for %s: %w", pathArg, err)
 	}
@@ -204,7 +216,7 @@ tracked by LFS : %v
 	h := sha256.New()
 
 	var reader io.ReadCloser
-	reader, err = lfss3.AgentFetchReader(ctx, s3Input)
+	reader, err = agentFetchReader(ctx, s3Input)
 	if err != nil {
 		return fmt.Errorf("fetch reader: %w", err)
 	}

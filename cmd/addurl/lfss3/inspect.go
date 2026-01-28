@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -188,7 +189,7 @@ func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) {
 	}
 
 	// Expand ~ if present (nice-to-have).
-	if strings.HasPrefix(val, "~"+string(filepath.Separator)) || val == "~" {
+	if strings.HasPrefix(val, "~") && (len(val) == 1 || val[1] == '/' || val[1] == '\\') {
 		home, herr := userHomeDir()
 		if herr == nil && home != "" {
 			val = filepath.Join(home, strings.TrimPrefix(val, "~"))
@@ -230,6 +231,9 @@ func userHomeDir() (string, error) {
 	if runtime.GOOS == "windows" {
 		// Not your target, but safe fallback.
 		return "", errors.New("home expansion not supported on windows in this helper")
+	}
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return home, nil
 	}
 	// macOS/Linux
 	out, err := exec.Command("sh", "-lc", "printf %s \"$HOME\"").CombinedOutput()

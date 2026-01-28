@@ -48,7 +48,7 @@ type InspectResult struct {
 	// Object identity
 	Bucket       string
 	Key          string
-	WorktreeName string // basename of Key (filename)
+	WorktreeName string // basename of Key (filename), or override from input
 
 	// HEAD-derived info
 	SizeBytes   int64
@@ -87,9 +87,14 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 	if err != nil {
 		return nil, err
 	}
-	worktreeName := path.Base(key)
-	if worktreeName == "." || worktreeName == "/" || worktreeName == "" {
-		return nil, fmt.Errorf("could not derive worktree name from key %q", key)
+	worktreeName := strings.TrimSpace(in.WorktreeName)
+	if worktreeName == "" {
+		worktreeName = path.Base(key)
+		if worktreeName == "." || worktreeName == "/" || worktreeName == "" {
+			return nil, fmt.Errorf("could not derive worktree name from key %q", key)
+		}
+	} else if worktreeName == "." || worktreeName == "/" {
+		return nil, fmt.Errorf("invalid worktree name override %q", worktreeName)
 	}
 
 	// 3) HEAD on S3 to determine size and meta.SHA256.

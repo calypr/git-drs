@@ -223,6 +223,52 @@ for pass in 1 2; do
   echo "=== Test sequence pass #$pass completed ===" >&2
 done
 
+# After tests, upload a simple test file to the bucket via mc
+
+cd fixtures
+
+# create a simple test file, place it in the bucket via mc
+test_string='simple test'
+echo $test_string > /tmp/simple_test_file.txt
+sha256=$(sha256sum /tmp/simple_test_file.txt | cut -d' ' -f1)
+echo "Uploading a simple test file to the bucket via \`mc\`" >&2
+mc cp /tmp/simple_test_file.txt "$MINIO_ALIAS/$BUCKET/simple_test_file.txt"
+
+# get the s3 parameters from the mc alias
+MC_ALIAS_INFO_JSON=$(mc alias ls "$MINIO_ALIAS" --json)
+if [ $? -ne 0 ]; then
+  err "failed to get mc alias info for alias: $MINIO_ALIAS"
+  exit 1
+fi
+ENDPOINT=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.URL')
+ACCESS_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.accessKey')
+SECRET_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.secretKey')
+
+# use the add-url command to add the file to project
+git drs add-url s3://$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
+  --aws-access-key-id  $ACCESS_KEY \
+  --aws-secret-access-key  $SECRET_KEY  \
+  --endpoint-url $ENDPOINT \
+  --region us-east-1
+
+# set the .gitattributes to track the file
+git lfs track data/simple_test_file.txt
+#
+git add .gitattributes data/simple_test_file.txt
+git commit -m "add-url simple_test_file.txt to git lfs"
+
+# verify the sha256 matches
+grep $sha256 data/simple_test_file.txt
+# should show as a pointer file
+git lfs ls-files | grep " - data/simple_test_file.txt"
+
+git lfs pull origin main
+
+# verify the file is now tracked as a local data file
+git lfs ls-files | grep " * data/simple_test_file.txt"
+# verify the file contents after pull
+cat data/simple_test_file.txt | grep "$test_string"
+
 popd >/dev/null
 
 echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2

@@ -7,9 +7,9 @@ import (
 )
 
 func TestPushCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "push")
+	testutils.RunCmdMainTest(t, "push")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }

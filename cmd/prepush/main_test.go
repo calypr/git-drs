@@ -8,11 +8,11 @@ import (
 )
 
 func TestPrepushCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "prepush")
+	testutils.RunCmdMainTest(t, "prepush")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }
 
 func TestReadPushedBranches(t *testing.T) {

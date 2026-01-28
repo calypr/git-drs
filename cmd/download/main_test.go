@@ -7,9 +7,9 @@ import (
 )
 
 func TestDownloadCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "download")
+	testutils.RunCmdMainTest(t, "download")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }

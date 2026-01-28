@@ -7,9 +7,9 @@ import (
 )
 
 func TestFetchCmd(t *testing.T) {
-	testutils.TestCmdMain(t, "fetch")
+	testutils.RunCmdMainTest(t, "fetch")
 }
 
 func TestValidateArgs(t *testing.T) {
-	testutils.TestCmdArgs(t)
+	testutils.RunCmdArgsTest(t)
 }

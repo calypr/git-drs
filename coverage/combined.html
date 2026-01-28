@@ -2349,6 +2349,9 @@ import (
         "strings"
         "sync/atomic"
         "time"
+
+        "github.com/aws/aws-sdk-go-v2/aws"
+        "github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // progressReader wraps an io.ReadCloser and periodically writes progress to stderr.
@@ -2434,6 +2437,39 @@ func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, e
         if raw == "" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("AgentFetchReader: InspectInput.S3URL is empty")
         }</span>
+
+        <span class="cov0" title="0">useSignedFetch := strings.TrimSpace(input.AWSAccessKey) != "" ||
+                strings.TrimSpace(input.AWSSecretKey) != "" ||
+                strings.TrimSpace(input.AWSRegion) != ""
+        if useSignedFetch </span><span class="cov0" title="0">{
+                if strings.TrimSpace(input.AWSAccessKey) == "" || strings.TrimSpace(input.AWSSecretKey) == "" || strings.TrimSpace(input.AWSRegion) == "" </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("AgentFetchReader: AWSAccessKey, AWSSecretKey, and AWSRegion are required for signed fetch")
+                }</span>
+
+                <span class="cov0" title="0">bucket, key, err := parseS3URL(raw)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("AgentFetchReader: parse s3 url %q: %w", raw, err)
+                }</span>
+
+                <span class="cov0" title="0">s3Client, err := newS3Client(ctx, input)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("AgentFetchReader: init s3 client: %w", err)
+                }</span>
+
+                <span class="cov0" title="0">out, err := s3Client.GetObject(ctx, &amp;s3.GetObjectInput{
+                        Bucket: aws.String(bucket),
+                        Key:    aws.String(key),
+                })
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("AgentFetchReader: s3 GetObject failed (bucket=%q key=%q): %w", bucket, key, err)
+                }</span>
+                <span class="cov0" title="0">if out.Body == nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("AgentFetchReader: response body is nil for s3://%s/%s", bucket, key)
+                }</span>
+
+                <span class="cov0" title="0">label := fmt.Sprintf("fetch s3://%s/%s", bucket, key)
+                return newProgressReader(out.Body, label), nil</span>
+        }
 
         <span class="cov0" title="0">u, err := url.Parse(raw)
         if err != nil </span><span class="cov0" title="0">{

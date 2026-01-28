@@ -2,15 +2,9 @@
 # File: `tests/scripts/coverage/assert-coverage-timestamp.sh`
 set -euo pipefail
 
-COV='coverage/integration/coverage.out'
+COV='coverage/combined.out'
 if [ ! -f "$COV" ]; then
   echo "Missing coverage file: $COV" >&2
-  exit 1
-fi
-
-UNIT='coverage/unit/coverage.out'
-if [ ! -f "$UNIT" ]; then
-  echo "Missing coverage file: $UNIT" >&2
   exit 1
 fi
 
@@ -82,22 +76,6 @@ if [ "$cov_m" -gt "$max" ]; then
 else
   echo "FAIL: $COV is NOT newer than latest .go file ($latest_go)." >&2
   echo "  $COV mtime: $(date -r "$cov_m" +'%F %T' 2>/dev/null || date -d @"$cov_m" +'%F %T' 2>/dev/null)"
-  echo "  latest .go mtime: $(date -r "$max" +'%F %T' 2>/dev/null || date -d @"$max" +'%F %T' 2>/dev/null)"
-  exit 2
-fi
-
-unit_m=$(get_mtime "$UNIT")
-if [ -z "$unit_m" ] || [ "$unit_m" -eq 0 ]; then
-  echo "Could not read mtime for $UNIT" >&2
-  exit 1
-fi
-
-if [ "$unit_m" -gt "$max" ]; then
-  echo "OK: $UNIT is newer than latest .go file ($latest_go)."
-  exit 0
-else
-  echo "FAIL: $UNIT is NOT newer than latest .go file ($latest_go)." >&2
-  echo "  $UNIT mtime: $(date -r "$unit_m" +'%F %T' 2>/dev/null || date -d @"$unit_m" +'%F %T' 2>/dev/null)"
   echo "  latest .go mtime: $(date -r "$max" +'%F %T' 2>/dev/null || date -d @"$max" +'%F %T' 2>/dev/null)"
   exit 2
 fi

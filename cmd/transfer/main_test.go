@@ -1,4 +1,4 @@
-package transfer
+package transfer_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
-func TestMain(t *testing.T) {
+func TestTransferCmd(t *testing.T) {
 	testutils.TestCmdMain(t, "transfer")
 }
 

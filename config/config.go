@@ -10,7 +10,7 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	anvil_client "github.com/calypr/git-drs/client/anvil"
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"gopkg.in/yaml.v3"
@@ -55,7 +55,7 @@ type DRSRemote interface {
 }
 
 type RemoteSelect struct {
-	Gen3  *indexd_client.Gen3Remote `yaml:"gen3,omitempty"`
+	Gen3  *indexd.Gen3Remote        `yaml:"gen3,omitempty"`
 	Anvil *anvil_client.AnvilRemote `yaml:"anvil,omitempty"`
 }
 

@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	hash "github.com/calypr/data-client/indexd/hash"
-	indexdCl "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	localLfs "github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -47,13 +47,13 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
 		// Check for GitDrsIdxdClient
-		icli, ok := cli.(*indexdCl.GitDrsIdxdClient)
+		icli, ok := cli.(*indexd.GitDrsIdxdClient)
 		if !ok {
-			return fmt.Errorf("remote client is not an *indexdCl.GitDrsIdxdClient (got %T)", cli)
+			return fmt.Errorf("remote client is not an *indexd.GitDrsIdxdClient (got %T)", cli)
 		}
 
 		// Get all pending objects
-		pendingObjects, err := localLfs.GetPendingObjects(logger)
+		pendingObjects, err := lfs.GetPendingObjects(logger)
 		if err != nil {
 			return fmt.Errorf("error reading pending objects: %v", err)
 		}

@@ -8,7 +8,7 @@ import (
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 
-	indexdCl "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 )
 
 var Cmd = &cobra.Command{
@@ -48,7 +48,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Check for GitDrsIdxdClient
-		icli, ok := drsClient.(*indexdCl.GitDrsIdxdClient)
+		icli, ok := drsClient.(*indexd.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T), cannot push", drsClient)
 		}

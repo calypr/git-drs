@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/calypr/data-client/common"
+	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/projectdir"
@@ -137,7 +138,7 @@ func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DR
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MockDRSClient) RegisterFile(oid string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) {
+func (m *MockDRSClient) RegisterFile(oid string, path string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -158,6 +159,10 @@ func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64
 
 func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
 	return s3_utils.S3Meta{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
+	return nil
 }
 
 func TestPullRemoteDrsObjects(t *testing.T) {

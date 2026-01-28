@@ -1,4 +1,4 @@
-package indexd_client
+package indexd
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/calypr/data-client/fence"
 	"github.com/calypr/data-client/indexd"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"

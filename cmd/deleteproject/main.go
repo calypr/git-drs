@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	indexdCl "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/utils"
@@ -45,7 +45,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Cast to GitDrsIdxdClient to access GetProjectSample
-		indexdClient, ok := drsClient.(*indexdCl.GitDrsIdxdClient)
+		indexdClient, ok := drsClient.(*indexd.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("client is not an IndexDClient, cannot proceed with delete-project")
 		}

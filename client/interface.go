@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/calypr/data-client/common"
+	dataClient "github.com/calypr/data-client/g3client"
 	drs "github.com/calypr/data-client/indexd/drs"
 	hash "github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/s3_utils"
@@ -49,7 +50,7 @@ type DRSClient interface {
 	RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error)
 
 	// Put file into object storage and obtain a DRS record pointing to it
-	RegisterFile(oid string, progressCallback common.ProgressCallback) (*drs.DRSObject, error)
+	RegisterFile(oid string, path string, progressCallback common.ProgressCallback) (*drs.DRSObject, error)
 
 	// Update a DRS record and return the updated record
 	// Fields allowed: URLs, authz, name, version, description
@@ -60,4 +61,7 @@ type DRSClient interface {
 
 	// Add an S3 URL to an existing indexd record
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error)
+
+	// Get the underlying Gen3Interface
+	GetGen3Interface() dataClient.Gen3Interface
 }

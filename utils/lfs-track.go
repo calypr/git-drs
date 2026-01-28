@@ -91,7 +91,7 @@ func isLFSTracked(gitattributesContent string, filePath string) (bool, error) {
 		if matchesPattern(attr.Pattern, filePath) {
 			// Check for LFS attributes
 			if filter, exists := attr.Attributes["filter"]; exists {
-				return filter == "lfs", nil // Return immediately on filter match
+				isLFS = (filter == "lfs")
 			}
 		}
 	}
@@ -127,8 +127,15 @@ func matchesPattern(pattern, filePath string) bool {
 	}
 
 	// For simple glob patterns without path separators (like *.bin),
-	// only match against the filename, not the full path
-	// filename := filepath.Base(filePath)
+	// match against the filename (base) as well
+	if !strings.Contains(pattern, "/") {
+		filename := filepath.Base(filePath)
+		matched, err := filepath.Match(pattern, filename)
+		if err == nil && matched {
+			return true
+		}
+	}
+
 	matched, err := filepath.Match(pattern, filePath)
 	if err != nil {
 		return false

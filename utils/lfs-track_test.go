@@ -110,10 +110,10 @@ path/to/*.bin filter=lfs
 		{"archive.zip", true},    // *.zip matches filename
 		{"large-file.txt", true}, // exact match
 
-		// Files in subdirectories - should NOT match simple glob patterns
-		{"path/to/file.bin", true},    // This should match path/to/*.bin pattern
-		{"other/dir/file.bin", false}, // This should NOT match *.bin (no path separator in pattern)
-		{"subdir/archive.zip", false}, // This should NOT match *.zip
+		// Files in subdirectories - should match simple glob patterns
+		{"path/to/file.bin", true},   // This matches path/to/*.bin or *.bin
+		{"other/dir/file.bin", true}, // This matches *.bin
+		{"subdir/archive.zip", true}, // This matches *.zip
 
 		// Double star patterns should match
 		{"docs/manual/guide.pdf", true},
@@ -151,7 +151,7 @@ func TestMatchesPattern(t *testing.T) {
 		{"*.txt", "file.txt", true},
 		{"*.txt", "file.md", false},
 		{"*.bin", "file.bin", true},
-		{"*.bin", "path/to/file.bin", false}, // CORRECTED: Should be false
+		{"*.bin", "path/to/file.bin", true},
 
 		// Patterns with path separators
 		{"src/*.go", "src/main.go", true},
@@ -230,13 +230,13 @@ temp/*.bin -filter
 		t.Error("Expected true for data.bin")
 	}
 
-	// File in other subdirectory should NOT be LFS tracked (*.bin only matches filename)
+	// File in other subdirectory should be LFS tracked (*.bin matches anywhere)
 	result, err = isLFSTracked(content, "src/data.bin")
 	if err != nil {
 		t.Errorf("isLFSTracked failed: %v", err)
 	}
-	if result {
-		t.Error("Expected false for src/data.bin (*.bin should only match filename)")
+	if !result {
+		t.Error("Expected true for src/data.bin (*.bin should match anywhere)")
 	}
 }
 
@@ -263,9 +263,9 @@ models/*.blend filter=lfs diff=lfs merge=lfs -text
 		desc     string
 	}{
 		{"image.psd", true, "PSD file in root should be LFS"},
-		{"project/image.psd", false, "PSD file in subdirectory should NOT match *.psd"},
+		{"project/image.psd", true, "PSD file in subdirectory should match *.psd"},
 		{"archive.zip", true, "ZIP file in root should be LFS"},
-		{"backup/archive.zip", false, "ZIP file in subdirectory should NOT match *.zip"},
+		{"backup/archive.zip", true, "ZIP file in subdirectory should match *.zip"},
 		{"assets/textures/logo.png", true, "PNG in assets should match assets/**/*.png"},
 		{"images/logo.png", false, "PNG outside assets should NOT match"},
 		{"models/character.blend", true, "Blend file in models should be LFS"},

@@ -183,7 +183,7 @@ tracked by LFS : %v
 
 	// 3) fetch bytes -> tmp, compute sha+count
 
-	// replace the pseudocode with this real Go snippet (to be placed inside runAddURL)
+	// Create the temporary directory and file where the S3 object will be streamed while computing its hash and size.
 	if err = os.MkdirAll(tmpDir, 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", tmpDir, err)
 	}

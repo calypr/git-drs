@@ -2394,12 +2394,9 @@ func newProgressReader(rc io.ReadCloser, label string) io.ReadCloser <span class
                         case &lt;-p.quit:<span class="cov0" title="0">
                                 // final line (replace same line, then newline)
                                 total := atomic.LoadInt64(&amp;p.total)
-                                if total == last </span><span class="cov0" title="0">{
-                                        fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
-                                }</span> else<span class="cov0" title="0"> {
-                                        fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
-                                }</span>
-                                <span class="cov0" title="0">close(p.done)
+                                _ = last // in case we want to use last for something later
+                                fmt.Fprintf(os.Stderr, "\r%s: %d bytes\n", p.label, total)
+                                close(p.done)
                                 return</span>
                         }
                 }

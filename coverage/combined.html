@@ -79,7 +79,7 @@
 				
 				<option value="file11">github.com/calypr/git-drs/cmd/addurl/lfss3/inspect.go (0.0%)</option>
 				
-				<option value="file12">github.com/calypr/git-drs/cmd/addurl/main.go (4.5%)</option>
+				<option value="file12">github.com/calypr/git-drs/cmd/addurl/main.go (4.2%)</option>
 				
 				<option value="file13">github.com/calypr/git-drs/cmd/cache/create-cache.go (0.0%)</option>
 				
@@ -2490,10 +2490,8 @@ func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, e
         }
 
         <span class="cov0" title="0">if resp.Body == nil </span><span class="cov0" title="0">{
-                _ = resp.Body.Close()
                 return nil, fmt.Errorf("AgentFetchReader: response body is nil for %s", s3url)
         }</span>
-
         // wrap response body with progress reporting that writes to stderr
         <span class="cov0" title="0">label := fmt.Sprintf("fetch %s", s3url)
         return newProgressReader(resp.Body, label), nil</span>
@@ -2620,15 +2618,25 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
                 lm = *head.LastModified
         }</span>
 
+        <span class="cov0" title="0">if head.ContentLength == nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("s3 HeadObject missing ContentLength (bucket=%q key=%q)", bucket, key)
+        }</span>
+        <span class="cov0" title="0">sizeBytes := *head.ContentLength
+
+        var etag string
+        if head.ETag != nil </span><span class="cov0" title="0">{
+                etag = strings.Trim(*head.ETag, `"`)
+        }</span>
+
         <span class="cov0" title="0">out := &amp;InspectResult{
                 GitCommonDir: gitCommonDir,
                 LFSRoot:      lfsRoot,
                 Bucket:       bucket,
                 Key:          key,
                 WorktreeName: worktreeName,
-                SizeBytes:    *head.ContentLength,
+                SizeBytes:    sizeBytes,
                 MetaSHA256:   metaSHA,
-                ETag:         strings.Trim(*head.ETag, `"`),
+                ETag:         etag,
                 LastModTime:  lm,
         }
         return out, nil</span>
@@ -3072,8 +3080,18 @@ tracked by LFS : %v
         }</span>
 
         // 2) object destination
-        <span class="cov0" title="0">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", info.ETag[0:2], info.ETag[2:4])
-        tmpObj := filepath.Join(tmpDir, info.ETag)
+        <span class="cov0" title="0">etag := info.ETag
+        subdir1, subdir2 := "xx", "yy"
+        if len(etag) &gt;= 4 </span><span class="cov0" title="0">{
+                subdir1 = etag[0:2]
+                subdir2 = etag[2:4]
+        }</span>
+        <span class="cov0" title="0">objName := etag
+        if objName == "" </span><span class="cov0" title="0">{
+                objName = "unknown-etag"
+        }</span>
+        <span class="cov0" title="0">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+        tmpObj := filepath.Join(tmpDir, objName)
 
         // 3) fetch bytes -&gt; tmp, compute sha+count
 

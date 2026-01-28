@@ -1,4 +1,4 @@
-package register_test
+package register
 
 import (
 	"testing"

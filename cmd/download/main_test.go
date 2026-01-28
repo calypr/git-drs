@@ -1,4 +1,4 @@
-package download_test
+package download
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package fetch_test
+package fetch
 
 import (
 	"testing"

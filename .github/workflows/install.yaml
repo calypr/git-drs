@@ -17,24 +17,14 @@ jobs:
       matrix:
         include:
           - { os: linux, arch: amd64, runner: ubuntu-latest }
-          # - { os: linux, arch: arm64, runner: ubuntu-latest-arm64 }
-          # - { os: darwin, arch: amd64, runner: macos-latest }
-          # - { os: darwin, arch: arm64, runner: macos-latest }
+          - { os: linux, arch: arm64, runner: ubuntu-latest-arm64 }
+          - { os: darwin, arch: amd64, runner: macos-latest }
+          - { os: darwin, arch: arm64, runner: macos-latest }
 
     steps:
       - name: Install Default Version (Latest Release)
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"  
-          source $HOME/.bashrc
-          which git-drs
-          git-drs --help
-
-      - name: Install Specific Version (Tag)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG=$(gh release view --json tagName --jq '.tagName' || echo "")
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $TAG
           source $HOME/.bashrc
           which git-drs
           git-drs --help

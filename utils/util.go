@@ -5,19 +5,10 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-func GitTopLevel() (string, error) {
-	path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSuffix(path, "\n"), nil
-}
 
 func SimpleRun(cmds []string) (string, error) {
 	exePath, err := exec.LookPath(cmds[0])
@@ -27,14 +18,6 @@ func SimpleRun(cmds []string) (string, error) {
 	cmd := exec.Command(exePath, cmds[1:]...)
 	cmdOut, err := cmd.Output()
 	return string(cmdOut), err
-}
-
-func DrsTopLevel() (string, error) {
-	base, err := GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, DRS_DIR), nil
 }
 
 // CanDownloadFile checks if a file can be downloaded from the given signed URL

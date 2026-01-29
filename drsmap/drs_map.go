@@ -18,9 +18,9 @@ import (
 	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/utils"
+	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
 )
 
@@ -138,7 +138,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client g3client.Gen3Int
 			}
 
 		} else {
-			filePath, err := GetObjectPath(projectdir.LFS_OBJS_PATH, drsObjKey)
+			filePath, err := GetObjectPath(common.LFS_OBJS_PATH, drsObjKey)
 			if err != nil {
 				return err
 			}
@@ -178,7 +178,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 		for sumType, sum := range sumMap {
 			if sumType == hash.ChecksumTypeSHA256.String() {
 				oid = sum
-				drsObjPath, err = GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
+				drsObjPath, err = GetObjectPath(common.DRS_OBJS_PATH, oid)
 				if err != nil {
 					return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 				}
@@ -218,7 +218,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
 	// which will be used at push-time
 	for _, file := range lfsFiles {
 		// check if indexd object already prepared, skip if so
-		drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
+		drsObjPath, err := GetObjectPath(common.DRS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -234,7 +234,7 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
 		// logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
 		// get file info needed to create indexd record
-		path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
+		path, err := GetObjectPath(common.LFS_OBJS_PATH, file.Oid)
 		if err != nil {
 			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
 		}
@@ -285,7 +285,7 @@ func DrsUUID(projectId string, hash string) string {
 // creates drsObject record from file
 func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
 	// unmarshal the DRS object
-	path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
+	path, err := GetObjectPath(common.DRS_OBJS_PATH, oid)
 	if err != nil {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 	}
@@ -361,27 +361,53 @@ func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
 }
 
 func getStagedFiles() ([]string, error) {
-	// chose exec here for performance over using go-git
-	// tradeoff is very rare concurrency problems which currently aren't relevant to the pre-commit
-	// FIXME: filter out files that have been deleted? Bug: if git rm, the DRS object still created
-	cmd := exec.Command("git", "diff", "--name-only", "--cached")
-	cmdOut, err := cmd.Output()
+	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("error running git command: %w: out: '%s'", err, string(cmdOut))
+		return nil, err
 	}
-	stagedFiles := strings.Split(strings.TrimSpace(string(cmdOut)), "\n")
+	repo, err := git.PlainOpenWithOptions(cwd, &git.PlainOpenOptions{DetectDotGit: true})
+	if err != nil {
+		return nil, err
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return nil, err
+	}
+
+	var stagedFiles []string
+	for file, s := range status {
+		if s.Staging == git.Added || s.Staging == git.Modified || s.Staging == git.Renamed || s.Staging == git.Copied {
+			stagedFiles = append(stagedFiles, file)
+		}
+	}
 	return stagedFiles, nil
 }
 
 func GetRepoNameFromGit(remote string) (string, error) {
-	// prefer simple os.Exec over using go-git
-	cmd := exec.Command("git", "config", "--get", fmt.Sprintf("remote.%s.url", remote))
-	out, err := cmd.Output()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	repo, err := git.PlainOpenWithOptions(cwd, &git.PlainOpenOptions{DetectDotGit: true})
 	if err != nil {
 		return "", err
 	}
 
-	remoteURL := strings.TrimSpace(string(out))
+	rem, err := repo.Remote(remote)
+	if err != nil {
+		return "", err
+	}
+
+	urls := rem.Config().URLs
+	if len(urls) == 0 {
+		return "", fmt.Errorf("no URLs found for remote %s", remote)
+	}
+
+	remoteURL := strings.TrimSpace(urls[0])
 	repoName := strings.TrimSuffix(filepath.Base(remoteURL), ".git")
 	return repoName, nil
 }
@@ -567,7 +593,7 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Convert project ID to resource path format for comparison
-	expectedAuthz, err := utils.ProjectToResource(projectId)
+	expectedAuthz, err := drs.ProjectToResource(projectId)
 	if err != nil {
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}

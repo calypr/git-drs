@@ -7,19 +7,18 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/gitrepo"
 )
-
-const DRS_DIR = ".git/drs"
 
 type DrsWalkFunc func(path string, d *drs.DRSObject) error
 
 func BaseDir() (string, error) {
-	gitTopLevel, err := utils.GitTopLevel()
+	gitTopLevel, err := gitrepo.GitTopLevel()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(gitTopLevel, DRS_DIR), nil
+	return filepath.Join(gitTopLevel, common.DRS_DIR), nil
 }
 
 type dirWalker struct {

@@ -13,7 +13,7 @@ import (
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/data-client/indexd/hash"
-	"github.com/calypr/git-drs/projectdir"
+	localCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
@@ -165,6 +165,10 @@ func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
 	return nil
 }
 
+func (m *MockDRSClient) GetBucketName() string {
+	return ""
+}
+
 func TestPullRemoteDrsObjects(t *testing.T) {
 	setupTestRepo(t)
 	// mockClient and setup
@@ -185,7 +189,7 @@ func TestPullRemoteDrsObjects(t *testing.T) {
 	}
 
 	// Create required directory structure (mimicking setup that might be missing)
-	os.MkdirAll(".git/drs/lfs/objects", 0755)
+	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
@@ -196,7 +200,7 @@ func TestPullRemoteDrsObjects(t *testing.T) {
 
 	// Verify file exists using correct project path variable
 	// PullRemoteDrsObjects uses projectdir.DRS_OBJS_PATH
-	path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, sha)
+	path, err := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
 	if err != nil {
 		t.Fatalf("GetObjectPath failed: %v", err)
 	}

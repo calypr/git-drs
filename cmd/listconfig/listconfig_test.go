@@ -17,7 +17,7 @@ func TestListConfigCmdArgs(t *testing.T) {
 
 func TestListConfigRun_Error(t *testing.T) {
 	_ = testutils.SetupTestGitRepo(t)
-	// No config
+	// No config should not error, just return empty
 	err := Cmd.RunE(Cmd, []string{})
-	assert.Error(t, err)
+	assert.NoError(t, err)
 }

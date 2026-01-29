@@ -5,13 +5,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/projectdir"
 )
 
 func TestTransferRefCmd_Init(t *testing.T) {
@@ -23,21 +21,20 @@ func TestTransferRefCmd_Init(t *testing.T) {
 	defer os.Chdir(origDir)
 
 	// Mock config
-	configDir := filepath.Join(tmp, projectdir.DRS_DIR)
-	os.MkdirAll(configDir, 0755)
-
-	// Create dummy config
-	_ = config.Config{
-		DefaultRemote: "origin",
-		Remotes: map[config.Remote]config.RemoteSelect{
-			"origin": {},
-		},
+	// Create dummy config using git config
+	cmds := [][]string{
+		{"config", "drs.default-remote", "origin"},
+		{"config", "drs.remote.origin.type", "gen3"},
+		{"config", "drs.remote.origin.project", "prog-proj"},
+		// api_key is not used in LoadConfig structs currently for gen3 remote, but we set what we can
 	}
-	f, _ := os.Create(filepath.Join(configDir, "config.yaml"))
-	// We can't easily marshal dependencies that are skipped in test but basic config is fine
-	// actually we just need a file to exist and be loadable
-	f.WriteString("default_remote: origin\nremotes:\n  origin:\n    gen3:\n      api_key: test\n      project_id: prog-proj\n")
-	f.Close()
+	for _, args := range cmds {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmp
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
+		}
+	}
 
 	// Check that loading this config works (implicit validation of setup)
 	if _, err := config.LoadConfig(); err != nil {
@@ -91,11 +88,18 @@ func TestTransferRefCmd_Download(t *testing.T) {
 	defer os.Chdir(origDir)
 
 	// Mock config
-	configDir := filepath.Join(tmp, projectdir.DRS_DIR)
-	os.MkdirAll(configDir, 0755)
-	f, _ := os.Create(filepath.Join(configDir, "config.yaml"))
-	f.WriteString("default_remote: origin\nremotes:\n  origin:\n    gen3:\n      api_key: test\n      project_id: prog-proj\n")
-	f.Close()
+	cmds := [][]string{
+		{"config", "drs.default-remote", "origin"},
+		{"config", "drs.remote.origin.type", "gen3"},
+		{"config", "drs.remote.origin.project", "prog-proj"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmp
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
+		}
+	}
 
 	r, w, _ := os.Pipe()
 	oldStdout := os.Stdout

@@ -28,12 +28,11 @@ func TestGen3Remote_Getters(t *testing.T) {
 
 func TestGen3Remote_GetClient_Error(t *testing.T) {
 	r := Gen3Remote{}
-	params := map[string]string{"remote_name": "non-existent-remote"}
 
 	// Create a logger
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	client, err := r.GetClient(params, logger)
+	client, err := r.GetClient("non-existent-remote", logger)
 	if err == nil {
 		t.Error("Expected error for non-existent remote config")
 	}

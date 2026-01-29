@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -183,7 +184,7 @@ func TestGitTopLevelAndSimpleRun(t *testing.T) {
 		_ = os.Chdir(cwd)
 	})
 
-	top, err := GitTopLevel()
+	top, err := gitrepo.GitTopLevel()
 	if err != nil {
 		t.Fatalf("GitTopLevel error: %v", err)
 	}
@@ -389,64 +390,5 @@ func TestFilePathJoin(t *testing.T) {
 				t.Errorf("filepath.Join(%v) = %q, want %q", tt.parts, result, tt.expected)
 			}
 		})
-	}
-}
-func TestIsLFSTrackedFile(t *testing.T) {
-	tmp := t.TempDir()
-	attrPath := filepath.Join(tmp, ".gitattributes")
-	err := os.WriteFile(attrPath, []byte("*.bin filter=lfs diff=lfs merge=lfs -text\n"), 0644)
-	if err != nil {
-		t.Fatalf("write .gitattributes: %v", err)
-	}
-
-	tests := []struct {
-		path    string
-		tracked bool
-	}{
-		{"test.bin", true},
-		{"sub/test.bin", true},
-		{"test.txt", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			tracked, err := IsLFSTracked(attrPath, tt.path)
-			if err != nil {
-				t.Fatalf("IsLFSTracked error: %v", err)
-			}
-			if tracked != tt.tracked {
-				t.Errorf("IsLFSTracked(%s) = %v, want %v", tt.path, tracked, tt.tracked)
-			}
-		})
-	}
-}
-
-func TestDrsTopLevel(t *testing.T) {
-	tmp := t.TempDir()
-	drsDir := filepath.Join(tmp, ".git", "drs")
-	err := os.MkdirAll(drsDir, 0755)
-	if err != nil {
-		t.Fatalf("mkdir .git/drs: %v", err)
-	}
-
-	// Initialize git repo so git commands work
-	_, err = SimpleRun([]string{"git", "-C", tmp, "init"})
-	if err != nil {
-		t.Fatalf("git init: %v", err)
-	}
-
-	cwd, _ := os.Getwd()
-	os.Chdir(tmp)
-	defer os.Chdir(cwd)
-
-	top, err := DrsTopLevel()
-	if err != nil {
-		t.Fatalf("DrsTopLevel error: %v", err)
-	}
-
-	expected, _ := filepath.EvalSymlinks(drsDir)
-	actual, _ := filepath.EvalSymlinks(top)
-	if actual != expected {
-		t.Errorf("expected %s, got %s", expected, actual)
 	}
 }

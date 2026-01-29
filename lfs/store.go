@@ -9,7 +9,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/common"
 )
 
 // This file contains functions that pertain to .git/drs/lfs/objects directory walk
@@ -21,7 +21,7 @@ type PendingObject struct {
 // getPendingObjects walks .git/drs/lfs/objects/ to find all pending records
 func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) {
 	var objects []*PendingObject
-	objectsDir := projectdir.DRS_OBJS_PATH
+	objectsDir := common.DRS_OBJS_PATH
 
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		return nil, nil
@@ -57,7 +57,7 @@ func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) {
 
 func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
 	objects := map[string]*drs.DRSObject{}
-	objectsDir := projectdir.DRS_OBJS_PATH
+	objectsDir := common.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		logger.Debug(fmt.Sprintf("DRS objects directory not found: %s", objectsDir))
 		return nil, nil

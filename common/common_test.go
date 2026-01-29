@@ -1,9 +1,13 @@
-package utils
+package common
 
-import "testing"
+import (
+	"testing"
+
+	dataClientCommon "github.com/calypr/data-client/common"
+)
 
 func TestProjectToResource(t *testing.T) {
-	resource, err := ProjectToResource("prog-project")
+	resource, err := dataClientCommon.ProjectToResource("prog-project")
 	if err != nil {
 		t.Fatalf("ProjectToResource error: %v", err)
 	}
@@ -11,7 +15,7 @@ func TestProjectToResource(t *testing.T) {
 		t.Fatalf("unexpected resource: %s", resource)
 	}
 
-	if _, err := ProjectToResource("invalid"); err == nil {
+	if _, err := dataClientCommon.ProjectToResource("invalid"); err == nil {
 		t.Fatalf("expected error for invalid project")
 	}
 }

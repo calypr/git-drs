@@ -8,7 +8,9 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	"github.com/calypr/data-client/common"
+	dataClientCommon "github.com/calypr/data-client/common"
+	"github.com/calypr/git-drs/common"
+
 	"github.com/calypr/data-client/download"
 	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/client"
@@ -16,7 +18,6 @@ import (
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
 
@@ -169,7 +170,7 @@ var Cmd = &cobra.Command{
 				}
 
 				// download using data-client
-				dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, downloadMsg.Oid)
+				dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, downloadMsg.Oid)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
 					logger.Error(errMsg)
@@ -240,8 +241,8 @@ var Cmd = &cobra.Command{
 
 // GitLFSProgressCallback returns a ProgressCallback that sends progress events
 // to git-lfs via the streamEncoder
-func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback {
-	return func(event common.ProgressEvent) error {
+func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) dataClientCommon.ProgressCallback {
+	return func(event dataClientCommon.ProgressEvent) error {
 		lfs.WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
 		return nil
 	}

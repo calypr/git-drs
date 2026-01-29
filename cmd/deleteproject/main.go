@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -61,29 +61,29 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error: --confirm value '%s' does not match project ID '%s'", confirmFlag, projectId)
 		}
 		if confirmFlag != projectId {
-			utils.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
-			utils.DisplayField(os.Stderr, "Remote", string(remoteName))
-			utils.DisplayField(os.Stderr, "Project ID", projectId)
+			common.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
+			common.DisplayField(os.Stderr, "Remote", string(remoteName))
+			common.DisplayField(os.Stderr, "Project ID", projectId)
 
 			if len(sampleRecords) > 0 {
 				sample := sampleRecords[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
-				utils.DisplayField(os.Stderr, "  DID", sample.Id)
+				common.DisplayField(os.Stderr, "  DID", sample.Id)
 				if sample.Name != "" {
-					utils.DisplayField(os.Stderr, "  Filename", sample.Name)
+					common.DisplayField(os.Stderr, "  Filename", sample.Name)
 				}
-				utils.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
+				common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
 				if sample.CreatedTime != "" {
-					utils.DisplayField(os.Stderr, "  Created", sample.CreatedTime)
+					common.DisplayField(os.Stderr, "  Created", sample.CreatedTime)
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "\nNo records found for this project.\n")
 			}
 
 			fmt.Fprintf(os.Stderr, "\nThis will DELETE ALL records in project '%s'.\n", projectId)
-			utils.DisplayFooter(os.Stderr)
+			common.DisplayFooter(os.Stderr)
 
-			if err := utils.PromptForConfirmation(os.Stderr, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
+			if err := common.PromptForConfirmation(os.Stderr, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
 				return err
 			}
 		}

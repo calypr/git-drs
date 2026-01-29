@@ -59,7 +59,7 @@
 				
 				<option value="file1">github.com/calypr/git-drs/client/anvil/remote.go (100.0%)</option>
 				
-				<option value="file2">github.com/calypr/git-drs/client/indexd/add_url.go (17.6%)</option>
+				<option value="file2">github.com/calypr/git-drs/client/indexd/add_url.go (47.4%)</option>
 				
 				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (52.4%)</option>
 				
@@ -79,9 +79,9 @@
 				
 				<option value="file11">github.com/calypr/git-drs/cmd/addurl/lfss3/gitattributes.go (85.5%)</option>
 				
-				<option value="file12">github.com/calypr/git-drs/cmd/addurl/lfss3/inspect.go (55.6%)</option>
+				<option value="file12">github.com/calypr/git-drs/cmd/addurl/lfss3/inspect.go (76.8%)</option>
 				
-				<option value="file13">github.com/calypr/git-drs/cmd/addurl/main.go (66.7%)</option>
+				<option value="file13">github.com/calypr/git-drs/cmd/addurl/main.go (70.8%)</option>
 				
 				<option value="file14">github.com/calypr/git-drs/cmd/cache/create-cache.go (0.0%)</option>
 				
@@ -141,7 +141,7 @@
 				
 				<option value="file42">github.com/calypr/git-drs/drslog/logger.go (55.2%)</option>
 				
-				<option value="file43">github.com/calypr/git-drs/drsmap/drs_map.go (43.5%)</option>
+				<option value="file43">github.com/calypr/git-drs/drsmap/drs_map.go (44.2%)</option>
 				
 				<option value="file44">github.com/calypr/git-drs/drsmap/lfs_utils.go (94.1%)</option>
 				
@@ -375,35 +375,35 @@ func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, ht
         return GetBucketDetailsWithAuth(ctx, bucket, baseURL.String(), inc.AuthHandler, httpClient)
 }</span>
 
-</span>// FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
+// FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
 func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *slog.Logger) (int64, string, error) <span class="cov10" title="9">{
 
         // Parse S3 URL
         bucket, key, err := utils.ParseS3URL(s3URL)
-        if err != nil </span>{
-                return 0, "",</span> fmt.Errorf("failed to parse S3 URL: %w", err)
+        if err != nil </span><span class="cov1" title="1">{
+                return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
         }</span>
 
-</span>        // Create s3 client if not passed as param
+        // Create s3 client if not passed as param
         <span class="cov9" title="8">var finalRegion, finalEndpoint string
         var finalCfg aws.Config
         var clientWasProvided bool = (s3Client != nil)
 
-        if s3Client == nil </span>{
-                // Always load bas</span>e AWS configuration first
+        if s3Client == nil </span><span class="cov7" title="5">{
+                // Always load base AWS configuration first
                 cfg, err := awsConfig.LoadDefaultConfig(ctx)
-                if err != nil </span>{
-                        return 0, "",</span> fmt.Errorf("unable to load base AWS SDK config: %v. %s", err, messages.ADDURL_HELP_MSG)
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, "", fmt.Errorf("unable to load base AWS SDK config: %v. %s", err, messages.ADDURL_HELP_MSG)
                 }</span>
 
-</span>                // Build config options to override defaults
+                // Build config options to override defaults
                 <span class="cov7" title="5">var configOptions []func(*awsConfig.LoadOptions) error
 
                 // Override credentials if provided
-                if awsAccessKey != "" &amp;&amp; awsSecretKey != "" </span>{
+                if awsAccessKey != "" &amp;&amp; awsSecretKey != "" </span><span class="cov6" title="4">{
                         configOptions = append(configOptions,
-</span>                                awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+                                awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
                                         awsAccessKey,
                                         awsSecretKey,
                                         "", // session token (empty for basic credentials)
@@ -411,12 +411,12 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
                         )
                 }</span>
 
-</span>                // Override region with priority: parameter &gt; bucketDetails &gt; default
+                // Override region with priority: parameter &gt; bucketDetails &gt; default
                 <span class="cov7" title="5">regionToUse := ""
-                if region != "" </span>{
-                        regionToUse = r</span>egion
-                }</span> else if bucketDetails.Region != "" {
-                        </span></span>regionToUse = bucketDetails.Region
+                if region != "" </span><span class="cov3" title="2">{
+                        regionToUse = region
+                }</span> else<span class="cov5" title="3"> if bucketDetails.Region != "" </span><span class="cov1" title="1">{
+                        regionToUse = bucketDetails.Region
                 }</span>
                 <span class="cov7" title="5">if regionToUse != "" </span><span class="cov5" title="3">{
                         configOptions = append(configOptions, awsConfig.WithRegion(regionToUse))
@@ -441,38 +441,38 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
                 // Note: endpoint may also come from AWS config file, which will be loaded automatically
 
                 // Store final values for validation
-                finalRegion = cfg.Region
+                <span class="cov7" title="5">finalRegion = cfg.Region
                 finalCfg = cfg
 
-</span>                // Create S3 client with optional endpoint override and path-style addressing
-                s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) </span><span class="cov0" title="0">{
-                        if endpointToUse != "" </span><span class="cov0" title="0">{
+                // Create S3 client with optional endpoint override and path-style addressing
+                s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) </span><span class="cov7" title="5">{
+                        if endpointToUse != "" </span><span class="cov7" title="5">{
                                 o.BaseEndpoint = aws.String(endpointToUse)
                         }</span>
-                        <span class="cov0" title="0">o.UsePathStyle = true</span> // This forces path-style URLs
+                        <span class="cov7" title="5">o.UsePathStyle = true</span> // This forces path-style URLs
                 })
         }
 
         // Validate that all required configuration is present before making the HeadObject call
         // Only validate if we created the client ourselves (not provided as parameter)
-        <span class="cov0" title="0">if !clientWasProvided </span><span class="cov0" title="0">{
+        <span class="cov9" title="8">if !clientWasProvided </span><span class="cov7" title="5">{
                 var missingFields []string
 
                 // Check credentials
-                if finalCfg.Credentials != nil </span><span class="cov0" title="0">{
+                if finalCfg.Credentials != nil </span><span class="cov7" title="5">{
                         creds, err := finalCfg.Credentials.Retrieve(ctx)
-                        if err != nil || creds.AccessKeyID == "" </span><span class="cov0" title="0">{
+                        if err != nil || creds.AccessKeyID == "" </span><span class="cov1" title="1">{
                                 missingFields = append(missingFields, "AWS credentials (access key and secret key)")
                         }</span>
                 }
 
                 // Check region
-                <span class="cov0" title="0">if finalRegion == "" </span><span class="cov0" title="0">{
+                <span class="cov7" title="5">if finalRegion == "" </span><span class="cov3" title="2">{
                         missingFields = append(missingFields, "AWS region")
                 }</span>
 
                 // Check endpoint, ok if missing
-                <span class="cov0" title="0">if finalEndpoint == "" </span><span class="cov0" title="0">{
+                <span class="cov7" title="5">if finalEndpoint == "" </span><span class="cov5" title="3">{
                         logger.Debug("Warning: S3 endpoint URL is not provided. If supplied, using default AWS endpoint in configuration.")
                 }</span>
 
@@ -481,13 +481,13 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
                 // 2. For standard AWS S3, the endpoint is optional and determined by region
 
                 // If any required fields are missing, return a clear error
-                <span class="cov0" title="0">if len(missingFields) &gt; 0 </span><span class="cov0" title="0">{
+                <span class="cov7" title="5">if len(missingFields) &gt; 0 </span><span class="cov3" title="2">{
                         var errorMsg strings.Builder
                         errorMsg.WriteString("Missing required AWS configuration:\n")
-                        for i, field := range missingFields </span><span class="cov0" title="0">{
+                        for i, field := range missingFields </span><span class="cov5" title="3">{
                                 errorMsg.WriteString(fmt.Sprintf("  %d. %s\n", i+1, field))
                         }</span>
-                        <span class="cov0" title="0">errorMsg.WriteString("\nPlease provide these values via:\n")
+                        <span class="cov3" title="2">errorMsg.WriteString("\nPlease provide these values via:\n")
                         errorMsg.WriteString("  - Command-line flags (--" + s3_utils.AWS_KEY_FLAG_NAME + ", --" + s3_utils.AWS_SECRET_FLAG_NAME + ", --" + s3_utils.AWS_REGION_FLAG_NAME + ", --" + s3_utils.AWS_ENDPOINT_URL_FLAG_NAME + ")\n")
                         errorMsg.WriteString("  - Environment variables (" + s3_utils.AWS_KEY_ENV_VAR + ", " + s3_utils.AWS_SECRET_ENV_VAR + ", " + s3_utils.AWS_REGION_ENV_VAR + ", " + s3_utils.AWS_ENDPOINT_URL_ENV_VAR + ")\n")
                         errorMsg.WriteString("  - AWS credentials file (~/.aws/credentials)\n")
@@ -499,28 +499,28 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
         }
 
         // Ensure client was initialized (safety check)
-        <span class="cov0" title="0">if s3Client == nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="6">if s3Client == nil </span><span class="cov0" title="0">{
                 return 0, "", fmt.Errorf("S3 client was not initialized. %s", messages.ADDURL_HELP_MSG)
         }</span>
 
-        <span class="cov0" title="0">input := &amp;s3.HeadObjectInput{
+        <span class="cov8" title="6">input := &amp;s3.HeadObjectInput{
                 Bucket: &amp;bucket,
                 Key:    aws.String(key),
         }
 
         resp, err := s3Client.HeadObject(ctx, input)
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span><span class="cov1" title="1">{
                 return 0, "", fmt.Errorf("failed to head object, %v", err)
         }</span>
 
-        <span class="cov0" title="0">var contentLength int64
-        if resp.ContentLength != nil </span><span class="cov0" title="0">{
+        <span class="cov7" title="5">var contentLength int64
+        if resp.ContentLength != nil </span><span class="cov7" title="5">{
                 contentLength = *resp.ContentLength
         }</span> else<span class="cov0" title="0"> {
                 contentLength = 0
         }</span>
 
-        <span class="cov0" title="0">return contentLength, resp.LastModified.Format(time.RFC3339), nil</span>
+        <span class="cov7" title="5">return contentLength, resp.LastModified.Format(time.RFC3339), nil</span>
 }
 
 // fetchS3Metadata fetches S3 metadata (size, modified date) for a given S3 URL.
@@ -619,7 +619,7 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) <span class="cov0" title="0">{
+func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) <span class="cov3" title="2">{
         // Create context with 10-second timeout
         ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
         defer cancel()
@@ -631,12 +631,12 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
         }</span>
 
         // Use NoOpLogger if no logger provided
-        <span class="cov0" title="0">if inc.Logger == nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="2">if inc.Logger == nil </span><span class="cov0" title="0">{
                 inc.Logger = drslog.NewNoOpLogger()
         }</span>
 
         // Validate inputs
-        <span class="cov0" title="0">if err := s3_utils.ValidateInputs(s3URL, sha256); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="2">if err := s3_utils.ValidateInputs(s3URL, sha256); err != nil </span><span class="cov3" title="2">{
                 return s3_utils.S3Meta{}, err
         }</span>
 
@@ -2726,46 +2726,46 @@ type InspectResult struct {
         ETag        string
         LastModTime time.Time
 }
-</span>
-//</span> InspectS3ForLFS does all 3 requested tasks.
-func InspectS3ForLFS(ctx context.Conte</span>xt, </span>in InspectInput) (*InspectResult, error) {
-        if strings.TrimSpace(in.S3URL) == "" {
-                </span></span></span>return nil, errors.New("S3URL is required")
+
+// InspectS3ForLFS does all 3 requested tasks.
+func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, error) <span class="cov4" title="2">{
+        if strings.TrimSpace(in.S3URL) == "" </span><span class="cov0" title="0">{
+                return nil, errors.New("S3URL is required")
         }</span>
-</span></span>        <span class="cov5" title="2">if strings.TrimSpace(in.AWSRegion) == "" </span><span class="cov0" title="0">{
+        <span class="cov4" title="2">if strings.TrimSpace(in.AWSRegion) == "" </span><span class="cov0" title="0">{
                 return nil, errors.New("AWSRegion is required")
         }</span>
-        <span class="cov5" title="2">if in.AWSAccessKey == "" || in.AWSSecretKey == "" </span><span class="cov0" title="0">{
+        <span class="cov4" title="2">if in.AWSAccessKey == "" || in.AWSSecretKey == "" </span><span class="cov0" title="0">{
                 return nil, errors.New("AWSAccessKey and AWSSecretKey are required")
         }</span>
 
         // 1) Determine Git LFS storage root.
-        <span class="cov5" title="2">gitCommonDir, lfsRoot, err := GetGitRootDirectories(ctx)
+        <span class="cov4" title="2">gitCommonDir, lfsRoot, err := GetGitRootDirectories(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
         // 2) Parse S3 URL + derive working tree filename.
-        <span class="cov5" title="2">bucket, key, err := parseS3URL(in.S3URL)
+        <span class="cov4" title="2">bucket, key, err := parseS3URL(in.S3URL)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="2">worktreeName := strings.TrimSpace(in.WorktreeName)
+        <span class="cov4" title="2">worktreeName := strings.TrimSpace(in.WorktreeName)
         if worktreeName == "" </span><span class="cov0" title="0">{
                 worktreeName = path.Base(key)
                 if worktreeName == "." || worktreeName == "/" || worktreeName == "" </span><span class="cov0" title="0">{
                         return nil, fmt.Errorf("could not derive worktree name from key %q", key)
                 }</span>
-        } else<span class="cov5" title="2"> if worktreeName == "." || worktreeName == "/" </span><span class="cov0" title="0">{
+        } else<span class="cov4" title="2"> if worktreeName == "." || worktreeName == "/" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid worktree name override %q", worktreeName)
         }</span>
 
         // 3) HEAD on S3 to determine size and meta.SHA256.
-        <span class="cov5" title="2">s3Client, err := newS3Client(ctx, in)
+        <span class="cov4" title="2">s3Client, err := newS3Client(ctx, in)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="2">head, err := s3Client.HeadObject(ctx, &amp;s3.HeadObjectInput{
+        <span class="cov4" title="2">head, err := s3Client.HeadObject(ctx, &amp;s3.HeadObjectInput{
                 Bucket: aws.String(bucket),
                 Key:    aws.String(key),
         })
@@ -2773,7 +2773,7 @@ func InspectS3ForLFS(ctx context.Conte</span>xt, </span>in InspectInput) (*Inspe
                 return nil, fmt.Errorf("s3 HeadObject failed (bucket=%q key=%q): %w", bucket, key, err)
         }</span>
 
-        <span class="cov5" title="2">metaSHA := extractSHA256FromMetadata(head.Metadata)
+        <span class="cov4" title="2">metaSHA := extractSHA256FromMetadata(head.Metadata)
 
         // Optional: validate provided SHA256 against metadata if both exist.
         expected := normalizeSHA256(in.SHA256)
@@ -2781,22 +2781,22 @@ func InspectS3ForLFS(ctx context.Conte</span>xt, </span>in InspectInput) (*Inspe
                 return nil, fmt.Errorf("sha256 mismatch: expected=%s head.meta=%s", expected, metaSHA)
         }</span>
 
-        <span class="cov5" title="2">var lm time.Time
-        if head.LastModified != nil </span><span class="cov5" title="2">{
+        <span class="cov4" title="2">var lm time.Time
+        if head.LastModified != nil </span><span class="cov4" title="2">{
                 lm = *head.LastModified
         }</span>
 
-        <span class="cov5" title="2">if head.ContentLength == nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="2">if head.ContentLength == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("s3 HeadObject missing ContentLength (bucket=%q key=%q)", bucket, key)
         }</span>
-        <span class="cov5" title="2">sizeBytes := *head.ContentLength
+        <span class="cov4" title="2">sizeBytes := *head.ContentLength
 
         var etag string
-        if head.ETag != nil </span><span class="cov5" title="2">{
+        if head.ETag != nil </span><span class="cov4" title="2">{
                 etag = strings.Trim(*head.ETag, `"`)
         }</span>
 
-        <span class="cov5" title="2">out := &amp;InspectResult{
+        <span class="cov4" title="2">out := &amp;InspectResult{
                 GitCommonDir: gitCommonDir,
                 LFSRoot:      lfsRoot,
                 Bucket:       bucket,
@@ -2811,51 +2811,51 @@ func InspectS3ForLFS(ctx context.Conte</span>xt, </span>in InspectInput) (*Inspe
 }
 
 // GetGitRootDirectories returns (gitCommonDir, lfsRoot, error).
-func GetGitRootDirectories(ctx context.Context) (string, string, error) <span class="cov5" title="2">{
+func GetGitRootDirectories(ctx context.Context) (string, string, error) <span class="cov4" title="2">{
         gitCommonDir, err := gitRevParseGitCommonDir(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", err
         }</span>
-        <span class="cov5" title="2">lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
+        <span class="cov4" title="2">lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", err
         }</span>
-        <span class="cov5" title="2">if lfsRoot == "" </span><span class="cov0" title="0">{
+        <span class="cov4" title="2">if lfsRoot == "" </span><span class="cov0" title="0">{
                 lfsRoot = filepath.Join(gitCommonDir, "lfs")
         }</span>
-        <span class="cov5" title="2">return gitCommonDir, lfsRoot, nil</span>
+        <span class="cov4" title="2">return gitCommonDir, lfsRoot, nil</span>
 }
 
 //
 // --- Git helpers ---
 //
 
-func GitLFSTrack(ctx context.Context, path string) (bool, error) <span class="cov5" title="2">{
+func GitLFSTrack(ctx context.Context, path string) (bool, error) <span class="cov4" title="2">{
         out, err := runGit(ctx, "lfs", "track", path)
         if err != nil </span><span class="cov0" title="0">{
                 return false, fmt.Errorf("git lfs track failed: %w", err)
         }</span>
-        <span class="cov5" title="2">return strings.Contains(out, path), nil</span>
+        <span class="cov4" title="2">return strings.Contains(out, path), nil</span>
 }
 
-func GitLFSTrackReadOnly(ctx context.Context, path string) (bool, error) <span class="cov5" title="2">{
+func GitLFSTrackReadOnly(ctx context.Context, path string) (bool, error) <span class="cov4" title="2">{
         _, err := GitLFSTrack(ctx, path)
         if err != nil </span><span class="cov0" title="0">{
                 return false, fmt.Errorf("git lfs track failed: %w", err)
         }</span>
 
-        <span class="cov5" title="2">repoRoot, err := utils.GitTopLevel()
+        <span class="cov4" title="2">repoRoot, err := utils.GitTopLevel()
         if err != nil </span><span class="cov0" title="0">{
                 return false, err
         }</span>
 
-        <span class="cov5" title="2">attrPath := filepath.Join(repoRoot, ".gitattributes")
+        <span class="cov4" title="2">attrPath := filepath.Join(repoRoot, ".gitattributes")
         changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{path})
         if err != nil </span><span class="cov0" title="0">{
                 return false, err
         }</span>
 
-        <span class="cov5" title="2">return changed, nil</span>
+        <span class="cov4" title="2">return changed, nil</span>
 }
 
 func GetGitAttribute(ctx context.Context, attr string, path string) (string, error) <span class="cov0" title="0">{
@@ -2866,23 +2866,23 @@ func GetGitAttribute(ctx context.Context, attr string, path string) (string, err
         <span class="cov0" title="0">return out, nil</span>
 }
 
-func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="cov5" title="2">{
+func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="cov8" title="6">{
         out, err := runGit(ctx, "rev-parse", "--git-common-dir")
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("git rev-parse --git-common-dir failed: %w", err)
         }</span>
-        <span class="cov5" title="2">dir := strings.TrimSpace(out)
+        <span class="cov8" title="6">dir := strings.TrimSpace(out)
         if dir == "" </span><span class="cov0" title="0">{
                 return "", errors.New("git rev-parse returned empty --git-common-dir")
         }</span>
         // If relative, resolve it against current working directory.
-        <span class="cov5" title="2">if !filepath.IsAbs(dir) </span><span class="cov5" title="2">{
+        <span class="cov8" title="6">if !filepath.IsAbs(dir) </span><span class="cov8" title="6">{
                 abs, err := filepath.Abs(dir)
-                if err == nil </span><span class="cov5" title="2">{
+                if err == nil </span><span class="cov8" title="6">{
                         dir = abs
                 }</span>
         }
-        <span class="cov5" title="2">return dir, nil</span>
+        <span class="cov8" title="6">return dir, nil</span>
 }
 
 // resolveLFSRoot implements:
@@ -2890,63 +2890,63 @@ func gitRevParseGitCommonDir(ctx context.Context) (string, error) <span class="c
 //   - if relative: resolve relative to GitCommonDir (this is how git-lfs treats it in practice)
 //
 // - else: &lt;GitCommonDir&gt;/lfs
-func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) <span class="cov5" title="2">{
+func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) <span class="cov8" title="6">{
         // NOTE: git config --get returns exit status 1 if key not found.
         out, err := runGitAllowMissing(ctx, "config", "--get", "lfs.storage")
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("git config --get lfs.storage failed: %w", err)
         }</span>
-        <span class="cov5" title="2">val := strings.TrimSpace(out)
+        <span class="cov8" title="6">val := strings.TrimSpace(out)
 
-        if val == "" </span><span class="cov5" title="2">{
+        if val == "" </span><span class="cov5" title="3">{
                 return filepath.Clean(filepath.Join(gitCommonDir, "lfs")), nil
         }</span>
 
         // Expand ~ if present (nice-to-have).
-        <span class="cov0" title="0">if strings.HasPrefix(val, "~") &amp;&amp; (len(val) == 1 || val[1] == '/' || val[1] == '\\') </span><span class="cov0" title="0">{
+        <span class="cov5" title="3">if strings.HasPrefix(val, "~") &amp;&amp; (len(val) == 1 || val[1] == '/' || val[1] == '\\') </span><span class="cov1" title="1">{
                 home, herr := userHomeDir()
-                if herr == nil &amp;&amp; home != "" </span><span class="cov0" title="0">{
+                if herr == nil &amp;&amp; home != "" </span><span class="cov1" title="1">{
                         val = filepath.Join(home, strings.TrimPrefix(val, "~"))
                 }</span>
         }
 
-        <span class="cov0" title="0">if !filepath.IsAbs(val) </span><span class="cov0" title="0">{
+        <span class="cov5" title="3">if !filepath.IsAbs(val) </span><span class="cov1" title="1">{
                 val = filepath.Join(gitCommonDir, val)
         }</span>
-        <span class="cov0" title="0">return filepath.Clean(val), nil</span>
+        <span class="cov5" title="3">return filepath.Clean(val), nil</span>
 }
 
-func runGit(ctx context.Context, args ...string) (string, error) <span class="cov10" title="4">{
+func runGit(ctx context.Context, args ...string) (string, error) <span class="cov10" title="8">{
         cmd := exec.CommandContext(ctx, "git", args...)
         b, err := cmd.CombinedOutput()
         if err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(b)))
         }</span>
-        <span class="cov10" title="4">return string(b), nil</span>
+        <span class="cov10" title="8">return string(b), nil</span>
 }
 
 // runGitAllowMissing treats "key not found" as empty output, not an error.
-func runGitAllowMissing(ctx context.Context, args ...string) (string, error) <span class="cov5" title="2">{
+func runGitAllowMissing(ctx context.Context, args ...string) (string, error) <span class="cov8" title="6">{
         cmd := exec.CommandContext(ctx, "git", args...)
         b, err := cmd.CombinedOutput()
-        if err != nil </span><span class="cov5" title="2">{
+        if err != nil </span><span class="cov5" title="3">{
                 // "git config --get missing.key" exits 1 with empty output.
                 s := strings.TrimSpace(string(b))
-                if s == "" </span><span class="cov5" title="2">{
+                if s == "" </span><span class="cov5" title="3">{
                         return "", nil
                 }</span>
                 <span class="cov0" title="0">return "", fmt.Errorf("%v: %s", err, s)</span>
         }
-        <span class="cov0" title="0">return string(b), nil</span>
+        <span class="cov5" title="3">return string(b), nil</span>
 }
 
-func userHomeDir() (string, error) <span class="cov0" title="0">{
+func userHomeDir() (string, error) <span class="cov1" title="1">{
         // Avoid os/user on some cross-compile scenarios; keep it simple.
         if runtime.GOOS == "windows" </span><span class="cov0" title="0">{
                 // Not your target, but safe fallback.
                 return "", errors.New("home expansion not supported on windows in this helper")
         }</span>
-        <span class="cov0" title="0">if home := strings.TrimSpace(os.Getenv("HOME")); home != "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if home := strings.TrimSpace(os.Getenv("HOME")); home != "" </span><span class="cov1" title="1">{
                 return home, nil
         }</span>
         // macOS/Linux
@@ -2965,45 +2965,45 @@ var virtualHostedRE = regexp.MustCompile(`^(.+?)\.s3(?:[.-]|$)`)
 
 // parseS3URL parses s3://bucket/key, virtual-hosted HTTPS (bucket.s3.../key)
 // and path-style HTTPS (s3.../bucket/key). Returns bucket and key.
-func parseS3URL(raw string) (string, string, error) <span class="cov8" title="3">{
+func parseS3URL(raw string) (string, string, error) <span class="cov8" title="6">{
         u, err := url.Parse(raw)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", err
         }</span>
 
-        <span class="cov8" title="3">switch u.Scheme </span>{
-        case "s3":<span class="cov8" title="3">
+        <span class="cov8" title="6">switch u.Scheme </span>{
+        case "s3":<span class="cov7" title="4">
                 bucket := u.Host
                 key := strings.TrimPrefix(u.Path, "/")
                 return bucket, key, nil</span>
-        case "http", "https":<span class="cov0" title="0">
+        case "http", "https":<span class="cov4" title="2">
                 host := u.Hostname()
 
                 // virtual-hosted: bucket.s3.amazonaws.com or bucket.s3-region.amazonaws.com
-                if m := virtualHostedRE.FindStringSubmatch(host); m != nil </span><span class="cov0" title="0">{
+                if m := virtualHostedRE.FindStringSubmatch(host); m != nil </span><span class="cov1" title="1">{
                         bucket := m[1]
                         key := strings.TrimPrefix(u.Path, "/")
                         return bucket, key, nil
                 }</span>
 
                 // path-style: s3.../bucket/key
-                <span class="cov0" title="0">path := strings.TrimPrefix(u.Path, "/")
+                <span class="cov1" title="1">path := strings.TrimPrefix(u.Path, "/")
                 if path == "" </span><span class="cov0" title="0">{
                         return "", "", fmt.Errorf("no bucket in URL: %s", raw)
                 }</span>
-                <span class="cov0" title="0">parts := strings.SplitN(path, "/", 2)
+                <span class="cov1" title="1">parts := strings.SplitN(path, "/", 2)
                 bucket := parts[0]
                 key := ""
-                if len(parts) == 2 </span><span class="cov0" title="0">{
+                if len(parts) == 2 </span><span class="cov1" title="1">{
                         key = parts[1]
                 }</span>
-                <span class="cov0" title="0">return bucket, key, nil</span>
+                <span class="cov1" title="1">return bucket, key, nil</span>
         default:<span class="cov0" title="0">
                 return "", "", fmt.Errorf("unsupported scheme: %s", u.Scheme)</span>
         }
 }
 
-func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span class="cov8" title="3">{
+func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span class="cov5" title="3">{
         creds := credentials.NewStaticCredentialsProvider(in.AWSAccessKey, in.AWSSecretKey, "")
 
         // Custom HTTP client is useful for S3-compatible endpoints.
@@ -3025,16 +3025,16 @@ func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span
                 return nil, fmt.Errorf("aws config init failed: %w", err)
         }</span>
 
-        <span class="cov8" title="3">opts := []func(*s3.Options){}
-        if strings.TrimSpace(in.AWSEndpoint) != "" </span><span class="cov8" title="3">{
+        <span class="cov5" title="3">opts := []func(*s3.Options){}
+        if strings.TrimSpace(in.AWSEndpoint) != "" </span><span class="cov5" title="3">{
                 ep := strings.TrimRight(in.AWSEndpoint, "/")
-                opts = append(opts, func(o *s3.Options) </span><span class="cov8" title="3">{
+                opts = append(opts, func(o *s3.Options) </span><span class="cov5" title="3">{
                         o.UsePathStyle = true // usually required for Ceph/MinIO/custom endpoints
                         o.BaseEndpoint = aws.String(ep)
                 }</span>)
         }
 
-        <span class="cov8" title="3">return s3.NewFromConfig(cfg, opts...), nil</span>
+        <span class="cov5" title="3">return s3.NewFromConfig(cfg, opts...), nil</span>
 }
 
 //
@@ -3043,29 +3043,29 @@ func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) <span
 
 var sha256HexRe = regexp.MustCompile(`(?i)^[0-9a-f]{64}$`)
 
-func normalizeSHA256(s string) string <span class="cov5" title="2">{
+func normalizeSHA256(s string) string <span class="cov10" title="8">{
         s = strings.TrimSpace(s)
         s = strings.TrimPrefix(strings.ToLower(s), "sha256:")
         s = strings.TrimSpace(s)
         if s == "" </span><span class="cov1" title="1">{
                 return ""
         }</span>
-        <span class="cov1" title="1">if !sha256HexRe.MatchString(s) </span><span class="cov0" title="0">{
+        <span class="cov9" title="7">if !sha256HexRe.MatchString(s) </span><span class="cov1" title="1">{
                 // If caller provided something malformed, treat as empty.
                 // Change this to a hard error if you prefer.
                 return ""
         }</span>
-        <span class="cov1" title="1">return strings.ToLower(s)</span>
+        <span class="cov8" title="6">return strings.ToLower(s)</span>
 }
 
-func extractSHA256FromMetadata(md map[string]string) string <span class="cov5" title="2">{
-        if md == nil </span><span class="cov5" title="2">{
+func extractSHA256FromMetadata(md map[string]string) string <span class="cov7" title="5">{
+        if md == nil </span><span class="cov4" title="2">{
                 return ""
         }</span>
 
         // AWS SDK v2 exposes user-defined metadata WITHOUT the "x-amz-meta-" prefix,
         // and normalizes keys to lower-case.
-        <span class="cov0" title="0">candidates := []string{
+        <span class="cov5" title="3">candidates := []string{
                 "sha256",
                 "checksum-sha256",
                 "content-sha256",
@@ -3073,18 +3073,18 @@ func extractSHA256FromMetadata(md map[string]string) string <span class="cov5" t
                 "git-lfs-sha256",
         }
 
-        for _, k := range candidates </span><span class="cov0" title="0">{
-                if v, ok := md[k]; ok </span><span class="cov0" title="0">{
+        for _, k := range candidates </span><span class="cov10" title="8">{
+                if v, ok := md[k]; ok </span><span class="cov4" title="2">{
                         n := normalizeSHA256(v)
-                        if n != "" </span><span class="cov0" title="0">{
+                        if n != "" </span><span class="cov4" title="2">{
                                 return n
                         }</span>
                 }
         }
 
         // Sometimes people stash "sha256:&lt;hex&gt;"
-        <span class="cov0" title="0">for _, v := range md </span><span class="cov0" title="0">{
-                if n := normalizeSHA256(v); n != "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">for _, v := range md </span><span class="cov1" title="1">{
+                if n := normalizeSHA256(v); n != "" </span><span class="cov1" title="1">{
                         return n
                 }</span>
         }
@@ -3094,13 +3094,13 @@ func extractSHA256FromMetadata(md map[string]string) string <span class="cov5" t
 
 // IsLFSTracked returns true if the given path is tracked by Git LFS
 // (i.e. has `filter=lfs` via git attributes).
-func IsLFSTracked(path string) (bool, error) <span class="cov5" title="2">{
+func IsLFSTracked(path string) (bool, error) <span class="cov7" title="4">{
         if path == "" </span><span class="cov0" title="0">{
                 return false, fmt.Errorf("path is empty")
         }</span>
 
         // Git prefers forward slashes, even on macOS/Linux
-        <span class="cov5" title="2">cleanPath := filepath.ToSlash(path)
+        <span class="cov7" title="4">cleanPath := filepath.ToSlash(path)
 
         cmd := exec.Command(
                 "git",
@@ -3123,12 +3123,12 @@ func IsLFSTracked(path string) (bool, error) <span class="cov5" title="2">{
         // path: filter: unspecified
         //
         // Format is stable and documented.
-        <span class="cov5" title="2">fields := strings.Split(out.String(), ":")
+        <span class="cov7" title="4">fields := strings.Split(out.String(), ":")
         if len(fields) &lt; 3 </span><span class="cov0" title="0">{
                 return false, nil
         }</span>
 
-        <span class="cov5" title="2">value := strings.TrimSpace(fields[2])
+        <span class="cov7" title="4">value := strings.TrimSpace(fields[2])
         return value == "lfs", nil</span>
 }
 </pre>
@@ -3151,11 +3151,11 @@ import (
         "github.com/calypr/git-drs/drsmap"
         "github.com/spf13/cobra"
 
-        "github.com/calypr/git-drs/cmd/addu</span><span class="cov0" title="0">rl/lfss3"
+        "github.com/calypr/git-drs/cmd/addurl/lfss3"
         "github.com/calypr/git-drs/s3_utils"
 )
-</span>
-</span>var (
+
+var (
         inspectS3ForLFS  = lfss3.InspectS3ForLFS
         isLFSTracked     = lfss3.IsLFSTracked
         agentFetchReader = lfss3.AgentFetchReader
@@ -3163,27 +3163,27 @@ import (
 
 var Cmd = NewCommand()
 
-func NewCommand() *cobra.Command {
+func NewCommand() *cobra.Command <span class="cov10" title="48">{
         cmd := &amp;cobra.Command{
                 Use:   "add-url &lt;s3-url&gt; [path]",
                 Short: "Add a file to the Git DRS repo using an S3 URL",
-                Args: func(cmd *cobra.Command, args []string) error {
-                        if len(args) &lt; 1 || len(args) &gt; 2 {
+                Args: func(cmd *cobra.Command, args []string) error </span><span class="cov2" title="2">{
+                        if len(args) &lt; 1 || len(args) &gt; 2 </span><span class="cov0" title="0">{
                                 return errors.New("usage: add-url &lt;s3-url&gt; [path]")
-                        }
-                        return nil
+                        }</span>
+                        <span class="cov2" title="2">return nil</span>
                 },
                 RunE: runAddURL,
         }
-        addFlags(cmd)
-        return cmd
+        <span class="cov10" title="48">addFlags(cmd)
+        return cmd</span>
 }
 
-func addFlags(cmd *cobra.Command) {
+func addFlags(cmd *cobra.Command) <span class="cov10" title="48">{
         cmd.Flags().String(
                 s3_utils.AWS_KEY_FLAG_NAME,
                 os.Getenv(s3_utils.AWS_KEY_ENV_VAR),
-        </span></span></span></span></span></span>        "AWS access key",
+                "AWS access key",
         )
 
         cmd.Flags().String(
@@ -3212,61 +3212,61 @@ func addFlags(cmd *cobra.Command) {
         )
 }</span>
 
-func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov2" title="2">{
+func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov3" title="3">{
         ctx := cmd.Context()
-        if ctx == nil </span><span class="cov0" title="0">{
+        if ctx == nil </span><span class="cov1" title="1">{
                 ctx = context.Background()
         }</span>
 
-        <span class="cov2" title="2">logger, err := drslog.NewLogger("", false)
+        <span class="cov3" title="3">logger, err := drslog.NewLogger("", false)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error creating logger: %v", err)
         }</span>
 
-        <span class="cov2" title="2">s3URL := args[0]
+        <span class="cov3" title="3">s3URL := args[0]
 
         // Determine path: use provided optional arg, otherwise derive from URL path
         var pathArg string
         if len(args) == 2 </span><span class="cov2" title="2">{
                 pathArg = args[1]
-        }</span> else<span class="cov0" title="0"> {
+        }</span> else<span class="cov1" title="1"> {
                 u, perr := url.Parse(s3URL)
                 if perr != nil </span><span class="cov0" title="0">{
                         return perr
                 }</span>
-                <span class="cov0" title="0">pathArg = strings.TrimPrefix(u.Path, "/")</span>
+                <span class="cov1" title="1">pathArg = strings.TrimPrefix(u.Path, "/")</span>
         }
 
-        <span class="cov2" title="2">sha256Param, ferr := cmd.Flags().GetString("sha256")
+        <span class="cov3" title="3">sha256Param, ferr := cmd.Flags().GetString("sha256")
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag sha256: %w", ferr)
         }</span>
 
-        <span class="cov2" title="2">awsKey, ferr := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
+        <span class="cov3" title="3">awsKey, ferr := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_KEY_FLAG_NAME, ferr)
         }</span>
-        <span class="cov2" title="2">awsSecret, ferr := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
+        <span class="cov3" title="3">awsSecret, ferr := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_SECRET_FLAG_NAME, ferr)
         }</span>
-        <span class="cov2" title="2">awsRegion, ferr := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
+        <span class="cov3" title="3">awsRegion, ferr := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_REGION_FLAG_NAME, ferr)
         }</span>
-        <span class="cov2" title="2">awsEndpoint, ferr := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
+        <span class="cov3" title="3">awsEndpoint, ferr := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
         if ferr != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("read flag %s: %w", s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, ferr)
         }</span>
 
-        <span class="cov2" title="2">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
+        <span class="cov3" title="3">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
                 return errors.New("AWS credentials must be provided via flags or environment variables")
         }</span>
-        <span class="cov2" title="2">if awsRegion == "" </span><span class="cov0" title="0">{
+        <span class="cov3" title="3">if awsRegion == "" </span><span class="cov0" title="0">{
                 return errors.New("AWS region must be provided via flag or environment variable")
         }</span>
 
-        <span class="cov2" title="2">s3Input := lfss3.InspectInput{
+        <span class="cov3" title="3">s3Input := lfss3.InspectInput{
                 S3URL:        s3URL,
                 AWSAccessKey: awsKey,
                 AWSSecretKey: awsSecret,
@@ -3280,12 +3280,12 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov2"
                 return err
         }</span>
 
-        <span class="cov2" title="2">isLFSTracked, err := isLFSTracked(pathArg)
+        <span class="cov3" title="3">isLFSTracked, err := isLFSTracked(pathArg)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("check LFS tracking for %s: %w", pathArg, err)
         }</span>
 
-        <span class="cov2" title="2">if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
+        <span class="cov3" title="3">if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
 Resolved Git LFS info
 ---------------------
 Git common dir : %s
@@ -3324,14 +3324,14 @@ sha256 param  : %s
                 return fmt.Errorf("print resolved info: %w", err)
         }</span>
 
-        <span class="cov2" title="2">if sha256Param == "" </span><span class="cov1" title="1">{
+        <span class="cov3" title="3">if sha256Param == "" </span><span class="cov2" title="2">{
                 computedSHA, tmpObj, err2 := downloadAndComputeSHA256(info, err, ctx, s3Input)
                 if err2 != nil </span><span class="cov0" title="0">{
                         return err2
                 }</span>
 
                 // 4) move tmp object to LFS storage
-                <span class="cov1" title="1">oid := computedSHA
+                <span class="cov2" title="2">oid := computedSHA
                 dstDir := filepath.Join(info.LFSRoot, "objects", oid[0:2], oid[2:4])
                 dstObj := filepath.Join(dstDir, oid)
 
@@ -3339,17 +3339,17 @@ sha256 param  : %s
                         return fmt.Errorf("mkdir %s: %w", dstDir, err)
                 }</span>
 
-                <span class="cov1" title="1">if err = os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
+                <span class="cov2" title="2">if err = os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
                 }</span>
 
-                <span class="cov1" title="1">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
+                <span class="cov2" title="2">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("stderr write: %w", err)
                 }</span>
-                <span class="cov1" title="1">sha256Param = computedSHA</span>
+                <span class="cov2" title="2">sha256Param = computedSHA</span>
         }
 
-        <span class="cov2" title="2">oid := sha256Param
+        <span class="cov3" title="3">oid := sha256Param
         // 5) write pointer file in working tree
         pointer := fmt.Sprintf(
                 "version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
@@ -3359,21 +3359,21 @@ sha256 param  : %s
         if pathArg == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("empty worktree path")
         }</span>
-        <span class="cov2" title="2">safePath := filepath.Clean(pathArg)
+        <span class="cov3" title="3">safePath := filepath.Clean(pathArg)
         dir := filepath.Dir(safePath)
-        if dir != "." &amp;&amp; dir != "/" </span><span class="cov2" title="2">{
+        if dir != "." &amp;&amp; dir != "/" </span><span class="cov3" title="3">{
                 if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("mkdir %s: %w", dir, err)
                 }</span>
         }
-        <span class="cov2" title="2">if err = os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="3">if err = os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write %s: %w", safePath, err)
         }</span>
 
-        <span class="cov2" title="2">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
+        <span class="cov3" title="3">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("stderr write: %w", err)
         }</span>
-        <span class="cov2" title="2">if !isLFSTracked </span><span class="cov2" title="2">{
+        <span class="cov3" title="3">if !isLFSTracked </span><span class="cov2" title="2">{
                 // git lfs track
                 _, err := lfss3.GitLFSTrackReadOnly(ctx, pathArg)
                 if err != nil </span><span class="cov0" title="0">{
@@ -3385,18 +3385,23 @@ sha256 param  : %s
                 }</span>
         }
 
-        <span class="cov2" title="2">cfg, err := config.LoadConfig()
+        <span class="cov3" title="3">cfg, err := config.LoadConfig()
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error getting config: %v", err)
         }</span>
 
-        <span class="cov2" title="2">remote, err := cfg.GetDefaultRemote()
+        <span class="cov3" title="3">remote, err := cfg.GetDefaultRemote()
 
         cli, err := cfg.GetRemoteClient(remote, logger)
         if err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("error GetRemoteClient: %v", err)
-        }</span>
-        <span class="cov2" title="2">file := drsmap.LfsFileInfo{
+                cwd, errCwd := os.Getwd()
+                if errCwd != nil </span><span class="cov0" title="0">{
+                        _, _ = fmt.Fprintf(os.Stderr, "os.Getwd: %v\n", errCwd)
+                        os.Exit(1)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("error GetRemoteClient: remote %s %s %v", remote, cwd, err)</span>
+        }
+        <span class="cov3" title="3">file := drsmap.LfsFileInfo{
                 Name: pathArg,
                 Size: info.SizeBytes,
                 Oid:  oid,
@@ -3406,24 +3411,24 @@ sha256 param  : %s
                 return fmt.Errorf("error WriteDrsFile: %v", err)
         }</span>
 
-        <span class="cov2" title="2">return nil</span>
+        <span class="cov3" title="3">return nil</span>
 }
 
 // downloadAndComputeSHA256 downloads the S3 object to a temporary file while computing its SHA256 hash.
 // returns the computed SHA256 hash, temporary path and any error encountered.
-func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) <span class="cov1" title="1">{
+func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) <span class="cov2" title="2">{
         // 2) object destination
         etag := info.ETag
         subdir1, subdir2 := "xx", "yy"
-        if len(etag) &gt;= 4 </span><span class="cov1" title="1">{
+        if len(etag) &gt;= 4 </span><span class="cov2" title="2">{
                 subdir1 = etag[0:2]
                 subdir2 = etag[2:4]
         }</span>
-        <span class="cov1" title="1">objName := etag
+        <span class="cov2" title="2">objName := etag
         if objName == "" </span><span class="cov0" title="0">{
                 objName = "unknown-etag"
         }</span>
-        <span class="cov1" title="1">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+        <span class="cov2" title="2">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
         tmpObj := filepath.Join(tmpDir, objName)
 
         // 3) fetch bytes -&gt; tmp, compute sha+count
@@ -3433,12 +3438,12 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 return "", "", fmt.Errorf("mkdir %s: %w", tmpDir, err)
         }</span>
 
-        <span class="cov1" title="1">f, err := os.Create(tmpObj)
+        <span class="cov2" title="2">f, err := os.Create(tmpObj)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("create %s: %w", tmpObj, err)
         }</span>
         // ensure any leftover file is closed and error propagated via named return
-        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
+        <span class="cov2" title="2">defer func() </span><span class="cov2" title="2">{
                 if f != nil </span><span class="cov0" title="0">{
                         if cerr := f.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close tmp file: %w", cerr)
@@ -3446,7 +3451,7 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 }
         }()
 
-        <span class="cov1" title="1">h := sha256.New()
+        <span class="cov2" title="2">h := sha256.New()
 
         var reader io.ReadCloser
         reader, err = agentFetchReader(ctx, s3Input)
@@ -3454,7 +3459,7 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 return "", "", fmt.Errorf("fetch reader: %w", err)
         }</span>
         // ensure close on any early return; propagate close error via named return
-        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
+        <span class="cov2" title="2">defer func() </span><span class="cov2" title="2">{
                 if reader != nil </span><span class="cov0" title="0">{
                         if cerr := reader.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close reader: %w", cerr)
@@ -3462,16 +3467,16 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 }
         }()
 
-        <span class="cov1" title="1">n, err := io.Copy(io.MultiWriter(f, h), reader)
+        <span class="cov2" title="2">n, err := io.Copy(io.MultiWriter(f, h), reader)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
         }</span>
 
         // explicitly close reader and handle error
-        <span class="cov1" title="1">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("close reader: %w", cerr)
         }</span>
-        <span class="cov1" title="1">reader = nil
+        <span class="cov2" title="2">reader = nil
 
         // ensure data is flushed to disk
         if err = f.Sync(); err != nil </span><span class="cov0" title="0">{
@@ -3479,10 +3484,10 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
         }</span>
 
         // explicitly close tmp file before rename
-        <span class="cov1" title="1">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("close %s: %w", tmpObj, cerr)
         }</span>
-        <span class="cov1" title="1">f = nil
+        <span class="cov2" title="2">f = nil
 
         // use n (bytes written) to avoid unused var warnings
         _ = n
@@ -7041,13 +7046,13 @@ type LfsDryRunSpec struct {
 }
 
 // RunLfsPushDryRun executes: git lfs push --dry-run &lt;remote&gt; &lt;ref&gt;
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) <span class="cov5" title="4">{
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) <span class="cov3" title="4">{
         if spec.Remote == "" || spec.Ref == "" </span><span class="cov0" title="0">{
                 return "", errors.New("missing remote or ref")
         }</span>
 
         // Debug-print the command to stderr
-        <span class="cov5" title="4">fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
+        <span class="cov3" title="4">fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
         logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
 
         cmd := exec.CommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
@@ -7066,7 +7071,7 @@ func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, l
                 }</span>
                 <span class="cov0" title="0">return out, fmt.Errorf("git lfs push --dry-run failed: %s", msg)</span>
         }
-        <span class="cov5" title="4">return out, nil</span>
+        <span class="cov3" title="4">return out, nil</span>
 }
 
 // output of git lfs ls-files
@@ -7191,7 +7196,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
         return nil</span>
 }
 
-func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov5" title="4">{
+func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov3" title="4">{
 
         logger.Debug("Update to DRS objects started")
 
@@ -7202,28 +7207,28 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
         }</span>
 
         // get project
-        <span class="cov5" title="4">projectId := drsClient.GetProjectId()
+        <span class="cov3" title="4">projectId := drsClient.GetProjectId()
         if projectId == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("no project configured: %v", err)
         }</span>
 
         // create a DRS object for each LFS file
         // which will be used at push-time
-        <span class="cov5" title="4">for _, file := range lfsFiles </span><span class="cov5" title="4">{
+        <span class="cov3" title="4">for _, file := range lfsFiles </span><span class="cov3" title="4">{
 
                 drsObj, err2 := WriteDrsFile(drsClient, file, projectId, nil)
                 if err2 != nil </span><span class="cov0" title="0">{
                         logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err2))
                         continue</span>
                 }
-                <span class="cov5" title="4">logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))</span>
+                <span class="cov3" title="4">logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))</span>
         }
 
-        <span class="cov5" title="4">return nil</span>
+        <span class="cov3" title="4">return nil</span>
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(drsClient client.DRSClient, file LfsFileInfo, projectId string, objectPath *string) (*drs.DRSObject, error) <span class="cov6" title="6">{
+func WriteDrsFile(drsClient client.DRSClient, file LfsFileInfo, projectId string, objectPath *string) (*drs.DRSObject, error) <span class="cov4" title="7">{
 
         drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
         if err != nil </span><span class="cov0" title="0">{
@@ -7235,7 +7240,7 @@ func WriteDrsFile(drsClient client.DRSClient, file LfsFileInfo, projectId string
         // if file is in cache, hasn't been committed to git or pushed to indexd
         // create a local DRS object for it
         // TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-        <span class="cov6" title="6">drsId := DrsUUID(projectId, file.Oid)
+        <span class="cov4" title="7">drsId := DrsUUID(projectId, file.Oid)
         // logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
 
         // get file info needed to create indexd record
@@ -7251,71 +7256,71 @@ func WriteDrsFile(drsClient client.DRSClient, file LfsFileInfo, projectId string
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov6" title="6">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov3" title="2">{
+        <span class="cov4" title="7">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov3" title="3">{
                 drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
         }</span>
 
         // write drs objects to DRS_OBJS_PATH
-        <span class="cov6" title="6">err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
+        <span class="cov4" title="7">err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov6" title="6">return drsObj, nil</span>
+        <span class="cov4" title="7">return drsObj, nil</span>
 }
 
-func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov6" title="6">{
+func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov4" title="8">{
         // get object bytes
         indexdObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
         }</span>
-        <span class="cov6" title="6">if err := os.MkdirAll(filepath.Dir(drsObjPath), 0755); err != nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="8">if err := os.MkdirAll(filepath.Dir(drsObjPath), 0755); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error creating directory for %s: %v", drsObjPath, err)
         }</span>
 
         // write indexd obj to file as json
-        <span class="cov6" title="6">err = os.WriteFile(drsObjPath, indexdObjBytes, 0644)
+        <span class="cov4" title="8">err = os.WriteFile(drsObjPath, indexdObjBytes, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error writing %s: %v", drsObjPath, err)
         }</span>
-        <span class="cov6" title="6">return nil</span>
+        <span class="cov4" title="8">return nil</span>
 }
 
-func DrsUUID(projectId string, hash string) string <span class="cov6" title="6">{
+func DrsUUID(projectId string, hash string) string <span class="cov10" title="117">{
         // create UUID based on project ID and hash
         hashStr := fmt.Sprintf("%s:%s", projectId, hash)
         return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
 }</span>
 
 // creates drsObject record from file
-func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov5" title="4">{
+func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov4" title="5">{
         // unmarshal the DRS object
         path, err := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov5" title="4">drsObjBytes, err := os.ReadFile(path)
+        <span class="cov4" title="5">drsObjBytes, err := os.ReadFile(path)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov5" title="4">var drsObject drs.DRSObject
+        <span class="cov4" title="5">var drsObject drs.DRSObject
         err = sonic.ConfigFastest.Unmarshal(drsObjBytes, &amp;drsObject)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov5" title="4">return &amp;drsObject, nil</span>
+        <span class="cov4" title="5">return &amp;drsObject, nil</span>
 }
 
-func GetObjectPath(basePath string, oid string) (string, error) <span class="cov10" title="16">{
+func GetObjectPath(basePath string, oid string) (string, error) <span class="cov6" title="21">{
         // check that oid is a valid sha256 hash
-        if len(oid) != 64 </span><span class="cov0" title="0">{
+        if len(oid) != 64 </span><span class="cov1" title="1">{
                 return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
         }</span>
 
-        <span class="cov10" title="16">return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil</span>
+        <span class="cov6" title="20">return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil</span>
 }
 
 ////////////////
@@ -7391,17 +7396,17 @@ func GetRepoNameFromGit(remote string) (string, error) <span class="cov0" title=
         return repoName, nil</span>
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) <span class="cov5" title="4">{
+func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) <span class="cov3" title="4">{
         if logger == nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("logger is required")
         }</span>
-        <span class="cov5" title="4">repoDir, err := os.Getwd()
+        <span class="cov3" title="4">repoDir, err := os.Getwd()
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
         // no timeout for now
-        <span class="cov5" title="4">ctx := context.Background()
+        <span class="cov3" title="4">ctx := context.Background()
         // If needed, can re-enable timeout
         // Set a timeout context for git commands, 3 minutes should be enough
         //ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
@@ -7410,15 +7415,15 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
         if gitRemoteName == "" </span><span class="cov0" title="0">{
                 gitRemoteName = "origin"
         }</span>
-        <span class="cov5" title="4">if gitRemoteLocation != "" </span><span class="cov5" title="4">{
+        <span class="cov3" title="4">if gitRemoteLocation != "" </span><span class="cov3" title="4">{
                 logger.Debug(fmt.Sprintf("Using git remote %s at %s for LFS dry-run", gitRemoteName, gitRemoteLocation))
         }</span> else<span class="cov0" title="0"> {
                 logger.Debug(fmt.Sprintf("Using git remote %s for LFS dry-run", gitRemoteName))
         }</span>
 
-        <span class="cov5" title="4">refs := buildLfsRefs(branches)
+        <span class="cov3" title="4">refs := buildLfsRefs(branches)
         lfsFileMap := make(map[string]LfsFileInfo)
-        for _, ref := range refs </span><span class="cov5" title="4">{
+        for _, ref := range refs </span><span class="cov3" title="4">{
                 spec := LfsDryRunSpec{
                         Remote: gitRemoteName,
                         Ref:    ref,
@@ -7428,42 +7433,42 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
                         return nil, err
                 }</span>
 
-                <span class="cov5" title="4">if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil </span><span class="cov0" title="0">{
+                <span class="cov3" title="4">if err := addLfsFilesFromDryRun(out, repoDir, logger, lfsFileMap); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
         }
 
-        <span class="cov5" title="4">return lfsFileMap, nil</span>
+        <span class="cov3" title="4">return lfsFileMap, nil</span>
 }
 
-func buildLfsRefs(branches []string) []string <span class="cov5" title="4">{
+func buildLfsRefs(branches []string) []string <span class="cov3" title="4">{
         if len(branches) == 0 </span><span class="cov0" title="0">{
                 return []string{"HEAD"}
         }</span>
-        <span class="cov5" title="4">refs := make([]string, 0, len(branches))
+        <span class="cov3" title="4">refs := make([]string, 0, len(branches))
         seen := make(map[string]struct{})
-        for _, branch := range branches </span><span class="cov5" title="4">{
+        for _, branch := range branches </span><span class="cov3" title="4">{
                 branch = strings.TrimSpace(branch)
                 if branch == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov5" title="4">ref := branch
-                if branch != "HEAD" &amp;&amp; !strings.HasPrefix(branch, "refs/") </span><span class="cov5" title="4">{
+                <span class="cov3" title="4">ref := branch
+                if branch != "HEAD" &amp;&amp; !strings.HasPrefix(branch, "refs/") </span><span class="cov3" title="4">{
                         ref = fmt.Sprintf("refs/heads/%s", branch)
                 }</span>
-                <span class="cov5" title="4">if _, ok := seen[ref]; ok </span><span class="cov0" title="0">{
+                <span class="cov3" title="4">if _, ok := seen[ref]; ok </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov5" title="4">seen[ref] = struct{}{}
+                <span class="cov3" title="4">seen[ref] = struct{}{}
                 refs = append(refs, ref)</span>
         }
-        <span class="cov5" title="4">if len(refs) == 0 </span><span class="cov0" title="0">{
+        <span class="cov3" title="4">if len(refs) == 0 </span><span class="cov0" title="0">{
                 return []string{"HEAD"}
         }</span>
-        <span class="cov5" title="4">return refs</span>
+        <span class="cov3" title="4">return refs</span>
 }
 
-func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error <span class="cov5" title="4">{
+func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error <span class="cov3" title="4">{
         // Log when dry-run returns no output to help with debugging
         if strings.TrimSpace(out) == "" </span><span class="cov0" title="0">{
                 logger.Debug("No LFS files to push (dry-run returned no output)")
@@ -7471,18 +7476,18 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
         }</span>
 
         // accept lowercase or uppercase hex
-        <span class="cov5" title="4">sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
+        <span class="cov3" title="4">sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 
-        for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") </span><span class="cov6" title="6">{
+        for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") </span><span class="cov4" title="6">{
                 line = strings.TrimSpace(line)
                 if line == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov6" title="6">parts := strings.Fields(line)
+                <span class="cov4" title="6">parts := strings.Fields(line)
                 if len(parts) &lt; 2 </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov6" title="6">oid := parts[1]
+                <span class="cov4" title="6">oid := parts[1]
                 path := parts[len(parts)-1]
 
                 // Validate OID looks like a SHA256 hex string.
@@ -7492,21 +7497,21 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                 }
 
                 // see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
-                <span class="cov6" title="6">if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" &amp;&amp; strings.Contains(path, ".gitattributes") </span><span class="cov3" title="2">{
+                <span class="cov4" title="6">if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" &amp;&amp; strings.Contains(path, ".gitattributes") </span><span class="cov2" title="2">{
                         logger.Debug(fmt.Sprintf("skipping empty LFS pointer for %s", path))
                         continue</span>
                 }
                 // Remove a trailing parenthetical suffix from p, e.g.:
                 // "path/to/file.dat (100 KB)" -&gt; "path/to/file.dat"
-                <span class="cov5" title="4">if idx := strings.LastIndex(path, " ("); idx != -1 &amp;&amp; strings.HasSuffix(path, ")") </span><span class="cov0" title="0">{
+                <span class="cov3" title="4">if idx := strings.LastIndex(path, " ("); idx != -1 &amp;&amp; strings.HasSuffix(path, ")") </span><span class="cov0" title="0">{
                         path = strings.TrimSpace(path[:idx])
                 }</span>
-                <span class="cov5" title="4">size := int64(0)
+                <span class="cov3" title="4">size := int64(0)
                 absPath := path
-                if repoDir != "" &amp;&amp; !filepath.IsAbs(path) </span><span class="cov5" title="4">{
+                if repoDir != "" &amp;&amp; !filepath.IsAbs(path) </span><span class="cov3" title="4">{
                         absPath = filepath.Join(repoDir, path)
                 }</span>
-                <span class="cov5" title="4">if stat, err := os.Stat(absPath); err == nil </span><span class="cov5" title="4">{
+                <span class="cov3" title="4">if stat, err := os.Stat(absPath); err == nil </span><span class="cov3" title="4">{
                         size = stat.Size()
                 }</span> else<span class="cov0" title="0"> {
                         logger.Error(fmt.Sprintf("could not stat file %s: %v", path, err))
@@ -7515,8 +7520,8 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
 
                 // If the file is small, read it and detect LFS pointer signature.
                 // Pointer files are textual and include the LFS spec version + an oid line.
-                <span class="cov5" title="4">if size &gt; 0 &amp;&amp; size &lt; 2048 </span><span class="cov3" title="2">{
-                        if data, readErr := os.ReadFile(absPath); readErr == nil </span><span class="cov3" title="2">{
+                <span class="cov3" title="4">if size &gt; 0 &amp;&amp; size &lt; 2048 </span><span class="cov2" title="2">{
+                        if data, readErr := os.ReadFile(absPath); readErr == nil </span><span class="cov2" title="2">{
                                 s := strings.TrimSpace(string(data))
                                 if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") &amp;&amp; strings.Contains(s, "oid sha256:") </span><span class="cov0" title="0">{
                                         logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
@@ -7525,7 +7530,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                         }
                 }
 
-                <span class="cov5" title="4">lfsFileMap[path] = LfsFileInfo{
+                <span class="cov3" title="4">lfsFileMap[path] = LfsFileInfo{
                         Name:    path,
                         Size:    size,
                         OidType: "sha256",
@@ -7535,7 +7540,7 @@ func addLfsFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap 
                 //logger.Printf("GetAllLfsFiles added LFS file %s", path)
         }
 
-        <span class="cov5" title="4">return nil</span>
+        <span class="cov3" title="4">return nil</span>
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI
@@ -7566,26 +7571,26 @@ func CreateCustomPath(baseDir, drsURI string) (string, error) <span class="cov0"
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov5" title="4">{
-        if len(records) == 0 </span><span class="cov0" title="0">{
+func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov4" title="5">{
+        if len(records) == 0 </span><span class="cov1" title="1">{
                 return nil, nil
         }</span>
 
         // Convert project ID to resource path format for comparison
-        <span class="cov5" title="4">expectedAuthz, err := utils.ProjectToResource(projectId)
+        <span class="cov3" title="4">expectedAuthz, err := utils.ProjectToResource(projectId)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
         }</span>
 
         // Get the first record with matching authz if exists
 
-        <span class="cov5" title="4">for _, record := range records </span><span class="cov5" title="4">{
-                for _, access := range record.AccessMethods </span><span class="cov5" title="4">{
+        <span class="cov3" title="4">for _, record := range records </span><span class="cov3" title="4">{
+                for _, access := range record.AccessMethods </span><span class="cov3" title="4">{
                         // assert access has Authorizations
                         if access.Authorizations == nil </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("access method for record %v missing authorizations", record)
                         }</span>
-                        <span class="cov5" title="4">if access.Authorizations.Value == expectedAuthz </span><span class="cov5" title="4">{
+                        <span class="cov3" title="4">if access.Authorizations.Value == expectedAuthz </span><span class="cov3" title="4">{
                                 return &amp;record, nil
                         }</span>
                 }

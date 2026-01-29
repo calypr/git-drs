@@ -127,7 +127,7 @@
 				
 				<option value="file35">github.com/calypr/git-drs/cmd/version/main.go (57.9%)</option>
 				
-				<option value="file36">github.com/calypr/git-drs/config/config.go (44.5%)</option>
+				<option value="file36">github.com/calypr/git-drs/config/config.go (44.2%)</option>
 				
 				<option value="file37">github.com/calypr/git-drs/drs/hash/hash.go (93.8%)</option>
 				
@@ -5895,7 +5895,7 @@ type Config struct {
 func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) <span class="cov9" title="39">{
         x, ok := c.Remotes[remote]
         if !ok </span><span class="cov0" title="0">{
-                path, _ := getConfigPath()
+                path, _ := c.ConfigPath()
                 return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s path: %s", remote, path)
         }</span>
         <span class="cov9" title="38">if x.Gen3 != nil </span><span class="cov9" title="38">{
@@ -5973,6 +5973,10 @@ func getConfigPath() (string, error) <span class="cov10" title="50">{
         <span class="cov10" title="50">configPath := filepath.Join(topLevel, projectdir.DRS_DIR, projectdir.CONFIG_YAML)
         return configPath, nil</span>
 }
+
+func (c Config) ConfigPath() (string, error) <span class="cov0" title="0">{
+        return getConfigPath()
+}</span>
 
 // updates and git adds a Git DRS config file
 // this should handle three cases:

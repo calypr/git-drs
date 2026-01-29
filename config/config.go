@@ -68,7 +68,7 @@ type Config struct {
 func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
-		path, _ := getConfigPath()
+		path, _ := c.ConfigPath()
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s path: %s", remote, path)
 	}
 	if x.Gen3 != nil {
@@ -145,6 +145,10 @@ func getConfigPath() (string, error) {
 
 	configPath := filepath.Join(topLevel, projectdir.DRS_DIR, projectdir.CONFIG_YAML)
 	return configPath, nil
+}
+
+func (c Config) ConfigPath() (string, error) {
+	return getConfigPath()
 }
 
 // updates and git adds a Git DRS config file

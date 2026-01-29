@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
@@ -29,9 +29,9 @@ var AddURLCmd = &cobra.Command{
 		myLogger := drslog.GetLogger()
 
 		// set git config lfs.allowincompletepush = true
-		configCmd := exec.Command("git", "config", "lfs.allowincompletepush", "true")
-		if err := configCmd.Run(); err != nil {
-			return fmt.Errorf("unable to configure git to push pointers: %v. Please change the .git/config file to include an [lfs] section with allowincompletepush = true", err)
+		// set git config lfs.allowincompletepush = true
+		if err := gitrepo.SetGitConfigOptions(map[string]string{"lfs.allowincompletepush": "true"}); err != nil {
+			return fmt.Errorf("unable to configure git to push pointers: %v", err)
 		}
 
 		// Parse arguments
@@ -110,8 +110,7 @@ func generatePointerFile(filePath string, sha256 string, fileSize int64) error {
 	}
 
 	// Add the pointer file to Git
-	cmd := exec.Command("git", "add", filePath)
-	if err := cmd.Run(); err != nil {
+	if err := gitrepo.AddFile(filePath); err != nil {
 		return fmt.Errorf("failed to add pointer file to Git: %w", err)
 	}
 

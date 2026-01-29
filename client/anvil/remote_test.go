@@ -31,7 +31,7 @@ func TestAnvilRemoteAccessors(t *testing.T) {
 func TestAnvilRemoteGetClientNotImplemented(t *testing.T) {
 	remote := AnvilRemote{}
 	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	client, err := remote.GetClient(map[string]string{}, logger)
+	client, err := remote.GetClient("", logger)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

@@ -29,14 +29,14 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetClient(params map[string]string, logger *slog.Logger) (client.DRSClient, error) {
+func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (client.DRSClient, error) {
 	manager := conf.NewConfigure(logger)
-	cred, err := manager.Load(params["remote_name"])
+	cred, err := manager.Load(remoteName)
 	if err != nil {
 		return nil, err
 	}
 
-	gen3Logger := logs.NewGen3Logger(logger, "", params["remote_name"])
+	gen3Logger := logs.NewGen3Logger(logger, "", remoteName)
 	if err := g3client.EnsureValidCredential(context.Background(), cred, manager, gen3Logger, nil); err != nil {
 		return nil, err
 	}

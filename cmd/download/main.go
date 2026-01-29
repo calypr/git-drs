@@ -6,10 +6,10 @@ import (
 
 	"github.com/calypr/data-client/download"
 	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +69,7 @@ var Cmd = &cobra.Command{
 
 		// download url to destination path or LFS objects if not specified
 		if dstPath == "" {
-			dstPath, err = drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
+			dstPath, err = drsmap.GetObjectPath(common.LFS_OBJS_PATH, oid)
 		}
 		if err != nil {
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
@@ -16,7 +15,7 @@ import (
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/gitrepo"
 )
 
 // Config holds configuration parameters for the GitDrsIdxdClient.
@@ -57,11 +56,11 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 
 	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
 
-	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
+	upsert, err := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
 		return nil, err
 	}
-	multiPartThresholdInt, err := getLfsCustomTransferInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	multiPartThresholdInt, err := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +158,7 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 	}
 
 	// Filter by project ID logic is git-drs specific business logic (ensure we only see our project's files)
-	resourcePath, err := utils.ProjectToResource(cl.Config.ProjectId)
+	resourcePath, err := common.ProjectToResource(cl.Config.ProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -217,13 +216,3 @@ func (cl *GitDrsIdxdClient) GetUpsert() bool {
 }
 
 // Helpers retained from original implementation
-func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
-	cmd := os.Getenv("GIT_EXEC_PATH") // Dummy check
-	_ = cmd
-	// Mocking for now to avoid too much exec
-	return defaultValue, nil
-}
-
-func getLfsCustomTransferInt(key string, defaultValue int64) (int64, error) {
-	return defaultValue, nil
-}

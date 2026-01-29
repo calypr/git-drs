@@ -16,10 +16,11 @@ import (
 	"github.com/calypr/data-client/indexd"
 	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/messages"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
@@ -178,7 +179,7 @@ func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, r
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
+	isLFS, err := lfs.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
 		return s3_utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
 	}
@@ -200,7 +201,7 @@ func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, r
 		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
 
-	drsObjPath, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
+	drsObjPath, err := drsmap.GetObjectPath(common.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
 	if err != nil {
 		return s3_utils.S3Meta{}, err
 	}

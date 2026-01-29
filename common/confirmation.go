@@ -1,4 +1,4 @@
-package utils
+package common
 
 import (
 	"bufio"
@@ -6,11 +6,6 @@ import (
 	"io"
 	"os"
 	"strings"
-)
-
-const (
-	// ConfirmationYes is the string users must type to confirm destructive operations
-	ConfirmationYes = "yes"
 )
 
 // PromptForConfirmation displays a prompt and reads user input to confirm an operation.

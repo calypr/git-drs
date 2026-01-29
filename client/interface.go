@@ -62,6 +62,8 @@ type DRSClient interface {
 	// Add an S3 URL to an existing indexd record
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error)
 
+	GetBucketName() string
+
 	// Get the underlying Gen3Interface
 	GetGen3Interface() dataClient.Gen3Interface
 }

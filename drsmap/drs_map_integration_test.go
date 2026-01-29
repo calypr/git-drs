@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/common"
 )
 
 // Mock helper process
@@ -141,7 +141,7 @@ func TestUpdateDrsObjects(t *testing.T) {
 	}
 
 	// Check if DRS object created
-	drsPath, _ := GetObjectPath(projectdir.DRS_OBJS_PATH, oid)
+	drsPath, _ := GetObjectPath(common.DRS_OBJS_PATH, oid)
 	if _, err := os.Stat(drsPath); os.IsNotExist(err) {
 		t.Errorf("Expected DRS object file at %s", drsPath)
 	}

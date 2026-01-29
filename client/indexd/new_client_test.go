@@ -2,24 +2,29 @@ package indexd
 
 import (
 	"log/slog"
+	"net/http/httptest"
 	"os"
 	"testing"
 
 	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/logs"
 )
 
 func TestNewGitDrsIdxdClient(t *testing.T) {
-	// Setup logger
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// Setup mock server
+	mock := &mockIndexdServer{}
+	server := httptest.NewServer(mock.handler(t))
+	defer server.Close()
+	logger := logs.NewSlogNoOpLogger()
 
 	// Setup inputs
 	cred := conf.Credential{
-		APIEndpoint: "http://indexd.example.com",
+		APIEndpoint: server.URL,
 		Profile:     "test-profile",
 	}
 
 	remote := Gen3Remote{
-		Endpoint:  "http://indexd.example.com",
+		Endpoint:  server.URL,
 		ProjectID: "test-project",
 		Bucket:    "test-bucket",
 	}
@@ -45,6 +50,11 @@ func TestNewGitDrsIdxdClient(t *testing.T) {
 	}
 	if impl.Config.BucketName != "test-bucket" {
 		t.Errorf("Expected BucketName 'test-bucket', got %s", impl.Config.BucketName)
+	}
+
+	// Verify Base URL matches mock server
+	if impl.Base.String() != server.URL {
+		t.Errorf("Expected Base URL %s, got %s", server.URL, impl.Base.String())
 	}
 }
 

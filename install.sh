@@ -102,18 +102,25 @@ echo "Installing git-drs to $DEST"
 mkdir -p $DEST
 mv git-drs $DEST
 
-# Verify that git-drs is in the user's PATH
+# Check if git-drs is in the user's PATH
 if ! command -v git-drs >/dev/null 2>&1; then
-    echo "Adding $DEST to PATH"
-    if [ -n "$ZSH_VERSION" ]; then
-        SHELL="$HOME/.zshrc"
-    else
-        # Default to .bashrc if shell is unknown
-        SHELL="$HOME/.bashrc"
-    fi
 
-    echo 'export PATH=$PATH:'"$DEST" >> "$SHELL"
-    echo "Please restart your terminal or run 'source $SHELL' to update your PATH."
+	# Check if $DEST is already in PATH
+	if [[ ":$PATH:" != *":$DEST:"* ]]; then
+		echo "Adding $DEST to PATH"
+
+		# ZSH
+		if [ -n "$ZSH_VERSION" ]; then
+			SHELL="$HOME/.zshrc"
+		
+		# Default to Bash
+		else
+			SHELL="$HOME/.bashrc"
+		fi
+
+		echo 'export PATH=$PATH:'"$DEST" >> "$SHELL"
+		echo "Run 'source $SHELL' to update your $PATH."
+	fi
 fi
 
 # Clean up

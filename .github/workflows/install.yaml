@@ -23,7 +23,6 @@ jobs:
 
     steps:
       - name: Install Default Version (Latest Release)
-        env:
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"  
 

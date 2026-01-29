@@ -223,16 +223,22 @@ for pass in 1 2; do
   echo "=== Test sequence pass #$pass completed ===" >&2
 done
 
+#
 # After tests, upload a simple test file to the bucket via mc
-
+# ensure git-drs can add-url it correctly
+#
 cd fixtures
 
 # create a simple test file, place it in the bucket via mc
 test_string='simple test'
+test_string2='simple test2'
 echo $test_string > /tmp/simple_test_file.txt
+echo $test_string2 > /tmp/simple_test_file2.txt
 sha256=$(sha256sum /tmp/simple_test_file.txt | cut -d' ' -f1)
+sha2562=$(sha256sum /tmp/simple_test_file2.txt | cut -d' ' -f1)
 echo "Uploading a simple test file to the bucket via \`mc\`" >&2
 mc cp /tmp/simple_test_file.txt "$MINIO_ALIAS/$BUCKET/simple_test_file.txt"
+mc cp /tmp/simple_test_file2.txt "$MINIO_ALIAS/$BUCKET/simple_test_file2.txt"
 
 # get the s3 parameters from the mc alias
 MC_ALIAS_INFO_JSON=$(mc alias ls "$MINIO_ALIAS" --json)
@@ -245,6 +251,7 @@ ACCESS_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.accessKey')
 SECRET_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.secretKey')
 
 # use the add-url command to add the file to project
+# we are not providing the sha256, so git-drs must compute it and verify it matches
 git drs add-url s3://$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
   --aws-access-key-id  $ACCESS_KEY \
   --aws-secret-access-key  $SECRET_KEY  \
@@ -269,6 +276,20 @@ git lfs ls-files | grep " * data/simple_test_file.txt"
 # verify the file contents after pull
 cat data/simple_test_file.txt | grep "$test_string"
 
+# use the add-url command to add the file to project
+# we are providing the sha256, so git-drs must trust it
+git drs add-url s3://$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
+  --aws-access-key-id  $ACCESS_KEY \
+  --aws-secret-access-key  $SECRET_KEY  \
+  --endpoint-url $ENDPOINT \
+  --sha256 $sha2562 \
+  --region us-east-1
+
+# TODO ...
+
+#
+#
+#
 popd >/dev/null
 
 echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2

@@ -34,14 +34,14 @@ var Cmd = &cobra.Command{
 		} else {
 			remote, err = cfg.GetDefaultRemote()
 			if err != nil {
-				logger.Printf("Error getting remote: %v", err)
+				logger.Error(fmt.Sprintf("Error getting remote: %v", err))
 				return err
 			}
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, logger)
 		if err != nil {
-			logger.Printf("\nerror creating DRS client: %s", err)
+			logger.Error(fmt.Sprintf("\nerror creating DRS client: %s", err))
 			return err
 		}
 

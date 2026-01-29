@@ -40,4 +40,15 @@ func TestWriteMessages(t *testing.T) {
 	if complete.Path != "path" || complete.Oid != "oid" {
 		t.Fatalf("unexpected complete message: %+v", complete)
 	}
+
+	buf.Reset()
+	WriteProgressMessage(enc, "oid", 10, 5)
+	var progress ProgressResponse
+	if err := sonic.ConfigFastest.Unmarshal(buf.Bytes(), &progress); err != nil {
+		t.Fatalf("unmarshal progress: %v", err)
+	}
+	if progress.Oid != "oid" || progress.BytesSoFar != 10 || progress.BytesSinceLast != 5 {
+		t.Fatalf("unexpected progress message: %+v", progress)
+	}
+
 }

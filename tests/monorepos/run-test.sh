@@ -3,8 +3,10 @@
 # strict
 set -euo pipefail
 # echo commands as they are executed
-set -x
-    
+if [  "${GIT_TRACE:-}" ]; then
+  set -x
+fi
+
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
@@ -12,6 +14,9 @@ PROFILE_DEFAULT="calypr-dev"
 PROJECT_DEFAULT="cbds-monorepos"
 GIT_REMOTE_DEFAULT="https://github.com/calypr/monorepo.git"
 CLEAN_DEFAULT="false"
+CLONE_DEFAULT="false"
+UPSERT_DEFAULT="false"
+BUCKET_DEFAULT="cbds"
 
 # Parse optional flags (can also be provided via environment variables)
 while [ $# -gt 0 ]; do
@@ -56,8 +61,32 @@ while [ $# -gt 0 ]; do
       CLEAN="true"
       shift
       ;;
+    --clone=*)
+      CLONE="${1#*=}"
+      shift
+      ;;
+    --clone)
+      CLONE="true"
+      shift
+      ;;
+    --upsert=*)
+      UPSERT="${1#*=}"
+      shift
+      ;;
+    --upsert)
+      UPSERT="true"
+      shift
+      ;;
+    --bucket=*)
+      BUCKET="${1#*=}"
+      shift
+      ;;
+    --bucket)
+      BUCKET="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--git-remote NAME]" >&2
+      echo "Usage: $0 [--credentials-path PATH] [--profile NAME] [--project NAME] [--clean] [--clone] [--git-remote NAME] [--upsert]" >&2
       exit 0
       ;;
     *)
@@ -72,7 +101,9 @@ PROFILE="${PROFILE:-$PROFILE_DEFAULT}"
 PROJECT="${PROJECT:-$PROJECT_DEFAULT}"
 GIT_REMOTE="${GIT_REMOTE:-$GIT_REMOTE_DEFAULT}"
 CLEAN="${CLEAN:-$CLEAN_DEFAULT}"
-
+CLONE="${CLONE:-$CLONE_DEFAULT}"
+UPSERT="${UPSERT:-$UPSERT_DEFAULT}"
+BUCKET="${BUCKET:-$BUCKET_DEFAULT}"
 
 IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
 
@@ -81,6 +112,8 @@ export PROFILE
 export PROGRAM
 export PROJECT
 export GIT_REMOTE
+export CLONE
+export UPSERT
 
 echo "Using CREDENTIALS_PATH=$CREDENTIALS_PATH" >&2
 echo "Using PROFILE=$PROFILE" >&2
@@ -88,6 +121,9 @@ echo "Using PROGRAM=$PROGRAM" >&2
 echo "Using PROJECT=$PROJECT" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
 echo "Using CLEAN=$CLEAN" >&2
+echo "Using CLONE=$CLONE" >&2
+echo "Using UPSERT=$UPSERT" >&2
+
 
 if [ "$(basename "$PWD")" != "monorepos" ] || [ "$(basename "$(dirname "$PWD")")" != "tests" ]; then
   echo 'error: must run from tests/monorepos directory' >&2
@@ -131,15 +167,15 @@ fi
 # ensure git-drs is running from this project's build
 # run `which git-drs` and check if it's in the build directory
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ABS_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
-
-GIT_DRS_EXE=$ABS_PATH/git-drs
-if [ ! -f "$GIT_DRS_EXE" ]; then
-  echo "error: git-drs executable not found at $GIT_DRS_EXE" >&2
-  exit 1
-fi
-export PATH="$ABS_PATH:$PATH"
+#SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+#ABS_PATH="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
+#
+#GIT_DRS_EXE=$ABS_PATH/git-drs
+#if [ ! -f "$GIT_DRS_EXE" ]; then
+#  echo "error: git-drs executable not found at $GIT_DRS_EXE" >&2
+#  exit 1
+#fi
+#export PATH="$ABS_PATH:$PATH"
 echo "Using git-drs from: $(which git-drs)" >&2
 
 
@@ -155,9 +191,37 @@ echo "Running in `pwd`"  >&2
 # to reset git state
 if [ "$CLEAN" = "true" ]; then
   echo "Cleaning existing git state" >&2
-  rm -rf .git .drs .gitattributes  ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log
+  rm -rf .git .gitattributes .gitignore ~/.gen3/logs/*.* lfs-console.log lfs-console-aggregate.log commit.log commit-aggregate.log || true
 else
   echo "CLEAN flag not set to true; skipping git state cleanup" >&2
+fi
+
+if [ "$CLONE" = "true" ]; then
+  rm -rf ../clone || true
+  mkdir ../clone || true
+  cd ../clone
+  echo "Cloning remote repository into ../clone" >&2
+  # clone into current directory
+  if ! git clone "$GIT_REMOTE" .; then
+    echo "error: git clone failed" >&2
+    exit 1
+  fi
+  echo "Finished cloning remote repository into `pwd`" >&2
+  echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/file-0001.dat:" >&2
+  if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    exit 1
+  fi
+  echo "Pulling LFS objects from remote" >&2
+  git drs init
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git lfs pull origin main
+  if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+    echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    exit 1
+  fi
+  echo "Clone and LFS pull successful" >&2
+  exit 0
 fi
 
 # init git repo if not already a git repo
@@ -174,19 +238,39 @@ else
 
   # Initialize drs configuration for this repo
   git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket cbds --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  # Set multipart-threshold to 10 (MB) for testing purposes
+  # Using a smaller threshold to force a multipart upload for testing
+  # default is 500 (MB)
+  git config --local lfs.customtransfer.drs.multipart-threshold 10
+
+  # Set multipart-min-chunk-size to 5 (MB) for testing purposes
+  # Using a smaller chunk size to will force a large number of parts for testing
+  # To test this, you will need to disable data_clients.OptimalChunkSize in code
+  # We used this to test a 5GB+ file upload with many parts which causes a minio error
+  # git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
+
+  # Enable upsert for testing purposes, when adding files to indexd, if the object already exists, delete and re-add it
+  if [ "$UPSERT" = "true" ]; then
+    git config --local lfs.customtransfer.drs.upsert true
+    echo "UPSERT is enabled; set lfs.customtransfer.drs.upsert to true" >&2
+  else
+    echo "UPSERT is disabled; not setting lfs.customtransfer.drs.upsert" >&2
+  fi
 
   # verify fixtures/.drs/config.yaml exists
-  if [ ! -f ".drs/config.yaml" ]; then
-    echo "error: .drs/config.yaml not found after git drs init" >&2
+  if [ ! -f ".git/drs/config.yaml" ]; then
+    echo "error: .git/drs/config.yaml not found after git drs init" >&2
+    exit 1
+  fi
+
+  # verify .gitignore does not exist yet
+  if [ -f ".gitignore" ]; then
+    echo "error: .gitignore unexpected after git drs init" >&2
     exit 1
   fi
 
   echo "Finished initializing git repository with git-drs in `pwd`" >&2
-  git add .drs
-  git commit -m "Add .drs" .drs
-  git add .gitignore
-  git commit -m "Add .gitignore" .gitignore
 
   # Create an empty .gitattributes file
   # if .gitattributes does not already exist initialize it
@@ -201,7 +285,11 @@ else
   echo "Finished init.  Force pushing to remote." >&2
   git remote -v
 
-  GIT_TRACE=1 GIT_TRANSFER_TRACE=1 git push -f origin main 2>&1 | tee lfs-console.log
+  if [ -z "${GIT_TRACE:-}" ]; then
+    echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
+    echo "# export GIT_TRACE=1 GIT_TRANSFER_TRACE=1" >&2
+  fi
+  git push -f origin main 2>&1 | tee lfs-console.log
 
   echo "Finished init.  Finished pushing to remote." >&2
   exit 0
@@ -222,7 +310,11 @@ for dir in */ ; do
     git add "$dir"
     git commit -am "Add $dir" 2>&1 | tee commit.log
     cat commit.log >> commit-aggregate.log
-    GIT_TRACE=1 GIT_TRANSFER_TRACE=1 git push origin main 2>&1 | tee lfs-console.log
+    if [ -z "${GIT_TRACE:-}" ]; then
+      echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
+      echo "# export GIT_TRACE=1 GIT_TRANSFER_TRACE=1" >&2
+    fi
+    git push origin main 2>&1 | tee lfs-console.log
     echo "##########################################" >> lfs-console.log
     echo "# finished pushing $dir to remote." >> lfs-console.log
     # if .drs/lfs/objects exists, log last 3 lines of tree

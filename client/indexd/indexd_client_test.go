@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/data-client/client/conf"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
@@ -372,6 +374,13 @@ func TestIndexdClient_GetProjectSample_DefaultLimit(t *testing.T) {
 }
 
 func TestIndexdClient_NewIndexDClient(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	runGit(t, repoDir, "config", "lfs.customtransfer.drs.upsert", "false")
+	runGit(t, repoDir, "config", "lfs.customtransfer.drs.multipart-threshold", "222")
+
 	cred := conf.Credential{APIEndpoint: "https://example.com"}
 	remote := Gen3Remote{ProjectID: "project", Bucket: "bucket"}
 	client, err := NewIndexDClient(cred, remote, drslog.NewNoOpLogger())
@@ -387,5 +396,116 @@ func TestIndexdClient_NewIndexDClient(t *testing.T) {
 	}
 	if indexd.HttpClient.HTTPClient.Timeout != 30*time.Second {
 		t.Fatalf("unexpected http timeout: %v", indexd.HttpClient.HTTPClient.Timeout)
+	}
+	if indexd.Upsert {
+		t.Fatalf("expected force push disabled, got %v", indexd.Upsert)
+	}
+	if indexd.MultiPartThreshold != 222*common.MB {
+		t.Fatalf("expected multipart threshold 222, got %d", indexd.MultiPartThreshold)
+	}
+}
+
+func TestGetLfsCustomTransferBool_DefaultValue(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
+	if err != nil {
+		t.Fatalf("getLfsCustomTransferBool error: %v", err)
+	}
+	if value {
+		t.Fatalf("expected default false, got %v", value)
+	}
+}
+
+func TestGetLfsCustomTransferBool_MissingKeyReturnsDefault(t *testing.T) {
+	repoDir := initTestGitRepo(t)
+	restore := chdirForTest(t, repoDir)
+	defer restore()
+
+	value, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
+	if err != nil {
+		t.Fatalf("getLfsCustomTransferBool error: %v", err)
+	}
+	if value {
+		t.Fatalf("expected false, got %v", value)
+	}
+}
+
+func initTestGitRepo(t *testing.T) string {
+	t.Helper()
+	repoDir := t.TempDir()
+	runGit(t, repoDir, "init")
+	return repoDir
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+}
+
+func chdirForTest(t *testing.T, dir string) func() {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd error: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir error: %v", err)
+	}
+	return func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restore Chdir error: %v", err)
+		}
+	}
+}
+
+func TestBuildDrsObj_Success(t *testing.T) {
+	client := &IndexDClient{
+		ProjectId:  "test-project",
+		BucketName: "bucket",
+	}
+
+	obj, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
+	if err != nil {
+		t.Fatalf("BuildDrsObj error: %v", err)
+	}
+	if obj.Id != "did-1" {
+		t.Fatalf("unexpected Id: %s", obj.Id)
+	}
+	if obj.Name != "file.txt" {
+		t.Fatalf("unexpected Name: %s", obj.Name)
+	}
+	if obj.Checksums.SHA256 != "sha-256" {
+		t.Fatalf("unexpected checksum: %v", obj.Checksums)
+	}
+	if obj.Size != 12 {
+		t.Fatalf("unexpected size: %d", obj.Size)
+	}
+	if len(obj.AccessMethods) != 1 {
+		t.Fatalf("expected 1 access method, got %d", len(obj.AccessMethods))
+	}
+	if !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
+		t.Fatalf("unexpected access URL: %s", obj.AccessMethods[0].AccessURL.URL)
+	}
+	if obj.AccessMethods[0].Type != "s3" {
+		t.Fatalf("unexpected access method type: %s", obj.AccessMethods[0].Type)
+	}
+}
+
+func TestBuildDrsObj_EmptyBucket(t *testing.T) {
+	client := &IndexDClient{
+		ProjectId:  "test-project",
+		BucketName: "",
+	}
+
+	_, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
+	if err == nil {
+		t.Fatalf("expected error when BucketName is empty")
 	}
 }

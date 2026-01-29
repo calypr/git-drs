@@ -1,6 +1,7 @@
 package hash
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -275,5 +276,26 @@ func TestConvertChecksumsToHashInfo(t *testing.T) {
 				t.Errorf("ConvertChecksumsToHashInfo() got = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestHashInfoUnmarshalJSONChecksumsArray(t *testing.T) {
+	payload := []byte(`[
+		{"checksum":"8f200381b52333426dcad04771eb18f1","type":"md5"},
+		{"checksum":"3d0658efb439683ae9649c6213299219","type":"sha256"}
+	]`)
+
+	var got HashInfo
+	if err := json.Unmarshal(payload, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	want := HashInfo{
+		MD5:    "8f200381b52333426dcad04771eb18f1",
+		SHA256: "3d0658efb439683ae9649c6213299219",
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("json.Unmarshal() got = %+v, want %+v", got, want)
 	}
 }

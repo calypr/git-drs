@@ -23,11 +23,11 @@ func TestNewLoggerAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLogger error: %v", err)
 	}
-	logger.Printf("hello %s", "world")
-	logger.Print("line")
-	logger.Println("another")
+	logger.Debug("hello world")
+	logger.Debug("line")
+	logger.Debug("another")
 
-	logPath := filepath.Join(".drs", "git-drs.log")
+	logPath := filepath.Join(".git", "drs", "git-drs.log")
 	if _, err := os.Stat(logPath); err != nil {
 		t.Fatalf("expected log file: %v", err)
 	}
@@ -44,5 +44,5 @@ func TestGetLoggerFallback(t *testing.T) {
 
 func TestNewNoOpLogger(t *testing.T) {
 	logger := NewNoOpLogger()
-	logger.Print("noop")
+	logger.Debug("noop")
 }

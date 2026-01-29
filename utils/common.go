@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	DRS_DIR = ".drs"
+	DRS_DIR = ".git/drs"
 )
 
 func ProjectToResource(project string) (string, error) {

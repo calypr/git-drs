@@ -8,7 +8,7 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ### `git drs init`
 
-Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and configures `.gitignore` patterns.
+Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and creates a `.git/drs/` directory that Git ignores automatically.
 
 **Usage:**
 
@@ -28,11 +28,21 @@ git drs init
 
 **What it does:**
 
-- Creates `.drs/` directory structure
+- Creates `.git/drs/` directory structure
 - Configures Git LFS custom transfer agent
-- Updates `.gitignore` to exclude DRS cache files
 - Installs Git hooks for DRS workflows
-- Stages `.gitignore` changes automatically
+
+**When to run:**
+
+- **Once** after cloning a Git repository
+- **Once** after creating a new Git repository
+- **Never** needed for subsequent work sessions
+
+**You do NOT need to run `git drs init` again:**
+
+- When starting a new work session
+- After refreshing credentials
+- After pulling new changes
 
 **Note:** Run this before adding remotes.
 
@@ -167,7 +177,7 @@ git drs fetch production
 **What it does:**
 
 - Identifies remote and project from configuration
-- Transfers all DRS records for a given project from the server to the local `.drs/lfs/objects/` directory
+- Transfers all DRS records for a given project from the server to the local `.git/drs/lfs/objects/` directory
 
 ### `git drs push [remote-name]`
 
@@ -186,7 +196,7 @@ git drs push production
 
 **What it does:**
 
-- Checks local `.drs/lfs/objects/` for DRS metadata
+- Checks local `.git/drs/lfs/objects/` for DRS metadata
 - For each object, uploads file to bucket if file exists locally
 - If file doesn't exist locally (metadata only), registers metadata without upload
 - This enables cross-remote promotion workflows
@@ -206,6 +216,36 @@ git drs push production
 This is useful when files are already in the production bucket with matching SHA256 hashes. It can also be used to reupload files given that the files are pulled to the repo first.
 
 **Note:** `fetch` and `push` are commonly used together. `fetch` pulls metadata from one remote, `push` registers it to another.
+
+### `git drs query`
+
+Query a DRS object by its DRS ID or SHA256 checksum.
+
+**Usage:**
+
+```bash
+# Query by DRS ID (default behavior)
+git drs query <drs-id>
+
+# Query by SHA256 checksum
+git drs query --checksum <sha256>
+```
+
+**Options:**
+
+- `--checksum`, `-c`: Treat the argument as a SHA256 checksum instead of a DRS ID.
+- `--pretty`, `-p`: Output indented JSON for easier reading.
+- `--remote`, `-r`: Target a specific remote (default: default_remote).
+
+**Examples:**
+
+```bash
+# Query by checksum and pretty-print the result
+git drs query --checksum 9f2c2db77f0a3e2b47e4b44b8ce8d4c8c3c4c0b5f4c5a2d2f9b1d0bfb0a1c2d3 --pretty
+
+# Query by DRS ID against a specific remote
+git drs query did:example:12345 --remote staging
+```
 
 ### `git drs add-url`
 

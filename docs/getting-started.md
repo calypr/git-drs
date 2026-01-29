@@ -278,7 +278,7 @@ git drs remote set staging
 
 ### View Logs
 
-- Logs location: `.drs/` directory
+- Logs location: `.git/drs/` directory
 
 ## Command Summary
 
@@ -296,6 +296,8 @@ git drs remote set staging
 | **Download**       | `git lfs pull -I "pattern"`                 |
 
 ## Session Workflow
+
+> **Note**: You do NOT need to run `git drs init` again. Initialization is a one-time setup per Git repository clone.
 
 For each work session:
 

@@ -24,7 +24,7 @@ var Cmd = &cobra.Command{
 		myLogger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			myLogger.Printf("Error loading config: %v", err)
+			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
 			return err
 		}
 
@@ -34,14 +34,14 @@ var Cmd = &cobra.Command{
 		} else {
 			remote, err = cfg.GetDefaultRemote()
 			if err != nil {
-				myLogger.Printf("Error getting default remote: %v", err)
+				myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
 				return err
 			}
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			myLogger.Printf("Error creating indexd client: %s", err)
+			myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
 			return err
 		}
 

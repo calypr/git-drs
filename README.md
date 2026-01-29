@@ -1,5 +1,12 @@
 # Git DRS
 
+---
+# NOTICE
+
+git-drs is not yet fully compliant with DRS. It currently works against Gen3's indexd system. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
+
+---
+
 [![Tests](https://github.com/calypr/git-drs/actions/workflows/test.yaml/badge.svg)](https://github.com/calypr/git-drs/actions/workflows/test.yaml)
 
 **Git-LFS file management for DRS servers**
@@ -39,15 +46,15 @@ git lfs install --skip-smudge
 ### Basic Usage
 
 ```bash
+# Initialize repository (one-time Git repo setup)
+git drs init
+
 # Add DRS remote
 git drs remote add gen3 production \
     --cred /path/to/credentials.json \
     --url https://calypr-public.ohsu.edu \
     --project my-project \
     --bucket my-bucket
-
-# Initialize repository
-git drs init
 
 # Track files
 git lfs track "*.bam"

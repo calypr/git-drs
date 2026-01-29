@@ -2,7 +2,7 @@ package add
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/calypr/data-client/client/conf"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
@@ -47,7 +47,7 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
@@ -56,7 +56,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
-	configure := conf.NewConfigure(log)
+	configure := conf.NewConfigure(drslog.AsStdLogger(logg))
 	switch {
 	case fenceToken != "":
 		accessToken = fenceToken
@@ -108,7 +108,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log
 	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
 		return fmt.Errorf("failed to update remote config: %w", err)
 	}
-	log.Printf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket)
+	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket))
 
 	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
 	cred := &conf.Credential{
@@ -125,6 +125,6 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, log *log
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
 
-	log.Printf("Gen3 profile '%s' configured and token refreshed successfully", remoteName)
+	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
 	return nil
 }

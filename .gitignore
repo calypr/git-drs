@@ -5,8 +5,6 @@
 /build
 git-drs
 venv*
-coverage.out
-coverage.html
 # admin tool
 admin/
 # Ignore any file named .env anywhere in the repository

@@ -50,7 +50,7 @@ var AddURLCmd = &cobra.Command{
 
 		// if none provided, use default AWS configuration on file
 		if awsAccessKey == "" && awsSecretKey == "" {
-			myLogger.Print("No AWS credentials provided. Using default AWS configuration from file.")
+			myLogger.Debug("No AWS credentials provided. Using default AWS configuration from file.")
 		}
 
 		cfg, err := config.LoadConfig()
@@ -82,7 +82,7 @@ var AddURLCmd = &cobra.Command{
 		if err := generatePointerFile(relFilePath, sha256, meta.Size); err != nil {
 			return fmt.Errorf("failed to generate pointer file: %w", err)
 		}
-		myLogger.Print("S3 URL successfully added to Git DRS repo.")
+		myLogger.Debug("S3 URL successfully added to Git DRS repo.")
 		return nil
 	},
 }

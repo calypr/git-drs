@@ -22,9 +22,6 @@ jobs:
           # - { os: darwin, arch: arm64, runner: macos-latest }
 
     steps:
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-
       - name: Install Default Version (Latest Release)
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"  
@@ -33,6 +30,8 @@ jobs:
           git-drs --help
 
       - name: Install Specific Version (Tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG=$(gh release view --json tagName --jq '.tagName' || echo "")
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $TAG

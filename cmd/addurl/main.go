@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 
 	"github.com/calypr/git-drs/cmd/addurl/lfss3"
@@ -78,6 +81,11 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
+	}
+
+	logger, err := drslog.NewLogger("", false)
+	if err != nil {
+		return fmt.Errorf("error creating logger: %v", err)
 	}
 
 	s3URL := args[0]
@@ -162,6 +170,7 @@ Worktree
 -------------
 path           : %s
 tracked by LFS : %v
+sha256 param  : %s
 
 `,
 		info.GitCommonDir,
@@ -175,104 +184,37 @@ tracked by LFS : %v
 		info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
 		pathArg,
 		isLFSTracked,
+		sha256Param,
 	); err != nil {
 		return fmt.Errorf("print resolved info: %w", err)
 	}
 
-	// 2) object destination
-	etag := info.ETag
-	subdir1, subdir2 := "xx", "yy"
-	if len(etag) >= 4 {
-		subdir1 = etag[0:2]
-		subdir2 = etag[2:4]
-	}
-	objName := etag
-	if objName == "" {
-		objName = "unknown-etag"
-	}
-	tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
-	tmpObj := filepath.Join(tmpDir, objName)
-
-	// 3) fetch bytes -> tmp, compute sha+count
-
-	// Create the temporary directory and file where the S3 object will be streamed while computing its hash and size.
-	if err = os.MkdirAll(tmpDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", tmpDir, err)
-	}
-
-	f, err := os.Create(tmpObj)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", tmpObj, err)
-	}
-	// ensure any leftover file is closed and error propagated via named return
-	defer func() {
-		if f != nil {
-			if cerr := f.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("close tmp file: %w", cerr)
-			}
+	if sha256Param == "" {
+		computedSHA, tmpObj, err2 := downloadAndComputeSHA256(info, err, ctx, s3Input)
+		if err2 != nil {
+			return err2
 		}
-	}()
 
-	h := sha256.New()
+		// 4) move tmp object to LFS storage
+		oid := computedSHA
+		dstDir := filepath.Join(info.LFSRoot, "objects", oid[0:2], oid[2:4])
+		dstObj := filepath.Join(dstDir, oid)
 
-	var reader io.ReadCloser
-	reader, err = agentFetchReader(ctx, s3Input)
-	if err != nil {
-		return fmt.Errorf("fetch reader: %w", err)
-	}
-	// ensure close on any early return; propagate close error via named return
-	defer func() {
-		if reader != nil {
-			if cerr := reader.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("close reader: %w", cerr)
-			}
+		if err = os.MkdirAll(dstDir, 0755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dstDir, err)
 		}
-	}()
 
-	n, err := io.Copy(io.MultiWriter(f, h), reader)
-	if err != nil {
-		return fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
+		if err = os.Rename(tmpObj, dstObj); err != nil {
+			return fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
+		}
+
+		if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil {
+			return fmt.Errorf("stderr write: %w", err)
+		}
+		sha256Param = computedSHA
 	}
 
-	// explicitly close reader and handle error
-	if cerr := reader.Close(); cerr != nil {
-		return fmt.Errorf("close reader: %w", cerr)
-	}
-	reader = nil
-
-	// ensure data is flushed to disk
-	if err = f.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", tmpObj, err)
-	}
-
-	// explicitly close tmp file before rename
-	if cerr := f.Close(); cerr != nil {
-		return fmt.Errorf("close %s: %w", tmpObj, cerr)
-	}
-	f = nil
-
-	// use n (bytes written) to avoid unused var warnings
-	_ = n
-
-	// compute hex SHA256 of the fetched content
-	computedSHA := fmt.Sprintf("%x", h.Sum(nil))
-	//optional: compare with provided `sha256` flag if desired
-	if sha256Param != "" && sha256Param != computedSHA {
-		return fmt.Errorf("sha256Param mismatch: expected %s got %s", sha256Param, computedSHA)
-	}
-
-	oid := computedSHA
-	dstDir := filepath.Join(info.LFSRoot, "objects", oid[0:2], oid[2:4])
-	dstObj := filepath.Join(dstDir, oid)
-
-	if err = os.MkdirAll(dstDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dstDir, err)
-	}
-
-	if err = os.Rename(tmpObj, dstObj); err != nil {
-		return fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
-	}
-
+	oid := sha256Param
 	// 5) write pointer file in working tree
 	pointer := fmt.Sprintf(
 		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
@@ -293,11 +235,124 @@ tracked by LFS : %v
 		return fmt.Errorf("write %s: %w", safePath, err)
 	}
 
-	if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil {
-		return fmt.Errorf("stderr write: %w", err)
-	}
 	if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil {
 		return fmt.Errorf("stderr write: %w", err)
 	}
+	if !isLFSTracked {
+		// git lfs track
+		_, err := lfss3.GitLFSTrackReadOnly(ctx, pathArg)
+		if err != nil {
+			return fmt.Errorf("git lfs track %s: %w", pathArg, err)
+		}
+
+		if _, err := fmt.Fprintf(os.Stderr, "Info: Added to Git LFS. Remember to `git add %s` and `git commit ...`", pathArg); err != nil {
+			return fmt.Errorf("stderr write: %w", err)
+		}
+	}
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("error getting config: %v", err)
+	}
+
+	remote, err := cfg.GetDefaultRemote()
+
+	cli, err := cfg.GetRemoteClient(remote, logger)
+	if err != nil {
+		return fmt.Errorf("error GetRemoteClient: %v", err)
+	}
+	file := drsmap.LfsFileInfo{
+		Name: pathArg,
+		Size: info.SizeBytes,
+		Oid:  oid,
+	}
+	_, err = drsmap.WriteDrsFile(cli, file, cli.GetProjectId(), &s3URL)
+	if err != nil {
+		return fmt.Errorf("error WriteDrsFile: %v", err)
+	}
+
 	return nil
+}
+
+// downloadAndComputeSHA256 downloads the S3 object to a temporary file while computing its SHA256 hash.
+// returns the computed SHA256 hash, temporary path and any error encountered.
+func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) {
+	// 2) object destination
+	etag := info.ETag
+	subdir1, subdir2 := "xx", "yy"
+	if len(etag) >= 4 {
+		subdir1 = etag[0:2]
+		subdir2 = etag[2:4]
+	}
+	objName := etag
+	if objName == "" {
+		objName = "unknown-etag"
+	}
+	tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+	tmpObj := filepath.Join(tmpDir, objName)
+
+	// 3) fetch bytes -> tmp, compute sha+count
+
+	// Create the temporary directory and file where the S3 object will be streamed while computing its hash and size.
+	if err = os.MkdirAll(tmpDir, 0755); err != nil {
+		return "", "", fmt.Errorf("mkdir %s: %w", tmpDir, err)
+	}
+
+	f, err := os.Create(tmpObj)
+	if err != nil {
+		return "", "", fmt.Errorf("create %s: %w", tmpObj, err)
+	}
+	// ensure any leftover file is closed and error propagated via named return
+	defer func() {
+		if f != nil {
+			if cerr := f.Close(); cerr != nil && err == nil {
+				err = fmt.Errorf("close tmp file: %w", cerr)
+			}
+		}
+	}()
+
+	h := sha256.New()
+
+	var reader io.ReadCloser
+	reader, err = agentFetchReader(ctx, s3Input)
+	if err != nil {
+		return "", "", fmt.Errorf("fetch reader: %w", err)
+	}
+	// ensure close on any early return; propagate close error via named return
+	defer func() {
+		if reader != nil {
+			if cerr := reader.Close(); cerr != nil && err == nil {
+				err = fmt.Errorf("close reader: %w", cerr)
+			}
+		}
+	}()
+
+	n, err := io.Copy(io.MultiWriter(f, h), reader)
+	if err != nil {
+		return "", "", fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
+	}
+
+	// explicitly close reader and handle error
+	if cerr := reader.Close(); cerr != nil {
+		return "", "", fmt.Errorf("close reader: %w", cerr)
+	}
+	reader = nil
+
+	// ensure data is flushed to disk
+	if err = f.Sync(); err != nil {
+		return "", "", fmt.Errorf("sync %s: %w", tmpObj, err)
+	}
+
+	// explicitly close tmp file before rename
+	if cerr := f.Close(); cerr != nil {
+		return "", "", fmt.Errorf("close %s: %w", tmpObj, cerr)
+	}
+	f = nil
+
+	// use n (bytes written) to avoid unused var warnings
+	_ = n
+
+	// compute hex SHA256 of the fetched content
+	computedSHA := fmt.Sprintf("%x", h.Sum(nil))
+	return computedSHA, tmpObj, nil
 }

@@ -28,7 +28,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error creating logger: %v", err)
 		}
 
-		myLogger.Debug("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
+		myLogger.Info("~~~~~~~~~~~~~ START: pre-push ~~~~~~~~~~~~~")
 
 		cfg, err := config.LoadConfig()
 		if err != nil {
@@ -80,7 +80,7 @@ var Cmd = &cobra.Command{
 		// Buffer stdin to a temp file and invoke `git lfs pre-push <remote> <url>` with same args and stdin.
 		tmp, err := os.CreateTemp("", "prepush-stdin-*")
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("error creating temp file for stdin: %v", err))
+			myLogger.Error(fmt.Sprintf("error creating temp file for stdin: %v", err))
 			return err
 		}
 		defer func() {
@@ -90,32 +90,30 @@ var Cmd = &cobra.Command{
 
 		// Copy all of stdin into the temp file.
 		if _, err := io.Copy(tmp, os.Stdin); err != nil {
-			myLogger.Debug(fmt.Sprintf("error buffering stdin: %v", err))
+			myLogger.Error(fmt.Sprintf("error buffering stdin: %v", err))
 			return err
 		}
 
 		// Rewind to start so the child process can read it.
 		if _, err := tmp.Seek(0, 0); err != nil {
-			myLogger.Debug(fmt.Sprintf("error seeking temp stdin: %v", err))
+			myLogger.Error(fmt.Sprintf("error seeking temp stdin: %v", err))
 			return err
 		}
 
 		// read the temp file and get a list of all unique local branches being pushed
 		branches, err := readPushedBranches(tmp)
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("error reading pushed branches: %v", err))
+			myLogger.Error(fmt.Sprintf("error reading pushed branches: %v", err))
 			return err
 		}
 
 		myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
 		err = drsmap.UpdateDrsObjects(cli, gitRemoteName, gitRemoteLocation, branches, myLogger)
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
+			myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 			return err
 		}
-		myLogger.Debug("DRS objects prepared for push!")
-
-		myLogger.Debug("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+		myLogger.Info("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 		return nil
 	},
 }

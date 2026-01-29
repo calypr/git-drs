@@ -201,45 +201,57 @@ func UpdateDrsObjects(drsClient client.DRSClient, gitRemoteName, gitRemoteLocati
 	// create a DRS object for each LFS file
 	// which will be used at push-time
 	for _, file := range lfsFiles {
-		// check if indexd object already prepared, skip if so
-		drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
-		}
-		if _, err := os.Stat(drsObjPath); err == nil {
-			logger.Debug(fmt.Sprintf("Skipping record creation, file %s with OID %s already exists in DRS objects path %s", file.Name, file.Oid, drsObjPath))
+
+		drsObj, err2 := WriteDrsFile(drsClient, file, projectId, nil)
+		if err2 != nil {
+			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err2))
 			continue
 		}
-
-		// if file is in cache, hasn't been committed to git or pushed to indexd
-		// create a local DRS object for it
-		// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-		drsId := DrsUUID(projectId, file.Oid)
-		// logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
-
-		// get file info needed to create indexd record
-		path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
-		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
-		}
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return fmt.Errorf("error: File %s does not exist in LFS objects path %s. Aborting", file.Name, path)
-		}
-
-		drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
-		if err != nil {
-			return fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
-		}
-
-		// write drs objects to DRS_OBJS_PATH
-		err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
-		if err != nil {
-			return fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
-		}
-		logger.Debug(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))
+		logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))
 	}
 
 	return nil
+}
+
+// WriteDrsFile creates drsObject record from LFS file info
+func WriteDrsFile(drsClient client.DRSClient, file LfsFileInfo, projectId string, objectPath *string) (*drs.DRSObject, error) {
+
+	drsObjPath, err := GetObjectPath(projectdir.DRS_OBJS_PATH, file.Oid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
+	}
+
+	// determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
+
+	// if file is in cache, hasn't been committed to git or pushed to indexd
+	// create a local DRS object for it
+	// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
+	drsId := DrsUUID(projectId, file.Oid)
+	// logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
+
+	// get file info needed to create indexd record
+	//path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
+	//if err != nil {
+	//	return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
+	//}
+	//if _, err := os.Stat(path); os.IsNotExist(err) {
+	//	return fmt.Errorf("error: File %s does not exist in LFS objects path %s. Aborting", file.Name, path)
+	//}
+
+	drsObj, err := drsClient.BuildDrsObj(file.Name, file.Oid, file.Size, drsId)
+	if err != nil {
+		return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
+	}
+	if objectPath != nil && *objectPath != "" {
+		drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
+	}
+
+	// write drs objects to DRS_OBJS_PATH
+	err = WriteDrsObj(drsObj, file.Oid, drsObjPath)
+	if err != nil {
+		return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
+	}
+	return drsObj, nil
 }
 
 func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {

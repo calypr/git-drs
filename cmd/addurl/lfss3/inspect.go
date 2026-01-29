@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/calypr/git-drs/utils"
 )
 
 // InspectInput is the drop-in input you requested.
@@ -71,16 +72,9 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 	}
 
 	// 1) Determine Git LFS storage root.
-	gitCommonDir, err := gitRevParseGitCommonDir(ctx)
+	gitCommonDir, lfsRoot, err := GetGitRootDirectories(ctx)
 	if err != nil {
 		return nil, err
-	}
-	lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
-	if err != nil {
-		return nil, err
-	}
-	if lfsRoot == "" {
-		lfsRoot = filepath.Join(gitCommonDir, "lfs")
 	}
 
 	// 2) Parse S3 URL + derive working tree filename.
@@ -148,9 +142,61 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 	return out, nil
 }
 
+// GetGitRootDirectories returns (gitCommonDir, lfsRoot, error).
+func GetGitRootDirectories(ctx context.Context) (string, string, error) {
+	gitCommonDir, err := gitRevParseGitCommonDir(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
+	if err != nil {
+		return "", "", err
+	}
+	if lfsRoot == "" {
+		lfsRoot = filepath.Join(gitCommonDir, "lfs")
+	}
+	return gitCommonDir, lfsRoot, nil
+}
+
 //
 // --- Git helpers ---
 //
+
+func GitLFSTrack(ctx context.Context, path string) (bool, error) {
+	out, err := runGit(ctx, "lfs", "track", path)
+	if err != nil {
+		return false, fmt.Errorf("git lfs track failed: %w", err)
+	}
+	return strings.Contains(out, path), nil
+}
+
+func GitLFSTrackReadOnly(ctx context.Context, path string) (bool, error) {
+	_, err := GitLFSTrack(ctx, path)
+	if err != nil {
+		return false, fmt.Errorf("git lfs track failed: %w", err)
+	}
+
+	repoRoot, err := utils.GitTopLevel()
+	if err != nil {
+		return false, err
+	}
+
+	attrPath := filepath.Join(repoRoot, ".gitattributes")
+	changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{path})
+	if err != nil {
+		return false, err
+	}
+
+	return changed, nil
+}
+
+func GetGitAttribute(ctx context.Context, attr string, path string) (string, error) {
+	out, err := runGit(ctx, "check-attr", attr, "--", path)
+	if err != nil {
+		return "", fmt.Errorf("git check-attr failed: %w", err)
+	}
+	return out, nil
+}
 
 func gitRevParseGitCommonDir(ctx context.Context) (string, error) {
 	out, err := runGit(ctx, "rev-parse", "--git-common-dir")

@@ -264,7 +264,7 @@ sha256 param  : %s
 			_, _ = fmt.Fprintf(os.Stderr, "os.Getwd: %v\n", errCwd)
 			os.Exit(1)
 		}
-		return fmt.Errorf("error GetRemoteClient: remote %s %s %v", remote, cwd, err)
+		return fmt.Errorf("error GetRemoteClient: remote: %s cwd: %s err: %v", remote, cwd, err)
 	}
 	file := drsmap.LfsFileInfo{
 		Name: pathArg,

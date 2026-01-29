@@ -259,7 +259,12 @@ sha256 param  : %s
 
 	cli, err := cfg.GetRemoteClient(remote, logger)
 	if err != nil {
-		return fmt.Errorf("error GetRemoteClient: %v", err)
+		cwd, errCwd := os.Getwd()
+		if errCwd != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "os.Getwd: %v\n", errCwd)
+			os.Exit(1)
+		}
+		return fmt.Errorf("error GetRemoteClient: remote %s %s %v", remote, cwd, err)
 	}
 	file := drsmap.LfsFileInfo{
 		Name: pathArg,

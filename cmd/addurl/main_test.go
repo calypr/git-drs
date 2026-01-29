@@ -55,6 +55,7 @@ remotes:
 		if err := os.WriteFile(p, []byte(yamlConfig), 0644); err != nil {
 			t.Fatalf("write config %s: %v", p, err)
 		}
+		fmt.Fprintf(os.Stderr, "TestRunAddURL_WritesPointerAndLFSObject wrote mock config file %s\n", p)
 	}
 
 	resetStubs := stubAddURLDeps(t,

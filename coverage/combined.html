@@ -127,7 +127,7 @@
 				
 				<option value="file35">github.com/calypr/git-drs/cmd/version/main.go (57.9%)</option>
 				
-				<option value="file36">github.com/calypr/git-drs/config/config.go (58.5%)</option>
+				<option value="file36">github.com/calypr/git-drs/config/config.go (44.5%)</option>
 				
 				<option value="file37">github.com/calypr/git-drs/drs/hash/hash.go (93.8%)</option>
 				
@@ -3399,9 +3399,9 @@ sha256 param  : %s
                         _, _ = fmt.Fprintf(os.Stderr, "os.Getwd: %v\n", errCwd)
                         os.Exit(1)
                 }</span>
-                <span class="cov0" title="0">return fmt.Errorf("error GetRemoteClient: remote %s %s %v", remote, cwd, err)</span>
+                <span class="cov0" title="0">return fmt.Errorf("error GetRemoteClient: remote: %s cwd: %s err: %v", remote, cwd, err)</span>
         }
-        <span class="cov3" title="3">file := drsmap.LfsFileInfo{
+        <span class="cov2" title="2">file := drsmap.LfsFileInfo{
                 Name: pathArg,
                 Size: info.SizeBytes,
                 Oid:  oid,
@@ -3411,24 +3411,24 @@ sha256 param  : %s
                 return fmt.Errorf("error WriteDrsFile: %v", err)
         }</span>
 
-        <span class="cov3" title="3">return nil</span>
+        <span class="cov2" title="2">return nil</span>
 }
 
 // downloadAndComputeSHA256 downloads the S3 object to a temporary file while computing its SHA256 hash.
 // returns the computed SHA256 hash, temporary path and any error encountered.
-func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) <span class="cov2" title="2">{
+func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) <span class="cov1" title="1">{
         // 2) object destination
         etag := info.ETag
         subdir1, subdir2 := "xx", "yy"
-        if len(etag) &gt;= 4 </span><span class="cov2" title="2">{
+        if len(etag) &gt;= 4 </span><span class="cov1" title="1">{
                 subdir1 = etag[0:2]
                 subdir2 = etag[2:4]
         }</span>
-        <span class="cov2" title="2">objName := etag
+        <span class="cov1" title="1">objName := etag
         if objName == "" </span><span class="cov0" title="0">{
                 objName = "unknown-etag"
         }</span>
-        <span class="cov2" title="2">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
+        <span class="cov1" title="1">tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
         tmpObj := filepath.Join(tmpDir, objName)
 
         // 3) fetch bytes -&gt; tmp, compute sha+count
@@ -3438,12 +3438,12 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 return "", "", fmt.Errorf("mkdir %s: %w", tmpDir, err)
         }</span>
 
-        <span class="cov2" title="2">f, err := os.Create(tmpObj)
+        <span class="cov1" title="1">f, err := os.Create(tmpObj)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("create %s: %w", tmpObj, err)
         }</span>
         // ensure any leftover file is closed and error propagated via named return
-        <span class="cov2" title="2">defer func() </span><span class="cov2" title="2">{
+        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
                 if f != nil </span><span class="cov0" title="0">{
                         if cerr := f.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close tmp file: %w", cerr)
@@ -3451,7 +3451,7 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 }
         }()
 
-        <span class="cov2" title="2">h := sha256.New()
+        <span class="cov1" title="1">h := sha256.New()
 
         var reader io.ReadCloser
         reader, err = agentFetchReader(ctx, s3Input)
@@ -3459,7 +3459,7 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 return "", "", fmt.Errorf("fetch reader: %w", err)
         }</span>
         // ensure close on any early return; propagate close error via named return
-        <span class="cov2" title="2">defer func() </span><span class="cov2" title="2">{
+        <span class="cov1" title="1">defer func() </span><span class="cov1" title="1">{
                 if reader != nil </span><span class="cov0" title="0">{
                         if cerr := reader.Close(); cerr != nil &amp;&amp; err == nil </span><span class="cov0" title="0">{
                                 err = fmt.Errorf("close reader: %w", cerr)
@@ -3467,16 +3467,16 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
                 }
         }()
 
-        <span class="cov2" title="2">n, err := io.Copy(io.MultiWriter(f, h), reader)
+        <span class="cov1" title="1">n, err := io.Copy(io.MultiWriter(f, h), reader)
         if err != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
         }</span>
 
         // explicitly close reader and handle error
-        <span class="cov2" title="2">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if cerr := reader.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("close reader: %w", cerr)
         }</span>
-        <span class="cov2" title="2">reader = nil
+        <span class="cov1" title="1">reader = nil
 
         // ensure data is flushed to disk
         if err = f.Sync(); err != nil </span><span class="cov0" title="0">{
@@ -3484,10 +3484,10 @@ func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.
         }</span>
 
         // explicitly close tmp file before rename
-        <span class="cov2" title="2">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if cerr := f.Close(); cerr != nil </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("close %s: %w", tmpObj, cerr)
         }</span>
-        <span class="cov2" title="2">f = nil
+        <span class="cov1" title="1">f = nil
 
         // use n (bytes written) to avoid unused var warnings
         _ = n
@@ -5895,9 +5895,10 @@ type Config struct {
 func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) <span class="cov9" title="39">{
         x, ok := c.Remotes[remote]
         if !ok </span><span class="cov0" title="0">{
-                return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
+                path, _ := getConfigPath()
+                return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s path: %s", remote, path)
         }</span>
-        <span class="cov9" title="39">if x.Gen3 != nil </span><span class="cov9" title="39">{
+        <span class="cov9" title="38">if x.Gen3 != nil </span><span class="cov9" title="38">{
                 configText, _ := yaml.Marshal(x.Gen3)
                 configParams := make(map[string]string)
                 yaml.Unmarshal(configText, configParams)
@@ -5923,7 +5924,7 @@ func (c Config) GetRemote(remote Remote) DRSRemote <span class="cov0" title="0">
 }
 
 // GetDefaultRemote returns the configured default remote with validation
-func (c Config) GetDefaultRemote() (Remote, error) <span class="cov9" title="40">{
+func (c Config) GetDefaultRemote() (Remote, error) <span class="cov9" title="38">{
         if c.DefaultRemote == "" </span><span class="cov0" title="0">{
                 return "", fmt.Errorf(
                         "no default remote configured.\n"+
@@ -5933,7 +5934,7 @@ func (c Config) GetDefaultRemote() (Remote, error) <span class="cov9" title="40"
                 )
         }</span>
 
-        <span class="cov9" title="40">if _, ok := c.Remotes[c.DefaultRemote]; !ok </span><span class="cov0" title="0">{
+        <span class="cov9" title="38">if _, ok := c.Remotes[c.DefaultRemote]; !ok </span><span class="cov0" title="0">{
                 return "", fmt.Errorf(
                         "default remote '%s' not found in configuration.\n"+
                                 "Available remotes: %v",
@@ -5942,16 +5943,16 @@ func (c Config) GetDefaultRemote() (Remote, error) <span class="cov9" title="40"
                 )
         }</span>
 
-        <span class="cov9" title="40">return c.DefaultRemote, nil</span>
+        <span class="cov9" title="38">return c.DefaultRemote, nil</span>
 }
 
 // GetRemoteOrDefault returns the specified remote if provided, otherwise returns the default remote
 // This is a common pattern used across many commands that accept an optional --remote flag
-func (c Config) GetRemoteOrDefault(remote string) (Remote, error) <span class="cov2" title="2">{
-        if remote != "" </span><span class="cov1" title="1">{
+func (c Config) GetRemoteOrDefault(remote string) (Remote, error) <span class="cov0" title="0">{
+        if remote != "" </span><span class="cov0" title="0">{
                 return Remote(remote), nil
         }</span>
-        <span class="cov1" title="1">return c.GetDefaultRemote()</span>
+        <span class="cov0" title="0">return c.GetDefaultRemote()</span>
 }
 
 // listRemoteNames returns a slice of all remote names for error messages
@@ -5963,13 +5964,13 @@ func (c Config) listRemoteNames() []string <span class="cov0" title="0">{
         <span class="cov0" title="0">return names</span>
 }
 
-func getConfigPath() (string, error) <span class="cov10" title="58">{
+func getConfigPath() (string, error) <span class="cov10" title="50">{
         topLevel, err := utils.GitTopLevel()
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
 
-        <span class="cov10" title="58">configPath := filepath.Join(topLevel, projectdir.DRS_DIR, projectdir.CONFIG_YAML)
+        <span class="cov10" title="50">configPath := filepath.Join(topLevel, projectdir.DRS_DIR, projectdir.CONFIG_YAML)
         return configPath, nil</span>
 }
 
@@ -5978,45 +5979,45 @@ func getConfigPath() (string, error) <span class="cov10" title="58">{
 // 1. create a new config file if it does not exist / is empty
 // 2. return an error if the config file is invalid
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
-func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) <span class="cov4" title="5">{
+func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) <span class="cov4" title="4">{
         configPath, err := getConfigPath()
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
         // check if file exists, if not create parent directory
-        <span class="cov4" title="5">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov1" title="1">{
+        <span class="cov4" title="4">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov0" title="0">{
                 if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil </span><span class="cov0" title="0">{
                         return nil, err
                 }</span>
         }
 
         // if file doesn't exist, create file. Otherwise, open the file for writing
-        <span class="cov4" title="5">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
+        <span class="cov4" title="4">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov4" title="5">defer file.Close()
+        <span class="cov4" title="4">defer file.Close()
 
         // if file is not empty, unmarshal into Config
         var cfg Config
-        if err := yaml.NewDecoder(file).Decode(&amp;cfg); err != nil </span><span class="cov4" title="5">{
+        if err := yaml.NewDecoder(file).Decode(&amp;cfg); err != nil </span><span class="cov4" title="4">{
                 // if the file is empty, we can just create a new config
                 cfg = Config{
                         Remotes: map[Remote]RemoteSelect{},
                 }
         }</span>
 
-        <span class="cov4" title="5">if cfg.Remotes == nil </span><span class="cov0" title="0">{
+        <span class="cov4" title="4">if cfg.Remotes == nil </span><span class="cov0" title="0">{
                 cfg.Remotes = make(map[Remote]RemoteSelect)
         }</span>
 
         // Set as default if this is the first remote
-        <span class="cov4" title="5">if len(cfg.Remotes) == 0 &amp;&amp; cfg.DefaultRemote == "" </span><span class="cov4" title="5">{
+        <span class="cov4" title="4">if len(cfg.Remotes) == 0 &amp;&amp; cfg.DefaultRemote == "" </span><span class="cov4" title="4">{
                 cfg.DefaultRemote = name
         }</span>
 
-        <span class="cov4" title="5">cfg.Remotes[name] = remote
+        <span class="cov4" title="4">cfg.Remotes[name] = remote
 
         // overwrite the file using config
         file.Seek(0, 0)
@@ -6024,32 +6025,32 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) <span class
         if err := yaml.NewEncoder(file).Encode(cfg); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("failed to write config file: %w", err)
         }</span>
-        <span class="cov4" title="5">return &amp;cfg, nil</span>
+        <span class="cov4" title="4">return &amp;cfg, nil</span>
 }
 
 // load an existing config
-func LoadConfig() (*Config, error) <span class="cov9" title="47">{
+func LoadConfig() (*Config, error) <span class="cov9" title="42">{
         configPath, err := getConfigPath()
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
-        <span class="cov9" title="47">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov1" title="1">{
+        <span class="cov9" title="42">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("config file does not exist. Please run 'git drs init', see 'git drs init --help' for more details")
         }</span>
 
-        <span class="cov9" title="46">reader, err := os.Open(configPath)
+        <span class="cov9" title="42">reader, err := os.Open(configPath)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("failed to open config file at %s", configPath)
         }</span>
-        <span class="cov9" title="46">defer reader.Close()
+        <span class="cov9" title="42">defer reader.Close()
 
         b, err := io.ReadAll(reader)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("unable to read config file at %s", configPath)
         }</span>
 
-        <span class="cov9" title="46">conf := Config{}
+        <span class="cov9" title="42">conf := Config{}
         err = yaml.Unmarshal(b, &amp;conf)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("config file at %s is invalid: %w", configPath, err)
@@ -6057,12 +6058,12 @@ func LoadConfig() (*Config, error) <span class="cov9" title="47">{
 
         // Validate: if remotes exist but no default, error with migration instructions
         // FIXME: can be deleted after internal dev team ports over
-        <span class="cov9" title="46">if len(conf.Remotes) &gt; 0 &amp;&amp; conf.DefaultRemote == "" </span><span class="cov1" title="1">{
+        <span class="cov9" title="42">if len(conf.Remotes) &gt; 0 &amp;&amp; conf.DefaultRemote == "" </span><span class="cov0" title="0">{
                 remoteNames := make([]string, 0, len(conf.Remotes))
-                for name := range conf.Remotes </span><span class="cov1" title="1">{
+                for name := range conf.Remotes </span><span class="cov0" title="0">{
                         remoteNames = append(remoteNames, string(name))
                 }</span>
-                <span class="cov1" title="1">return nil, fmt.Errorf(
+                <span class="cov0" title="0">return nil, fmt.Errorf(
                         "configuration migration required.\n\n" +
                                 "Your config has remotes but no default_remote field.\n" +
                                 "Add this line to .git/drs/config.yaml:\n\n" +
@@ -6072,26 +6073,26 @@ func LoadConfig() (*Config, error) <span class="cov9" title="47">{
                 )</span>
         }
 
-        <span class="cov9" title="45">return &amp;conf, nil</span>
+        <span class="cov9" title="42">return &amp;conf, nil</span>
 }
 
-func CreateEmptyConfig() error <span class="cov4" title="5">{
+func CreateEmptyConfig() error <span class="cov4" title="4">{
         configPath, err := getConfigPath()
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov4" title="5">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov4" title="5">{
+        <span class="cov4" title="4">if _, err := os.Stat(configPath); os.IsNotExist(err) </span><span class="cov4" title="4">{
                 if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
         }
 
         // create empty config file
-        <span class="cov4" title="5">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
+        <span class="cov4" title="4">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov4" title="5">defer file.Close()
+        <span class="cov4" title="4">defer file.Close()
 
         return nil</span>
 }
@@ -6109,23 +6110,23 @@ func GetProjectId(remote Remote) (string, error) <span class="cov0" title="0">{
 }
 
 // SaveConfig writes the configuration to disk
-func SaveConfig(cfg *Config) error <span class="cov1" title="1">{
+func SaveConfig(cfg *Config) error <span class="cov0" title="0">{
         configPath, err := getConfigPath()
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov1" title="1">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+        <span class="cov0" title="0">file, err := os.OpenFile(configPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov1" title="1">defer file.Close()
+        <span class="cov0" title="0">defer file.Close()
 
         if err := yaml.NewEncoder(file).Encode(cfg); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to write config file: %w", err)
         }</span>
 
-        <span class="cov1" title="1">return nil</span>
+        <span class="cov0" title="0">return nil</span>
 }
 </pre>
 		

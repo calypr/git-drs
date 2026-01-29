@@ -24,10 +24,7 @@ jobs:
     steps:
       - name: Install Default Version (Latest Release)
         run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"  
-
+          /bin/bash -c install.sh
           source $HOME/.bashrc
-
           which git-drs
-          
           git-drs --help

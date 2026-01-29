@@ -17,14 +17,18 @@ jobs:
       matrix:
         include:
           - { os: linux, arch: amd64, runner: ubuntu-latest }
-          - { os: linux, arch: arm64, runner: ubuntu-latest-arm64 }
+          - { os: linux, arch: arm64, runner: ubuntu-24.04-arm64 }
           - { os: darwin, arch: amd64, runner: macos-latest }
           - { os: darwin, arch: arm64, runner: macos-latest }
 
     steps:
       - name: Install Default Version (Latest Release)
+        env:
         run: |
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"  
+
           source $HOME/.bashrc
+
           which git-drs
+          
           git-drs --help

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/client/indexd"
@@ -47,7 +48,7 @@ type DRSRemote interface {
 	GetProjectId() string
 	GetEndpoint() string
 	GetBucketName() string
-	GetClient(remoteName string, logger *slog.Logger) (client.DRSClient, error)
+	GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error)
 }
 
 type RemoteSelect struct {
@@ -61,15 +62,15 @@ type Config struct {
 	Remotes       map[Remote]RemoteSelect
 }
 
-func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (client.DRSClient, error) {
+func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
 	if x.Gen3 != nil {
-		return x.Gen3.GetClient(string(remote), logger)
+		return x.Gen3.GetClient(string(remote), logger, opts...)
 	} else if x.Anvil != nil {
-		return x.Anvil.GetClient(string(remote), logger)
+		return x.Anvil.GetClient(string(remote), logger, opts...)
 	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }

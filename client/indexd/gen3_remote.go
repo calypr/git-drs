@@ -29,7 +29,7 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (client.DRSClient, error) {
+func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	manager := conf.NewConfigure(logger)
 	cred, err := manager.Load(remoteName)
 	if err != nil {
@@ -41,5 +41,5 @@ func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (client.DR
 		return nil, err
 	}
 
-	return NewGitDrsIdxdClient(*cred, s, logger)
+	return NewGitDrsIdxdClient(*cred, s, logger, opts...)
 }

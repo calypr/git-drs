@@ -158,7 +158,7 @@ func newTestClient(server *httptest.Server) *GitDrsIdxdClient {
 	// Create a dummy logger
 	logger, _ := logs.New("test")
 	// Convert logging because data-client now expects slog
-	g3 := g3client.NewGen3InterfaceFromCredential(cred, logger)
+	g3 := g3client.NewGen3InterfaceFromCredential(cred, logger, g3client.WithClients(g3client.IndexdClient, g3client.FenceClient, g3client.SowerClient))
 
 	// Since we migrated GitDrsIdxdClient to accept slog.Logger but use TEE logger internally via bridge,
 	// here we can just create a noop slog logger.

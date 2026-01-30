@@ -34,7 +34,7 @@ type GitDrsIdxdClient struct {
 	Config *Config
 }
 
-func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logger *slog.Logger) (client.DRSClient, error) {
+func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,11 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	dLogger, closer := logs.New(profileConfig.Profile, logOpts...)
 	_ = closer
 
-	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
+	// If no options provided, use defaults for GitDrsIdxdClient
+	if len(opts) == 0 {
+		opts = append(opts, g3client.WithClients(g3client.IndexdClient, g3client.FenceClient, g3client.SowerClient))
+	}
+	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
 
 	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {

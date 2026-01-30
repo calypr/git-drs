@@ -21,12 +21,12 @@ import (
 	"github.com/calypr/data-client/client/logs"
 	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-retryablehttp"
@@ -39,7 +39,7 @@ type IndexDClient struct {
 	ProjectId   string
 	BucketName  string
 	Logger      *slog.Logger
-	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
+	AuthHandler cloud.AuthHandler // Injected for testing/flexibility
 
 	HttpClient *retryablehttp.Client
 	SConfig    sonic.API

@@ -4,22 +4,17 @@
 //  1. determines the effective Git LFS storage root (.git/lfs vs git config lfs.storage)
 //  2. derives a working-tree filename from the S3 object key (basename of key)
 //  3. performs an S3 HEAD Object to retrieve size and user metadata (sha256 if present)
-package lfss3
+package cloud
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"path"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
@@ -27,7 +22,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/calypr/git-drs/utils"
 )
 
 // S3ObjectParameters container for S3 object identification and access.
@@ -129,154 +123,6 @@ func InspectS3ForLFS(ctx context.Context, in S3ObjectParameters) (*S3Object, err
 		LastModTime: lm,
 	}
 	return out, nil
-}
-
-// GetGitRootDirectories
-// returns (gitCommonDir, lfsRoot, error).
-func GetGitRootDirectories(ctx context.Context) (string, string, error) {
-	gitCommonDir, err := gitRevParseGitCommonDir(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	lfsRoot, err := resolveLFSRoot(ctx, gitCommonDir)
-	if err != nil {
-		return "", "", err
-	}
-	if lfsRoot == "" {
-		lfsRoot = filepath.Join(gitCommonDir, "lfs")
-	}
-	return gitCommonDir, lfsRoot, nil
-}
-
-//
-// --- Git helpers ---
-//
-
-func GitLFSTrack(ctx context.Context, path string) (bool, error) {
-	out, err := runGit(ctx, "lfs", "track", path)
-	if err != nil {
-		return false, fmt.Errorf("git lfs track failed: %w", err)
-	}
-	return strings.Contains(out, path), nil
-}
-
-func GitLFSTrackReadOnly(ctx context.Context, path string) (bool, error) {
-	_, err := GitLFSTrack(ctx, path)
-	if err != nil {
-		return false, fmt.Errorf("git lfs track failed: %w", err)
-	}
-
-	repoRoot, err := utils.GitTopLevel()
-	if err != nil {
-		return false, err
-	}
-
-	attrPath := filepath.Join(repoRoot, ".gitattributes")
-	changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{path})
-	if err != nil {
-		return false, err
-	}
-
-	return changed, nil
-}
-
-func GetGitAttribute(ctx context.Context, attr string, path string) (string, error) {
-	out, err := runGit(ctx, "check-attr", attr, "--", path)
-	if err != nil {
-		return "", fmt.Errorf("git check-attr failed: %w", err)
-	}
-	return out, nil
-}
-
-func gitRevParseGitCommonDir(ctx context.Context) (string, error) {
-	out, err := runGit(ctx, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return "", fmt.Errorf("git rev-parse --git-common-dir failed: %w", err)
-	}
-	dir := strings.TrimSpace(out)
-	if dir == "" {
-		return "", errors.New("git rev-parse returned empty --git-common-dir")
-	}
-	// If relative, resolve it against current working directory.
-	if !filepath.IsAbs(dir) {
-		abs, err := filepath.Abs(dir)
-		if err == nil {
-			dir = abs
-		}
-	}
-	return dir, nil
-}
-
-// resolveLFSRoot implements:
-// - if `git config --get lfs.storage` is set: use it
-//   - if relative: resolve relative to GitCommonDir (this is how git-lfs treats it in practice)
-//
-// - else: <GitCommonDir>/lfs
-func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) {
-	// NOTE: git config --get returns exit status 1 if key not found.
-	out, err := runGitAllowMissing(ctx, "config", "--get", "lfs.storage")
-	if err != nil {
-		return "", fmt.Errorf("git config --get lfs.storage failed: %w", err)
-	}
-	val := strings.TrimSpace(out)
-
-	if val == "" {
-		return filepath.Clean(filepath.Join(gitCommonDir, "lfs")), nil
-	}
-
-	// Expand ~ if present (nice-to-have).
-	if strings.HasPrefix(val, "~") && (len(val) == 1 || val[1] == '/' || val[1] == '\\') {
-		home, herr := userHomeDir()
-		if herr == nil && home != "" {
-			val = filepath.Join(home, strings.TrimPrefix(val, "~"))
-		}
-	}
-
-	if !filepath.IsAbs(val) {
-		val = filepath.Join(gitCommonDir, val)
-	}
-	return filepath.Clean(val), nil
-}
-
-func runGit(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(b)))
-	}
-	return string(b), nil
-}
-
-// runGitAllowMissing treats "key not found" as empty output, not an error.
-func runGitAllowMissing(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		// "git config --get missing.key" exits 1 with empty output.
-		s := strings.TrimSpace(string(b))
-		if s == "" {
-			return "", nil
-		}
-		return "", fmt.Errorf("%v: %s", err, s)
-	}
-	return string(b), nil
-}
-
-func userHomeDir() (string, error) {
-	// Avoid os/user on some cross-compile scenarios; keep it simple.
-	if runtime.GOOS == "windows" {
-		// Not your target, but safe fallback.
-		return "", errors.New("home expansion not supported on windows in this helper")
-	}
-	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
-		return home, nil
-	}
-	// macOS/Linux
-	out, err := exec.Command("sh", "-lc", "printf %s \"$HOME\"").CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 //
@@ -412,44 +258,4 @@ func extractSHA256FromMetadata(md map[string]string) string {
 	}
 
 	return ""
-}
-
-// IsLFSTracked returns true if the given path is tracked by Git LFS
-// (i.e. has `filter=lfs` via git attributes).
-func IsLFSTracked(path string) (bool, error) {
-	if path == "" {
-		return false, fmt.Errorf("path is empty")
-	}
-
-	// Git prefers forward slashes, even on macOS/Linux
-	cleanPath := filepath.ToSlash(path)
-
-	cmd := exec.Command(
-		"git",
-		"check-attr",
-		"filter",
-		"--",
-		cleanPath,
-	)
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-
-	if err := cmd.Run(); err != nil {
-		return false, fmt.Errorf("git check-attr failed: %w (%s)", err, out.String())
-	}
-
-	// Expected output:
-	// path: filter: lfs
-	// path: filter: unspecified
-	//
-	// Format is stable and documented.
-	fields := strings.Split(out.String(), ":")
-	if len(fields) < 3 {
-		return false, nil
-	}
-
-	value := strings.TrimSpace(fields[2])
-	return value == "lfs", nil
 }

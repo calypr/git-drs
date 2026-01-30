@@ -1,4 +1,4 @@
-package lfss3
+package lfs
 
 import (
 	"os"

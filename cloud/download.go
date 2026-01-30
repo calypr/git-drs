@@ -1,4 +1,4 @@
-package s3_utils
+package cloud
 
 import (
 	"fmt"

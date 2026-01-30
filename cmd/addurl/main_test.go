@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/lfss3"
-	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/spf13/cobra"
 )
 
@@ -57,8 +56,8 @@ remotes:
 	}
 
 	resetStubs := stubAddURLDeps(t,
-		func(ctx context.Context, in lfss3.S3ObjectParameters) (*lfss3.S3Object, error) {
-			return &lfss3.S3Object{
+		func(ctx context.Context, in cloud.S3ObjectParameters) (*cloud.S3Object, error) {
+			return &cloud.S3Object{
 				Bucket:      "bucket",
 				Key:         "path/to/file.bin",
 				Path:        "file.bin",
@@ -72,7 +71,7 @@ remotes:
 			return true, nil
 		},
 		// download stub: write the LFS object into lfsRoot and return the sha
-		func(ctx context.Context, info *lfss3.S3Object, input lfss3.S3ObjectParameters, lfsRootPath string) (string, string, error) {
+		func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRootPath string) (string, string, error) {
 			objPath := filepath.Join(lfsRootPath, "objects", shaHex[0:2], shaHex[2:4], shaHex)
 			if err := os.MkdirAll(filepath.Dir(objPath), 0755); err != nil {
 				return "", "", err
@@ -124,9 +123,9 @@ remotes:
 
 func stubAddURLDeps(
 	t *testing.T,
-	inspectFn func(context.Context, lfss3.S3ObjectParameters) (*lfss3.S3Object, error),
+	inspectFn func(context.Context, cloud.S3ObjectParameters) (*cloud.S3Object, error),
 	isTrackedFn func(string) (bool, error),
-	downloadFn func(context.Context, *lfss3.S3Object, lfss3.S3ObjectParameters, string) (string, string, error),
+	downloadFn func(context.Context, *cloud.S3Object, cloud.S3ObjectParameters, string) (string, string, error),
 ) func() {
 	t.Helper()
 	origInspect := inspectS3ForLFS
@@ -146,13 +145,13 @@ func stubAddURLDeps(
 
 func requireFlags(t *testing.T, cmd *cobra.Command) {
 	t.Helper()
-	if err := cmd.Flags().Set(s3_utils.AWS_KEY_FLAG_NAME, "key"); err != nil {
+	if err := cmd.Flags().Set(cloud.AWS_KEY_FLAG_NAME, "key"); err != nil {
 		t.Fatalf("set aws key: %v", err)
 	}
-	if err := cmd.Flags().Set(s3_utils.AWS_SECRET_FLAG_NAME, "secret"); err != nil {
+	if err := cmd.Flags().Set(cloud.AWS_SECRET_FLAG_NAME, "secret"); err != nil {
 		t.Fatalf("set aws secret: %v", err)
 	}
-	if err := cmd.Flags().Set(s3_utils.AWS_REGION_FLAG_NAME, "region"); err != nil {
+	if err := cmd.Flags().Set(cloud.AWS_REGION_FLAG_NAME, "region"); err != nil {
 		t.Fatalf("set aws region: %v", err)
 	}
 }

@@ -9,18 +9,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/lfss3"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
-
-	"github.com/calypr/git-drs/s3_utils"
 )
 
 var (
-	inspectS3ForLFS = lfss3.InspectS3ForLFS
-	isLFSTracked    = lfss3.IsLFSTracked
+	inspectS3ForLFS = cloud.InspectS3ForLFS
+	isLFSTracked    = lfs.IsLFSTracked
 )
 
 var Cmd = NewCommand()
@@ -43,26 +42,26 @@ func NewCommand() *cobra.Command {
 
 func addFlags(cmd *cobra.Command) {
 	cmd.Flags().String(
-		s3_utils.AWS_KEY_FLAG_NAME,
-		os.Getenv(s3_utils.AWS_KEY_ENV_VAR),
+		cloud.AWS_KEY_FLAG_NAME,
+		os.Getenv(cloud.AWS_KEY_ENV_VAR),
 		"AWS access key",
 	)
 
 	cmd.Flags().String(
-		s3_utils.AWS_SECRET_FLAG_NAME,
-		os.Getenv(s3_utils.AWS_SECRET_ENV_VAR),
+		cloud.AWS_SECRET_FLAG_NAME,
+		os.Getenv(cloud.AWS_SECRET_ENV_VAR),
 		"AWS secret key",
 	)
 
 	cmd.Flags().String(
-		s3_utils.AWS_REGION_FLAG_NAME,
-		os.Getenv(s3_utils.AWS_REGION_ENV_VAR),
+		cloud.AWS_REGION_FLAG_NAME,
+		os.Getenv(cloud.AWS_REGION_ENV_VAR),
 		"AWS S3 region",
 	)
 
 	cmd.Flags().String(
-		s3_utils.AWS_ENDPOINT_URL_FLAG_NAME,
-		os.Getenv(s3_utils.AWS_ENDPOINT_URL_ENV_VAR),
+		cloud.AWS_ENDPOINT_URL_FLAG_NAME,
+		os.Getenv(cloud.AWS_ENDPOINT_URL_ENV_VAR),
 		"AWS S3 endpoint (optional, for Ceph/MinIO)",
 	)
 
@@ -104,21 +103,21 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 		return fmt.Errorf("read flag sha256: %w", ferr)
 	}
 
-	awsKey, ferr := cmd.Flags().GetString(s3_utils.AWS_KEY_FLAG_NAME)
+	awsKey, ferr := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
 	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", s3_utils.AWS_KEY_FLAG_NAME, ferr)
+		return fmt.Errorf("read flag %s: %w", cloud.AWS_KEY_FLAG_NAME, ferr)
 	}
-	awsSecret, ferr := cmd.Flags().GetString(s3_utils.AWS_SECRET_FLAG_NAME)
+	awsSecret, ferr := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
 	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", s3_utils.AWS_SECRET_FLAG_NAME, ferr)
+		return fmt.Errorf("read flag %s: %w", cloud.AWS_SECRET_FLAG_NAME, ferr)
 	}
-	awsRegion, ferr := cmd.Flags().GetString(s3_utils.AWS_REGION_FLAG_NAME)
+	awsRegion, ferr := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
 	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", s3_utils.AWS_REGION_FLAG_NAME, ferr)
+		return fmt.Errorf("read flag %s: %w", cloud.AWS_REGION_FLAG_NAME, ferr)
 	}
-	awsEndpoint, ferr := cmd.Flags().GetString(s3_utils.AWS_ENDPOINT_URL_FLAG_NAME)
+	awsEndpoint, ferr := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
 	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", s3_utils.AWS_ENDPOINT_URL_FLAG_NAME, ferr)
+		return fmt.Errorf("read flag %s: %w", cloud.AWS_ENDPOINT_URL_FLAG_NAME, ferr)
 	}
 
 	if awsKey == "" || awsSecret == "" {
@@ -128,7 +127,7 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 		return errors.New("AWS region must be provided via flag or environment variable")
 	}
 
-	s3Input := lfss3.S3ObjectParameters{
+	s3Input := cloud.S3ObjectParameters{
 		S3URL:           s3URL,
 		AWSAccessKey:    awsKey,
 		AWSSecretKey:    awsSecret,
@@ -151,7 +150,7 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 	}
 
 	// get Git LFS directories
-	gitCommonDir, lfsRoot, err := lfss3.GetGitRootDirectories(ctx)
+	gitCommonDir, lfsRoot, err := lfs.GetGitRootDirectories(ctx)
 	if err != nil {
 		return fmt.Errorf("get git root directories: %w", err)
 	}
@@ -247,7 +246,7 @@ sha256 param  : %s
 	}
 	if !isLFSTracked {
 		// git lfs track
-		_, err := lfss3.GitLFSTrackReadOnly(ctx, pathArg)
+		_, err := lfs.GitLFSTrackReadOnly(ctx, pathArg)
 		if err != nil {
 			return fmt.Errorf("git lfs track %s: %w", pathArg, err)
 		}
@@ -286,10 +285,10 @@ sha256 param  : %s
 	return nil
 }
 
-// download uses lfss3.AgentFetchReader to download the S3 object, returning
+// download uses cloud.AgentFetchReader to download the S3 object, returning
 // the computed SHA256 and the path to the temporary downloaded file.
 // The caller is responsible for moving/deleting the temporary file.
 // we include this wrapper function to allow mocking in tests.
-var download = func(ctx context.Context, info *lfss3.S3Object, input lfss3.S3ObjectParameters, lfsRoot string) (string, string, error) {
-	return lfss3.Download(ctx, info, input, lfsRoot)
+var download = func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error) {
+	return cloud.Download(ctx, info, input, lfsRoot)
 }

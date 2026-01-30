@@ -3,11 +3,11 @@ package download
 import (
 	"fmt"
 
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
 
@@ -66,7 +66,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)
 		}
-		err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
+		err = cloud.DownloadSignedUrl(accessUrl.URL, dstPath)
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
 		}

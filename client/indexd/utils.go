@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/cloud"
 )
 
 // getBucketDetailsWithAuth fetches bucket details from Gen3 using an AuthHandler.
@@ -18,7 +18,7 @@ import (
 //   - bucketsEndpointURL: full URL to the /user/data/buckets endpoint
 //   - authHandler: handler for adding authentication headers
 //   - httpClient: the HTTP client to use
-func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL string, authHandler s3_utils.AuthHandler, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
+func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL string, authHandler cloud.AuthHandler, httpClient *http.Client) (*cloud.S3Bucket, error) {
 	// Use provided client or create default
 	if httpClient == nil {
 		httpClient = &http.Client{}
@@ -47,7 +47,7 @@ func GetBucketDetailsWithAuth(ctx context.Context, bucket, bucketsEndpointURL st
 	}
 
 	// extract bucket endpoint
-	var bucketInfo s3_utils.S3BucketsResponse
+	var bucketInfo cloud.S3BucketsResponse
 	if err := sonic.ConfigFastest.NewDecoder(resp.Body).Decode(&bucketInfo); err != nil {
 		return nil, fmt.Errorf("failed to decode bucket information: %w", err)
 	}

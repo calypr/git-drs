@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic/encoder"
-	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/cloud"
 )
 
 type testAuthHandler struct {
@@ -25,8 +25,8 @@ func TestGetBucketDetailsWithAuth(t *testing.T) {
 	var authHeader string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader = r.Header.Get("Authorization")
-		resp := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		resp := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"bucket": {Region: "us-east-1", EndpointURL: "https://s3.example.com"},
 			},
 		}
@@ -49,8 +49,8 @@ func TestGetBucketDetailsWithAuth(t *testing.T) {
 
 func TestGetBucketDetailsWithAuth_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{},
+		resp := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{},
 		}
 		w.WriteHeader(http.StatusOK)
 		_ = encoder.NewStreamEncoder(w).Encode(resp)

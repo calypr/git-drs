@@ -39,3 +39,25 @@ func TestInitGitConfig(t *testing.T) {
 		t.Fatalf("initGitConfig error: %v", err)
 	}
 }
+func TestInitRun_Error(t *testing.T) {
+	// Not in a git repo
+	tmpDir := t.TempDir()
+	cwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(cwd)
+
+	err := Cmd.RunE(Cmd, []string{})
+	if err == nil {
+		t.Errorf("expected error when not in git repo")
+	}
+}
+func TestInitCmdArgs(t *testing.T) {
+	err := Cmd.Args(Cmd, []string{})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	err = Cmd.Args(Cmd, []string{"extra"})
+	if err == nil {
+		t.Errorf("expected error for extra args")
+	}
+}

@@ -1,11 +1,14 @@
 package add
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
-	"github.com/calypr/data-client/client/conf"
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/logs"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/utils"
@@ -56,7 +59,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
-	configure := conf.NewConfigure(drslog.AsStdLogger(logg))
+	configure := conf.NewConfigure(logg)
 	switch {
 	case fenceToken != "":
 		accessToken = fenceToken
@@ -97,7 +100,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	}
 
 	remoteGen3 := config.RemoteSelect{
-		Gen3: &indexd_client.Gen3Remote{
+		Gen3: &indexd.Gen3Remote{
 			Endpoint:  apiEndpoint,
 			ProjectID: project,
 			Bucket:    bucket,
@@ -119,6 +122,11 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 		AccessToken:        accessToken, // may be stale
 		UseShepherd:        "false",     // or preserve from existing?
 		MinShepherdVersion: "",
+	}
+
+	gen3Logger := logs.NewGen3Logger(logg, "", remoteName)
+	if err := g3client.EnsureValidCredential(context.Background(), cred, configure, gen3Logger, nil); err != nil {
+		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", err)
 	}
 
 	if err := configure.Save(cred); err != nil {

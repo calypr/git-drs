@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	drs "github.com/calypr/data-client/indexd/drs"
+	hash "github.com/calypr/data-client/indexd/hash"
 	"golang.org/x/oauth2/google"
 )
 
@@ -20,7 +20,7 @@ type AnvilClient struct {
 	SConfig  sonic.API
 }
 
-func (an *AnvilClient) GetObject(objectID string) (*drs.DRSObject, error) {
+func (an *AnvilClient) GetObject(ctx context.Context, objectID string) (*drs.DRSObject, error) {
 	// get auth token
 	token, err := GetAuthToken()
 	if err != nil {

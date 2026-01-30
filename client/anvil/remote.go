@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 )
 
@@ -30,7 +31,7 @@ func (s AnvilRemote) GetBucketName() string {
 	return ""
 }
 
-func (s AnvilRemote) GetClient(params map[string]string, logger *slog.Logger) (client.DRSClient, error) {
+func (s AnvilRemote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	return nil, fmt.Errorf(("AnVIL Client needs to be implemented"))
 	// return NewAnvilClient(s, logger)
 }

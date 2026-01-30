@@ -4,15 +4,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +33,7 @@ var Cmd = &cobra.Command{
 		logg := drslog.GetLogger()
 
 		// check if .git dir exists to ensure you're in a git repository
-		_, err := utils.GitTopLevel()
+		_, err := gitrepo.GitTopLevel()
 		if err != nil {
 			return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 		}
@@ -74,21 +72,17 @@ var Cmd = &cobra.Command{
 }
 
 func initGitConfig() error {
-	configs := [][]string{
-		{"lfs.standalonetransferagent", "drs"},
-		{"lfs.customtransfer.drs.path", "git-drs"},
-		{"lfs.customtransfer.drs.args", "transfer"},
-		// TODO: different for anvil / read-only?
-		{"lfs.allowincompletepush", "false"},
-		{"lfs.customtransfer.drs.concurrent", strconv.FormatBool(transfers > 1)},
-		{"lfs.customtransfer.drs.concurrenttransfers", strconv.Itoa(transfers)},
+	configs := map[string]string{
+		"lfs.standalonetransferagent":                "drs",
+		"lfs.customtransfer.drs.path":                "git-drs",
+		"lfs.customtransfer.drs.args":                "transfer",
+		"lfs.allowincompletepush":                    "false",
+		"lfs.customtransfer.drs.concurrent":          strconv.FormatBool(transfers > 1),
+		"lfs.customtransfer.drs.concurrenttransfers": strconv.Itoa(transfers),
 	}
 
-	for _, args := range configs {
-		cmd := exec.Command("git", "config", args[0], args[1])
-		if cmdOut, err := cmd.Output(); err != nil {
-			return fmt.Errorf("unable to set git config %s: %s", args[0], cmdOut)
-		}
+	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
+		return fmt.Errorf("unable to write git config: %w", err)
 	}
 
 	return nil
@@ -99,13 +93,11 @@ func init() {
 }
 
 func installPrePushHook(logger *slog.Logger) error {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmdOut, err := cmd.Output()
+	hooksDir, err := gitrepo.GetGitHooksDir()
 	if err != nil {
-		return fmt.Errorf("unable to locate git directory: %w", err)
+		return fmt.Errorf("unable to get hooks directory: %w", err)
 	}
-	gitDir := strings.TrimSpace(string(cmdOut))
-	hooksDir := filepath.Join(gitDir, "hooks")
+
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("unable to create hooks directory: %w", err)
 	}

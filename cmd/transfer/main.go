@@ -2,19 +2,22 @@ package transfer
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
-	"github.com/calypr/data-client/client/common"
+	dataClientCommon "github.com/calypr/data-client/common"
+	"github.com/calypr/git-drs/common"
+
+	"github.com/calypr/data-client/download"
+	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
 
@@ -140,35 +143,52 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, "", 400, errMsg)
 					continue
 				}
-				logger.Info(fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
+				ctx := dataClientCommon.WithProgress(context.Background(), lfs.NewProgressCallback(streamEncoder))
+				ctx = dataClientCommon.WithOid(ctx, downloadMsg.Oid)
+				logger.InfoContext(ctx, fmt.Sprintf("Downloading file OID %s", downloadMsg.Oid))
 
-				// get signed url
-				accessUrl, err := drsClient.GetDownloadURL(downloadMsg.Oid)
+				// get the matching record for this OID
+				checksumSpec := &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: downloadMsg.Oid}
+				records, err := drsClient.GetObjectByHash(ctx, checksumSpec)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
-					logger.Error(errMsg)
+					errMsg := fmt.Sprintf("Error looking up OID %s: %v", downloadMsg.Oid, err)
+					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
 					continue
 				}
-				if accessUrl.URL == "" {
-					errMsg := fmt.Sprintf("Unable to get access URL for OID %s", downloadMsg.Oid)
-					logger.Error(errMsg)
+
+				matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
+				if err != nil {
+					errMsg := fmt.Sprintf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
+					logger.ErrorContext(ctx, errMsg)
+					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+					continue
+				}
+				if matchingRecord == nil {
+					errMsg := fmt.Sprintf("No matching record found for project %s and OID %s", drsClient.GetProjectId(), downloadMsg.Oid)
+					logger.ErrorContext(ctx, errMsg)
+					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 404, errMsg)
+					continue
+				}
+
+				// download using data-client
+				dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, downloadMsg.Oid)
+				if err != nil {
+					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
+					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
 
-				// download signed url
-				dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, downloadMsg.Oid)
+				err = download.DownloadToPath(
+					ctx,
+					drsClient.GetGen3Interface(),
+					matchingRecord.Id,
+					dstPath,
+				)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
-					logger.Error(errMsg)
-					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
-					continue
-				}
-				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
-				if err != nil {
-					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
-					logger.Error(errMsg)
+					errMsg := fmt.Sprintf("Error downloading file for OID %s (GUID: %s): %v", downloadMsg.Oid, matchingRecord.Id, err)
+					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
 					continue
 				}
@@ -176,7 +196,7 @@ var Cmd = &cobra.Command{
 				lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
 
 				// send success message back
-				logger.Info(fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
+				logger.InfoContext(ctx, fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
 
 				lfs.WriteCompleteMessage(streamEncoder, downloadMsg.Oid, dstPath)
 
@@ -192,17 +212,21 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 400, errMsg)
 					continue
 				}
-				logger.Info(fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
-				drsObj, err := drsClient.RegisterFile(uploadMsg.Oid, GitLFSProgressCallback(streamEncoder))
+
+				ctx := dataClientCommon.WithProgress(context.Background(), lfs.NewProgressCallback(streamEncoder))
+				ctx = dataClientCommon.WithOid(ctx, uploadMsg.Oid)
+				logger.InfoContext(ctx, fmt.Sprintf("Uploading file OID %s", uploadMsg.Oid))
+
+				drsObj, err := drsClient.RegisterFile(ctx, uploadMsg.Oid, uploadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error registering file: %v\n", err)
-					logger.Error(errMsg)
+					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, uploadMsg.Oid, 502, errMsg)
 					continue
 				}
 				// send success message back
 				lfs.WriteCompleteMessage(streamEncoder, uploadMsg.Oid, drsObj.Name)
-				logger.Info(fmt.Sprintf("Upload for OID %s complete", uploadMsg.Oid))
+				logger.InfoContext(ctx, fmt.Sprintf("Upload for Oid %s complete", uploadMsg.Oid))
 
 			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
 				logger.Info("LFS transfer terminate received.")
@@ -217,13 +241,4 @@ var Cmd = &cobra.Command{
 		return nil
 
 	},
-}
-
-// GitLFSProgressCallback returns a ProgressCallback that logs progress events
-// using the provided streamEncoder. It always returns nil (no error).
-func GitLFSProgressCallback(streamEncoder *encoder.StreamEncoder) common.ProgressCallback {
-	return func(e common.ProgressEvent) error {
-		lfs.WriteProgressMessage(streamEncoder, e.Oid, e.BytesSoFar, e.BytesSinceLast)
-		return nil
-	}
 }

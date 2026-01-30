@@ -27,7 +27,7 @@ func TestWriteMessages(t *testing.T) {
 	if err := sonic.ConfigFastest.Unmarshal(buf.Bytes(), &errMsg); err != nil {
 		t.Fatalf("unmarshal error: %v", err)
 	}
-	if errMsg.Oid != "oid" || errMsg.Error.Code != 500 {
+	if errMsg.Event != "complete" || errMsg.Oid != "oid" || errMsg.Error.Code != 500 {
 		t.Fatalf("unexpected error message: %+v", errMsg)
 	}
 

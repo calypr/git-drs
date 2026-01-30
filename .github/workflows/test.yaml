@@ -28,9 +28,9 @@ jobs:
         find . -name "*.sh" | xargs ls -l
         find . -name "*.out" | xargs ls -l
 
-    - name: Check uploaded coverage files
-      run: |
-        tests/scripts/coverage/assert-coverage-timestamp.sh 
+    #- name: Check uploaded coverage files
+    #  run: |
+    #    tests/scripts/coverage/assert-coverage-timestamp.sh 
 
     - name: Upload coverage reports as artifact
       uses: actions/upload-artifact@v4

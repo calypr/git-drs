@@ -1,14 +1,15 @@
 package register
 
 import (
+	"context"
 	"fmt"
 
-	indexdCl "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -45,13 +46,14 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("error creating indexd client: %v", err)
 		}
-		icli, ok := cli.(*indexdCl.IndexDClient)
+		// Check for GitDrsIdxdClient
+		icli, ok := cli.(*indexd.GitDrsIdxdClient)
 		if !ok {
-			return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T)", cli)
+			return fmt.Errorf("remote client is not an *indexd.GitDrsIdxdClient (got %T)", cli)
 		}
 
 		// Get all pending objects
-		pendingObjects, err := drs.GetPendingObjects(logger)
+		pendingObjects, err := lfs.GetPendingObjects(logger)
 		if err != nil {
 			return fmt.Errorf("error reading pending objects: %v", err)
 		}
@@ -80,7 +82,7 @@ var Cmd = &cobra.Command{
 			}
 
 			// Check if records with this hash already exist in indexd
-			records, err := cli.GetObjectByHash(&hash.Checksum{Type: "sha256", Checksum: obj.OID})
+			records, err := cli.GetObjectByHash(context.Background(), &hash.Checksum{Type: "sha256", Checksum: obj.OID})
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error querying indexd for %s: %v", obj.Path, err))
 				errorCount++
@@ -103,7 +105,7 @@ var Cmd = &cobra.Command{
 			}
 
 			// Register the indexd record
-			_, err = icli.RegisterRecord(indexdObj)
+			_, err = icli.RegisterRecord(context.Background(), indexdObj)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error registering %s with indexd: %v", obj.Path, err))
 				errorCount++

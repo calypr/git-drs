@@ -13,6 +13,8 @@ import (
 
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
+
+	"github.com/calypr/data-client/logs"
 )
 
 var globalLogger *slog.Logger
@@ -111,7 +113,7 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 		Level:       resolveLogLevel(),
 		ReplaceAttr: replaceSourceAttr,
 	})
-	core := slog.New(handler).With("pid", os.Getpid())
+	core := slog.New(logs.NewProgressHandler(handler)).With("pid", os.Getpid())
 
 	globalLoggerMu.Lock()
 	globalLogFile = file
@@ -179,7 +181,7 @@ func NewNoOpLogger() *slog.Logger {
 	handler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
-	return slog.New(handler)
+	return slog.New(logs.NewProgressHandler(handler))
 }
 
 // resolveLogLevel determines the effective log level.

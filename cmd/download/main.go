@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	dataClientCommon "github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/download"
 	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/git-drs/common"
@@ -75,13 +76,12 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)
 		}
 
+		ctx := dataClientCommon.WithOid(context.Background(), oid)
 		err = download.DownloadToPath(
-			context.Background(),
+			ctx,
 			drsClient.GetGen3Interface(),
 			matchingRecord.Id,
 			dstPath,
-			oid,
-			nil, // No progress callback for now or use a default one
 		)
 		if err != nil {
 			return fmt.Errorf("Error downloading file for OID %s (GUID: %s): %v", oid, matchingRecord.Id, err)

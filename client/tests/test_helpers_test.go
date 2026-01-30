@@ -29,7 +29,7 @@ func testIndexdClient(baseURL string) indexd.IndexdInterface {
 	cred := &conf.Credential{APIEndpoint: baseURL, Profile: "test-remote", AccessToken: "test-token"}
 	logger, _ := logs.New("test")
 	config := conf.NewConfigure(logger.Logger)
-	req := request.NewRequestInterface(logger.Logger, cred, config)
+	req := request.NewRequestInterface(logger, cred, config)
 	return indexd.NewIndexdClient(req, cred, logger.Logger)
 }
 
@@ -39,7 +39,7 @@ func testIndexdClientWithMockAuth(baseURL string) indexd.IndexdInterface {
 	cred := &conf.Credential{APIEndpoint: baseURL, Profile: "test-remote", AccessToken: "mock-token"}
 	logger, _ := logs.New("test")
 	config := conf.NewConfigure(logger.Logger)
-	req := request.NewRequestInterface(logger.Logger, cred, config)
+	req := request.NewRequestInterface(logger, cred, config)
 	return indexd.NewIndexdClient(req, cred, logger.Logger)
 }
 

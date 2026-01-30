@@ -5,15 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/cmd/addurl/lfss3"
+	"github.com/calypr/git-drs/lfss3"
 	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +22,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	shaHex := fmt.Sprintf("%x", sum[:])
 
 	tempDir := t.TempDir()
-	lfsRoot := filepath.Join(tempDir, "lfs")
+	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
 
 	// ensure a git repository exists so any git-based config lookups succeed
 	cmdInit := exec.Command("git", "init")
@@ -59,24 +57,30 @@ remotes:
 	}
 
 	resetStubs := stubAddURLDeps(t,
-		func(ctx context.Context, in lfss3.InspectInput) (*lfss3.InspectResult, error) {
-			return &lfss3.InspectResult{
-				GitCommonDir: tempDir,
-				LFSRoot:      lfsRoot,
-				Bucket:       "bucket",
-				Key:          "path/to/file.bin",
-				WorktreeName: "file.bin",
-				SizeBytes:    int64(len(content)),
-				MetaSHA256:   "",
-				ETag:         "abcd1234",
-				LastModTime:  time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		func(ctx context.Context, in lfss3.S3ObjectParameters) (*lfss3.S3Object, error) {
+			return &lfss3.S3Object{
+				Bucket:      "bucket",
+				Key:         "path/to/file.bin",
+				Path:        "file.bin",
+				SizeBytes:   int64(len(content)),
+				MetaSHA256:  "",
+				ETag:        "abcd1234",
+				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 			}, nil
 		},
 		func(path string) (bool, error) {
 			return true, nil
 		},
-		func(ctx context.Context, in lfss3.InspectInput) (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader(content)), nil
+		// download stub: write the LFS object into lfsRoot and return the sha
+		func(ctx context.Context, info *lfss3.S3Object, input lfss3.S3ObjectParameters, lfsRootPath string) (string, string, error) {
+			objPath := filepath.Join(lfsRootPath, "objects", shaHex[0:2], shaHex[2:4], shaHex)
+			if err := os.MkdirAll(filepath.Dir(objPath), 0755); err != nil {
+				return "", "", err
+			}
+			if err := os.WriteFile(objPath, []byte(content), 0644); err != nil {
+				return "", "", err
+			}
+			return shaHex, objPath, nil
 		},
 	)
 	t.Cleanup(resetStubs)
@@ -115,62 +119,28 @@ remotes:
 
 // deprecated test case: now that we always "trust" the client-provided SHA256, this case is not applicable
 //func TestRunAddURL_SHA256Mismatch(t *testing.T) {
-//	content := "checksum content"
-//
-//	resetStubs := stubAddURLDeps(t,
-//		func(ctx context.Context, in lfss3.InspectInput) (*lfss3.InspectResult, error) {
-//			return &lfss3.InspectResult{
-//				GitCommonDir: t.TempDir(),
-//				LFSRoot:      t.TempDir(),
-//				Bucket:       "bucket",
-//				Key:          "file.bin",
-//				WorktreeName: "file.bin",
-//				SizeBytes:    int64(len(content)),
-//				MetaSHA256:   "",
-//				ETag:         "abcd1234",
-//				LastModTime:  time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
-//			}, nil
-//		},
-//		func(path string) (bool, error) {
-//			return false, nil
-//		},
-//		func(ctx context.Context, in lfss3.InspectInput) (io.ReadCloser, error) {
-//			return io.NopCloser(strings.NewReader(content)), nil
-//		},
-//	)
-//	t.Cleanup(resetStubs)
-//
-//	cmd := NewCommand()
-//	requireFlags(t, cmd)
-//	if err := cmd.Flags().Set("sha256", "0000000000000000000000000000000000000000000000000000000000000000"); err != nil {
-//		t.Fatalf("set sha256 flag: %v", err)
-//	}
-//
-//	err := runAddURL(cmd, []string{"s3://bucket/file.bin", "file.bin"})
-//	if err == nil || !strings.Contains(err.Error(), "sha256Param mismatch") {
-//		t.Fatalf("expected sha256 mismatch error, got %v", err)
-//	}
+//	...
 //}
 
 func stubAddURLDeps(
 	t *testing.T,
-	inspectFn func(context.Context, lfss3.InspectInput) (*lfss3.InspectResult, error),
+	inspectFn func(context.Context, lfss3.S3ObjectParameters) (*lfss3.S3Object, error),
 	isTrackedFn func(string) (bool, error),
-	agentFetchFn func(context.Context, lfss3.InspectInput) (io.ReadCloser, error),
+	downloadFn func(context.Context, *lfss3.S3Object, lfss3.S3ObjectParameters, string) (string, string, error),
 ) func() {
 	t.Helper()
 	origInspect := inspectS3ForLFS
 	origIsTracked := isLFSTracked
-	origFetch := agentFetchReader
+	origDownload := download
 
 	inspectS3ForLFS = inspectFn
 	isLFSTracked = isTrackedFn
-	agentFetchReader = agentFetchFn
+	download = downloadFn
 
 	return func() {
 		inspectS3ForLFS = origInspect
 		isLFSTracked = origIsTracked
-		agentFetchReader = origFetch
+		download = origDownload
 	}
 }
 

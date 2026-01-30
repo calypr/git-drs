@@ -86,14 +86,14 @@ func (p *progressReader) Close() error {
 // It accepts `s3://bucket/key` URLs and converts them to HTTPS URLs. If `input.AWSEndpoint`
 // is set it will use that endpoint in path-style (endpoint/bucket/key); otherwise it
 // uses the default virtual-hosted AWS form: https://{bucket}.s3.amazonaws.com/{key}.
-func AgentFetchReader(ctx context.Context, input InspectInput) (io.ReadCloser, error) {
+func AgentFetchReader(ctx context.Context, input S3ObjectParameters) (io.ReadCloser, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	raw := strings.TrimSpace(input.S3URL)
 	if raw == "" {
-		return nil, fmt.Errorf("AgentFetchReader: InspectInput.S3URL is empty")
+		return nil, fmt.Errorf("AgentFetchReader: S3ObjectParameters.S3URL is empty")
 	}
 
 	useSignedFetch := strings.TrimSpace(input.AWSAccessKey) != "" ||

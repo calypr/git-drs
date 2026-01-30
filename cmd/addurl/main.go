@@ -2,10 +2,8 @@ package addurl
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,16 +12,15 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/lfss3"
 	"github.com/spf13/cobra"
 
-	"github.com/calypr/git-drs/cmd/addurl/lfss3"
 	"github.com/calypr/git-drs/s3_utils"
 )
 
 var (
-	inspectS3ForLFS  = lfss3.InspectS3ForLFS
-	isLFSTracked     = lfss3.IsLFSTracked
-	agentFetchReader = lfss3.AgentFetchReader
+	inspectS3ForLFS = lfss3.InspectS3ForLFS
+	isLFSTracked    = lfss3.IsLFSTracked
 )
 
 var Cmd = NewCommand()
@@ -131,27 +128,36 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 		return errors.New("AWS region must be provided via flag or environment variable")
 	}
 
-	s3Input := lfss3.InspectInput{
-		S3URL:        s3URL,
-		AWSAccessKey: awsKey,
-		AWSSecretKey: awsSecret,
-		AWSRegion:    awsRegion,
-		AWSEndpoint:  awsEndpoint,
-		SHA256:       sha256Param,
-		WorktreeName: pathArg,
+	s3Input := lfss3.S3ObjectParameters{
+		S3URL:           s3URL,
+		AWSAccessKey:    awsKey,
+		AWSSecretKey:    awsSecret,
+		AWSRegion:       awsRegion,
+		AWSEndpoint:     awsEndpoint,
+		SHA256:          sha256Param,
+		DestinationPath: pathArg,
 	}
-	info, err := inspectS3ForLFS(ctx, s3Input)
+
+	// 1) inspect S3 object, get metadata via HEAD
+	s3Info, err := inspectS3ForLFS(ctx, s3Input)
 	if err != nil {
 		return err
 	}
 
+	// check if pathArg is already tracked by LFS
 	isLFSTracked, err := isLFSTracked(pathArg)
 	if err != nil {
 		return fmt.Errorf("check LFS tracking for %s: %w", pathArg, err)
 	}
 
+	// get Git LFS directories
+	gitCommonDir, lfsRoot, err := lfss3.GetGitRootDirectories(ctx)
+	if err != nil {
+		return fmt.Errorf("get git root directories: %w", err)
+	}
+	// print resolved info
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
-Resolved Git LFS info
+Resolved Git LFS s3Info
 ---------------------
 Git common dir : %s
 LFS storage    : %s
@@ -173,31 +179,32 @@ tracked by LFS : %v
 sha256 param  : %s
 
 `,
-		info.GitCommonDir,
-		info.LFSRoot,
-		info.Bucket,
-		info.Key,
-		info.WorktreeName,
-		info.SizeBytes,
-		info.MetaSHA256,
-		info.ETag,
-		info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
+		gitCommonDir,
+		lfsRoot,
+		s3Info.Bucket,
+		s3Info.Key,
+		s3Info.Path,
+		s3Info.SizeBytes,
+		s3Info.MetaSHA256,
+		s3Info.ETag,
+		s3Info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
 		pathArg,
 		isLFSTracked,
 		sha256Param,
 	); err != nil {
-		return fmt.Errorf("print resolved info: %w", err)
+		return fmt.Errorf("print resolved s3Info: %w", err)
 	}
 
 	if sha256Param == "" {
-		computedSHA, tmpObj, err2 := downloadAndComputeSHA256(info, err, ctx, s3Input)
+
+		computedSHA, tmpObj, err2 := download(ctx, s3Info, s3Input, lfsRoot)
 		if err2 != nil {
 			return err2
 		}
 
 		// 4) move tmp object to LFS storage
 		oid := computedSHA
-		dstDir := filepath.Join(info.LFSRoot, "objects", oid[0:2], oid[2:4])
+		dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
 		dstObj := filepath.Join(dstDir, oid)
 
 		if err = os.MkdirAll(dstDir, 0755); err != nil {
@@ -218,7 +225,7 @@ sha256 param  : %s
 	// 5) write pointer file in working tree
 	pointer := fmt.Sprintf(
 		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		oid, info.SizeBytes,
+		oid, s3Info.SizeBytes,
 	)
 	// write pointer file to working tree pathArg
 	if pathArg == "" {
@@ -268,7 +275,7 @@ sha256 param  : %s
 	}
 	file := drsmap.LfsFileInfo{
 		Name: pathArg,
-		Size: info.SizeBytes,
+		Size: s3Info.SizeBytes,
 		Oid:  oid,
 	}
 	_, err = drsmap.WriteDrsFile(cli, file, cli.GetProjectId(), &s3URL)
@@ -279,85 +286,10 @@ sha256 param  : %s
 	return nil
 }
 
-// downloadAndComputeSHA256 downloads the S3 object to a temporary file while computing its SHA256 hash.
-// returns the computed SHA256 hash, temporary path and any error encountered.
-func downloadAndComputeSHA256(info *lfss3.InspectResult, err error, ctx context.Context, s3Input lfss3.InspectInput) (string, string, error) {
-	// 2) object destination
-	etag := info.ETag
-	subdir1, subdir2 := "xx", "yy"
-	if len(etag) >= 4 {
-		subdir1 = etag[0:2]
-		subdir2 = etag[2:4]
-	}
-	objName := etag
-	if objName == "" {
-		objName = "unknown-etag"
-	}
-	tmpDir := filepath.Join(info.LFSRoot, "tmp-objects", subdir1, subdir2)
-	tmpObj := filepath.Join(tmpDir, objName)
-
-	// 3) fetch bytes -> tmp, compute sha+count
-
-	// Create the temporary directory and file where the S3 object will be streamed while computing its hash and size.
-	if err = os.MkdirAll(tmpDir, 0755); err != nil {
-		return "", "", fmt.Errorf("mkdir %s: %w", tmpDir, err)
-	}
-
-	f, err := os.Create(tmpObj)
-	if err != nil {
-		return "", "", fmt.Errorf("create %s: %w", tmpObj, err)
-	}
-	// ensure any leftover file is closed and error propagated via named return
-	defer func() {
-		if f != nil {
-			if cerr := f.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("close tmp file: %w", cerr)
-			}
-		}
-	}()
-
-	h := sha256.New()
-
-	var reader io.ReadCloser
-	reader, err = agentFetchReader(ctx, s3Input)
-	if err != nil {
-		return "", "", fmt.Errorf("fetch reader: %w", err)
-	}
-	// ensure close on any early return; propagate close error via named return
-	defer func() {
-		if reader != nil {
-			if cerr := reader.Close(); cerr != nil && err == nil {
-				err = fmt.Errorf("close reader: %w", cerr)
-			}
-		}
-	}()
-
-	n, err := io.Copy(io.MultiWriter(f, h), reader)
-	if err != nil {
-		return "", "", fmt.Errorf("copy bytes to %s: %w", tmpObj, err)
-	}
-
-	// explicitly close reader and handle error
-	if cerr := reader.Close(); cerr != nil {
-		return "", "", fmt.Errorf("close reader: %w", cerr)
-	}
-	reader = nil
-
-	// ensure data is flushed to disk
-	if err = f.Sync(); err != nil {
-		return "", "", fmt.Errorf("sync %s: %w", tmpObj, err)
-	}
-
-	// explicitly close tmp file before rename
-	if cerr := f.Close(); cerr != nil {
-		return "", "", fmt.Errorf("close %s: %w", tmpObj, cerr)
-	}
-	f = nil
-
-	// use n (bytes written) to avoid unused var warnings
-	_ = n
-
-	// compute hex SHA256 of the fetched content
-	computedSHA := fmt.Sprintf("%x", h.Sum(nil))
-	return computedSHA, tmpObj, nil
+// download uses lfss3.AgentFetchReader to download the S3 object, returning
+// the computed SHA256 and the path to the temporary downloaded file.
+// The caller is responsible for moving/deleting the temporary file.
+// we include this wrapper function to allow mocking in tests.
+var download = func(ctx context.Context, info *lfss3.S3Object, input lfss3.S3ObjectParameters, lfsRoot string) (string, string, error) {
+	return lfss3.Download(ctx, info, input, lfsRoot)
 }

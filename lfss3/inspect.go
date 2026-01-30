@@ -30,27 +30,24 @@ import (
 	"github.com/calypr/git-drs/utils"
 )
 
-// InspectInput is the drop-in input you requested.
-type InspectInput struct {
-	S3URL        string
-	AWSAccessKey string
-	AWSSecretKey string
-	AWSRegion    string
-	AWSEndpoint  string // optional: custom endpoint (Ceph/MinIO/etc.)
-	SHA256       string // optional expected hex (64 chars). Can be "sha256:<hex>" or "<hex>"
-	WorktreeName string // optional override of derived worktree name
+// S3ObjectParameters container for S3 object identification and access.
+type S3ObjectParameters struct {
+	S3URL           string
+	AWSAccessKey    string
+	AWSSecretKey    string
+	AWSRegion       string
+	AWSEndpoint     string // optional: custom endpoint (Ceph/MinIO/etc.)
+	SHA256          string // optional expected hex (64 chars). Can be "sha256:<hex>" or "<hex>"
+	DestinationPath string // optional override URL path (worktree filename)
 }
 
-// InspectResult is what we return.
-type InspectResult struct {
-	// Git/LFS paths
-	GitCommonDir string // result of: git rev-parse --git-common-dir
-	LFSRoot      string // either lfs.storage (resolved) or <gitCommonDir>/lfs
+// S3Object is what we return.
+type S3Object struct {
 
 	// Object identity
-	Bucket       string
-	Key          string
-	WorktreeName string // basename of Key (filename), or override from input
+	Bucket string
+	Key    string
+	Path   string // basename of Key (filename), or override from input
 
 	// HEAD-derived info
 	SizeBytes   int64
@@ -60,7 +57,7 @@ type InspectResult struct {
 }
 
 // InspectS3ForLFS does all 3 requested tasks.
-func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, error) {
+func InspectS3ForLFS(ctx context.Context, in S3ObjectParameters) (*S3Object, error) {
 	if strings.TrimSpace(in.S3URL) == "" {
 		return nil, errors.New("S3URL is required")
 	}
@@ -71,18 +68,12 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 		return nil, errors.New("AWSAccessKey and AWSSecretKey are required")
 	}
 
-	// 1) Determine Git LFS storage root.
-	gitCommonDir, lfsRoot, err := GetGitRootDirectories(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	// 2) Parse S3 URL + derive working tree filename.
 	bucket, key, err := parseS3URL(in.S3URL)
 	if err != nil {
 		return nil, err
 	}
-	worktreeName := strings.TrimSpace(in.WorktreeName)
+	worktreeName := strings.TrimSpace(in.DestinationPath)
 	if worktreeName == "" {
 		worktreeName = path.Base(key)
 		if worktreeName == "." || worktreeName == "/" || worktreeName == "" {
@@ -128,21 +119,20 @@ func InspectS3ForLFS(ctx context.Context, in InspectInput) (*InspectResult, erro
 		etag = strings.Trim(*head.ETag, `"`)
 	}
 
-	out := &InspectResult{
-		GitCommonDir: gitCommonDir,
-		LFSRoot:      lfsRoot,
-		Bucket:       bucket,
-		Key:          key,
-		WorktreeName: worktreeName,
-		SizeBytes:    sizeBytes,
-		MetaSHA256:   metaSHA,
-		ETag:         etag,
-		LastModTime:  lm,
+	out := &S3Object{
+		Bucket:      bucket,
+		Key:         key,
+		Path:        worktreeName,
+		SizeBytes:   sizeBytes,
+		MetaSHA256:  metaSHA,
+		ETag:        etag,
+		LastModTime: lm,
 	}
 	return out, nil
 }
 
-// GetGitRootDirectories returns (gitCommonDir, lfsRoot, error).
+// GetGitRootDirectories
+// returns (gitCommonDir, lfsRoot, error).
 func GetGitRootDirectories(ctx context.Context) (string, string, error) {
 	gitCommonDir, err := gitRevParseGitCommonDir(ctx)
 	if err != nil {
@@ -335,7 +325,7 @@ func parseS3URL(raw string) (string, string, error) {
 	}
 }
 
-func newS3Client(ctx context.Context, in InspectInput) (*s3.Client, error) {
+func newS3Client(ctx context.Context, in S3ObjectParameters) (*s3.Client, error) {
 	creds := credentials.NewStaticCredentialsProvider(in.AWSAccessKey, in.AWSSecretKey, "")
 
 	// Custom HTTP client is useful for S3-compatible endpoints.

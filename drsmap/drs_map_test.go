@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/indexd/drs"
 	"github.com/calypr/data-client/indexd/hash"
@@ -138,7 +137,7 @@ func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DR
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MockDRSClient) RegisterFile(oid string, path string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) {
+func (m *MockDRSClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/indexd/drs"
@@ -16,8 +15,8 @@ import (
 // RegisterFile implements DRSClient.RegisterFile
 // It registers (or reuses) an indexd record for the oid, uploads the object if it
 // is not already available in the bucket, and returns the resulting DRS object.
-func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallback common.ProgressCallback) (*drs.DRSObject, error) {
-	cl.Logger.Debug(fmt.Sprintf("register file started for oid: %s", oid))
+func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+	cl.Logger.DebugContext(ctx, fmt.Sprintf("register file started for oid: %s", oid))
 
 	// load the DRS object from oid created by prepush
 	drsObject, err := drsmap.DrsInfoFromOid(oid)
@@ -25,19 +24,15 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 		return nil, fmt.Errorf("error getting drs object for oid %s: %v", oid, err)
 	}
 
-	// Register the indexd record
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cl.Logger.Info(fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))
 	_, err = cl.RegisterRecord(ctx, drsObject)
 	if err != nil {
 		// handle "already exists" error ie upsert behavior
 		if strings.Contains(err.Error(), "already exists") {
 			if !cl.Config.Upsert {
-				cl.Logger.Debug(fmt.Sprintf("indexd record already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
+				cl.Logger.DebugContext(ctx, fmt.Sprintf("indexd record already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
 			} else {
-				cl.Logger.Debug(fmt.Sprintf("indexd record already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
+				cl.Logger.DebugContext(ctx, fmt.Sprintf("indexd record already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
 				err = cl.DeleteRecord(ctx, oid)
 				if err != nil {
 					return nil, fmt.Errorf("error deleting existing indexd record oid %s: did: %s err: %v", oid, drsObject.Id, err)
@@ -51,23 +46,21 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 			return nil, fmt.Errorf("error saving oid %s indexd record: %v", oid, err)
 		}
 	}
-	cl.Logger.Info(fmt.Sprintf("indexd record registration complete for oid %s", oid))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("indexd record registration complete for oid %s", oid))
 
 	// Now attempt to upload the file if not already available
-	cl.Logger.Info(fmt.Sprintf("checking if oid %s is already downloadable", oid))
-	downloadable, err := cl.isFileDownloadable(drsObject)
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", oid))
+	downloadable, err := cl.isFileDownloadable(ctx, drsObject)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if file is downloadable: oid %s %v", oid, err)
 	}
 	if downloadable {
-		cl.Logger.Debug(fmt.Sprintf("file %s is already available for download, skipping upload", oid))
+		cl.Logger.DebugContext(ctx, fmt.Sprintf("file %s is already available for download, skipping upload", oid))
 		return drsObject, nil
 	}
-	cl.Logger.Info(fmt.Sprintf("file %s is not downloadable, proceeding to upload", oid))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", oid))
 
 	// Proceed to upload the file
-	profile := cl.G3.GetCredential().Profile
-
 	// Reuse the Gen3 interface
 	g3 := cl.G3
 
@@ -79,7 +72,7 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			cl.Logger.Debug(fmt.Sprintf("warning: error closing file %s: %v", filePath, err))
+			cl.Logger.DebugContext(ctx, fmt.Sprintf("warning: error closing file %s: %v", filePath, err))
 		}
 	}(file)
 
@@ -90,22 +83,21 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 	}
 
 	if drsObject.Size < multiPartThreshold {
-		cl.Logger.Debug(fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
+		cl.Logger.DebugContext(ctx, fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
 		req := common.FileUploadRequestObject{
 			SourcePath: filePath,
 			ObjectKey:  drsObject.Checksums.SHA256,
 			GUID:       drsObject.Id,
 			Bucket:     cl.Config.BucketName,
-			Progress:   progressCallback,
 		}
-		err := upload.UploadSingle(context.Background(), profile, req, false)
+		err := upload.UploadSingle(ctx, g3, req, false)
 		if err != nil {
 			return nil, fmt.Errorf("UploadSingle error: %s", err)
 		}
 	} else {
-		cl.Logger.Debug(fmt.Sprintf("MultipartUpload size: %d path: %s", drsObject.Size, filePath))
+		cl.Logger.DebugContext(ctx, fmt.Sprintf("MultipartUpload size: %d path: %s", drsObject.Size, filePath))
 		err = upload.MultipartUpload(
-			context.TODO(),
+			ctx,
 			g3,
 			common.FileUploadRequestObject{
 				SourcePath:   filePath,
@@ -113,7 +105,6 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 				GUID:         drsObject.Id,
 				FileMetadata: common.FileMetadata{},
 				Bucket:       cl.Config.BucketName,
-				Progress:     progressCallback,
 			},
 			file, false,
 		)
@@ -125,13 +116,13 @@ func (cl *GitDrsIdxdClient) RegisterFile(oid string, path string, progressCallba
 }
 
 // isFileDownloadable checks if a file is already available for download
-func (cl *GitDrsIdxdClient) isFileDownloadable(drsObject *drs.DRSObject) (bool, error) {
+func (cl *GitDrsIdxdClient) isFileDownloadable(ctx context.Context, drsObject *drs.DRSObject) (bool, error) {
 	// Try to get a download URL - if successful, file is downloadable
 	if len(drsObject.AccessMethods) == 0 {
 		return false, nil
 	}
 	accessType := drsObject.AccessMethods[0].Type
-	res, err := cl.G3.Indexd().GetDownloadURL(context.Background(), drsObject.Id, accessType)
+	res, err := cl.G3.Indexd().GetDownloadURL(ctx, drsObject.Id, accessType)
 	if err != nil {
 		// If we can't get a download URL, assume file is not downloadable
 		return false, nil

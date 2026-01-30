@@ -60,10 +60,8 @@ github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uS
 github.com/bytedance/sonic v1.15.0/go.mod h1:tFkWrPz0/CUCLEF4ri4UkHekCIcdnkqXw9VduqpJh0k=
 github.com/bytedance/sonic/loader v0.5.0 h1:gXH3KVnatgY7loH5/TkeVyXPfESoqSBSBEiDd5VjlgE=
 github.com/bytedance/sonic/loader v0.5.0/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
-github.com/calypr/data-client v0.0.0-20260128205045-f0427f3d54b4 h1:qzJ9SJR9vvjEQUCFiStispL/JVnxwcbTwCw5DHyGP/U=
-github.com/calypr/data-client v0.0.0-20260128205045-f0427f3d54b4/go.mod h1:ic7OQEAgSMpVVGy7lRH/6zw4bM9VvPWfiW9HjAlm2GI=
-github.com/calypr/data-client v0.0.0-20260129205657-07c01fda0509 h1:H0KlfMJLugqdPOfwnZT99AZnV5WJoWnlbaDjGNU4610=
-github.com/calypr/data-client v0.0.0-20260129205657-07c01fda0509/go.mod h1:ic7OQEAgSMpVVGy7lRH/6zw4bM9VvPWfiW9HjAlm2GI=
+github.com/calypr/data-client v0.0.0-20260129225340-2feb5cabb93a h1:xWo77M2pJp7BOcBgErvmOgeTmJzyUis+JM2J/CDl/vM=
+github.com/calypr/data-client v0.0.0-20260129225340-2feb5cabb93a/go.mod h1:ic7OQEAgSMpVVGy7lRH/6zw4bM9VvPWfiW9HjAlm2GI=
 github.com/clipperhouse/stringish v0.1.1 h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=
 github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEXNWYXQgCt4hdOzA=
 github.com/clipperhouse/uax29/v2 v2.3.0 h1:SNdx9DVUqMoBuBoW3iLOj4FQv3dN5mDtuqwuhIGpJy4=

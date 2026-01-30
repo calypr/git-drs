@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os/exec"
+	"strconv"
+	"strings"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
@@ -13,9 +16,7 @@ import (
 	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/gitrepo"
 )
 
 // Config holds configuration parameters for the GitDrsIdxdClient.
@@ -50,17 +51,34 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	// or assume we use the one passed in if we update data-client to take slog.
 	// For now we assume data-client/logs/TeeLogger is still used by data-client internals,
 	// so we bridge it.
-	dLogger, closer := logs.New(profileConfig.Profile, logs.WithBaseLogger(drslog.AsStdLogger(logger)))
-	// Note: closer is ignored here
+	// Initialize data-client Gen3Interface with slog-adapted logger.
+	// We disable data-client's console output because drslog already handles stderr/file logging.
+	// We also disable data-client's separate message file by default to aggregate logs in git-drs.log,
+	// but allow re-enabling it via config.
+	// but allow re-enabling it via config.
+	enableDataClientLogs, _ := getLfsCustomTransferBool("lfs.customtransfer.drs.enable-data-client-logs", false)
+
+	logOpts := []logs.Option{
+		logs.WithBaseLogger(logger),
+		logs.WithNoConsole(), // drslog already writes to stderr if configured
+	}
+
+	if enableDataClientLogs {
+		logOpts = append(logOpts, logs.WithMessageFile())
+	} else {
+		logOpts = append(logOpts, logs.WithNoMessageFile())
+	}
+
+	dLogger, closer := logs.New(profileConfig.Profile, logOpts...)
 	_ = closer
 
 	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
 
-	upsert, err := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
+	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
 	if err != nil {
 		return nil, err
 	}
-	multiPartThresholdInt, err := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	multiPartThresholdInt, err := getLfsCustomTransferInt("lfs.customtransfer.drs.multipart-threshold", 500)
 	if err != nil {
 		return nil, err
 	}
@@ -216,3 +234,28 @@ func (cl *GitDrsIdxdClient) GetUpsert() bool {
 }
 
 // Helpers retained from original implementation
+
+func getLfsCustomTransferString(key string) (string, error) {
+	cmd := exec.Command("git", "config", key)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func getLfsCustomTransferInt(key string, defaultValue int64) (int64, error) {
+	valStr, err := getLfsCustomTransferString(key)
+	if err != nil || valStr == "" {
+		return defaultValue, nil
+	}
+	return strconv.ParseInt(valStr, 10, 64)
+}
+
+func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
+	valStr, err := getLfsCustomTransferString(key)
+	if err != nil || valStr == "" {
+		return defaultValue, nil
+	}
+	return strconv.ParseBool(valStr)
+}

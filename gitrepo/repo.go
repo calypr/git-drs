@@ -1,15 +1,12 @@
 package gitrepo
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/common"
 	"github.com/go-git/go-git/v5"
-	gitconfig "github.com/go-git/go-git/v5/config"
 )
 
 func DrsTopLevel() (string, error) {
@@ -42,26 +39,6 @@ func GitTopLevel() (string, error) {
 	return wt.Filesystem.Root(), nil
 }
 
-// GetGitConfigValue retrieves a value from git config by key (string)
-func GetGitConfigValue(conf *gitconfig.Config, key string) string {
-	parts := strings.Split(key, ".")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	// Check for section.key
-	if len(parts) == 2 {
-		return conf.Raw.Section(parts[0]).Option(parts[1])
-	}
-
-	// Check for section.subsection.key
-	section := parts[0]
-	subsection := strings.Join(parts[1:len(parts)-1], ".")
-	option := parts[len(parts)-1]
-
-	return conf.Raw.Section(section).Subsection(subsection).Option(option)
-}
-
 // GetGitConfigString reads a string value from git config
 func GetGitConfigString(key string) (string, error) {
 	repo, err := GetRepo()
@@ -72,38 +49,27 @@ func GetGitConfigString(key string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	return GetGitConfigValue(conf, key), nil
+
+	// Inline the logic of GetGitConfigValue since we are removing it
+	parts := strings.Split(key, ".")
+	if len(parts) < 2 {
+		return "", nil
+	}
+
+	// Check for section.key
+	if len(parts) == 2 {
+		return conf.Raw.Section(parts[0]).Option(parts[1]), nil
+	}
+
+	// Check for section.subsection.key
+	section := parts[0]
+	subsection := strings.Join(parts[1:len(parts)-1], ".")
+	option := parts[len(parts)-1]
+
+	return conf.Raw.Section(section).Subsection(subsection).Option(option), nil
 }
 
 // GetGitConfigInt reads an integer value from git config
-func GetGitConfigInt(key string, defaultValue int64) (int64, error) {
-	strVal, err := GetGitConfigString(key)
-	if err != nil || strVal == "" {
-		return defaultValue, err
-	}
-
-	parsed, err := strconv.ParseInt(strVal, 10, 64)
-	if err != nil {
-		return defaultValue, fmt.Errorf("invalid int value for %s: %q", key, strVal)
-	}
-
-	return parsed, nil
-}
-
-// GetGitConfigBool reads a boolean value from git config
-func GetGitConfigBool(key string, defaultValue bool) (bool, error) {
-	strVal, err := GetGitConfigString(key)
-	if err != nil || strVal == "" {
-		return defaultValue, err
-	}
-
-	parsed, err := strconv.ParseBool(strVal)
-	if err != nil {
-		return defaultValue, fmt.Errorf("invalid boolean value for %s: %q", key, strVal)
-	}
-
-	return parsed, nil
-}
 
 // SetGitConfigOptions updates git configuration with the provided key-value pairs
 func SetGitConfigOptions(configs map[string]string) error {

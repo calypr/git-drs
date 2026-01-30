@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# File: tests/scripts/coverage/run-e2e-coverage.sh
+# Purpose: Builds an instrumented git-drs binary and runs end-to-end tests with coverage capture
 set -euo pipefail
  
 ROOT_DIR=$(git rev-parse --show-toplevel)
@@ -7,9 +9,9 @@ INTEGRATION_COV_DIR="${INTEGRATION_COV_DIR:-${COVERAGE_ROOT}/integration/raw}"
 INTEGRATION_PROFILE="${INTEGRATION_PROFILE:-${COVERAGE_ROOT}/integration/coverage.out}"
 BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/coverage}"
  
-E2E_SCRIPT="${ROOT_DIR}/tests/scripts/end-2-end/e2e.sh"
+E2E_SCRIPT="${ROOT_DIR}/tests/scripts/end-to-end/e2e.sh"
 if [[ ! -x "${E2E_SCRIPT}" ]]; then
-ALT_E2E_SCRIPT="${ROOT_DIR}/tests/scripts/end-to-end/e2e.sh"
+ALT_E2E_SCRIPT="${ROOT_DIR}/tests/scripts/end-2-end/e2e.sh"
 if [[ -x "${ALT_E2E_SCRIPT}" ]]; then
 E2E_SCRIPT="${ALT_E2E_SCRIPT}"
 else
@@ -22,7 +24,8 @@ mkdir -p "${BUILD_DIR}" "${INTEGRATION_COV_DIR}" "$(dirname "${INTEGRATION_PROFI
  
 GOFLAGS=()
 if [[ -n "${GOFLAGS_EXTRA:-}" ]]; then
-GOFLAGS+=("${GOFLAGS_EXTRA}")
+# shellcheck disable=SC2206
+GOFLAGS=(${GOFLAGS_EXTRA})
 fi
  
 go build "${GOFLAGS[@]}" -cover -covermode=atomic -coverpkg=./... -o "${BUILD_DIR}/git-drs" .

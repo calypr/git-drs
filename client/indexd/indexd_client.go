@@ -21,12 +21,12 @@ import (
 	"github.com/calypr/data-client/client/logs"
 	"github.com/calypr/data-client/client/upload"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-retryablehttp"
@@ -39,7 +39,7 @@ type IndexDClient struct {
 	ProjectId   string
 	BucketName  string
 	Logger      *slog.Logger
-	AuthHandler s3_utils.AuthHandler // Injected for testing/flexibility
+	AuthHandler cloud.AuthHandler // Injected for testing/flexibility
 
 	HttpClient *retryablehttp.Client
 	SConfig    sonic.API
@@ -1064,36 +1064,6 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	}
 
 	return record, nil
-}
-
-func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	bucket := cl.BucketName
-	if bucket == "" {
-		return nil, fmt.Errorf("error: bucket name is empty in config file")
-	}
-
-	//TODO: support other storage backends
-	fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
-
-	authzStr, err := utils.ProjectToResource(cl.GetProjectId())
-	if err != nil {
-		return nil, err
-	}
-	authorizations := drs.Authorizations{
-		Value: authzStr,
-	}
-
-	// create DrsObj
-	DrsObj := drs.DRSObject{
-		Id:   drsId,
-		Name: fileName,
-		// TODO: ensure that we can retrieve the access method during submission (happens in transfer)
-		AccessMethods: []drs.AccessMethod{{Type: "s3", AccessURL: drs.AccessURL{URL: fileURL}, Authorizations: &authorizations}},
-		Checksums:     hash.HashInfo{SHA256: checksum},
-		Size:          size,
-	}
-
-	return &DrsObj, nil
 }
 
 // Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)

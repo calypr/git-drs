@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -301,24 +300,6 @@ func TestIndexdClient_RegisterAndUpdate(t *testing.T) {
 	}
 }
 
-func TestIndexdClient_BuildDrsObj(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "bucket",
-	}
-
-	obj, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err != nil {
-		t.Fatalf("BuildDrsObj error: %v", err)
-	}
-	if obj.Id != "did-1" || obj.Checksums.SHA256 != "sha-256" {
-		t.Fatalf("unexpected drs object: %+v", obj)
-	}
-	if len(obj.AccessMethods) != 1 || !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
-		t.Fatalf("unexpected access URL: %+v", obj.AccessMethods)
-	}
-}
-
 func TestIndexdClient_GetProfile(t *testing.T) {
 	client := &IndexDClient{AuthHandler: &RealAuthHandler{Cred: confCredential("profile")}}
 	profile, err := client.GetProfile()
@@ -462,50 +443,5 @@ func chdirForTest(t *testing.T, dir string) func() {
 		if err := os.Chdir(cwd); err != nil {
 			t.Fatalf("restore Chdir error: %v", err)
 		}
-	}
-}
-
-func TestBuildDrsObj_Success(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "bucket",
-	}
-
-	obj, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err != nil {
-		t.Fatalf("BuildDrsObj error: %v", err)
-	}
-	if obj.Id != "did-1" {
-		t.Fatalf("unexpected Id: %s", obj.Id)
-	}
-	if obj.Name != "file.txt" {
-		t.Fatalf("unexpected Name: %s", obj.Name)
-	}
-	if obj.Checksums.SHA256 != "sha-256" {
-		t.Fatalf("unexpected checksum: %v", obj.Checksums)
-	}
-	if obj.Size != 12 {
-		t.Fatalf("unexpected size: %d", obj.Size)
-	}
-	if len(obj.AccessMethods) != 1 {
-		t.Fatalf("expected 1 access method, got %d", len(obj.AccessMethods))
-	}
-	if !strings.Contains(obj.AccessMethods[0].AccessURL.URL, filepath.Join("bucket", "did-1", "sha-256")) {
-		t.Fatalf("unexpected access URL: %s", obj.AccessMethods[0].AccessURL.URL)
-	}
-	if obj.AccessMethods[0].Type != "s3" {
-		t.Fatalf("unexpected access method type: %s", obj.AccessMethods[0].Type)
-	}
-}
-
-func TestBuildDrsObj_EmptyBucket(t *testing.T) {
-	client := &IndexDClient{
-		ProjectId:  "test-project",
-		BucketName: "",
-	}
-
-	_, err := client.BuildDrsObj("file.txt", "sha-256", 12, "did-1")
-	if err == nil {
-		t.Fatalf("expected error when BucketName is empty")
 	}
 }

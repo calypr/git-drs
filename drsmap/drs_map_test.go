@@ -8,6 +8,7 @@ import (
 
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
+	drslfs "github.com/calypr/git-drs/drsmap/lfs"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -79,5 +80,32 @@ func TestGetObjectPathLayout(t *testing.T) {
 	}
 	if filepath.Base(path) != oid {
 		t.Fatalf("unexpected path: %s", path)
+	}
+}
+
+func TestWriteDrsFile(t *testing.T) {
+	setupTestRepo(t)
+
+	builder := drs.NewObjectBuilder("bucket", "prog-project")
+	file := drslfs.LfsFileInfo{
+		Name: "file.txt",
+		Size: 12,
+		Oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+
+	drsObj, err := WriteDrsFile(builder, file, nil)
+	if err != nil {
+		t.Fatalf("WriteDrsFile error: %v", err)
+	}
+	if drsObj.Id == "" {
+		t.Fatalf("expected drs object id")
+	}
+
+	read, err := DrsInfoFromOid(file.Oid)
+	if err != nil {
+		t.Fatalf("DrsInfoFromOid error: %v", err)
+	}
+	if read.Checksums.SHA256 != file.Oid {
+		t.Fatalf("unexpected checksum: %+v", read.Checksums)
 	}
 }

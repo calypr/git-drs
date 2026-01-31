@@ -15,19 +15,19 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/messages"
 	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
 
 // getBucketDetails fetches bucket details from Gen3, loading config and auth.
 // This is the production version that includes all config/auth dependencies.
-func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*s3_utils.S3Bucket, error) {
+func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, httpClient *http.Client) (*cloud.S3Bucket, error) {
 	// get all buckets
 	baseURL := *inc.Base // Create a copy to avoid mutating inc.Base
 	baseURL.Path = filepath.Join(baseURL.Path, "user/data/buckets")
@@ -37,7 +37,7 @@ func (inc *IndexDClient) getBucketDetails(ctx context.Context, bucket string, ht
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 // This is the core testable logic, separated for easier unit testing.
-func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *s3_utils.S3Bucket, s3Client *s3.Client, logger *slog.Logger) (int64, string, error) {
+func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *cloud.S3Bucket, s3Client *s3.Client, logger *slog.Logger) (int64, string, error) {
 
 	// Parse S3 URL
 	bucket, key, err := utils.ParseS3URL(s3URL)
@@ -148,8 +148,8 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 				errorMsg.WriteString(fmt.Sprintf("  %d. %s\n", i+1, field))
 			}
 			errorMsg.WriteString("\nPlease provide these values via:\n")
-			errorMsg.WriteString("  - Command-line flags (--" + s3_utils.AWS_KEY_FLAG_NAME + ", --" + s3_utils.AWS_SECRET_FLAG_NAME + ", --" + s3_utils.AWS_REGION_FLAG_NAME + ", --" + s3_utils.AWS_ENDPOINT_URL_FLAG_NAME + ")\n")
-			errorMsg.WriteString("  - Environment variables (" + s3_utils.AWS_KEY_ENV_VAR + ", " + s3_utils.AWS_SECRET_ENV_VAR + ", " + s3_utils.AWS_REGION_ENV_VAR + ", " + s3_utils.AWS_ENDPOINT_URL_ENV_VAR + ")\n")
+			errorMsg.WriteString("  - Command-line flags (--" + cloud.AWS_KEY_FLAG_NAME + ", --" + cloud.AWS_SECRET_FLAG_NAME + ", --" + cloud.AWS_REGION_FLAG_NAME + ", --" + cloud.AWS_ENDPOINT_URL_FLAG_NAME + ")\n")
+			errorMsg.WriteString("  - Environment variables (" + cloud.AWS_KEY_ENV_VAR + ", " + cloud.AWS_SECRET_ENV_VAR + ", " + cloud.AWS_REGION_ENV_VAR + ", " + cloud.AWS_ENDPOINT_URL_ENV_VAR + ")\n")
 			errorMsg.WriteString("  - AWS credentials file (~/.aws/credentials)\n")
 			errorMsg.WriteString("  - Gen3 bucket registration (if bucket can be registered in Gen3)\n")
 			errorMsg.WriteString("\n")
@@ -199,7 +199,7 @@ func (inc *IndexDClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKe
 	}
 	if bucketDetails == nil {
 		logger.Debug("WARNING: no matching bucket found in CALYPR")
-		bucketDetails = &s3_utils.S3Bucket{}
+		bucketDetails = &cloud.S3Bucket{}
 	}
 
 	return FetchS3MetadataWithBucketDetails(ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, logger)
@@ -279,13 +279,13 @@ func (inc *IndexDClient) upsertIndexdRecord(url string, sha256 string, fileSize 
 }
 
 // AddURL adds a file to the Git DRS repo using an S3 URL
-func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
+func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (cloud.S3Meta, error) {
 	// Create context with 10-second timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// Apply options
-	cfg := &s3_utils.AddURLConfig{}
+	cfg := &cloud.AddURLConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -296,23 +296,23 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 	}
 
 	// Validate inputs
-	if err := s3_utils.ValidateInputs(s3URL, sha256); err != nil {
-		return s3_utils.S3Meta{}, err
+	if err := cloud.ValidateInputs(s3URL, sha256); err != nil {
+		return cloud.S3Meta{}, err
 	}
 
 	// check that lfs is tracking the file
 	_, relPath, err := utils.ParseS3URL(s3URL)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
 	// confirm file is tracked
 	isLFS, err := utils.IsLFSTracked(".gitattributes", relPath)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
 	}
 	if !isLFS {
-		return s3_utils.S3Meta{}, fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
+		return cloud.S3Meta{}, fmt.Errorf("file is not tracked by LFS. Please run `git lfs track %s && git add .gitattributes` before proceeding", relPath)
 	}
 
 	// Fetch S3 metadata (size, modified date)
@@ -321,9 +321,9 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 	if err != nil {
 		// if err contains 403, probably misconfigured credentials
 		if strings.Contains(err.Error(), "403") {
-			return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w. Double check your configured AWS credentials and endpoint url", err)
+			return cloud.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w. Double check your configured AWS credentials and endpoint url", err)
 		}
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
 
 	// logging
@@ -335,21 +335,21 @@ func (inc *IndexDClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regio
 	inc.Logger.Debug("Processing indexd record...")
 	drsObj, err := inc.upsertIndexdRecord(s3URL, sha256, fileSize, inc.Logger)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
 
 	// write to file so push has that file available
 	drsObjPath, err := drsmap.GetObjectPath(projectdir.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to get object path: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("failed to get object path: %w", err)
 	}
 	if err := drsmap.WriteDrsObj(drsObj, sha256, drsObjPath); err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to write DRS object: %w", err)
+		return cloud.S3Meta{}, fmt.Errorf("failed to write DRS object: %w", err)
 	}
 
 	inc.Logger.Debug("Indexd updated")
 
-	return s3_utils.S3Meta{
+	return cloud.S3Meta{
 		Size:         fileSize,
 		LastModified: modifiedDate,
 	}, nil

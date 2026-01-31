@@ -1,4 +1,4 @@
-package drsmap
+package lfs
 
 import (
 	"os"

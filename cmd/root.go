@@ -48,7 +48,7 @@ func init() {
 	RootCmd.AddCommand(transfer.Cmd)
 	RootCmd.AddCommand(transferref.Cmd)
 	RootCmd.AddCommand(version.Cmd)
-	RootCmd.AddCommand(addurl.AddURLCmd)
+	RootCmd.AddCommand(addurl.Cmd)
 	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(fetch.Cmd)
 	RootCmd.AddCommand(push.Cmd)

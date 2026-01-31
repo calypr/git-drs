@@ -9,12 +9,12 @@ import (
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/data-client/client/common"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
 
@@ -147,7 +147,16 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
 					logger.Error(errMsg)
-					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+
+					drsObject, errG := drsmap.DrsInfoFromOid(downloadMsg.Oid)
+					if errG == nil && drsObject != nil {
+						manualDownloadMsg := fmt.Sprintf("%s %s", drsObject.AccessMethods[0].AccessURL.URL, drsObject.Name)
+						logger.Info(manualDownloadMsg)
+						lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 302, manualDownloadMsg)
+					} else {
+						logger.Error(fmt.Sprintf("drsClient.GetObject failed for %s: %v ", downloadMsg.Oid, errG))
+						lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+					}
 					continue
 				}
 				if accessUrl.URL == "" {
@@ -165,7 +174,7 @@ var Cmd = &cobra.Command{
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
 					continue
 				}
-				err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
+				err = cloud.DownloadSignedUrl(accessUrl.URL, dstPath)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error downloading file for OID %s: %v", downloadMsg.Oid, err)
 					logger.Error(errMsg)

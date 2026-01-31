@@ -12,6 +12,9 @@ If the S3 bucket is already registered in Gen3, the system can automatically ret
 ### 2. Adding S3 Files from Non-Registered Buckets
 If the S3 bucket is not registered in Gen3, you must provide both AWS credentials and bucket configuration (region and endpoint URL).
 
+### S3 URL handling in both use cases
+In both of the use cases above, the S3 URL you pass to `git drs add-url` is treated as the canonical file location. The CLI forwards that exact `s3://...` value into the DRS object it writes locally, and when the object is registered with indexd, the URL is carried through as the stored access URL for the record. This means the source S3 URL is preserved regardless of whether the bucket is Gen3-registered or user-specified.
+
 ## AWS Configuration
 
 This command follows the standard AWS CLI authentication and configuration precedence as documented in the [AWS CLI Authentication Guide](https://docs.aws.amazon.com/cli/v1/userguide/cli-chap-authentication.html)

@@ -17,6 +17,66 @@ type PendingObject struct {
 	Path string
 }
 
+type ObjectStore struct {
+	BasePath string
+	Logger   *slog.Logger
+}
+
+func NewObjectStore(basePath string, logger *slog.Logger) *ObjectStore {
+	return &ObjectStore{
+		BasePath: basePath,
+		Logger:   logger,
+	}
+}
+
+func (s *ObjectStore) ObjectPath(oid string) (string, error) {
+	// check that oid is a valid sha256 hash
+	if len(oid) != 64 {
+		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
+	}
+
+	return filepath.Join(s.BasePath, oid[:2], oid[2:4], oid), nil
+}
+
+func (s *ObjectStore) WriteObject(drsObj *DRSObject, oid string) error {
+	indexdObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
+	if err != nil {
+		return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
+	}
+
+	drsObjPath, err := s.ObjectPath(oid)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(drsObjPath), 0755); err != nil {
+		return fmt.Errorf("error creating directory for %s: %v", drsObjPath, err)
+	}
+
+	if err := os.WriteFile(drsObjPath, indexdObjBytes, 0644); err != nil {
+		return fmt.Errorf("error writing %s: %v", drsObjPath, err)
+	}
+	return nil
+}
+
+func (s *ObjectStore) ReadObject(oid string) (*DRSObject, error) {
+	path, err := s.ObjectPath(oid)
+	if err != nil {
+		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+	}
+
+	drsObjBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
+	}
+
+	var drsObject DRSObject
+	if err := sonic.ConfigFastest.Unmarshal(drsObjBytes, &drsObject); err != nil {
+		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
+	}
+
+	return &drsObject, nil
+}
+
 // getPendingObjects walks .git/drs/lfs/objects/ to find all pending records
 func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) {
 	var objects []*PendingObject

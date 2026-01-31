@@ -16,10 +16,10 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
 	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/s3_utils"
 )
 
 // Unit Tests for validateInputs
@@ -48,7 +48,7 @@ func TestValidateInputs_ConcurrentCalls(t *testing.T) {
 	errChan := make(chan error, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			errChan <- s3_utils.ValidateInputs(validS3URL, validSHA256)
+			errChan <- cloud.ValidateInputs(validS3URL, validSHA256)
 		}()
 	}
 
@@ -74,8 +74,8 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 		// Capture the auth header set by the handler
 		authHeaderValue = r.Header.Get("Authorization")
 
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -116,8 +116,8 @@ func TestGetBucketDetailsWithAuth_Success(t *testing.T) {
 func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 	// Test that missing bucket returns proper error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"other-bucket": {
 					Region:      "us-east-1",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -146,12 +146,12 @@ func TestGetBucketDetailsWithAuth_BucketMissing(t *testing.T) {
 func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 	tests := []struct {
 		name       string
-		bucket     s3_utils.S3Bucket
+		bucket     cloud.S3Bucket
 		wantErrMsg string
 	}{
 		{
 			name: "missing region",
-			bucket: s3_utils.S3Bucket{
+			bucket: cloud.S3Bucket{
 				EndpointURL: "https://s3.amazonaws.com",
 				Region:      "",
 			},
@@ -159,7 +159,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 		},
 		{
 			name: "missing endpoint",
-			bucket: s3_utils.S3Bucket{
+			bucket: cloud.S3Bucket{
 				EndpointURL: "",
 				Region:      "us-west-2",
 			},
@@ -167,7 +167,7 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 		},
 		{
 			name: "missing both",
-			bucket: s3_utils.S3Bucket{
+			bucket: cloud.S3Bucket{
 				EndpointURL: "",
 				Region:      "",
 			},
@@ -178,8 +178,8 @@ func TestGetBucketDetailsWithAuth_MissingFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				response := s3_utils.S3BucketsResponse{
-					S3Buckets: map[string]*s3_utils.S3Bucket{
+				response := cloud.S3BucketsResponse{
+					S3Buckets: map[string]*cloud.S3Bucket{
 						"test-bucket": &tt.bucket,
 					},
 				}
@@ -236,8 +236,8 @@ func TestGetBucketDetailsWithAuth_WithToken(t *testing.T) {
 			tokenReceived = strings.TrimPrefix(authHeader, "Bearer ")
 		}
 
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -274,8 +274,8 @@ func TestGetBucketDetailsWithAuth_NoAuthHandler(t *testing.T) {
 			authHeaderPresent = true
 		}
 
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.amazonaws.com",
@@ -350,7 +350,7 @@ func TestS3BucketsResponse_UnmarshalValid(t *testing.T) {
 		"GS_BUCKETS": {}
 	}`
 
-	var response s3_utils.S3BucketsResponse
+	var response cloud.S3BucketsResponse
 	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3BucketsResponse: %v", err)
@@ -384,7 +384,7 @@ func TestS3BucketsResponse_EmptyBuckets(t *testing.T) {
 		"GS_BUCKETS": {}
 	}`
 
-	var response s3_utils.S3BucketsResponse
+	var response cloud.S3BucketsResponse
 	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal empty S3BucketsResponse: %v", err)
@@ -402,7 +402,7 @@ func TestS3Bucket_MissingOptionalFields(t *testing.T) {
 		"region": "us-west-2"
 	}`
 
-	var bucket s3_utils.S3Bucket
+	var bucket cloud.S3Bucket
 	err := sonic.ConfigFastest.Unmarshal([]byte(jsonData), &bucket)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal S3Bucket: %v", err)
@@ -450,7 +450,7 @@ func TestFetchS3Metadata_Success_WithProvidedClient(t *testing.T) {
 	})
 
 	// Provide bucket details directly (bypass getBucketDetails)
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 		Programs:    []string{"test-program"},
@@ -489,7 +489,7 @@ func TestFetchS3Metadata_Success_WithCredentialsInParams(t *testing.T) {
 
 	s3Mock.AddObject("test-bucket", "file.bam", 1024)
 
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -532,7 +532,7 @@ func TestFetchS3Metadata_Success_UsingBucketDetailsFromGen3(t *testing.T) {
 	s3Mock.AddObject("test-bucket", "data.bam", 512)
 
 	// Bucket details from Gen3 (simulated)
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -568,7 +568,7 @@ func TestFetchS3Metadata_Failure_InvalidS3URL(t *testing.T) {
 	ctx := context.Background()
 
 	ignoreAWSConfigFiles(t)
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: "http://endpoint",
 	}
@@ -602,7 +602,7 @@ func TestFetchS3Metadata_Failure_MissingCredentials(t *testing.T) {
 	s3Mock := NewMockS3Server(t)
 	defer s3Mock.Close()
 
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "", // No region - this will definitely trigger validation error
 		EndpointURL: s3Mock.URL(),
 	}
@@ -636,7 +636,7 @@ func TestFetchS3Metadata_Failure_MissingRegion(t *testing.T) {
 
 	// Bucket details WITHOUT region
 	ignoreAWSConfigFiles(t)
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		EndpointURL: "http://s3-endpoint",
 		// No region field
 	}
@@ -686,7 +686,7 @@ func TestFetchS3Metadata_Failure_S3ObjectNotFound(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -736,7 +736,7 @@ func TestFetchS3Metadata_Success_NilContentLength(t *testing.T) {
 		o.UsePathStyle = true
 	})
 
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-west-2",
 		EndpointURL: s3Mock.URL(),
 	}
@@ -772,7 +772,7 @@ func TestFetchS3Metadata_Success_ParameterPriorityOverBucketDetails(t *testing.T
 	defer s3Mock.Close()
 
 	// Bucket details with DIFFERENT endpoint
-	bucketDetails := &s3_utils.S3Bucket{
+	bucketDetails := &cloud.S3Bucket{
 		Region:      "us-east-1", // Different region
 		EndpointURL: "http://different-endpoint",
 		Programs:    []string{"test-program"},
@@ -1288,7 +1288,7 @@ func TestCustomEndpointResolver(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolver := &s3_utils.CustomEndpointResolver{Endpoint: tt.endpoint}
+			resolver := &cloud.CustomEndpointResolver{Endpoint: tt.endpoint}
 			endpoint, err := resolver.ResolveEndpoint(tt.service, tt.region)
 
 			if err != nil {
@@ -1375,7 +1375,7 @@ func TestS3URLParsing_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(tt.s3URL, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+			err := cloud.ValidateInputs(tt.s3URL, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 			if (err != nil) != tt.expectError {
 				t.Errorf("validateInputs() for %s error = %v, expectError %v", tt.description, err, tt.expectError)
 			}

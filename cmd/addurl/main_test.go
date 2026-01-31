@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/cloud"
+	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 )
 
@@ -114,6 +115,17 @@ remotes:
 	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
 	if _, err := os.Stat(lfsObject); err != nil {
 		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
+	}
+
+	drsObject, err := drsmap.DrsInfoFromOid(shaHex)
+	if err != nil {
+		t.Fatalf("read drs object: %v", err)
+	}
+	if len(drsObject.AccessMethods) == 0 {
+		t.Fatalf("expected access methods in drs object")
+	}
+	if got := drsObject.AccessMethods[0].AccessURL.URL; got != "s3://bucket/path/to/file.bin" {
+		t.Fatalf("unexpected access URL: %s", got)
 	}
 }
 

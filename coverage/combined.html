@@ -6122,14 +6122,14 @@ type HashInfo struct {
 }
 
 // UnmarshalJSON accepts both the DRS map-based schema and the array-of-checksums schema.
-func (h *HashInfo) UnmarshalJSON(data []byte) error <span class="cov8" title="32">{
+func (h *HashInfo) UnmarshalJSON(data []byte) error <span class="cov8" title="33">{
         if string(data) == "null" </span><span class="cov0" title="0">{
                 *h = HashInfo{}
                 return nil
         }</span>
 
-        <span class="cov8" title="32">var mapPayload map[string]string
-        if err := json.Unmarshal(data, &amp;mapPayload); err == nil </span><span class="cov8" title="31">{
+        <span class="cov8" title="33">var mapPayload map[string]string
+        if err := json.Unmarshal(data, &amp;mapPayload); err == nil </span><span class="cov8" title="32">{
                 *h = ConvertStringMapToHashInfo(mapPayload)
                 return nil
         }</span>
@@ -6143,20 +6143,20 @@ func (h *HashInfo) UnmarshalJSON(data []byte) error <span class="cov8" title="32
         <span class="cov0" title="0">return fmt.Errorf("unsupported HashInfo payload: %s", string(data))</span>
 }
 
-func ConvertStringMapToHashInfo(inputHashes map[string]string) HashInfo <span class="cov9" title="41">{
+func ConvertStringMapToHashInfo(inputHashes map[string]string) HashInfo <span class="cov9" title="42">{
         hashInfo := HashInfo{}
 
-        for key, value := range inputHashes </span><span class="cov10" title="52">{
+        for key, value := range inputHashes </span><span class="cov10" title="53">{
                 if !SupportedChecksums[key] </span><span class="cov4" title="4">{
                         continue</span> // Disregard unsupported types
                 }
                 // We use the string key directly in the switch statement.
-                <span class="cov9" title="48">switch key </span>{
+                <span class="cov9" title="49">switch key </span>{
                 case string(ChecksumTypeMD5):<span class="cov4" title="5">
                         hashInfo.MD5 = value</span>
                 case string(ChecksumTypeSHA1):<span class="cov2" title="2">
                         hashInfo.SHA = value</span> // Maps to SHA field
-                case string(ChecksumTypeSHA256):<span class="cov9" title="34">
+                case string(ChecksumTypeSHA256):<span class="cov9" title="35">
                         hashInfo.SHA256 = value</span>
                 case string(ChecksumTypeSHA512):<span class="cov2" title="2">
                         hashInfo.SHA512 = value</span>
@@ -6168,7 +6168,7 @@ func ConvertStringMapToHashInfo(inputHashes map[string]string) HashInfo <span cl
                 }
         }
 
-        <span class="cov9" title="41">return hashInfo</span>
+        <span class="cov9" title="42">return hashInfo</span>
 }
 
 // convertHashInfoToMap converts HashInfo struct to map[string]string
@@ -6195,14 +6195,14 @@ func ConvertHashInfoToMap(hashes HashInfo) map[string]string <span class="cov5" 
         <span class="cov5" title="7">return result</span>
 }
 
-func ConvertChecksumsToMap(checksums []Checksum) map[string]string <span class="cov6" title="9">{
+func ConvertChecksumsToMap(checksums []Checksum) map[string]string <span class="cov5" title="9">{
         result := make(map[string]string, len(checksums))
         for _, c := range checksums </span><span class="cov7" title="18">{
                 // Uses the Checksum's Type (e.g., "sha256") as the key
                 // and the Checksum's Checksum value as the map value.
                 result[string(c.Type)] = c.Checksum
         }</span>
-        <span class="cov6" title="9">return result</span>
+        <span class="cov5" title="9">return result</span>
 }
 
 // convertChecksumsToHashInfo is the main conversion logic needed for the structs.
@@ -6397,20 +6397,20 @@ type ObjectStore struct {
         Logger   *slog.Logger
 }
 
-func NewObjectStore(basePath string, logger *slog.Logger) *ObjectStore <span class="cov10" title="27">{
+func NewObjectStore(basePath string, logger *slog.Logger) *ObjectStore <span class="cov10" title="28">{
         return &amp;ObjectStore{
                 BasePath: basePath,
                 Logger:   logger,
         }
 }</span>
 
-func (s *ObjectStore) ObjectPath(oid string) (string, error) <span class="cov10" title="27">{
+func (s *ObjectStore) ObjectPath(oid string) (string, error) <span class="cov10" title="28">{
         // check that oid is a valid sha256 hash
         if len(oid) != 64 </span><span class="cov1" title="1">{
                 return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
         }</span>
 
-        <span class="cov9" title="26">return filepath.Join(s.BasePath, oid[:2], oid[2:4], oid), nil</span>
+        <span class="cov9" title="27">return filepath.Join(s.BasePath, oid[:2], oid[2:4], oid), nil</span>
 }
 
 func (s *ObjectStore) WriteObject(drsObj *DRSObject, oid string) error <span class="cov7" title="10">{
@@ -6433,23 +6433,23 @@ func (s *ObjectStore) WriteObject(drsObj *DRSObject, oid string) error <span cla
         <span class="cov7" title="10">return nil</span>
 }
 
-func (s *ObjectStore) ReadObject(oid string) (*DRSObject, error) <span class="cov6" title="7">{
+func (s *ObjectStore) ReadObject(oid string) (*DRSObject, error) <span class="cov6" title="8">{
         path, err := s.ObjectPath(oid)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov6" title="7">drsObjBytes, err := os.ReadFile(path)
+        <span class="cov6" title="8">drsObjBytes, err := os.ReadFile(path)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov6" title="7">var drsObject DRSObject
+        <span class="cov6" title="8">var drsObject DRSObject
         if err := sonic.ConfigFastest.Unmarshal(drsObjBytes, &amp;drsObject); err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
         }</span>
 
-        <span class="cov6" title="7">return &amp;drsObject, nil</span>
+        <span class="cov6" title="8">return &amp;drsObject, nil</span>
 }
 
 // getPendingObjects walks .git/drs/lfs/objects/ to find all pending records
@@ -6464,7 +6464,7 @@ func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) <span clas
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov5" title="5">if info.IsDir() </span><span class="cov4" title="3">{
+                <span class="cov5" title="5">if info.IsDir() </span><span class="cov3" title="3">{
                         return nil
                 }</span>
                 <span class="cov2" title="2">rel, err := filepath.Rel(objectsDir, path)
@@ -6502,14 +6502,14 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*DRSObject, error) <span 
                         logger.Error(fmt.Sprintf("Error accessing path %s: %v", path, err))
                         return err
                 }</span>
-                <span class="cov5" title="6">if info.IsDir() </span><span class="cov4" title="3">{
+                <span class="cov5" title="6">if info.IsDir() </span><span class="cov3" title="3">{
                         return nil
                 }</span>
-                <span class="cov4" title="3">rel, err := filepath.Rel(objectsDir, path)
+                <span class="cov3" title="3">rel, err := filepath.Rel(objectsDir, path)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov4" title="3">parts := strings.SplitN(rel, string(os.PathSeparator), 3)
+                <span class="cov3" title="3">parts := strings.SplitN(rel, string(os.PathSeparator), 3)
                 if len(parts) != 3 </span><span class="cov1" title="1">{
                         logger.Debug(fmt.Sprintf("Skipping malformed path: %s", path))
                         return nil
@@ -7261,7 +7261,7 @@ func DrsUUID(projectId string, hash string) string <span class="cov10" title="11
 }</span>
 
 // creates drsObject record from file
-func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov4" title="6">{
+func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov4" title="7">{
         return drsstore.ReadObject(projectdir.DRS_OBJS_PATH, oid)
 }</span>
 
@@ -7659,7 +7659,7 @@ func WriteObject(basePath string, drsObj *drs.DRSObject, oid string) error <span
         return store.WriteObject(drsObj, oid)
 }</span>
 
-func ReadObject(basePath string, oid string) (*drs.DRSObject, error) <span class="cov8" title="7">{
+func ReadObject(basePath string, oid string) (*drs.DRSObject, error) <span class="cov9" title="8">{
         store := drs.NewObjectStore(basePath, nil)
         return store.ReadObject(oid)
 }</span>

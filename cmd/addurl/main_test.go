@@ -55,7 +55,8 @@ remotes:
 		fmt.Fprintf(os.Stderr, "TestRunAddURL_WritesPointerAndLFSObject wrote mock config file %s\n", p)
 	}
 
-	resetStubs := stubAddURLDeps(t,
+	service := NewAddURLService()
+	resetStubs := stubAddURLDeps(t, service,
 		func(ctx context.Context, in cloud.S3ObjectParameters) (*cloud.S3Object, error) {
 			return &cloud.S3Object{
 				Bucket:      "bucket",
@@ -92,8 +93,8 @@ remotes:
 	oldwd := mustChdir(t, tempDir)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	if err := runAddURL(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
-		t.Fatalf("runAddURL error: %v", err)
+	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
+		t.Fatalf("service.Run error: %v", err)
 	}
 
 	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
@@ -123,23 +124,24 @@ remotes:
 
 func stubAddURLDeps(
 	t *testing.T,
+	service *AddURLService,
 	inspectFn func(context.Context, cloud.S3ObjectParameters) (*cloud.S3Object, error),
 	isTrackedFn func(string) (bool, error),
 	downloadFn func(context.Context, *cloud.S3Object, cloud.S3ObjectParameters, string) (string, string, error),
 ) func() {
 	t.Helper()
-	origInspect := inspectS3ForLFS
-	origIsTracked := isLFSTracked
-	origDownload := download
+	origInspect := service.inspectS3
+	origIsTracked := service.isLFSTracked
+	origDownload := service.download
 
-	inspectS3ForLFS = inspectFn
-	isLFSTracked = isTrackedFn
-	download = downloadFn
+	service.inspectS3 = inspectFn
+	service.isLFSTracked = isTrackedFn
+	service.download = downloadFn
 
 	return func() {
-		inspectS3ForLFS = origInspect
-		isLFSTracked = origIsTracked
-		download = origDownload
+		service.inspectS3 = origInspect
+		service.isLFSTracked = origIsTracked
+		service.download = origDownload
 	}
 }
 

@@ -1066,36 +1066,6 @@ func (cl *IndexDClient) GetIndexdRecordByDID(did string) (*OutputInfo, error) {
 	return record, nil
 }
 
-func (cl *IndexDClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	bucket := cl.BucketName
-	if bucket == "" {
-		return nil, fmt.Errorf("error: bucket name is empty in config file")
-	}
-
-	//TODO: support other storage backends
-	fileURL := fmt.Sprintf("s3://%s", filepath.Join(bucket, drsId, checksum))
-
-	authzStr, err := utils.ProjectToResource(cl.GetProjectId())
-	if err != nil {
-		return nil, err
-	}
-	authorizations := drs.Authorizations{
-		Value: authzStr,
-	}
-
-	// create DrsObj
-	DrsObj := drs.DRSObject{
-		Id:   drsId,
-		Name: fileName,
-		// TODO: ensure that we can retrieve the access method during submission (happens in transfer)
-		AccessMethods: []drs.AccessMethod{{Type: "s3", AccessURL: drs.AccessURL{URL: fileURL}, Authorizations: &authorizations}},
-		Checksums:     hash.HashInfo{SHA256: checksum},
-		Size:          size,
-	}
-
-	return &DrsObj, nil
-}
-
 // Helper function to get indexd record by DID (similar to existing pattern in DeleteIndexdRecord)
 func (cl *IndexDClient) getIndexdRecordByDID(did string) (*OutputInfo, error) {
 	url := fmt.Sprintf("%s/index/%s", cl.Base.String(), did)

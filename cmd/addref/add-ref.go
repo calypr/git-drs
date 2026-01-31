@@ -8,7 +8,7 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
+	drslfs "github.com/calypr/git-drs/drsmap/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +62,7 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		err = drsmap.CreateLfsPointer(obj, dstPath)
+		err = drslfs.CreateLfsPointer(obj, dstPath)
 		return err
 	},
 }

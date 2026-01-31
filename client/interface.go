@@ -53,9 +53,6 @@ type DRSClient interface {
 	// Fields allowed: URLs, authz, name, version, description
 	UpdateRecord(updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error)
 
-	// Create a DRS object given file info
-	BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error)
-
 	// Add an S3 URL to an existing indexd record
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (cloud.S3Meta, error)
 }

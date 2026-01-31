@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,15 +12,12 @@ import (
 
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	drslfs "github.com/calypr/git-drs/drsmap/lfs"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
-)
-
-var (
-	inspectS3ForLFS = cloud.InspectS3ForLFS
-	isLFSTracked    = lfs.IsLFSTracked
 )
 
 var Cmd = NewCommand()
@@ -74,57 +72,157 @@ func addFlags(cmd *cobra.Command) {
 }
 
 func runAddURL(cmd *cobra.Command, args []string) (err error) {
+	return NewAddURLService().Run(cmd, args)
+}
+
+// download uses cloud.AgentFetchReader to download the S3 object, returning
+// the computed SHA256 and the path to the temporary downloaded file.
+// The caller is responsible for moving/deleting the temporary file.
+// we include this wrapper function to allow mocking in tests.
+var download = func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error) {
+	return cloud.Download(ctx, info, input, lfsRoot)
+}
+
+type AddURLService struct {
+	newLogger    func(string, bool) (*slog.Logger, error)
+	inspectS3    func(ctx context.Context, input cloud.S3ObjectParameters) (*cloud.S3Object, error)
+	isLFSTracked func(path string) (bool, error)
+	getGitRoots  func(ctx context.Context) (string, string, error)
+	gitLFSTrack  func(ctx context.Context, path string) (bool, error)
+	loadConfig   func() (*config.Config, error)
+	download     func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error)
+}
+
+func NewAddURLService() *AddURLService {
+	return &AddURLService{
+		newLogger:    drslog.NewLogger,
+		inspectS3:    cloud.InspectS3ForLFS,
+		isLFSTracked: lfs.IsLFSTracked,
+		getGitRoots:  lfs.GetGitRootDirectories,
+		gitLFSTrack:  lfs.GitLFSTrackReadOnly,
+		loadConfig:   config.LoadConfig,
+		download:     download,
+	}
+}
+
+func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	logger, err := drslog.NewLogger("", false)
-	if err != nil {
+	if _, err := s.newLogger("", false); err != nil {
 		return fmt.Errorf("error creating logger: %v", err)
 	}
 
+	input, err := parseAddURLInput(cmd, args)
+	if err != nil {
+		return err
+	}
+
+	s3Info, err := s.inspectS3(ctx, input.s3Params)
+	if err != nil {
+		return err
+	}
+
+	isTracked, err := s.isLFSTracked(input.path)
+	if err != nil {
+		return fmt.Errorf("check LFS tracking for %s: %w", input.path, err)
+	}
+
+	gitCommonDir, lfsRoot, err := s.getGitRoots(ctx)
+	if err != nil {
+		return fmt.Errorf("get git root directories: %w", err)
+	}
+
+	if err := printResolvedInfo(cmd, gitCommonDir, lfsRoot, s3Info, input.path, isTracked, input.sha256); err != nil {
+		return err
+	}
+
+	oid, err := s.ensureLFSObject(ctx, s3Info, input, lfsRoot)
+	if err != nil {
+		return err
+	}
+
+	if err := writePointerFile(input.path, oid, s3Info.SizeBytes); err != nil {
+		return err
+	}
+
+	if err := maybeTrackLFS(ctx, s.gitLFSTrack, input.path, isTracked); err != nil {
+		return err
+	}
+
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return fmt.Errorf("error getting config: %v", err)
+	}
+
+	remote, err := cfg.GetDefaultRemote()
+	if err != nil {
+		return err
+	}
+
+	remoteConfig := cfg.GetRemote(remote)
+	if remoteConfig == nil {
+		return fmt.Errorf("error getting remote configuration for %s", remote)
+	}
+
+	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+
+	file := drslfs.LfsFileInfo{
+		Name: input.path,
+		Size: s3Info.SizeBytes,
+		Oid:  oid,
+	}
+	if _, err := drsmap.WriteDrsFile(builder, file, &input.s3URL); err != nil {
+		return fmt.Errorf("error WriteDrsFile: %v", err)
+	}
+
+	return nil
+}
+
+type addURLInput struct {
+	s3URL    string
+	path     string
+	sha256   string
+	s3Params cloud.S3ObjectParameters
+}
+
+func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
 	s3URL := args[0]
 
-	// Determine path: use provided optional arg, otherwise derive from URL path
-	var pathArg string
-	if len(args) == 2 {
-		pathArg = args[1]
-	} else {
-		u, perr := url.Parse(s3URL)
-		if perr != nil {
-			return perr
-		}
-		pathArg = strings.TrimPrefix(u.Path, "/")
+	pathArg, err := resolvePathArg(s3URL, args)
+	if err != nil {
+		return addURLInput{}, err
 	}
 
-	sha256Param, ferr := cmd.Flags().GetString("sha256")
-	if ferr != nil {
-		return fmt.Errorf("read flag sha256: %w", ferr)
+	sha256Param, err := cmd.Flags().GetString("sha256")
+	if err != nil {
+		return addURLInput{}, fmt.Errorf("read flag sha256: %w", err)
 	}
 
-	awsKey, ferr := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
-	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", cloud.AWS_KEY_FLAG_NAME, ferr)
+	awsKey, err := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
+	if err != nil {
+		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_KEY_FLAG_NAME, err)
 	}
-	awsSecret, ferr := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
-	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", cloud.AWS_SECRET_FLAG_NAME, ferr)
+	awsSecret, err := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
+	if err != nil {
+		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_SECRET_FLAG_NAME, err)
 	}
-	awsRegion, ferr := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
-	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", cloud.AWS_REGION_FLAG_NAME, ferr)
+	awsRegion, err := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
+	if err != nil {
+		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_REGION_FLAG_NAME, err)
 	}
-	awsEndpoint, ferr := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
-	if ferr != nil {
-		return fmt.Errorf("read flag %s: %w", cloud.AWS_ENDPOINT_URL_FLAG_NAME, ferr)
+	awsEndpoint, err := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
+	if err != nil {
+		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_ENDPOINT_URL_FLAG_NAME, err)
 	}
 
 	if awsKey == "" || awsSecret == "" {
-		return errors.New("AWS credentials must be provided via flags or environment variables")
+		return addURLInput{}, errors.New("AWS credentials must be provided via flags or environment variables")
 	}
 	if awsRegion == "" {
-		return errors.New("AWS region must be provided via flag or environment variable")
+		return addURLInput{}, errors.New("AWS region must be provided via flag or environment variable")
 	}
 
 	s3Input := cloud.S3ObjectParameters{
@@ -137,24 +235,26 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 		DestinationPath: pathArg,
 	}
 
-	// 1) inspect S3 object, get metadata via HEAD
-	s3Info, err := inspectS3ForLFS(ctx, s3Input)
-	if err != nil {
-		return err
-	}
+	return addURLInput{
+		s3URL:    s3URL,
+		path:     pathArg,
+		sha256:   sha256Param,
+		s3Params: s3Input,
+	}, nil
+}
 
-	// check if pathArg is already tracked by LFS
-	isLFSTracked, err := isLFSTracked(pathArg)
-	if err != nil {
-		return fmt.Errorf("check LFS tracking for %s: %w", pathArg, err)
+func resolvePathArg(s3URL string, args []string) (string, error) {
+	if len(args) == 2 {
+		return args[1], nil
 	}
+	u, err := url.Parse(s3URL)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(u.Path, "/"), nil
+}
 
-	// get Git LFS directories
-	gitCommonDir, lfsRoot, err := lfs.GetGitRootDirectories(ctx)
-	if err != nil {
-		return fmt.Errorf("get git root directories: %w", err)
-	}
-	// print resolved info
+func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, s3Info *cloud.S3Object, pathArg string, isTracked bool, sha256 string) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
 Resolved Git LFS s3Info
 ---------------------
@@ -188,45 +288,48 @@ sha256 param  : %s
 		s3Info.ETag,
 		s3Info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
 		pathArg,
-		isLFSTracked,
-		sha256Param,
+		isTracked,
+		sha256,
 	); err != nil {
 		return fmt.Errorf("print resolved s3Info: %w", err)
 	}
+	return nil
+}
 
-	if sha256Param == "" {
-
-		computedSHA, tmpObj, err2 := download(ctx, s3Info, s3Input, lfsRoot)
-		if err2 != nil {
-			return err2
-		}
-
-		// 4) move tmp object to LFS storage
-		oid := computedSHA
-		dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
-		dstObj := filepath.Join(dstDir, oid)
-
-		if err = os.MkdirAll(dstDir, 0755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", dstDir, err)
-		}
-
-		if err = os.Rename(tmpObj, dstObj); err != nil {
-			return fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
-		}
-
-		if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil {
-			return fmt.Errorf("stderr write: %w", err)
-		}
-		sha256Param = computedSHA
+func (s *AddURLService) ensureLFSObject(ctx context.Context, s3Info *cloud.S3Object, input addURLInput, lfsRoot string) (string, error) {
+	if input.sha256 != "" {
+		return input.sha256, nil
 	}
 
-	oid := sha256Param
-	// 5) write pointer file in working tree
+	computedSHA, tmpObj, err := s.download(ctx, s3Info, input.s3Params, lfsRoot)
+	if err != nil {
+		return "", err
+	}
+
+	oid := computedSHA
+	dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
+	dstObj := filepath.Join(dstDir, oid)
+
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return "", fmt.Errorf("mkdir %s: %w", dstDir, err)
+	}
+
+	if err := os.Rename(tmpObj, dstObj); err != nil {
+		return "", fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
+	}
+
+	if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil {
+		return "", fmt.Errorf("stderr write: %w", err)
+	}
+
+	return computedSHA, nil
+}
+
+func writePointerFile(pathArg, oid string, sizeBytes int64) error {
 	pointer := fmt.Sprintf(
 		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		oid, s3Info.SizeBytes,
+		oid, sizeBytes,
 	)
-	// write pointer file to working tree pathArg
 	if pathArg == "" {
 		return fmt.Errorf("empty worktree path")
 	}
@@ -237,58 +340,26 @@ sha256 param  : %s
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
-	if err = os.WriteFile(safePath, []byte(pointer), 0644); err != nil {
+	if err := os.WriteFile(safePath, []byte(pointer), 0644); err != nil {
 		return fmt.Errorf("write %s: %w", safePath, err)
 	}
 
 	if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil {
 		return fmt.Errorf("stderr write: %w", err)
 	}
-	if !isLFSTracked {
-		// git lfs track
-		_, err := lfs.GitLFSTrackReadOnly(ctx, pathArg)
-		if err != nil {
-			return fmt.Errorf("git lfs track %s: %w", pathArg, err)
-		}
-
-		if _, err := fmt.Fprintf(os.Stderr, "Info: Added to Git LFS. Remember to `git add %s` and `git commit ...`", pathArg); err != nil {
-			return fmt.Errorf("stderr write: %w", err)
-		}
-	}
-
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("error getting config: %v", err)
-	}
-
-	remote, err := cfg.GetDefaultRemote()
-
-	cli, err := cfg.GetRemoteClient(remote, logger)
-	if err != nil {
-		cwd, errCwd := os.Getwd()
-		if errCwd != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "os.Getwd: %v\n", errCwd)
-			os.Exit(1)
-		}
-		return fmt.Errorf("error GetRemoteClient: remote: %s cwd: %s err: %v", remote, cwd, err)
-	}
-	file := drsmap.LfsFileInfo{
-		Name: pathArg,
-		Size: s3Info.SizeBytes,
-		Oid:  oid,
-	}
-	_, err = drsmap.WriteDrsFile(cli, file, cli.GetProjectId(), &s3URL)
-	if err != nil {
-		return fmt.Errorf("error WriteDrsFile: %v", err)
-	}
-
 	return nil
 }
 
-// download uses cloud.AgentFetchReader to download the S3 object, returning
-// the computed SHA256 and the path to the temporary downloaded file.
-// The caller is responsible for moving/deleting the temporary file.
-// we include this wrapper function to allow mocking in tests.
-var download = func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error) {
-	return cloud.Download(ctx, info, input, lfsRoot)
+func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string) (bool, error), pathArg string, isTracked bool) error {
+	if isTracked {
+		return nil
+	}
+	if _, err := gitLFSTrack(ctx, pathArg); err != nil {
+		return fmt.Errorf("git lfs track %s: %w", pathArg, err)
+	}
+
+	if _, err := fmt.Fprintf(os.Stderr, "Info: Added to Git LFS. Remember to `git add %s` and `git commit ...`", pathArg); err != nil {
+		return fmt.Errorf("stderr write: %w", err)
+	}
+	return nil
 }

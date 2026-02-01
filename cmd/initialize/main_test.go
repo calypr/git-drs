@@ -32,6 +32,28 @@ func TestInstallPrePushHook(t *testing.T) {
 	}
 }
 
+func TestInstallPreCommitHook(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	logger := drslog.NewNoOpLogger()
+
+	if err := installPreCommitHook(logger); err != nil {
+		t.Fatalf("installPreCommitHook error: %v", err)
+	}
+
+	hookPath := filepath.Join(".git", "hooks", "pre-commit")
+	content, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("read hook: %v", err)
+	}
+	if !strings.Contains(string(content), "git drs precommit") {
+		t.Fatalf("expected hook to contain git drs precommit")
+	}
+
+	if err := installPreCommitHook(logger); err != nil {
+		t.Fatalf("installPreCommitHook second call error: %v", err)
+	}
+}
+
 func TestInitGitConfig(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	transfers = 2

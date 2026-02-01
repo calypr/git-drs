@@ -105,7 +105,7 @@
 				
 				<option value="file24">github.com/calypr/git-drs/cmd/listconfig/main.go (6.2%)</option>
 				
-				<option value="file25">github.com/calypr/git-drs/cmd/precommit/main.go (50.2%)</option>
+				<option value="file25">github.com/calypr/git-drs/cmd/precommit/main.go (32.8%)</option>
 				
 				<option value="file26">github.com/calypr/git-drs/cmd/prepush/main.go (71.9%)</option>
 				
@@ -4752,31 +4752,31 @@ func run(ctx context.Context) error <span class="cov0" title="0">{
         <span class="cov0" title="0">return nil</span>
 }
 
-func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) error <span class="cov4" title="2">{
+func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) error <span class="cov6" title="2">{
         oid, isLFS, err := stagedLFSOID(ctx, path)
         if err != nil </span><span class="cov0" title="0">{
                 // If file isn't in index, ignore.
                 return nil
         }</span>
-        <span class="cov4" title="2">if !isLFS </span><span class="cov0" title="0">{
+        <span class="cov6" title="2">if !isLFS </span><span class="cov1" title="1">{
                 // Out of scope.
                 return nil
         }</span>
 
-        <span class="cov4" title="2">pathFile := pathEntryFile(pathsDir, path)
+        <span class="cov1" title="1">pathFile := pathEntryFile(pathsDir, path)
 
         // Load previous path entry if it exists to detect content changes.
         var prev PathEntry
         prevExists := false
-        if b, err := os.ReadFile(pathFile); err == nil </span><span class="cov1" title="1">{
+        if b, err := os.ReadFile(pathFile); err == nil </span><span class="cov0" title="0">{
                 _ = json.Unmarshal(b, &amp;prev)
-                if prev.Path != "" &amp;&amp; prev.LFSOID != "" </span><span class="cov1" title="1">{
+                if prev.Path != "" &amp;&amp; prev.LFSOID != "" </span><span class="cov0" title="0">{
                         prevExists = true
                 }</span>
         }
 
         // Write/update path entry.
-        <span class="cov4" title="2">if err := writeJSONAtomic(pathFile, PathEntry{
+        <span class="cov1" title="1">if err := writeJSONAtomic(pathFile, PathEntry{
                 Path:      path,
                 LFSOID:    oid,
                 UpdatedAt: now,
@@ -4785,20 +4785,20 @@ func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) erro
         }</span>
 
         // Update OID entry for new oid: add path.
-        <span class="cov4" title="2">contentChanged := prevExists &amp;&amp; prev.LFSOID != oid
+        <span class="cov1" title="1">contentChanged := prevExists &amp;&amp; prev.LFSOID != oid
         if err := oidAddOrReplacePath(oidsDir, oid, "", path, now, contentChanged); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
         // If content changed, remove path from the *old* oid entry (best effort).
-        <span class="cov4" title="2">if contentChanged </span><span class="cov1" title="1">{
+        <span class="cov1" title="1">if contentChanged </span><span class="cov0" title="0">{
                 _ = oidRemovePath(oidsDir, prev.LFSOID, path, now)
         }</span>
 
-        <span class="cov4" title="2">return nil</span>
+        <span class="cov1" title="1">return nil</span>
 }
 
-func handleDelete(ctx context.Context, pathsDir, oidsDir, tombsDir, path, now string) error <span class="cov1" title="1">{
+func handleDelete(ctx context.Context, pathsDir, oidsDir, tombsDir, path, now string) error <span class="cov0" title="0">{
         // Only consider deletion if it was previously an LFS entry (cache-driven).
         pathFile := pathEntryFile(pathsDir, path)
         b, err := os.ReadFile(pathFile)
@@ -4806,22 +4806,22 @@ func handleDelete(ctx context.Context, pathsDir, oidsDir, tombsDir, path, now st
                 // nothing to do
                 return nil
         }</span>
-        <span class="cov1" title="1">var pe PathEntry
+        <span class="cov0" title="0">var pe PathEntry
         if err := json.Unmarshal(b, &amp;pe); err != nil </span><span class="cov0" title="0">{
                 // corrupted cache; remove it
                 _ = os.Remove(pathFile)
                 return nil
         }</span>
         // Remove path entry.
-        <span class="cov1" title="1">_ = os.Remove(pathFile)
+        <span class="cov0" title="0">_ = os.Remove(pathFile)
 
         // Remove this path from the old oid entry (best effort).
-        if pe.LFSOID != "" </span><span class="cov1" title="1">{
+        if pe.LFSOID != "" </span><span class="cov0" title="0">{
                 _ = oidRemovePath(oidsDir, pe.LFSOID, path, now)
         }</span>
 
         // Optional tombstone.
-        <span class="cov1" title="1">tombFile := filepath.Join(tombsDir, encodePath(path)+".json")
+        <span class="cov0" title="0">tombFile := filepath.Join(tombsDir, encodePath(path)+".json")
         _ = writeJSONAtomic(tombFile, map[string]string{
                 "path":       path,
                 "deleted_at": now,
@@ -4837,23 +4837,23 @@ func handleDelete(ctx context.Context, pathsDir, oidsDir, tombsDir, path, now st
 //        M&lt;TAB&gt;path
 //        D&lt;TAB&gt;path
 //        R100&lt;TAB&gt;old&lt;TAB&gt;new
-func stagedChanges(ctx context.Context) ([]Change, error) <span class="cov1" title="1">{
+func stagedChanges(ctx context.Context) ([]Change, error) <span class="cov0" title="0">{
         out, err := git(ctx, "diff", "--cached", "--name-status", "-M")
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">var changes []Change
+        <span class="cov0" title="0">var changes []Change
         sc := bufio.NewScanner(bytes.NewReader(out))
-        for sc.Scan() </span><span class="cov1" title="1">{
+        for sc.Scan() </span><span class="cov0" title="0">{
                 line := sc.Text()
                 if strings.TrimSpace(line) == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov1" title="1">parts := strings.Split(line, "\t")
+                <span class="cov0" title="0">parts := strings.Split(line, "\t")
                 if len(parts) &lt; 2 </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov1" title="1">status := parts[0]
+                <span class="cov0" title="0">status := parts[0]
                 switch </span>{
                 case status == "A":<span class="cov0" title="0">
                         changes = append(changes, Change{Kind: KindAdd, NewPath: parts[1], Status: status})</span>
@@ -4861,21 +4861,21 @@ func stagedChanges(ctx context.Context) ([]Change, error) <span class="cov1" tit
                         changes = append(changes, Change{Kind: KindModify, NewPath: parts[1], Status: status})</span>
                 case status == "D":<span class="cov0" title="0">
                         changes = append(changes, Change{Kind: KindDelete, NewPath: parts[1], Status: status})</span>
-                case strings.HasPrefix(status, "R") &amp;&amp; len(parts) &gt;= 3:<span class="cov1" title="1">
+                case strings.HasPrefix(status, "R") &amp;&amp; len(parts) &gt;= 3:<span class="cov0" title="0">
                         changes = append(changes, Change{Kind: KindRename, OldPath: parts[1], NewPath: parts[2], Status: status})</span>
                 default:<span class="cov0" title="0"></span>
                         // ignore other statuses (C, T, U, etc) for this reference impl
                 }
         }
-        <span class="cov1" title="1">if err := sc.Err(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if err := sc.Err(); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">return changes, nil</span>
+        <span class="cov0" title="0">return changes, nil</span>
 }
 
 // stagedLFSOID returns (oid, isLFS, err) based on STAGED content.
 // isLFS is true only if the staged file is a valid LFS pointer with an oid sha256 line.
-func stagedLFSOID(ctx context.Context, path string) (string, bool, error) <span class="cov7" title="4">{
+func stagedLFSOID(ctx context.Context, path string) (string, bool, error) <span class="cov6" title="2">{
         out, err := git(ctx, "show", ":"+path)
         if err != nil </span><span class="cov0" title="0">{
                 // path may not exist in index (deleted/intent-to-add weirdness)
@@ -4884,34 +4884,34 @@ func stagedLFSOID(ctx context.Context, path string) (string, bool, error) <span 
 
         // Fast parse: look for spec line and oid line near top.
         // LFS pointer files are small; scanning full content is fine.
-        <span class="cov7" title="4">var hasSpec bool
+        <span class="cov6" title="2">var hasSpec bool
         var oid string
 
         sc := bufio.NewScanner(bytes.NewReader(out))
-        for sc.Scan() </span><span class="cov10" title="7">{
+        for sc.Scan() </span><span class="cov10" title="3">{
                 line := sc.Text()
-                if line == lfsSpecLine </span><span class="cov6" title="3">{
+                if line == lfsSpecLine </span><span class="cov1" title="1">{
                         hasSpec = true
                         continue</span>
                 }
-                <span class="cov7" title="4">if strings.HasPrefix(line, "oid sha256:") </span><span class="cov6" title="3">{
+                <span class="cov6" title="2">if strings.HasPrefix(line, "oid sha256:") </span><span class="cov1" title="1">{
                         hex := strings.TrimPrefix(line, "oid sha256:")
                         hex = strings.TrimSpace(hex)
-                        if hex != "" </span><span class="cov6" title="3">{
+                        if hex != "" </span><span class="cov1" title="1">{
                                 oid = "sha256:" + hex
                         }</span>
                         // keep scanning a bit in case spec is below (rare), but we can break once both are found.
                 }
                 // pointer usually has only a few lines; stop early after 10 lines
-                <span class="cov7" title="4">if hasSpec &amp;&amp; oid != "" </span><span class="cov6" title="3">{
+                <span class="cov6" title="2">if hasSpec &amp;&amp; oid != "" </span><span class="cov1" title="1">{
                         break</span>
                 }
         }
-        <span class="cov7" title="4">if err := sc.Err(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov6" title="2">if err := sc.Err(); err != nil </span><span class="cov0" title="0">{
                 return "", false, err
         }</span>
 
-        <span class="cov7" title="4">if hasSpec &amp;&amp; oid != "" </span><span class="cov6" title="3">{
+        <span class="cov6" title="2">if hasSpec &amp;&amp; oid != "" </span><span class="cov1" title="1">{
                 return oid, true, nil
         }</span>
         <span class="cov1" title="1">return "", false, nil</span>
@@ -4938,7 +4938,7 @@ func gitRevParseGitDir(ctx context.Context) (string, error) <span class="cov0" t
         <span class="cov0" title="0">return gitDir, nil</span>
 }
 
-func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov8" title="5">{
+func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov6" title="2">{
         cmd := exec.CommandContext(ctx, "git", args...)
         cmd.Env = os.Environ()
         var stdout, stderr bytes.Buffer
@@ -4952,21 +4952,21 @@ func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov8"
                 }</span>
                 <span class="cov0" title="0">return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)</span>
         }
-        <span class="cov8" title="5">return stdout.Bytes(), nil</span>
+        <span class="cov6" title="2">return stdout.Bytes(), nil</span>
 }
 
 // pathEntryFile maps a repo-relative path to a cache file location.
 // We keep a deterministic encoding so any path maps to exactly one file.
-func pathEntryFile(pathsDir, path string) string <span class="cov8" title="5">{
+func pathEntryFile(pathsDir, path string) string <span class="cov10" title="3">{
         return filepath.Join(pathsDir, encodePath(path)+".json")
 }</span>
 
-func encodePath(path string) string <span class="cov10" title="7">{
+func encodePath(path string) string <span class="cov10" title="3">{
         // base64url encoding of the UTF-8 path string (no padding) is simple and safe.
         return base64.RawURLEncoding.EncodeToString([]byte(path))
 }</span>
 
-func oidEntryFile(oidsDir, oid string) string <span class="cov10" title="7">{
+func oidEntryFile(oidsDir, oid string) string <span class="cov6" title="2">{
         // OID contains ":"; make it filesystem safe but still human readable.
         // Use a stable transform; here: sha256 of oid string to avoid path length issues.
         sum := sha256.Sum256([]byte(oid))
@@ -4979,7 +4979,7 @@ func oidEntryFile(oidsDir, oid string) string <span class="cov10" title="7">{
 // - if oldPath != "" and present, replaces it with newPath
 // - sets ContentChange flag if requested (ORed into existing flag)
 // - preserves existing s3_url hint
-func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChanged bool) error <span class="cov4" title="2">{
+func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChanged bool) error <span class="cov1" title="1">{
         f := oidEntryFile(oidsDir, oid)
 
         entry := OIDEntry{
@@ -4993,44 +4993,44 @@ func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChan
                 entry.LFSOID = oid
         }</span>
 
-        <span class="cov4" title="2">paths := make(map[string]struct{}, len(entry.Paths)+1)
+        <span class="cov1" title="1">paths := make(map[string]struct{}, len(entry.Paths)+1)
         for _, p := range entry.Paths </span><span class="cov0" title="0">{
                 paths[p] = struct{}{}
         }</span>
 
-        <span class="cov4" title="2">if oldPath != "" </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if oldPath != "" </span><span class="cov0" title="0">{
                 delete(paths, oldPath)
         }</span>
-        <span class="cov4" title="2">if newPath != "" </span><span class="cov4" title="2">{
+        <span class="cov1" title="1">if newPath != "" </span><span class="cov1" title="1">{
                 paths[newPath] = struct{}{}
         }</span>
 
-        <span class="cov4" title="2">entry.Paths = keysSorted(paths)
+        <span class="cov1" title="1">entry.Paths = keysSorted(paths)
         entry.UpdatedAt = now
         entry.ContentChange = entry.ContentChange || contentChanged
 
         return writeJSONAtomic(f, entry)</span>
 }
 
-func oidRemovePath(oidsDir, oid, path, now string) error <span class="cov4" title="2">{
+func oidRemovePath(oidsDir, oid, path, now string) error <span class="cov0" title="0">{
         f := oidEntryFile(oidsDir, oid)
 
         b, err := os.ReadFile(f)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov4" title="2">var entry OIDEntry
+        <span class="cov0" title="0">var entry OIDEntry
         if err := json.Unmarshal(b, &amp;entry); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov4" title="2">paths := make(map[string]struct{}, len(entry.Paths))
-        for _, p := range entry.Paths </span><span class="cov4" title="2">{
-                if p == path </span><span class="cov4" title="2">{
+        <span class="cov0" title="0">paths := make(map[string]struct{}, len(entry.Paths))
+        for _, p := range entry.Paths </span><span class="cov0" title="0">{
+                if p == path </span><span class="cov0" title="0">{
                         continue</span>
                 }
                 <span class="cov0" title="0">paths[p] = struct{}{}</span>
         }
-        <span class="cov4" title="2">entry.Paths = keysSorted(paths)
+        <span class="cov0" title="0">entry.Paths = keysSorted(paths)
         entry.UpdatedAt = now
 
         // If no paths remain, keep the file (it may still hold s3_url hint) or delete it.
@@ -5040,45 +5040,45 @@ func oidRemovePath(oidsDir, oid, path, now string) error <span class="cov4" titl
         return writeJSONAtomic(f, entry)</span>
 }
 
-func keysSorted(m map[string]struct{}) []string <span class="cov7" title="4">{
+func keysSorted(m map[string]struct{}) []string <span class="cov1" title="1">{
         out := make([]string, 0, len(m))
-        for k := range m </span><span class="cov4" title="2">{
+        for k := range m </span><span class="cov1" title="1">{
                 out = append(out, k)
         }</span>
-        <span class="cov7" title="4">sort.Strings(out)
+        <span class="cov1" title="1">sort.Strings(out)
         return out</span>
 }
 
 // writeJSONAtomic writes JSON to a temp file then renames it into place.
 // This avoids partially written cache files if the process is interrupted.
-func writeJSONAtomic(path string, v any) error <span class="cov10" title="7">{
+func writeJSONAtomic(path string, v any) error <span class="cov6" title="2">{
         dir := filepath.Dir(path)
         if err := os.MkdirAll(dir, 0o755); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov10" title="7">tmp := path + ".tmp"
+        <span class="cov6" title="2">tmp := path + ".tmp"
         f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov10" title="7">defer func() </span><span class="cov10" title="7">{ _ = f.Close() }</span>()
+        <span class="cov6" title="2">defer func() </span><span class="cov6" title="2">{ _ = f.Close() }</span>()
 
-        <span class="cov10" title="7">enc := json.NewEncoder(f)
+        <span class="cov6" title="2">enc := json.NewEncoder(f)
         enc.SetIndent("", "  ")
         if err := enc.Encode(v); err != nil </span><span class="cov0" title="0">{
                 _ = os.Remove(tmp)
                 return err
         }</span>
-        <span class="cov10" title="7">if err := f.Sync(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov6" title="2">if err := f.Sync(); err != nil </span><span class="cov0" title="0">{
                 _ = os.Remove(tmp)
                 return err
         }</span>
-        <span class="cov10" title="7">if err := f.Close(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov6" title="2">if err := f.Close(); err != nil </span><span class="cov0" title="0">{
                 _ = os.Remove(tmp)
                 return err
         }</span>
-        <span class="cov10" title="7">return os.Rename(tmp, path)</span>
+        <span class="cov6" title="2">return os.Rename(tmp, path)</span>
 }
 
 func moveFileBestEffort(src, dst string) error <span class="cov0" title="0">{

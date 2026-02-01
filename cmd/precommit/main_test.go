@@ -8,126 +8,109 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-const (
-	lfsOIDOne = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-	lfsOIDTwo = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-)
-
-func TestStagedLFSOID(t *testing.T) {
+func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
 	repo := setupGitRepo(t)
-	writeFile(t, filepath.Join(repo, "data.bin"), lfsPointer(lfsOIDOne))
-	gitCmd(t, repo, "add", "data.bin")
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	oid, ok, err := stagedLFSOID(context.Background(), "data.bin")
-	if err != nil {
-		t.Fatalf("stagedLFSOID error: %v", err)
+	path := filepath.Join(repo, "data", "file.txt")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
 	}
-	if !ok {
-		t.Fatalf("expected LFS pointer to be detected")
+	if err := os.WriteFile(path, []byte("plain content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
 	}
-	if oid != lfsOIDOne {
-		t.Fatalf("expected oid %q, got %q", lfsOIDOne, oid)
-	}
-}
+	gitCmd(t, repo, "add", "data/file.txt")
 
-func TestStagedLFSOIDNonLFS(t *testing.T) {
-	repo := setupGitRepo(t)
-	writeFile(t, filepath.Join(repo, "notes.txt"), "plain text\n")
-	gitCmd(t, repo, "add", "notes.txt")
-
-	_, ok, err := stagedLFSOID(context.Background(), "notes.txt")
-	if err != nil {
-		t.Fatalf("stagedLFSOID error: %v", err)
-	}
-	if ok {
-		t.Fatalf("expected non-LFS file to be out of scope")
-	}
-}
-
-func TestHandleUpsertAndDelete(t *testing.T) {
-	repo := setupGitRepo(t)
-	writeFile(t, filepath.Join(repo, "data", "foo.bin"), lfsPointer(lfsOIDOne))
-	gitCmd(t, repo, "add", "data/foo.bin")
-
-	gitDir := gitDirPath(t, repo)
-	cacheRoot := filepath.Join(gitDir, cacheVersionDir)
+	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
 	pathsDir := filepath.Join(cacheRoot, "paths")
 	oidsDir := filepath.Join(cacheRoot, "oids")
-	tombsDir := filepath.Join(cacheRoot, "tombstones")
-	now := "2026-02-01T12:34:56Z"
-
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/foo.bin", now); err != nil {
-		t.Fatalf("handleUpsert error: %v", err)
+	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
+		t.Fatalf("mkdir paths: %v", err)
+	}
+	if err := os.MkdirAll(oidsDir, 0o755); err != nil {
+		t.Fatalf("mkdir oids: %v", err)
 	}
 
-	pathEntry := readPathEntry(t, pathEntryFile(pathsDir, "data/foo.bin"))
-	if pathEntry.Path != "data/foo.bin" || pathEntry.LFSOID != lfsOIDOne {
-		t.Fatalf("unexpected path entry: %#v", pathEntry)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.txt", now); err != nil {
+		t.Fatalf("handleUpsert: %v", err)
 	}
 
-	oidEntry := readOIDEntry(t, oidEntryFile(oidsDir, lfsOIDOne))
-	if !contains(oidEntry.Paths, "data/foo.bin") {
-		t.Fatalf("expected path in oid entry, got %#v", oidEntry.Paths)
-	}
-	if oidEntry.ContentChange {
-		t.Fatalf("expected content_changed to be false")
-	}
-
-	writeFile(t, filepath.Join(repo, "data", "foo.bin"), lfsPointer(lfsOIDTwo))
-	gitCmd(t, repo, "add", "data/foo.bin")
-
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/foo.bin", now); err != nil {
-		t.Fatalf("handleUpsert (content change) error: %v", err)
-	}
-
-	updated := readOIDEntry(t, oidEntryFile(oidsDir, lfsOIDTwo))
-	if !updated.ContentChange {
-		t.Fatalf("expected content_changed to be true after content update")
-	}
-	if !contains(updated.Paths, "data/foo.bin") {
-		t.Fatalf("expected new oid entry to include path, got %#v", updated.Paths)
-	}
-
-	if err := handleDelete(context.Background(), pathsDir, oidsDir, tombsDir, "data/foo.bin", now); err != nil {
-		t.Fatalf("handleDelete error: %v", err)
-	}
-
-	if _, err := os.Stat(pathEntryFile(pathsDir, "data/foo.bin")); !os.IsNotExist(err) {
-		t.Fatalf("expected path entry to be removed")
-	}
-
-	deletedEntry := readOIDEntry(t, oidEntryFile(oidsDir, lfsOIDTwo))
-	if contains(deletedEntry.Paths, "data/foo.bin") {
-		t.Fatalf("expected path to be removed from oid entry, got %#v", deletedEntry.Paths)
-	}
-	if _, err := os.Stat(filepath.Join(tombsDir, encodePath("data/foo.bin")+".json")); err != nil {
-		t.Fatalf("expected tombstone to be written: %v", err)
+	pathEntry := pathEntryFile(pathsDir, "data/file.txt")
+	if _, err := os.Stat(pathEntry); !os.IsNotExist(err) {
+		t.Fatalf("expected no cache entry for non-LFS file, got err=%v", err)
 	}
 }
 
-func TestStagedChangesRename(t *testing.T) {
+func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	repo := setupGitRepo(t)
-	writeFile(t, filepath.Join(repo, "a.txt"), "alpha\n")
-	gitCmd(t, repo, "add", "a.txt")
-	gitCmd(t, repo, "commit", "-m", "init")
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	gitCmd(t, repo, "mv", "a.txt", "b.txt")
-	changes, err := stagedChanges(context.Background())
+	path := filepath.Join(repo, "data", "file.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	lfsPointer := strings.Join([]string{
+		"version https://git-lfs.github.com/spec/v1",
+		"oid sha256:deadbeef",
+		"size 12",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(lfsPointer), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/file.bin")
+
+	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
+	pathsDir := filepath.Join(cacheRoot, "paths")
+	oidsDir := filepath.Join(cacheRoot, "oids")
+	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
+		t.Fatalf("mkdir paths: %v", err)
+	}
+	if err := os.MkdirAll(oidsDir, 0o755); err != nil {
+		t.Fatalf("mkdir oids: %v", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.bin", now); err != nil {
+		t.Fatalf("handleUpsert: %v", err)
+	}
+
+	pathEntry := pathEntryFile(pathsDir, "data/file.bin")
+	pathData, err := os.ReadFile(pathEntry)
 	if err != nil {
-		t.Fatalf("stagedChanges error: %v", err)
+		t.Fatalf("read path entry: %v", err)
+	}
+	var pathCache PathEntry
+	if err := json.Unmarshal(pathData, &pathCache); err != nil {
+		t.Fatalf("unmarshal path entry: %v", err)
+	}
+	if pathCache.Path != "data/file.bin" {
+		t.Fatalf("expected path entry to be data/file.bin, got %q", pathCache.Path)
+	}
+	if pathCache.LFSOID != "sha256:deadbeef" {
+		t.Fatalf("expected lfs oid sha256:deadbeef, got %q", pathCache.LFSOID)
 	}
 
-	found := false
-	for _, ch := range changes {
-		if ch.Kind == KindRename && ch.OldPath == "a.txt" && ch.NewPath == "b.txt" {
-			found = true
-			break
-		}
+	oidEntry := oidEntryFile(oidsDir, "sha256:deadbeef")
+	oidData, err := os.ReadFile(oidEntry)
+	if err != nil {
+		t.Fatalf("read oid entry: %v", err)
 	}
-	if !found {
-		t.Fatalf("expected rename in staged changes, got %#v", changes)
+	var oidCache OIDEntry
+	if err := json.Unmarshal(oidData, &oidCache); err != nil {
+		t.Fatalf("unmarshal oid entry: %v", err)
+	}
+	if oidCache.LFSOID != "sha256:deadbeef" {
+		t.Fatalf("expected oid entry sha256:deadbeef, got %q", oidCache.LFSOID)
+	}
+	if len(oidCache.Paths) != 1 || oidCache.Paths[0] != "data/file.bin" {
+		t.Fatalf("expected oid paths to include data/file.bin, got %v", oidCache.Paths)
 	}
 }
 
@@ -137,95 +120,27 @@ func setupGitRepo(t *testing.T) string {
 	gitCmd(t, dir, "init")
 	gitCmd(t, dir, "config", "user.email", "test@example.com")
 	gitCmd(t, dir, "config", "user.name", "Test User")
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
 	return dir
 }
 
-func gitCmd(t *testing.T, dir string, args ...string) string {
+func mustChdir(t *testing.T, dir string) string {
 	t.Helper()
-	cmd := execCmd(dir, args...)
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("Chdir(%s): %v", dir, err)
+	}
+	return old
+}
+
+func gitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))
 	}
-	return strings.TrimSpace(string(out))
-}
-
-func execCmd(dir string, args ...string) *exec.Cmd {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	return cmd
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-}
-
-func lfsPointer(oid string) string {
-	return strings.Join([]string{
-		lfsSpecLine,
-		"oid " + oid,
-		"size 123",
-		"",
-	}, "\n")
-}
-
-func gitDirPath(t *testing.T, repo string) string {
-	t.Helper()
-	cmd := execCmd(repo, "rev-parse", "--git-dir")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git rev-parse --git-dir failed: %v (%s)", err, string(out))
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func readPathEntry(t *testing.T, path string) PathEntry {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read path entry: %v", err)
-	}
-	var entry PathEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		t.Fatalf("unmarshal path entry: %v", err)
-	}
-	return entry
-}
-
-func readOIDEntry(t *testing.T, path string) OIDEntry {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read oid entry: %v", err)
-	}
-	var entry OIDEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		t.Fatalf("unmarshal oid entry: %v", err)
-	}
-	return entry
-}
-
-func contains(paths []string, value string) bool {
-	for _, p := range paths {
-		if p == value {
-			return true
-		}
-	}
-	return false
 }

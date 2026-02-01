@@ -61,7 +61,7 @@
 				
 				<option value="file2">github.com/calypr/git-drs/client/indexd/add_url.go (47.4%)</option>
 				
-				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (52.4%)</option>
+				<option value="file3">github.com/calypr/git-drs/client/indexd/auth_handler.go (83.3%)</option>
 				
 				<option value="file4">github.com/calypr/git-drs/client/indexd/convert.go (86.5%)</option>
 				
@@ -99,7 +99,7 @@
 				
 				<option value="file21">github.com/calypr/git-drs/cmd/fetch/main.go (0.0%)</option>
 				
-				<option value="file22">github.com/calypr/git-drs/cmd/initialize/main.go (69.3%)</option>
+				<option value="file22">github.com/calypr/git-drs/cmd/initialize/main.go (75.0%)</option>
 				
 				<option value="file23">github.com/calypr/git-drs/cmd/list/main.go (17.7%)</option>
 				
@@ -763,28 +763,28 @@ func RefreshToken(ctx context.Context, cred *conf.Credential) error <span class=
         needRefresh := false
         if err != nil </span><span class="cov0" title="0">{
                 needRefresh = true
-        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov0" title="0">{
+        }</span> else<span class="cov9" title="23"> if expiration.Before(time.Now()) </span><span class="cov2" title="2">{
                 needRefresh = true
         }</span>
 
-        <span class="cov9" title="23">if needRefresh </span><span class="cov0" title="0">{
+        <span class="cov9" title="23">if needRefresh </span><span class="cov2" title="2">{
                 logger, closer := logs.New(cred.Profile)
                 defer closer()
 
                 if err != nil </span><span class="cov0" title="0">{
                         logger.Printf("failed to get access token expiration, attempting token refresh: %v", err)
                 }</span>
-                <span class="cov0" title="0">conf := conf.NewConfigure(logger)
+                <span class="cov2" title="2">conf := conf.NewConfigure(logger)
                 r := api.NewFunctions(conf, request.NewRequestInterface(logger, cred, conf), cred, logger)
                 f, ok := r.(*api.Functions)
                 if !ok </span><span class="cov0" title="0">{
                         return fmt.Errorf("Function interface is not of type api.Functions")
                 }</span>
-                <span class="cov0" title="0">err = f.NewAccessToken(ctx)
+                <span class="cov2" title="2">err = f.NewAccessToken(ctx)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
                 }</span>
-                <span class="cov0" title="0">cred.AccessToken = f.Cred.AccessToken
+                <span class="cov2" title="2">cred.AccessToken = f.Cred.AccessToken
                 err = conf.Save(cred)
                 if err != nil </span><span class="cov0" title="0">{
                         return err
@@ -4337,19 +4337,19 @@ exec git lfs pre-push "$remote" "$url" &lt; "$TMPFILE"
         return nil</span>
 }
 
-func installPreCommitHook(logger *slog.Logger) error <span class="cov4" title="4">{
+func installPreCommitHook(logger *slog.Logger) error <span class="cov5" title="6">{
         cmd := exec.Command("git", "rev-parse", "--git-dir")
         cmdOut, err := cmd.Output()
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("unable to locate git directory: %w", err)
         }</span>
-        <span class="cov4" title="4">gitDir := strings.TrimSpace(string(cmdOut))
+        <span class="cov5" title="6">gitDir := strings.TrimSpace(string(cmdOut))
         hooksDir := filepath.Join(gitDir, "hooks")
         if err := os.MkdirAll(hooksDir, 0755); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("unable to create hooks directory: %w", err)
         }</span>
 
-        <span class="cov4" title="4">hookPath := filepath.Join(hooksDir, "pre-commit")
+        <span class="cov5" title="6">hookPath := filepath.Join(hooksDir, "pre-commit")
         hookBody := `
 # .git/hooks/pre-commit
 exec git drs precommit
@@ -4357,7 +4357,7 @@ exec git drs precommit
         hookScript := "#!/bin/sh\n" + hookBody
 
         existingContent, err := os.ReadFile(hookPath)
-        if err == nil </span><span class="cov0" title="0">{
+        if err == nil </span><span class="cov1" title="1">{
                 // there is an existing hook, rename it, and let the user know
                 // Backup existing hook with timestamp
                 timestamp := time.Now().Format("20060102T150405")
@@ -4365,21 +4365,21 @@ exec git drs precommit
                 if err := os.WriteFile(backupPath, existingContent, 0644); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("unable to back up existing pre-commit hook: %w", err)
                 }</span>
-                <span class="cov0" title="0">if err := os.Remove(hookPath); err != nil </span><span class="cov0" title="0">{
+                <span class="cov1" title="1">if err := os.Remove(hookPath); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("unable to remove hook after backing up: %w", err)
                 }</span>
-                <span class="cov0" title="0">logger.Debug(fmt.Sprintf("pre-commit hook updated; backup written to %s", backupPath))</span>
+                <span class="cov1" title="1">logger.Debug(fmt.Sprintf("pre-commit hook updated; backup written to %s", backupPath))</span>
         }
         // If there was an error other than expected not existing, return it
-        <span class="cov4" title="4">if err != nil &amp;&amp; !os.IsNotExist(err) </span><span class="cov0" title="0">{
+        <span class="cov5" title="6">if err != nil &amp;&amp; !os.IsNotExist(err) </span><span class="cov0" title="0">{
                 return fmt.Errorf("unable to read pre-commit hook: %w", err)
         }</span>
 
-        <span class="cov4" title="4">err = os.WriteFile(hookPath, []byte(hookScript), 0755)
+        <span class="cov5" title="6">err = os.WriteFile(hookPath, []byte(hookScript), 0755)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("unable to write pre-commit hook: %w", err)
         }</span>
-        <span class="cov4" title="4">logger.Debug("pre-commit hook installed")
+        <span class="cov5" title="6">logger.Debug("pre-commit hook installed")
         return nil</span>
 }
 </pre>
@@ -7888,7 +7888,7 @@ func Close() error <span class="cov1" title="1">{
 // Typical callers:
 // - GetLogger on first access when no global logger was configured.
 // - tests that need a deterministic logger that produces no output.
-func NewNoOpLogger() *slog.Logger <span class="cov4" title="13">{
+func NewNoOpLogger() *slog.Logger <span class="cov4" title="14">{
         handler := slog.NewTextHandler(io.Discard, &amp;slog.HandlerOptions{
                 Level: slog.LevelDebug,
         })
@@ -8817,7 +8817,7 @@ import (
 )
 
 // SetupTestGitRepo creates a temp directory mocking a real git repo
-func SetupTestGitRepo(t *testing.T) string <span class="cov10" title="2">{
+func SetupTestGitRepo(t *testing.T) string <span class="cov10" title="3">{
         t.Helper()
 
         tmpDir, err := os.MkdirTemp("", "git-drs-test-*")
@@ -8842,12 +8842,12 @@ func SetupTestGitRepo(t *testing.T) string <span class="cov10" title="2">{
         cmd.Dir = tmpDir
         _ = cmd.Run()
 
-        t.Cleanup(func() </span><span class="cov10" title="2">{
+        t.Cleanup(func() </span><span class="cov10" title="3">{
                 os.Chdir(originalDir)
                 os.RemoveAll(tmpDir)
         }</span>)
 
-        <span class="cov10" title="2">return tmpDir</span>
+        <span class="cov10" title="3">return tmpDir</span>
 }
 
 // CreateTestConfig creates a test Git DRS config file with the given content

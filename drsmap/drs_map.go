@@ -13,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/drs/hash"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
 	drsstore "github.com/calypr/git-drs/drsmap/store"
+	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
@@ -142,16 +143,64 @@ func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocatio
 		return fmt.Errorf("no project configured")
 	}
 
-	// create a DRS object for each LFS file
-	// which will be used at push-time
-	for _, file := range lfsFiles {
+	return UpdateDrsObjectsWithFiles(builder, lfsFiles, nil, false, logger)
+}
 
-		drsObj, err2 := WriteDrsFile(builder, file, nil)
-		if err2 != nil {
-			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err2))
+func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]drslfs.LfsFileInfo, cache *precommit_cache.Cache, preferCacheURL bool, logger *slog.Logger) error {
+	if logger == nil {
+		return fmt.Errorf("logger is required")
+	}
+	logger.Debug("Update to DRS objects started")
+
+	// get project
+	if builder.ProjectID == "" {
+		return fmt.Errorf("no project configured")
+	}
+	if len(lfsFiles) == 0 {
+		return nil
+	}
+
+	for _, file := range lfsFiles {
+		drsID := DrsUUID(builder.ProjectID, file.Oid)
+		authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
-		logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))
+
+		authoritativeURL := ""
+		if len(authoritativeObj.AccessMethods) > 0 {
+			authoritativeURL = authoritativeObj.AccessMethods[0].AccessURL.URL
+		}
+
+		var hint string
+		if cache != nil {
+			externalURL, ok, err := cache.LookupExternalURLByOID(file.Oid)
+			if err != nil {
+				logger.Debug(fmt.Sprintf("cache lookup failed for %s: %v", file.Oid, err))
+			} else if ok {
+				hint = externalURL
+			}
+		}
+
+		if hint != "" {
+			if err := precommit_cache.CheckExternalURLMismatch(hint, authoritativeURL); err != nil {
+				logger.Warn(fmt.Sprintf("Warning. %s (path=%s oid=%s)", err.Error(), file.Name, file.Oid))
+				fmt.Fprintln(os.Stderr, "Warning.", err.Error())
+			}
+		}
+
+		if preferCacheURL && hint != "" {
+			if len(authoritativeObj.AccessMethods) > 0 {
+				authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
+			}
+		}
+
+		if err := drsstore.WriteObject(projectdir.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
+			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
+			continue
+		}
+		logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))
 	}
 
 	return nil

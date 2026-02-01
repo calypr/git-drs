@@ -2,17 +2,22 @@ package prepush
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +35,7 @@ var Cmd = &cobra.Command{
 type PrePushService struct {
 	newLogger        func(string, bool) (*slog.Logger, error)
 	loadConfig       func() (*config.Config, error)
-	updateDrsObjects func(drs.ObjectBuilder, string, string, []string, *slog.Logger) error
+	updateDrsObjects func(drs.ObjectBuilder, map[string]drslfs.LfsFileInfo, *precommit_cache.Cache, bool, *slog.Logger) error
 	createTempFile   func(dir, pattern string) (*os.File, error)
 }
 
@@ -38,12 +43,13 @@ func NewPrePushService() *PrePushService {
 	return &PrePushService{
 		newLogger:        drslog.NewLogger,
 		loadConfig:       config.LoadConfig,
-		updateDrsObjects: drsmap.UpdateDrsObjects,
+		updateDrsObjects: drsmap.UpdateDrsObjectsWithFiles,
 		createTempFile:   os.CreateTemp,
 	}
 }
 
 func (s *PrePushService) Run(args []string, stdin io.Reader) error {
+	ctx := context.Background()
 	myLogger, err := s.newLogger("", false)
 	if err != nil {
 		return fmt.Errorf("error creating logger: %v", err)
@@ -86,14 +92,22 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		_ = os.Remove(tmp.Name())
 	}()
 
-	branches, err := readPushedBranches(tmp)
+	refs, err := readPushedRefs(tmp)
 	if err != nil {
-		myLogger.Error(fmt.Sprintf("error reading pushed branches: %v", err))
+		myLogger.Error(fmt.Sprintf("error reading pushed refs: %v", err))
+		return err
+	}
+	branches := branchesFromRefs(refs)
+
+	cache, cacheReady := openCache(ctx, myLogger)
+	lfsFiles, usedCache, err := collectLfsFiles(ctx, cache, cacheReady, gitRemoteName, gitRemoteLocation, branches, refs, myLogger)
+	if err != nil {
+		myLogger.Error(fmt.Sprintf("error collecting LFS files: %v", err))
 		return err
 	}
 
-	myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
-	err = s.updateDrsObjects(builder, gitRemoteName, gitRemoteLocation, branches, myLogger)
+	myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v (cache=%v)", branches, usedCache))
+	err = s.updateDrsObjects(builder, lfsFiles, cache, usedCache, myLogger)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 		return err
@@ -116,6 +130,13 @@ func parseRemoteArgs(args []string) (string, string) {
 	return gitRemoteName, gitRemoteLocation
 }
 
+type pushedRef struct {
+	LocalRef  string
+	LocalSHA  string
+	RemoteRef string
+	RemoteSHA string
+}
+
 func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.File, error)) (*os.File, error) {
 	tmp, err := createTempFile("", "prepush-stdin-*")
 	if err != nil {
@@ -135,7 +156,7 @@ func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.
 // readPushedBranches reads git push lines from the provided temp file,
 // extracts unique local branch names for refs under `refs/heads/` and
 // returns them sorted. The file is rewound to the start before returning.
-func readPushedBranches(f io.ReadSeeker) ([]string, error) {
+func readPushedRefs(f io.ReadSeeker) ([]pushedRef, error) {
 	// Ensure we read from start
 	// example:
 	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
@@ -143,33 +164,160 @@ func readPushedBranches(f io.ReadSeeker) ([]string, error) {
 		return nil, err
 	}
 	scanner := bufio.NewScanner(f)
-	set := make(map[string]struct{})
+	refs := make([]pushedRef, 0)
 	for scanner.Scan() {
 		line := scanner.Text()
 		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		if len(fields) < 4 {
 			continue
 		}
-		localRef := fields[0]
-		const prefix = "refs/heads/"
-		if strings.HasPrefix(localRef, prefix) {
-			branch := strings.TrimPrefix(localRef, prefix)
+		refs = append(refs, pushedRef{
+			LocalRef:  fields[0],
+			LocalSHA:  fields[1],
+			RemoteRef: fields[2],
+			RemoteSHA: fields[3],
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	// Rewind so caller can reuse the file
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
+func branchesFromRefs(refs []pushedRef) []string {
+	const prefix = "refs/heads/"
+	set := make(map[string]struct{})
+	for _, ref := range refs {
+		if strings.HasPrefix(ref.LocalRef, prefix) {
+			branch := strings.TrimPrefix(ref.LocalRef, prefix)
 			if branch != "" {
 				set[branch] = struct{}{}
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 	branches := make([]string, 0, len(set))
 	for b := range set {
 		branches = append(branches, b)
 	}
 	sort.Strings(branches)
-	// Rewind so caller can reuse the file
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
+	return branches
+}
+
+func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache, bool) {
+	cache, err := precommit_cache.Open(ctx)
+	if err != nil {
+		logger.Debug(fmt.Sprintf("pre-commit cache unavailable: %v", err))
+		return nil, false
 	}
-	return branches, nil
+	if _, err := os.Stat(cache.Root); err != nil {
+		if os.IsNotExist(err) {
+			logger.Debug("pre-commit cache missing; continuing without cache")
+		} else {
+			logger.Debug(fmt.Sprintf("pre-commit cache access error: %v", err))
+		}
+		return nil, false
+	}
+	return cache, true
+}
+
+func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheReady bool, gitRemoteName, gitRemoteLocation string, branches []string, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) {
+	if cacheReady {
+		lfsFiles, ok, err := lfsFilesFromCache(ctx, cache, refs, logger)
+		if err != nil {
+			logger.Debug(fmt.Sprintf("pre-commit cache read failed: %v", err))
+		} else if ok {
+			return lfsFiles, true, nil
+		}
+		logger.Debug("pre-commit cache incomplete or stale; falling back to LFS discovery")
+	}
+	lfsFiles, err := drslfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+	if err != nil {
+		return nil, false, err
+	}
+	return lfsFiles, false, nil
+}
+
+const cacheMaxAge = 24 * time.Hour
+
+func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) {
+	if cache == nil {
+		return nil, false, nil
+	}
+	paths, err := listPushedPaths(ctx, refs)
+	if err != nil {
+		return nil, false, err
+	}
+	lfsFiles := make(map[string]drslfs.LfsFileInfo, len(paths))
+	for _, path := range paths {
+		entry, ok, err := cache.ReadPathEntry(path)
+		if err != nil {
+			return nil, false, err
+		}
+		if !ok || entry.LFSOID == "" {
+			return nil, false, nil
+		}
+		if entry.UpdatedAt == "" || precommit_cache.StaleAfter(entry.UpdatedAt, cacheMaxAge) {
+			return nil, false, nil
+		}
+		stat, err := os.Stat(path)
+		if err != nil {
+			logger.Debug(fmt.Sprintf("cache path stat failed for %s: %v", path, err))
+			return nil, false, nil
+		}
+		lfsFiles[path] = drslfs.LfsFileInfo{
+			Name:    path,
+			Size:    stat.Size(),
+			OidType: "sha256",
+			Oid:     entry.LFSOID,
+			Version: "https://git-lfs.github.com/spec/v1",
+		}
+	}
+	return lfsFiles, true, nil
+}
+
+func listPushedPaths(ctx context.Context, refs []pushedRef) ([]string, error) {
+	const zeroSHA = "0000000000000000000000000000000000000000"
+	set := make(map[string]struct{})
+	for _, ref := range refs {
+		if ref.LocalSHA == "" || ref.LocalSHA == zeroSHA {
+			continue
+		}
+		var args []string
+		if ref.RemoteSHA == "" || ref.RemoteSHA == zeroSHA {
+			args = []string{"ls-tree", "-r", "--name-only", ref.LocalSHA}
+		} else {
+			args = []string{"diff", "--name-only", ref.RemoteSHA, ref.LocalSHA}
+		}
+		out, err := gitOutput(ctx, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			set[line] = struct{}{}
+		}
+	}
+	paths := make([]string, 0, len(set))
+	for path := range set {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func gitOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }

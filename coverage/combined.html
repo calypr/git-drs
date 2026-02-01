@@ -87,7 +87,7 @@
 				
 				<option value="file15">github.com/calypr/git-drs/cmd/addref/add-ref.go (3.3%)</option>
 				
-				<option value="file16">github.com/calypr/git-drs/cmd/addurl/main.go (72.4%)</option>
+				<option value="file16">github.com/calypr/git-drs/cmd/addurl/main.go (61.8%)</option>
 				
 				<option value="file17">github.com/calypr/git-drs/cmd/cache/create-cache.go (0.0%)</option>
 				
@@ -107,7 +107,7 @@
 				
 				<option value="file25">github.com/calypr/git-drs/cmd/precommit/main.go (50.2%)</option>
 				
-				<option value="file26">github.com/calypr/git-drs/cmd/prepush/main.go (72.8%)</option>
+				<option value="file26">github.com/calypr/git-drs/cmd/prepush/main.go (71.9%)</option>
 				
 				<option value="file27">github.com/calypr/git-drs/cmd/push/main.go (0.0%)</option>
 				
@@ -151,7 +151,7 @@
 				
 				<option value="file47">github.com/calypr/git-drs/drslog/logger.go (55.2%)</option>
 				
-				<option value="file48">github.com/calypr/git-drs/drsmap/drs_map.go (27.6%)</option>
+				<option value="file48">github.com/calypr/git-drs/drsmap/drs_map.go (29.0%)</option>
 				
 				<option value="file49">github.com/calypr/git-drs/drsmap/lfs/lfs.go (60.1%)</option>
 				
@@ -171,7 +171,7 @@
 				
 				<option value="file57">github.com/calypr/git-drs/lfs/messages.go (100.0%)</option>
 				
-				<option value="file58">github.com/calypr/git-drs/precommit_cache/helpers.go (70.9%)</option>
+				<option value="file58">github.com/calypr/git-drs/precommit_cache/helpers.go (27.2%)</option>
 				
 				<option value="file59">github.com/calypr/git-drs/tests/monorepos/generate-fixtures.go (0.0%)</option>
 				
@@ -3043,13 +3043,17 @@ func init() <span class="cov10" title="46">{
 
 import (
         "context"
+        "crypto/sha256"
+        "encoding/json"
         "errors"
         "fmt"
         "log/slog"
         "net/url"
         "os"
         "path/filepath"
+        "sort"
         "strings"
+        "time"
 
         "github.com/calypr/git-drs/cloud"
         "github.com/calypr/git-drs/config"
@@ -3058,15 +3062,19 @@ import (
         "github.com/calypr/git-drs/drsmap"
         drslfs "github.com/calypr/git-drs/drsmap/lfs"
         "github.com/calypr/git-drs/lfs"
+        "github.com/calypr/git-drs/precommit_cache"
+        "github.com/calypr/git-drs/utils"
         "github.com/spf13/cobra"
 )
 
 var Cmd = NewCommand()
 
-func NewCommand() *cobra.Command <span class="cov10" title="48">{
+// NewCommand constructs the Cobr<span class="cov0" title="0">a command for the `add-url` subcommand,
+// wiring usage, argument validation and the RunE handler.
+func NewCommand() *cobra.Command {
         cmd := &amp;cobra.Command{
                 Use:   "add-url &lt;s3-url&gt; [path]",
-                Short: "Add a file to the Git DRS repo using an S3 URL",
+</span>                Short: "Add a file to the Git DRS repo using an S3 URL",
                 Args: func(cmd *cobra.Command, args []string) error </span><span class="cov2" title="2">{
                         if len(args) &lt; 1 || len(args) &gt; 2 </span><span class="cov0" title="0">{
                                 return errors.New("usage: add-url &lt;s3-url&gt; [path]")
@@ -3075,11 +3083,13 @@ func NewCommand() *cobra.Command <span class="cov10" title="48">{
                 },
                 RunE: runAddURL,
         }
-        <span class="cov10" title="48">addFlags(cmd)
+        <span class="cov9" title="46">addFlags(cmd)
         return cmd</span>
 }
 
-func addFlags(cmd *cobra.Command) <span class="cov10" title="48">{
+// addFlags registers command-line flags for AWS credentials, endpoint and an
+// optional `sha256` expected checksum.
+func addFlags(cmd *cobra.Command) <span class="cov9" title="46">{
         cmd.Flags().String(
                 cloud.AWS_KEY_FLAG_NAME,
                 os.Getenv(cloud.AWS_KEY_ENV_VAR),
@@ -3112,6 +3122,7 @@ func addFlags(cmd *cobra.Command) <span class="cov10" title="48">{
         )
 }</span>
 
+// runAddURL is the Cobra RunE wrapper that delegates execution to the
 func runAddURL(cmd *cobra.Command, args []string) (err error) <span class="cov2" title="2">{
         return NewAddURLService().Run(cmd, args)
 }</span>
@@ -3124,6 +3135,8 @@ var download = func(ctx context.Context, info *cloud.S3Object, input cloud.S3Obj
         return cloud.Download(ctx, info, input, lfsRoot)
 }</span>
 
+// AddURLService groups injectable dependencies used to implement the add-url
+// behavior (logger factory, S3 inspection, LFS helpers, config loader, etc.).
 type AddURLService struct {
         newLogger    func(string, bool) (*slog.Logger, error)
         inspectS3    func(ctx context.Context, input cloud.S3ObjectParameters) (*cloud.S3Object, error)
@@ -3134,7 +3147,9 @@ type AddURLService struct {
         download     func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error)
 }
 
-func NewAddURLService() *AddURLService <span class="cov3" title="3">{
+// NewAddURLService constructs an AddURLService populated with production
+// implementations of its dependencies.
+func NewAddURLService() *AddURLService <span class="cov2" title="2">{
         return &amp;AddURLService{
                 newLogger:    drslog.NewLogger,
                 inspectS3:    cloud.InspectS3ForLFS,
@@ -3146,69 +3161,78 @@ func NewAddURLService() *AddURLService <span class="cov3" title="3">{
         }
 }</span>
 
-func (s *AddURLService) Run(cmd *cobra.Command, args []string) error <span class="cov3" title="3">{
+// Run executes the add-url workflow: parse CLI input, inspect the S3 object,
+// ensure the LFS object exists in local storage, write a Git LFS pointer file,
+// update the pre-commit cache (best-effort), optionally add a git-lfs track
+// entry, and record the DRS mapping.
+func (s *AddURLService) Run(cmd *cobra.Command, args []string) error <span class="cov2" title="2">{
         ctx := cmd.Context()
-        if ctx == nil </span><span class="cov1" title="1">{
+        if ctx == nil </span><span class="cov0" title="0">{
                 ctx = context.Background()
         }</span>
 
-        <span class="cov3" title="3">if _, err := s.newLogger("", false); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">logger, err := s.newLogger("", false)
+        if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error creating logger: %v", err)
         }</span>
 
-        <span class="cov3" title="3">input, err := parseAddURLInput(cmd, args)
+        <span class="cov2" title="2">input, err := parseAddURLInput(cmd, args)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">s3Info, err := s.inspectS3(ctx, input.s3Params)
+        <span class="cov2" title="2">s3Info, err := s.inspectS3(ctx, input.s3Params)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">isTracked, err := s.isLFSTracked(input.path)
+        <span class="cov2" title="2">isTracked, err := s.isLFSTracked(input.path)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("check LFS tracking for %s: %w", input.path, err)
         }</span>
 
-        <span class="cov3" title="3">gitCommonDir, lfsRoot, err := s.getGitRoots(ctx)
+        <span class="cov2" title="2">gitCommonDir, lfsRoot, err := s.getGitRoots(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("get git root directories: %w", err)
         }</span>
 
-        <span class="cov3" title="3">if err := printResolvedInfo(cmd, gitCommonDir, lfsRoot, s3Info, input.path, isTracked, input.sha256); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err := printResolvedInfo(cmd, gitCommonDir, lfsRoot, s3Info, input.path, isTracked, input.sha256); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">oid, err := s.ensureLFSObject(ctx, s3Info, input, lfsRoot)
+        <span class="cov2" title="2">oid, err := s.ensureLFSObject(ctx, s3Info, input, lfsRoot)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">if err := writePointerFile(input.path, oid, s3Info.SizeBytes); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err := writePointerFile(input.path, oid, s3Info.SizeBytes); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">if err := maybeTrackLFS(ctx, s.gitLFSTrack, input.path, isTracked); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err := updatePrecommitCache(ctx, logger, input.path, oid, input.s3URL); err != nil </span><span class="cov0" title="0">{
+                logger.Warn("pre-commit cache update skipped", "error", err)
+        }</span>
+
+        <span class="cov2" title="2">if err := maybeTrackLFS(ctx, s.gitLFSTrack, input.path, isTracked); err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">cfg, err := s.loadConfig()
+        <span class="cov2" title="2">cfg, err := s.loadConfig()
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error getting config: %v", err)
         }</span>
 
-        <span class="cov3" title="3">remote, err := cfg.GetDefaultRemote()
+        <span class="cov2" title="2">remote, err := cfg.GetDefaultRemote()
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov3" title="3">remoteConfig := cfg.GetRemote(remote)
+        <span class="cov2" title="2">remoteConfig := cfg.GetRemote(remote)
         if remoteConfig == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error getting remote configuration for %s", remote)
         }</span>
 
-        <span class="cov3" title="3">builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+        <span class="cov2" title="2">builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
 
         file := drslfs.LfsFileInfo{
                 Name: input.path,
@@ -3219,9 +3243,279 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error <span class
                 return fmt.Errorf("error WriteDrsFile: %v", err)
         }</span>
 
-        <span class="cov3" title="3">return nil</span>
+        <span class="cov2" title="2">return nil</span>
 }
 
+// updatePrecommitCache updates the project's pre-commit cache with a mapping
+// from a repository-relative `pathArg` to the given LFS `oid` and records the
+// external source URL. It will:
+//   - require a non-nil `logger`
+//   - open the pre-commit cache (`precommit_cache.Open`)
+//   - ensure cache directories exist
+//   - convert the supplied worktree path to a repository-relative path
+//   - create or update the per-path JSON entry with the current OID and timestamp
+//   - create or update the per-OID JSON entry listing paths that reference it,
+//     the external URL, and a content-change flag when the path's OID changed
+//   - remove the path from the previous OID entry when the content changed
+//
+// Parameters:
+//   - ctx: context for operations that may be cancellable
+//   - logger: a non-nil `*slog.Logger` used for warnings; if nil the function
+//     returns an error
+//   - pathArg: the worktree path to record (absolute or relative); must not be empty
+//   - oid: the LFS object id (string) to associate with the path
+//   - externalURL: optional external source URL for the object; empty string is allowed
+//
+// Returns an error if any cache operation, path resolution, or I/O fails.
+func updatePrecommitCache(ctx context.Context, logger *slog.Logger, pathArg, oid, externalURL string) error <span class="cov2" title="2">{
+        if logger == nil </span><span class="cov0" title="0">{
+                return errors.New("logger is required")
+        }</span>
+        // Open pre-commit cache. Returns a configured Cache or error.
+        <span class="cov2" title="2">cache, err := precommit_cache.Open(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Ensure cache directories exist.
+        <span class="cov2" title="2">if err := ensureCacheDirs(cache, logger); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Convert worktree path to repository-relative path.
+        <span class="cov2" title="2">relPath, err := repoRelativePath(pathArg)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        // Current timestamp in RFC3339 format (UTC).
+        <span class="cov2" title="2">now := time.Now().UTC().Format(time.RFC3339)
+
+        // Read previous path entry, if any.
+        pathFile := cachePathEntryFile(cache, relPath)
+        prevEntry, prevExists, err := readPathEntry(pathFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        // track whether content changed for this path
+        <span class="cov2" title="2">contentChanged := prevExists &amp;&amp; prevEntry.LFSOID != "" &amp;&amp; prevEntry.LFSOID != oid
+
+        if err := writeJSONAtomic(pathFile, precommit_cache.PathEntry{
+                Path:      relPath,
+                LFSOID:    oid,
+                UpdatedAt: now,
+        }); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov2" title="2">if err := upsertOIDEntry(cache, oid, relPath, externalURL, now, contentChanged); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov2" title="2">if contentChanged </span><span class="cov0" title="0">{
+                _ = removePathFromOID(cache, prevEntry.LFSOID, relPath, now)
+        }</span>
+
+        <span class="cov2" title="2">return nil</span>
+}
+
+// ensureCacheDirs verifies and creates the pre-commit cache directory layout
+// (paths and oids directories). It logs a warning when creating a missing
+// cache root.
+func ensureCacheDirs(cache *precommit_cache.Cache, logger *slog.Logger) error <span class="cov2" title="2">{
+        if cache == nil </span><span class="cov0" title="0">{
+                return errors.New("cache is nil")
+        }</span>
+        <span class="cov2" title="2">if _, err := os.Stat(cache.Root); err != nil </span><span class="cov1" title="1">{
+                if os.IsNotExist(err) </span><span class="cov1" title="1">{
+                        logger.Warn("pre-commit cache directory missing; creating", "path", cache.Root)
+                }</span> else<span class="cov0" title="0"> {
+                        return err
+                }</span>
+        }
+        <span class="cov2" title="2">if err := os.MkdirAll(cache.PathsDir, 0o755); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("create cache paths dir: %w", err)
+        }</span>
+        <span class="cov2" title="2">if err := os.MkdirAll(cache.OIDsDir, 0o755); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("create cache oids dir: %w", err)
+        }</span>
+        <span class="cov2" title="2">return nil</span>
+}
+
+// repoRelativePath converts a worktree path (absolute or relative) to a
+// repository-relative path. It resolves symlinks and ensures the path is
+// contained within the repository root.
+func repoRelativePath(pathArg string) (string, error) <span class="cov2" title="2">{
+        if pathArg == "" </span><span class="cov0" title="0">{
+                return "", errors.New("empty worktree path")
+        }</span>
+        <span class="cov2" title="2">root, err := utils.GitTopLevel()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov2" title="2">root, err = filepath.EvalSymlinks(root)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov2" title="2">clean := filepath.Clean(pathArg)
+        if filepath.IsAbs(clean) </span><span class="cov0" title="0">{
+                clean, err = filepath.EvalSymlinks(clean)
+                if err != nil </span><span class="cov0" title="0">{
+                        return "", err
+                }</span>
+                <span class="cov0" title="0">rel, err := filepath.Rel(root, clean)
+                if err != nil </span><span class="cov0" title="0">{
+                        return "", err
+                }</span>
+                <span class="cov0" title="0">if strings.HasPrefix(rel, "..") </span><span class="cov0" title="0">{
+                        return "", fmt.Errorf("path %s is outside repo root %s", clean, root)
+                }</span>
+                <span class="cov0" title="0">return filepath.ToSlash(rel), nil</span>
+        }
+        <span class="cov2" title="2">return filepath.ToSlash(clean), nil</span>
+}
+
+// cachePathEntryFile returns the filesystem path to the JSON path-entry file
+// for the given repository-relative path within the provided Cache.
+func cachePathEntryFile(cache *precommit_cache.Cache, path string) string <span class="cov2" title="2">{
+        return filepath.Join(cache.PathsDir, precommit_cache.EncodePath(path)+".json")
+}</span>
+
+// cacheOIDEntryFile returns the filesystem path to the JSON OID-entry file
+// for the given LFS OID. The file is named by sha256(oid) to avoid filesystem
+// restrictions and collisions.
+func cacheOIDEntryFile(cache *precommit_cache.Cache, oid string) string <span class="cov2" title="2">{
+        sum := sha256.Sum256([]byte(oid))
+        return filepath.Join(cache.OIDsDir, fmt.Sprintf("%x.json", sum[:]))
+}</span>
+
+// readPathEntry reads and parses a JSON PathEntry from disk. It returns the
+// parsed entry, a boolean indicating existence, or an error on I/O/parse
+// failure.
+func readPathEntry(path string) (*precommit_cache.PathEntry, bool, error) <span class="cov2" title="2">{
+        data, err := os.ReadFile(path)
+        if err != nil </span><span class="cov2" title="2">{
+                if errors.Is(err, os.ErrNotExist) </span><span class="cov2" title="2">{
+                        return nil, false, nil
+                }</span>
+                <span class="cov0" title="0">return nil, false, err</span>
+        }
+        <span class="cov0" title="0">var entry precommit_cache.PathEntry
+        if err := json.Unmarshal(data, &amp;entry); err != nil </span><span class="cov0" title="0">{
+                return nil, false, err
+        }</span>
+        <span class="cov0" title="0">return &amp;entry, true, nil</span>
+}
+
+// readOIDEntry reads and parses a JSON OIDEntry from disk. If the file is
+// missing it returns a freshly initialized entry (with LFSOID set to the
+// supplied oid and UpdatedAt set to now).
+func readOIDEntry(path string, oid string, now string) (*precommit_cache.OIDEntry, error) <span class="cov2" title="2">{
+        entry := &amp;precommit_cache.OIDEntry{
+                LFSOID:    oid,
+                Paths:     []string{},
+                UpdatedAt: now,
+        }
+        data, err := os.ReadFile(path)
+        if err != nil </span><span class="cov2" title="2">{
+                if errors.Is(err, os.ErrNotExist) </span><span class="cov2" title="2">{
+                        return entry, nil
+                }</span>
+                <span class="cov0" title="0">return nil, err</span>
+        }
+        <span class="cov0" title="0">if err := json.Unmarshal(data, entry); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov0" title="0">entry.LFSOID = oid
+        return entry, nil</span>
+}
+
+// upsertOIDEntry creates or updates the OID entry for `oid`, ensuring `path`
+// is listed among its Paths, updating ExternalURL when provided, and setting
+// content-change/state fields. The updated entry is written atomically.
+func upsertOIDEntry(cache *precommit_cache.Cache, oid, path, externalURL, now string, contentChanged bool) error <span class="cov2" title="2">{
+        if cache == nil </span><span class="cov0" title="0">{
+                return errors.New("cache is nil")
+        }</span>
+        <span class="cov2" title="2">oidFile := cacheOIDEntryFile(cache, oid)
+        entry, err := readOIDEntry(oidFile, oid, now)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov2" title="2">pathSet := make(map[string]struct{}, len(entry.Paths)+1)
+        for _, p := range entry.Paths </span><span class="cov0" title="0">{
+                pathSet[p] = struct{}{}
+        }</span>
+        <span class="cov2" title="2">if path != "" </span><span class="cov2" title="2">{
+                pathSet[path] = struct{}{}
+        }</span>
+        <span class="cov2" title="2">entry.Paths = sortedKeys(pathSet)
+        entry.UpdatedAt = now
+        entry.ContentChange = entry.ContentChange || contentChanged
+        if strings.TrimSpace(externalURL) != "" </span><span class="cov2" title="2">{
+                entry.ExternalURL = externalURL
+        }</span>
+
+        <span class="cov2" title="2">return writeJSONAtomic(oidFile, entry)</span>
+}
+
+// removePathFromOID removes `path` from the OID entry for `oid` and writes
+// the updated entry atomically. Missing entries are treated as empty.
+// sortedKeys returns a sorted slice of keys from the provided string-set map.
+func removePathFromOID(cache *precommit_cache.Cache, oid, path, now string) error <span class="cov0" title="0">{
+        if cache == nil </span><span class="cov0" title="0">{
+                return errors.New("cache is nil")
+        }</span>
+        <span class="cov0" title="0">oidFile := cacheOIDEntryFile(cache, oid)
+        entry, err := readOIDEntry(oidFile, oid, now)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">pathSet := make(map[string]struct{}, len(entry.Paths))
+        for _, p := range entry.Paths </span><span class="cov0" title="0">{
+                if p == path </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">pathSet[p] = struct{}{}</span>
+        }
+        <span class="cov0" title="0">entry.Paths = sortedKeys(pathSet)
+        entry.UpdatedAt = now
+
+        return writeJSONAtomic(oidFile, entry)</span>
+}
+
+// sortedKeys returns a sorted slice of keys from the provided string-set map.
+func sortedKeys(set map[string]struct{}) []string <span class="cov2" title="2">{
+        keys := make([]string, 0, len(set))
+        for key := range set </span><span class="cov2" title="2">{
+                keys = append(keys, key)
+        }</span>
+        <span class="cov2" title="2">sort.Strings(keys)
+        return keys</span>
+}
+
+// writeJSONAtomic marshals `value` to JSON and writes it to `path` atomically
+// by writing to a temporary file in the same directory and renaming it. It
+// ensures parent directories exist.
+func writeJSONAtomic(path string, value any) error <span class="cov4" title="4">{
+        dir := filepath.Dir(path)
+        if err := os.MkdirAll(dir, 0o755); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov4" title="4">tmp := path + ".tmp"
+        data, err := json.Marshal(value)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov4" title="4">if err := os.WriteFile(tmp, data, 0o644); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov4" title="4">return os.Rename(tmp, path)</span>
+}
+
+// parseAddURLInput parses CLI args and flags into an addURLInput, validates
+// required AWS credentials and region, and constructs cloud.S3ObjectParameters.
 type addURLInput struct {
         s3URL    string
         path     string
@@ -3229,7 +3523,7 @@ type addURLInput struct {
         s3Params cloud.S3ObjectParameters
 }
 
-func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) <span class="cov3" title="3">{
+func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) <span class="cov2" title="2">{
         s3URL := args[0]
 
         pathArg, err := resolvePathArg(s3URL, args)
@@ -3237,36 +3531,36 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) <s
                 return addURLInput{}, err
         }</span>
 
-        <span class="cov3" title="3">sha256Param, err := cmd.Flags().GetString("sha256")
+        <span class="cov2" title="2">sha256Param, err := cmd.Flags().GetString("sha256")
         if err != nil </span><span class="cov0" title="0">{
                 return addURLInput{}, fmt.Errorf("read flag sha256: %w", err)
         }</span>
 
-        <span class="cov3" title="3">awsKey, err := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
+        <span class="cov2" title="2">awsKey, err := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
         if err != nil </span><span class="cov0" title="0">{
                 return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_KEY_FLAG_NAME, err)
         }</span>
-        <span class="cov3" title="3">awsSecret, err := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
+        <span class="cov2" title="2">awsSecret, err := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
         if err != nil </span><span class="cov0" title="0">{
                 return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_SECRET_FLAG_NAME, err)
         }</span>
-        <span class="cov3" title="3">awsRegion, err := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
+        <span class="cov2" title="2">awsRegion, err := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
         if err != nil </span><span class="cov0" title="0">{
                 return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_REGION_FLAG_NAME, err)
         }</span>
-        <span class="cov3" title="3">awsEndpoint, err := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
+        <span class="cov2" title="2">awsEndpoint, err := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
         if err != nil </span><span class="cov0" title="0">{
                 return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_ENDPOINT_URL_FLAG_NAME, err)
         }</span>
 
-        <span class="cov3" title="3">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if awsKey == "" || awsSecret == "" </span><span class="cov0" title="0">{
                 return addURLInput{}, errors.New("AWS credentials must be provided via flags or environment variables")
         }</span>
-        <span class="cov3" title="3">if awsRegion == "" </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if awsRegion == "" </span><span class="cov0" title="0">{
                 return addURLInput{}, errors.New("AWS region must be provided via flag or environment variable")
         }</span>
 
-        <span class="cov3" title="3">s3Input := cloud.S3ObjectParameters{
+        <span class="cov2" title="2">s3Input := cloud.S3ObjectParameters{
                 S3URL:           s3URL,
                 AWSAccessKey:    awsKey,
                 AWSSecretKey:    awsSecret,
@@ -3284,18 +3578,22 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) <s
         }, nil</span>
 }
 
-func resolvePathArg(s3URL string, args []string) (string, error) <span class="cov3" title="3">{
+// resolvePathArg returns the explicit destination path argument when provided,
+// otherwise derives the worktree path from the given S3 URL path component.
+func resolvePathArg(s3URL string, args []string) (string, error) <span class="cov2" title="2">{
         if len(args) == 2 </span><span class="cov2" title="2">{
                 return args[1], nil
         }</span>
-        <span class="cov1" title="1">u, err := url.Parse(s3URL)
+        <span class="cov0" title="0">u, err := url.Parse(s3URL)
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov1" title="1">return strings.TrimPrefix(u.Path, "/"), nil</span>
+        <span class="cov0" title="0">return strings.TrimPrefix(u.Path, "/"), nil</span>
 }
 
-func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, s3Info *cloud.S3Object, pathArg string, isTracked bool, sha256 string) error <span class="cov3" title="3">{
+// printResolvedInfo writes a human-readable summary of resolved Git/LFS and
+// S3 object information to the command's stdout for user confirmation.
+func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, s3Info *cloud.S3Object, pathArg string, isTracked bool, sha256 string) error <span class="cov2" title="2">{
         if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
 Resolved Git LFS s3Info
 ---------------------
@@ -3334,20 +3632,24 @@ sha256 param  : %s
         ); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("print resolved s3Info: %w", err)
         }</span>
-        <span class="cov3" title="3">return nil</span>
+        <span class="cov2" title="2">return nil</span>
 }
 
-func (s *AddURLService) ensureLFSObject(ctx context.Context, s3Info *cloud.S3Object, input addURLInput, lfsRoot string) (string, error) <span class="cov3" title="3">{
+// ensureLFSObject ensures the LFS object identified by s3Info exists in the
+// repository's LFS storage. If the input includes an explicit SHA256 that is
+// returned immediately; otherwise the object is downloaded into a temporary
+// file and moved into the LFS `objects` storage, returning the object's oid.
+func (s *AddURLService) ensureLFSObject(ctx context.Context, s3Info *cloud.S3Object, input addURLInput, lfsRoot string) (string, error) <span class="cov2" title="2">{
         if input.sha256 != "" </span><span class="cov1" title="1">{
                 return input.sha256, nil
         }</span>
 
-        <span class="cov2" title="2">computedSHA, tmpObj, err := s.download(ctx, s3Info, input.s3Params, lfsRoot)
+        <span class="cov1" title="1">computedSHA, tmpObj, err := s.download(ctx, s3Info, input.s3Params, lfsRoot)
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
 
-        <span class="cov2" title="2">oid := computedSHA
+        <span class="cov1" title="1">oid := computedSHA
         dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
         dstObj := filepath.Join(dstDir, oid)
 
@@ -3355,18 +3657,21 @@ func (s *AddURLService) ensureLFSObject(ctx context.Context, s3Info *cloud.S3Obj
                 return "", fmt.Errorf("mkdir %s: %w", dstDir, err)
         }</span>
 
-        <span class="cov2" title="2">if err := os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if err := os.Rename(tmpObj, dstObj); err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
         }</span>
 
-        <span class="cov2" title="2">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
+        <span class="cov1" title="1">if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("stderr write: %w", err)
         }</span>
 
-        <span class="cov2" title="2">return computedSHA, nil</span>
+        <span class="cov1" title="1">return computedSHA, nil</span>
 }
 
-func writePointerFile(pathArg, oid string, sizeBytes int64) error <span class="cov3" title="3">{
+// writePointerFile writes a Git LFS pointer file at the given worktree path
+// referencing the supplied oid and recording sizeBytes. It creates parent
+// directories as needed and validates the path is non-empty.
+func writePointerFile(pathArg, oid string, sizeBytes int64) error <span class="cov2" title="2">{
         pointer := fmt.Sprintf(
                 "version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
                 oid, sizeBytes,
@@ -3374,25 +3679,28 @@ func writePointerFile(pathArg, oid string, sizeBytes int64) error <span class="c
         if pathArg == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("empty worktree path")
         }</span>
-        <span class="cov3" title="3">safePath := filepath.Clean(pathArg)
+        <span class="cov2" title="2">safePath := filepath.Clean(pathArg)
         dir := filepath.Dir(safePath)
-        if dir != "." &amp;&amp; dir != "/" </span><span class="cov3" title="3">{
+        if dir != "." &amp;&amp; dir != "/" </span><span class="cov2" title="2">{
                 if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("mkdir %s: %w", dir, err)
                 }</span>
         }
-        <span class="cov3" title="3">if err := os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if err := os.WriteFile(safePath, []byte(pointer), 0644); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("write %s: %w", safePath, err)
         }</span>
 
-        <span class="cov3" title="3">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("stderr write: %w", err)
         }</span>
-        <span class="cov3" title="3">return nil</span>
+        <span class="cov2" title="2">return nil</span>
 }
 
-func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string) (bool, error), pathArg string, isTracked bool) error <span class="cov3" title="3">{
-        if isTracked </span><span class="cov1" title="1">{
+// maybeTrackLFS ensures the supplied path is tracked by Git LFS by invoking
+// the provided gitLFSTrack callback when the path is not already tracked.
+// It reports the addition to stderr for user guidance.
+func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string) (bool, error), pathArg string, isTracked bool) error <span class="cov2" title="2">{
+        if isTracked </span><span class="cov0" title="0">{
                 return nil
         }</span>
         <span class="cov2" title="2">if _, err := gitLFSTrack(ctx, pathArg); err != nil </span><span class="cov0" title="0">{
@@ -4064,7 +4372,7 @@ func getCheckSumStr(obj drs.DRSObject) string <span class="cov1" title="1">{
         curVal := ""
         for checksumType, checksum := range hash.ConvertHashInfoToMap(obj.Checksums) </span><span class="cov2" title="2">{
                 c := getChecksumPos(hash.ChecksumType(checksumType), checksumPref)
-                if c != -1 &amp;&amp; c &lt; curPos </span><span class="cov1" title="1">{
+                if c != -1 &amp;&amp; c &lt; curPos </span><span class="cov2" title="2">{
                         curPos = c
                         curVal = checksumType + ":" + checksum
                 }</span>
@@ -4811,17 +5119,22 @@ func moveFileBestEffort(src, dst string) error <span class="cov0" title="0">{
 
 import (
         "bufio"
+        "context"
         "fmt"
         "io"
         "log/slog"
         "os"
+        "os/exec"
         "sort"
         "strings"
+        "time"
 
         "github.com/calypr/git-drs/config"
         "github.com/calypr/git-drs/drs"
         "github.com/calypr/git-drs/drslog"
         "github.com/calypr/git-drs/drsmap"
+        drslfs "github.com/calypr/git-drs/drsmap/lfs"
+        "github.com/calypr/git-drs/precommit_cache"
         "github.com/spf13/cobra"
 )
 
@@ -4839,7 +5152,7 @@ var Cmd = &amp;cobra.Command{
 type PrePushService struct {
         newLogger        func(string, bool) (*slog.Logger, error)
         loadConfig       func() (*config.Config, error)
-        updateDrsObjects func(drs.ObjectBuilder, string, string, []string, *slog.Logger) error
+        updateDrsObjects func(drs.ObjectBuilder, map[string]drslfs.LfsFileInfo, *precommit_cache.Cache, bool, *slog.Logger) error
         createTempFile   func(dir, pattern string) (*os.File, error)
 }
 
@@ -4847,12 +5160,13 @@ func NewPrePushService() *PrePushService <span class="cov10" title="4">{
         return &amp;PrePushService{
                 newLogger:        drslog.NewLogger,
                 loadConfig:       config.LoadConfig,
-                updateDrsObjects: drsmap.UpdateDrsObjects,
+                updateDrsObjects: drsmap.UpdateDrsObjectsWithFiles,
                 createTempFile:   os.CreateTemp,
         }
 }</span>
 
 func (s *PrePushService) Run(args []string, stdin io.Reader) error <span class="cov10" title="4">{
+        ctx := context.Background()
         myLogger, err := s.newLogger("", false)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error creating logger: %v", err)
@@ -4895,14 +5209,22 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error <span class="
                 _ = os.Remove(tmp.Name())
         }</span>()
 
-        <span class="cov10" title="4">branches, err := readPushedBranches(tmp)
+        <span class="cov10" title="4">refs, err := readPushedRefs(tmp)
         if err != nil </span><span class="cov0" title="0">{
-                myLogger.Error(fmt.Sprintf("error reading pushed branches: %v", err))
+                myLogger.Error(fmt.Sprintf("error reading pushed refs: %v", err))
+                return err
+        }</span>
+        <span class="cov10" title="4">branches := branchesFromRefs(refs)
+
+        cache, cacheReady := openCache(ctx, myLogger)
+        lfsFiles, usedCache, err := collectLfsFiles(ctx, cache, cacheReady, gitRemoteName, gitRemoteLocation, branches, refs, myLogger)
+        if err != nil </span><span class="cov0" title="0">{
+                myLogger.Error(fmt.Sprintf("error collecting LFS files: %v", err))
                 return err
         }</span>
 
-        <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v", branches))
-        err = s.updateDrsObjects(builder, gitRemoteName, gitRemoteLocation, branches, myLogger)
+        <span class="cov10" title="4">myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v (cache=%v)", branches, usedCache))
+        err = s.updateDrsObjects(builder, lfsFiles, cache, usedCache, myLogger)
         if err != nil </span><span class="cov0" title="0">{
                 myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
                 return err
@@ -4925,6 +5247,13 @@ func parseRemoteArgs(args []string) (string, string) <span class="cov10" title="
         <span class="cov10" title="4">return gitRemoteName, gitRemoteLocation</span>
 }
 
+type pushedRef struct {
+        LocalRef  string
+        LocalSHA  string
+        RemoteRef string
+        RemoteSHA string
+}
+
 func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.File, error)) (*os.File, error) <span class="cov10" title="4">{
         tmp, err := createTempFile("", "prepush-stdin-*")
         if err != nil </span><span class="cov0" title="0">{
@@ -4944,7 +5273,7 @@ func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.
 // readPushedBranches reads git push lines from the provided temp file,
 // extracts unique local branch names for refs under `refs/heads/` and
 // returns them sorted. The file is rewound to the start before returning.
-func readPushedBranches(f io.ReadSeeker) ([]string, error) <span class="cov10" title="4">{
+func readPushedRefs(f io.ReadSeeker) ([]pushedRef, error) <span class="cov10" title="4">{
         // Ensure we read from start
         // example:
         // refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
@@ -4952,35 +5281,162 @@ func readPushedBranches(f io.ReadSeeker) ([]string, error) <span class="cov10" t
                 return nil, err
         }</span>
         <span class="cov10" title="4">scanner := bufio.NewScanner(f)
-        set := make(map[string]struct{})
+        refs := make([]pushedRef, 0)
         for scanner.Scan() </span><span class="cov10" title="4">{
                 line := scanner.Text()
                 fields := strings.Fields(line)
-                if len(fields) &lt; 1 </span><span class="cov0" title="0">{
+                if len(fields) &lt; 4 </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov10" title="4">localRef := fields[0]
-                const prefix = "refs/heads/"
-                if strings.HasPrefix(localRef, prefix) </span><span class="cov10" title="4">{
-                        branch := strings.TrimPrefix(localRef, prefix)
+                <span class="cov10" title="4">refs = append(refs, pushedRef{
+                        LocalRef:  fields[0],
+                        LocalSHA:  fields[1],
+                        RemoteRef: fields[2],
+                        RemoteSHA: fields[3],
+                })</span>
+        }
+        <span class="cov10" title="4">if err := scanner.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        // Rewind so caller can reuse the file
+        <span class="cov10" title="4">if _, err := f.Seek(0, 0); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov10" title="4">return refs, nil</span>
+}
+
+func branchesFromRefs(refs []pushedRef) []string <span class="cov10" title="4">{
+        const prefix = "refs/heads/"
+        set := make(map[string]struct{})
+        for _, ref := range refs </span><span class="cov10" title="4">{
+                if strings.HasPrefix(ref.LocalRef, prefix) </span><span class="cov10" title="4">{
+                        branch := strings.TrimPrefix(ref.LocalRef, prefix)
                         if branch != "" </span><span class="cov10" title="4">{
                                 set[branch] = struct{}{}
                         }</span>
                 }
         }
-        <span class="cov10" title="4">if err := scanner.Err(); err != nil </span><span class="cov0" title="0">{
-                return nil, err
-        }</span>
         <span class="cov10" title="4">branches := make([]string, 0, len(set))
         for b := range set </span><span class="cov10" title="4">{
                 branches = append(branches, b)
         }</span>
         <span class="cov10" title="4">sort.Strings(branches)
-        // Rewind so caller can reuse the file
-        if _, err := f.Seek(0, 0); err != nil </span><span class="cov0" title="0">{
-                return nil, err
+        return branches</span>
+}
+
+func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache, bool) <span class="cov10" title="4">{
+        cache, err := precommit_cache.Open(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                logger.Debug(fmt.Sprintf("pre-commit cache unavailable: %v", err))
+                return nil, false
         }</span>
-        <span class="cov10" title="4">return branches, nil</span>
+        <span class="cov10" title="4">if _, err := os.Stat(cache.Root); err != nil </span><span class="cov10" title="4">{
+                if os.IsNotExist(err) </span><span class="cov10" title="4">{
+                        logger.Debug("pre-commit cache missing; continuing without cache")
+                }</span> else<span class="cov0" title="0"> {
+                        logger.Debug(fmt.Sprintf("pre-commit cache access error: %v", err))
+                }</span>
+                <span class="cov10" title="4">return nil, false</span>
+        }
+        <span class="cov0" title="0">return cache, true</span>
+}
+
+func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheReady bool, gitRemoteName, gitRemoteLocation string, branches []string, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) <span class="cov10" title="4">{
+        if cacheReady </span><span class="cov0" title="0">{
+                lfsFiles, ok, err := lfsFilesFromCache(ctx, cache, refs, logger)
+                if err != nil </span><span class="cov0" title="0">{
+                        logger.Debug(fmt.Sprintf("pre-commit cache read failed: %v", err))
+                }</span> else<span class="cov0" title="0"> if ok </span><span class="cov0" title="0">{
+                        return lfsFiles, true, nil
+                }</span>
+                <span class="cov0" title="0">logger.Debug("pre-commit cache incomplete or stale; falling back to LFS discovery")</span>
+        }
+        <span class="cov10" title="4">lfsFiles, err := drslfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, false, err
+        }</span>
+        <span class="cov10" title="4">return lfsFiles, false, nil</span>
+}
+
+const cacheMaxAge = 24 * time.Hour
+
+func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) <span class="cov5" title="2">{
+        if cache == nil </span><span class="cov0" title="0">{
+                return nil, false, nil
+        }</span>
+        <span class="cov5" title="2">paths, err := listPushedPaths(ctx, refs)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, false, err
+        }</span>
+        <span class="cov5" title="2">lfsFiles := make(map[string]drslfs.LfsFileInfo, len(paths))
+        for _, path := range paths </span><span class="cov5" title="2">{
+                entry, ok, err := cache.ReadPathEntry(path)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, false, err
+                }</span>
+                <span class="cov5" title="2">if !ok || entry.LFSOID == "" </span><span class="cov0" title="0">{
+                        return nil, false, nil
+                }</span>
+                <span class="cov5" title="2">if entry.UpdatedAt == "" || precommit_cache.StaleAfter(entry.UpdatedAt, cacheMaxAge) </span><span class="cov1" title="1">{
+                        return nil, false, nil
+                }</span>
+                <span class="cov1" title="1">stat, err := os.Stat(path)
+                if err != nil </span><span class="cov0" title="0">{
+                        logger.Debug(fmt.Sprintf("cache path stat failed for %s: %v", path, err))
+                        return nil, false, nil
+                }</span>
+                <span class="cov1" title="1">lfsFiles[path] = drslfs.LfsFileInfo{
+                        Name:    path,
+                        Size:    stat.Size(),
+                        OidType: "sha256",
+                        Oid:     entry.LFSOID,
+                        Version: "https://git-lfs.github.com/spec/v1",
+                }</span>
+        }
+        <span class="cov1" title="1">return lfsFiles, true, nil</span>
+}
+
+func listPushedPaths(ctx context.Context, refs []pushedRef) ([]string, error) <span class="cov5" title="2">{
+        const zeroSHA = "0000000000000000000000000000000000000000"
+        set := make(map[string]struct{})
+        for _, ref := range refs </span><span class="cov5" title="2">{
+                if ref.LocalSHA == "" || ref.LocalSHA == zeroSHA </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov5" title="2">var args []string
+                if ref.RemoteSHA == "" || ref.RemoteSHA == zeroSHA </span><span class="cov1" title="1">{
+                        args = []string{"ls-tree", "-r", "--name-only", ref.LocalSHA}
+                }</span> else<span class="cov1" title="1"> {
+                        args = []string{"diff", "--name-only", ref.RemoteSHA, ref.LocalSHA}
+                }</span>
+                <span class="cov5" title="2">out, err := gitOutput(ctx, args...)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov5" title="2">for _, line := range strings.Split(strings.TrimSpace(out), "\n") </span><span class="cov5" title="2">{
+                        line = strings.TrimSpace(line)
+                        if line == "" </span><span class="cov0" title="0">{
+                                continue</span>
+                        }
+                        <span class="cov5" title="2">set[line] = struct{}{}</span>
+                }
+        }
+        <span class="cov5" title="2">paths := make([]string, 0, len(set))
+        for path := range set </span><span class="cov5" title="2">{
+                paths = append(paths, path)
+        }</span>
+        <span class="cov5" title="2">sort.Strings(paths)
+        return paths, nil</span>
+}
+
+func gitOutput(ctx context.Context, args ...string) (string, error) <span class="cov5" title="2">{
+        cmd := exec.CommandContext(ctx, "git", args...)
+        cmd.Env = os.Environ()
+        out, err := cmd.CombinedOutput()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+        }</span>
+        <span class="cov5" title="2">return string(out), nil</span>
 }
 </pre>
 		
@@ -7228,7 +7684,7 @@ const (
 // - sets package variable GIT_TRANSFER_TRACE.
 // Typical callers:
 // - runtime automatically invokes init(); no external callers needed.
-func init() <span class="cov6" title="58">{
+func init() <span class="cov6" title="59">{
         GIT_TRANSFER_TRACE = 0
         if envValue := os.Getenv("GIT_TRANSFER_TRACE"); envValue != "" </span><span class="cov0" title="0">{
                 if parsed, err := strconv.Atoi(envValue); err == nil </span><span class="cov0" title="0">{
@@ -7472,15 +7928,15 @@ func parseLogLevel(value string) (slog.Level, bool) <span class="cov0" title="0"
 //
 // Typical callers:
 // - passed as ReplaceAttr to slog.HandlerOptions in NewLogger.
-func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="662">{
-        if attr.Key != slog.SourceKey </span><span class="cov9" title="510">{
+func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10" title="672">{
+        if attr.Key != slog.SourceKey </span><span class="cov9" title="518">{
                 return attr
         }</span>
-        <span class="cov7" title="152">source, ok := attr.Value.Any().(*slog.Source)
+        <span class="cov7" title="154">source, ok := attr.Value.Any().(*slog.Source)
         if !ok || source == nil </span><span class="cov0" title="0">{
                 return attr
         }</span>
-        <span class="cov7" title="152">source.File = formatSourcePath(source.File)
+        <span class="cov7" title="154">source.File = formatSourcePath(source.File)
         attr.Value = slog.AnyValue(source)
         return attr</span>
 }
@@ -7507,12 +7963,12 @@ func replaceSourceAttr(_ []string, attr slog.Attr) slog.Attr <span class="cov10"
 //
 // Typical callers:
 // - replaceSourceAttr when rewriting source file paths for log output.
-func formatSourcePath(path string) string <span class="cov7" title="152">{
+func formatSourcePath(path string) string <span class="cov7" title="154">{
         pathSlash := filepath.ToSlash(path)
         moduleSuffix := modulePathSuffix()
-        if moduleSuffix != "" </span><span class="cov7" title="152">{
+        if moduleSuffix != "" </span><span class="cov7" title="154">{
                 moduleSuffixSlash := strings.TrimPrefix(filepath.ToSlash(moduleSuffix), "/")
-                if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx &gt;= 0 </span><span class="cov7" title="152">{
+                if idx := strings.Index(pathSlash, "/"+moduleSuffixSlash+"/"); idx &gt;= 0 </span><span class="cov7" title="154">{
                         return pathSlash[idx+1:]
                 }</span>
                 <span class="cov0" title="0">if strings.HasPrefix(pathSlash, moduleSuffixSlash+"/") </span><span class="cov0" title="0">{
@@ -7545,16 +8001,16 @@ func formatSourcePath(path string) string <span class="cov7" title="152">{
 // - caches computed value via modulePathSuffixOnce.
 // Typical callers:
 // - formatSourcePath to help shorten file paths.
-func modulePathSuffix() string <span class="cov7" title="152">{
-        modulePathSuffixOnce.Do(func() </span><span class="cov5" title="36">{
-                if info, ok := debug.ReadBuildInfo(); ok &amp;&amp; info.Main.Path != "" </span><span class="cov5" title="36">{
+func modulePathSuffix() string <span class="cov7" title="154">{
+        modulePathSuffixOnce.Do(func() </span><span class="cov6" title="38">{
+                if info, ok := debug.ReadBuildInfo(); ok &amp;&amp; info.Main.Path != "" </span><span class="cov6" title="38">{
                         parts := strings.Split(info.Main.Path, "/")
-                        if len(parts) &gt; 1 </span><span class="cov5" title="36">{
+                        if len(parts) &gt; 1 </span><span class="cov6" title="38">{
                                 modulePathSuffixValue = strings.Join(parts[1:], "/")
                         }</span>
                 }
         })
-        <span class="cov7" title="152">return modulePathSuffixValue</span>
+        <span class="cov7" title="154">return modulePathSuffixValue</span>
 }
 
 // repoRootPath attempts to locate the repository root by searching for go.mod upward.
@@ -7609,6 +8065,7 @@ import (
         "github.com/calypr/git-drs/drs/hash"
         drslfs "github.com/calypr/git-drs/drsmap/lfs"
         drsstore "github.com/calypr/git-drs/drsmap/store"
+        "github.com/calypr/git-drs/precommit_cache"
         "github.com/calypr/git-drs/projectdir"
         "github.com/calypr/git-drs/utils"
         "github.com/google/uuid"
@@ -7723,7 +8180,7 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
         return nil</span>
 }
 
-func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov3" title="4">{
+func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov0" title="0">{
 
         logger.Debug("Update to DRS objects started")
 
@@ -7734,27 +8191,75 @@ func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocatio
         }</span>
 
         // get project
-        <span class="cov3" title="4">if builder.ProjectID == "" </span><span class="cov0" title="0">{
+        <span class="cov0" title="0">if builder.ProjectID == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("no project configured")
         }</span>
 
-        // create a DRS object for each LFS file
-        // which will be used at push-time
-        <span class="cov3" title="4">for _, file := range lfsFiles </span><span class="cov3" title="4">{
+        <span class="cov0" title="0">return UpdateDrsObjectsWithFiles(builder, lfsFiles, nil, false, logger)</span>
+}
 
-                drsObj, err2 := WriteDrsFile(builder, file, nil)
-                if err2 != nil </span><span class="cov0" title="0">{
-                        logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err2))
+func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]drslfs.LfsFileInfo, cache *precommit_cache.Cache, preferCacheURL bool, logger *slog.Logger) error <span class="cov3" title="4">{
+        if logger == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("logger is required")
+        }</span>
+        <span class="cov3" title="4">logger.Debug("Update to DRS objects started")
+
+        // get project
+        if builder.ProjectID == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("no project configured")
+        }</span>
+        <span class="cov3" title="4">if len(lfsFiles) == 0 </span><span class="cov2" title="2">{
+                return nil
+        }</span>
+
+        <span class="cov2" title="2">for _, file := range lfsFiles </span><span class="cov3" title="4">{
+                drsID := DrsUUID(builder.ProjectID, file.Oid)
+                authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
+                if err != nil </span><span class="cov0" title="0">{
+                        logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
                         continue</span>
                 }
-                <span class="cov3" title="4">logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, drsObj.Id))</span>
+
+                <span class="cov3" title="4">authoritativeURL := ""
+                if len(authoritativeObj.AccessMethods) &gt; 0 </span><span class="cov3" title="4">{
+                        authoritativeURL = authoritativeObj.AccessMethods[0].AccessURL.URL
+                }</span>
+
+                <span class="cov3" title="4">var hint string
+                if cache != nil </span><span class="cov0" title="0">{
+                        externalURL, ok, err := cache.LookupExternalURLByOID(file.Oid)
+                        if err != nil </span><span class="cov0" title="0">{
+                                logger.Debug(fmt.Sprintf("cache lookup failed for %s: %v", file.Oid, err))
+                        }</span> else<span class="cov0" title="0"> if ok </span><span class="cov0" title="0">{
+                                hint = externalURL
+                        }</span>
+                }
+
+                <span class="cov3" title="4">if hint != "" </span><span class="cov0" title="0">{
+                        if err := precommit_cache.CheckExternalURLMismatch(hint, authoritativeURL); err != nil </span><span class="cov0" title="0">{
+                                logger.Warn(fmt.Sprintf("Warning. %s (path=%s oid=%s)", err.Error(), file.Name, file.Oid))
+                                fmt.Fprintln(os.Stderr, "Warning.", err.Error())
+                        }</span>
+                }
+
+                <span class="cov3" title="4">if preferCacheURL &amp;&amp; hint != "" </span><span class="cov0" title="0">{
+                        if len(authoritativeObj.AccessMethods) &gt; 0 </span><span class="cov0" title="0">{
+                                authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
+                        }</span>
+                }
+
+                <span class="cov3" title="4">if err := drsstore.WriteObject(projectdir.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil </span><span class="cov0" title="0">{
+                        logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
+                        continue</span>
+                }
+                <span class="cov3" title="4">logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))</span>
         }
 
-        <span class="cov3" title="4">return nil</span>
+        <span class="cov2" title="2">return nil</span>
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) <span class="cov4" title="8">{
+func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) <span class="cov3" title="4">{
 
         // determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
@@ -7777,16 +8282,16 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov4" title="8">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov3" title="3">{
+        <span class="cov3" title="4">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov3" title="3">{
                 drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
         }</span>
 
         // write drs objects to DRS_OBJS_PATH
-        <span class="cov4" title="8">err = drsstore.WriteObject(projectdir.DRS_OBJS_PATH, drsObj, file.Oid)
+        <span class="cov3" title="4">err = drsstore.WriteObject(projectdir.DRS_OBJS_PATH, drsObj, file.Oid)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov4" title="8">return drsObj, nil</span>
+        <span class="cov3" title="4">return drsObj, nil</span>
 }
 
 func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov1" title="1">{
@@ -8835,22 +9340,7 @@ func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar
 }</span>
 </pre>
 		
-		<pre class="file" id="file58" style="display: none">// helpers for pre-push (reading .git/drs/pre-commit cache)
-// ---------------------------------------------------------
-// LFS-only local cache readers for pre-push validation.
-//
-// These helpers expose NON-AUTHORITATIVE hints recorded by pre-commit.
-// Pre-push is expected to resolve truth via Indexd / DRS and compare.
-//
-// Cache layout (per ADR):
-//   .git/drs/pre-commit/v1/paths/&lt;encoded-path&gt;.json   (Path -&gt; OID)
-//   .git/drs/pre-commit/v1/oids/&lt;oid-hash&gt;.json        (OID -&gt; paths[] + external_url hint)
-//
-// NOTE:
-// OID files are named by sha256(oid string), not the raw oid.
-// These helpers reproduce that mapping exactly.
-
-package precommit_cache
+		<pre class="file" id="file58" style="display: none">package precommit_cache
 
 import (
         "context"
@@ -8869,15 +9359,24 @@ import (
 )
 
 const (
+        // cacheVersionDir is the repository-relative directory under `.git`
+        // containing the pre-commit cache layout (paths and oids).
         cacheVersionDir = "drs/pre-commit/v1"
 )
 
+// PathEntry represents the per-path cache file format.
+// It maps a repository-relative path to the last recorded LFS OID and
+// a timestamp when the entry was updated.
 type PathEntry struct {
         Path      string `json:"path"`
         LFSOID    string `json:"lfs_oid"`
         UpdatedAt string `json:"updated_at"`
 }
 
+// OIDEntry represents the per-OID cache file format.
+// It lists repository paths that referenced the OID, an optional
+// non-authoritative external URL hint, a timestamp and a flag that
+// indicates whether content changed for a path update.
 type OIDEntry struct {
         LFSOID        string   `json:"lfs_oid"`
         Paths         []string `json:"paths"`
@@ -8886,7 +9385,8 @@ type OIDEntry struct {
         ContentChange bool     `json:"content_changed"`
 }
 
-// Cache provides read-only access to .git/drs/pre-commit cache.
+// Cache provides read-only access to the `.git/drs/pre-commit` cache.
+// Use Open to construct an instance with correct paths resolved.
 type Cache struct {
         GitDir    string
         Root      string
@@ -8895,13 +9395,16 @@ type Cache struct {
         StatePath string
 }
 
-func Open(ctx context.Context) (*Cache, error) <span class="cov1" title="1">{
+// Open discovers the repository `.git` directory and returns a Cache
+// configured to read the repository's pre-commit cache layout.
+// Returns an error if git metadata cannot be resolved.
+func Open(ctx context.Context) (*Cache, error) <span class="cov9" title="11">{
         gitDir, err := gitRevParseGitDir(ctx)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov1" title="1">root := filepath.Join(gitDir, cacheVersionDir)
-        return &amp;Cache{
+</span>        root := filepath.Join(gitDir, cacheVersionDir)
+        r</span>eturn &amp;Cache{
                 GitDir:    gitDir,
                 Root:      root,
                 PathsDir:  filepath.Join(root, "paths"),
@@ -8910,11 +9413,13 @@ func Open(ctx context.Context) (*Cache, error) <span class="cov1" title="1">{
         }, nil</span>
 }
 
-//
+</span>//
 // Primary lookup helpers
 //
 
 // LookupOIDByPath returns the cached LFS OID for a repo-relative path.
+// It returns (oid, true, nil) when present, (\"\", false, nil) when absent,
+// and an error if the underlying read failed.
 func (c *Cache) LookupOIDByPath(path string) (string, bool, error) <span class="cov1" title="1">{
         pe, ok, err := c.ReadPathEntry(path)
         if err != nil || !ok </span><span class="cov0" title="0">{
@@ -8926,49 +9431,52 @@ func (c *Cache) LookupOIDByPath(path string) (string, bool, error) <span class="
         <span class="cov1" title="1">return pe.LFSOID, true, nil</span>
 }
 
-// LookupPathsByOID returns advisory paths that recently referenced this OID.
-func (c *Cache) LookupPathsByOID(oid string) ([]string, bool, error) <span class="cov0" title="0">{
+// LookupPathsByOID returns advisory repository-relative paths that recently
+// referenced the given LFS OID. Paths are returned sorted. Absent OI<span class="cov0" title="0">D yields
+// (nil, false, nil).
+func (c *Cache) Lookup</span><span class="cov0" title="0">PathsByOID(oid string) ([]string, bool, error) {
         oe, ok, err := c.ReadOIDEntry(oid)
-        if err != nil || !ok </span><span class="cov0" title="0">{
+        i</span>f err != nil || !ok </span><span class="cov0" title="0">{
                 return nil, ok, err
         }</span>
-        <span class="cov0" title="0">paths := append([]string(nil), oe.Paths...)
+        paths := append([]strin</span>g(nil), oe.Paths...)
         sort.Strings(paths)
         return paths, true, nil</span>
 }
 
-// LookupExternalURLByOID returns the cached external URL hint (if any).
-// Returns ("", false, nil) if the OID entry is missing OR the hint is empty.
-func (c *Cache) LookupExternalURLByOID(oid string) (string, bool, error) <span class="cov5" title="2">{
+// LookupExternalURLByOID returns the cached external URL hint for an OID<span class="cov0" title="0">.
+// Returns (\"\", false, nil) if the entry is missing or the hint is empty.
+func (c *Cache) Lookup</span><span class="cov0" title="0">ExternalURLByOID(oid string) (string, bool, error) {
         oe, ok, err := c.ReadOIDEntry(oid)
-        if err != nil || !ok </span><span class="cov0" title="0">{
+        i</span>f err != nil || !ok </span><span class="cov0" title="0">{
                 return "", ok, err
         }</span>
-        <span class="cov5" title="2">u := strings.TrimSpace(oe.ExternalURL)
-        if u == "" </span><span class="cov0" title="0">{
+</span>        u := strings.TrimSpace(oe.ExternalURL)
+        i</span>f u == "" </span><span class="cov0" title="0">{
                 return "", false, nil
         }</span>
-        <span class="cov5" title="2">return u, true, nil</span>
+        <span class="cov0" title="0">return u, true, nil</span>
 }
 
-// ResolveExternalURLByPath maps:
-//
-//        path -&gt; oid -&gt; external_url (hint)
-//
-// Returns ("", false, nil) if any step is missing.
-func (c *Cache) ResolveExternalURLByPath(path string) (string, bool, error) <span class="cov1" title="1">{
+// ResolveExternalURLByPath resolves a path -&gt; oid -&gt; external_url (hint).
+// Returns the external URL hint when available. Missing data yields
+// (\"\", false, nil).
+func (c *Cache) ResolveExternalURLByPath(path string) (string, bool, error) <span class="cov0" title="0">{
         oid, ok, err := c.LookupOIDByPath(path)
         if err != nil || !ok </span><span class="cov0" title="0">{
                 return "", false, err
         }</span>
-        <span class="cov1" title="1">return c.LookupExternalURLByOID(oid)</span>
+        <span class="cov0" title="0">return c.LookupExternalURLByOID(oid)</span>
 }
 
 //
 // Lower-level file access
 //
 
-func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) <span class="cov1" title="1">{
+// ReadPathEntry reads and parses the JSON path entry for a repository-relative
+// path. Returns (entry, true, nil) on success, (nil, false, nil) if the file
+// does not exist, or an error on I/O/parse failure.
+func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) <span class="cov0" title="0">{
         f := c.pathEntryFile(path)
         b, err := os.ReadFile(f)
         if err != nil </span><span class="cov0" title="0">{
@@ -8977,14 +9485,17 @@ func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) <span class
                 }</span>
                 <span class="cov0" title="0">return nil, false, fmt.Errorf("read path entry %q: %w", f, err)</span>
         }
-        <span class="cov1" title="1">var pe PathEntry
+        <span class="cov0" title="0">var pe PathEntry
         if err := json.Unmarshal(b, &amp;pe); err != nil </span><span class="cov0" title="0">{
                 return nil, false, fmt.Errorf("parse path entry %q: %w", f, err)
         }</span>
-        <span class="cov1" title="1">return &amp;pe, true, nil</span>
+        <span class="cov0" title="0">return &amp;pe, true, nil</span>
 }
 
-func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) <span class="cov5" title="2">{
+// ReadOIDEntry reads and parses the JSON OID entry for an LFS OID string.
+// Returns (entry, true, nil) on success, (nil, false, nil) if missing,
+// or an error on I/O/parse failure.
+func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) <span class="cov0" title="0">{
         f := c.oidEntryFile(oid)
         b, err := os.ReadFile(f)
         if err != nil </span><span class="cov0" title="0">{
@@ -8993,92 +9504,108 @@ func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) <span class="c
                 }</span>
                 <span class="cov0" title="0">return nil, false, fmt.Errorf("read oid entry %q: %w", f, err)</span>
         }
-        <span class="cov5" title="2">var oe OIDEntry
+        <span class="cov0" title="0">var oe OIDEntry
         if err := json.Unmarshal(b, &amp;oe); err != nil </span><span class="cov0" title="0">{
                 return nil, false, fmt.Errorf("parse oid entry %q: %w", f, err)
         }</span>
-        <span class="cov5" title="2">return &amp;oe, true, nil</span>
+        <span class="cov0" title="0">return &amp;oe, true, nil</span>
 }
 
 //
 // Validation helpers (optional)
 //
 
-// CheckExternalURLMismatch compares a cached external URL hint against an authoritative URL.
-func CheckExternalURLMismatch(localHint, authoritative string) error <span class="cov8" title="3">{
+// CheckExternalURLMismatch compares a cached external URL hint against an
+// authoritative URL. If either value is empty this is a no-op. When both are
+// non-empty and differ an error describing the mismatch is returned.
+func CheckExternalURLMismatch(localHint, authoritative string) error <span class="cov0" title="0">{
         l := strings.TrimSpace(localHint)
         a := strings.TrimSpace(authoritative)
-        if l == "" || a == "" </span><span class="cov1" title="1">{
+        if l == "" || a == "" </span><span class="cov0" title="0">{
                 return nil
         }</span>
-        <span class="cov5" title="2">if l != a </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">if l != a </span><span class="cov0" title="0">{
                 return fmt.Errorf(
                         "external URL mismatch: cache=%q authoritative=%q",
                         l, a,
                 )
         }</span>
-        <span class="cov1" title="1">return nil</span>
+        <span class="cov0" title="0">return nil</span>
 }
 
-// StaleAfter reports whether a cache timestamp is older than maxAge.
-func StaleAfter(updatedAt string, maxAge time.Duration) bool <span class="cov5" title="2">{
+// StaleAfter reports whether a JSON entry with the given updatedAt RFC3339
+// timestamp is older than maxAge. Returns false if the timestamp cannot be parsed.
+func StaleAfter(updatedAt string, maxAge time.Duration) bool <span class="cov0" title="0">{
         t, err := time.Parse(time.RFC3339, updatedAt)
-        if err != nil </span><span class="cov1" title="1">{
+        if err != nil </span><span class="cov0" title="0">{
                 return false
         }</span>
-        <span class="cov1" title="1">return time.Since(t) &gt; maxAge</span>
+        <span class="cov0" title="0">return time.Since(t) &gt; maxAge</span>
 }
 
 //
 // Filename / encoding helpers
 //
 
-func (c *Cache) pathEntryFile(path string) string <span class="cov5" title="2">{
+// pathEntryFile returns the filesystem path to the JSON file for the given
+// repository-relative path within the Cache.PathsDir.
+func (c *Cache) pathEntryFile(path string) string <span class="cov0" title="0">{
         return filepath.Join(c.PathsDir, EncodePath(path)+".json")
 }</span>
 
-func (c *Cache) oidEntryFile(oid string) string <span class="cov10" title="4">{
+// oidEntryFile returns the filesystem path to the JSON file for the given
+// LFS OID. Files are named by sha256(oid) to avoid filesystem restrictions.
+func (c *Cache) oidEntryFile(oid string) string <span class="cov0" title="0">{
         sum := sha256.Sum256([]byte(oid))
         return filepath.Join(c.OIDsDir, fmt.Sprintf("%x.json", sum[:]))
 }</span>
 
-func EncodePath(path string) string <span class="cov8" title="3">{
+// EncodePath returns a filesystem-safe base64 raw-URL encoding for a path.
+// The encoding is reversible by DecodePath.
+func EncodePath(path string) string <span class="cov3" title="2">{
         return base64.RawURLEncoding.EncodeToString([]byte(path))
 }</span>
 
-func DecodePath(encoded string) (string, error) <span class="cov1" title="1">{
+// DecodePath decodes a value produced by EncodePath back to the original path.
+// Returns an error if the input is not valid base64 raw-URL.
+func DecodePath(encoded string) (string, error) <span class="cov0" title="0">{
         b, err := base64.RawURLEncoding.DecodeString(encoded)
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov1" title="1">return string(b), nil</span>
+        <span class="cov0" title="0">return string(b), nil</span>
 }
 
 //
 // Git helpers
 //
 
-func gitRevParseGitDir(ctx context.Context) (string, error) <span class="cov1" title="1">{
+// gitRevParseGitDir runs `git rev-parse --git-dir` (and `--show-toplevel` if
+// necessary) to return an absolute path to the repository `.git` directory.
+// Returns an error when git fails or the result cannot be resolved.
+func gitRevParseGitDir(ctx context.Context) (string, error) <span class="cov7" title="6">{
         out, err := git(ctx, "rev-parse", "--git-dir")
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov1" title="1">gitDir := strings.TrimSpace(string(out))
+        <span class="cov7" title="6">gitDir := strings.TrimSpace(string(out))
         if gitDir == "" </span><span class="cov0" title="0">{
                 return "", errors.New("could not determine .git dir")
         }</span>
-        <span class="cov1" title="1">if !filepath.IsAbs(gitDir) </span><span class="cov1" title="1">{
+        <span class="cov7" title="6">if !filepath.IsAbs(gitDir) </span><span class="cov7" title="6">{
                 rootOut, err := git(ctx, "rev-parse", "--show-toplevel")
                 if err != nil </span><span class="cov0" title="0">{
                         return "", err
                 }</span>
-                <span class="cov1" title="1">root := strings.TrimSpace(string(rootOut))
+                <span class="cov7" title="6">root := strings.TrimSpace(string(rootOut))
                 gitDir = filepath.Join(root, gitDir)</span>
         }
-        <span class="cov1" title="1">return gitDir, nil</span>
+        <span class="cov7" title="6">return gitDir, nil</span>
 }
 
-func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov5" title="2">{
+// git executes a git command and returns combined output. If git exits with
+// a non-zero status the returned error includes the command and stderr/stdout.
+func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov10" title="12">{
         cmd := exec.CommandContext(ctx, "git", args...)
         cmd.Env = os.Environ()
         out, err := cmd.CombinedOutput()
@@ -9089,7 +9616,7 @@ func git(ctx context.Context, args ...string) ([]byte, error) <span class="cov5"
                         strings.TrimSpace(string(out)),
                 )
         }</span>
-        <span class="cov5" title="2">return out, nil</span>
+        <span class="cov10" title="12">return out, nil</span>
 }
 </pre>
 		
@@ -9531,20 +10058,20 @@ import (
         "github.com/golang-jwt/jwt/v5"
 )
 
-func GitTopLevel() (string, error) <span class="cov9" title="65">{
+func GitTopLevel() (string, error) <span class="cov9" title="71">{
         path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
         if err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov9" title="65">return strings.TrimSuffix(path, "\n"), nil</span>
+        <span class="cov9" title="71">return strings.TrimSuffix(path, "\n"), nil</span>
 }
 
-func SimpleRun(cmds []string) (string, error) <span class="cov10" title="66">{
+func SimpleRun(cmds []string) (string, error) <span class="cov10" title="72">{
         exePath, err := exec.LookPath(cmds[0])
         if err != nil </span><span class="cov1" title="1">{
                 return "", fmt.Errorf("command not found: %s: %w", cmds[0], err)
         }</span>
-        <span class="cov9" title="65">cmd := exec.Command(exePath, cmds[1:]...)
+        <span class="cov9" title="71">cmd := exec.Command(exePath, cmds[1:]...)
         cmdOut, err := cmd.Output()
         return string(cmdOut), err</span>
 }
@@ -9622,7 +10149,7 @@ func ParseS3URL(s3url string) (string, string, error) <span class="cov7" title="
         if !strings.HasPrefix(s3url, s3Prefix) </span><span class="cov4" title="5">{
                 return "", "", fmt.Errorf("S3 URL requires prefix 's3://': %s", s3url)
         }</span>
-        <span class="cov7" title="17">trimmed := strings.TrimPrefix(s3url, s3Prefix)
+        <span class="cov6" title="17">trimmed := strings.TrimPrefix(s3url, s3Prefix)
         slashIndex := strings.Index(trimmed, "/")
         if slashIndex == -1 || slashIndex == len(trimmed)-1 </span><span class="cov3" title="4">{
                 return "", "", fmt.Errorf("invalid S3 file URL: %s", s3url)

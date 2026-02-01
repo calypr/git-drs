@@ -28,6 +28,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -63,6 +65,17 @@ type Change struct {
 	OldPath string // for rename
 	NewPath string // for rename (and for add/modify/delete uses NewPath)
 	Status  string // raw status, e.g. "A", "M", "D", "R100"
+}
+
+// Cmd line declaration
+var Cmd = &cobra.Command{
+	Use:   "precommit",
+	Short: "pre-commit hook to update local DRS cache",
+	Long:  "Pre-commit hook that updates the local DRS pre-commit cache",
+	Args:  cobra.ExactArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return run(context.Background())
+	},
 }
 
 func main() {

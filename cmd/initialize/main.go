@@ -14,7 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var transfers int
+var (
+	transfers            int
+	upsert               bool
+	multiPartThreshold   int
+	enableDataClientLogs bool
+)
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -71,12 +76,15 @@ var Cmd = &cobra.Command{
 
 func initGitConfig() error {
 	configs := map[string]string{
-		"lfs.standalonetransferagent":       "drs",
-		"lfs.customtransfer.drs.path":       "git-drs",
-		"lfs.customtransfer.drs.args":       "transfer",
-		"lfs.allowincompletepush":           "false",
-		"lfs.customtransfer.drs.concurrent": strconv.FormatBool(transfers > 1),
-		"lfs.concurrenttransfers":           strconv.Itoa(transfers),
+		"lfs.standalonetransferagent":                    "drs",
+		"lfs.customtransfer.drs.path":                    "git-drs",
+		"lfs.customtransfer.drs.args":                    "transfer",
+		"lfs.allowincompletepush":                        "false",
+		"lfs.customtransfer.drs.concurrent":              strconv.FormatBool(transfers > 1),
+		"lfs.concurrenttransfers":                        strconv.Itoa(transfers),
+		"lfs.customtransfer.drs.upsert":                  strconv.FormatBool(upsert),
+		"lfs.customtransfer.drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
+		"lfs.customtransfer.drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
 	}
 
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
@@ -87,6 +95,9 @@ func initGitConfig() error {
 
 func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
+	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for indexd records")
+	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 500, "Multipart threshold in MB")
+	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 }
 
 func installPrePushHook(logger *slog.Logger) error {

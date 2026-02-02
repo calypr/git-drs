@@ -78,9 +78,6 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 
 	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
-	if multiPartThresholdInt <= 0 {
-		multiPartThresholdInt = 500
-	}
 	var multiPartThreshold int64 = multiPartThresholdInt * common.MB
 
 	config := &Config{

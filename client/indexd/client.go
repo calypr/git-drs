@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os/exec"
-	"strconv"
-	"strings"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
@@ -17,6 +14,7 @@ import (
 	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/gitrepo"
 )
 
 // Config holds configuration parameters for the GitDrsIdxdClient.
@@ -56,7 +54,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	// We also disable data-client's separate message file by default to aggregate logs in git-drs.log,
 	// but allow re-enabling it via config.
 	// but allow re-enabling it via config.
-	enableDataClientLogs, _ := getLfsCustomTransferBool("lfs.customtransfer.drs.enable-data-client-logs", false)
+	enableDataClientLogs := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.enable-data-client-logs", false)
 
 	logOpts := []logs.Option{
 		logs.WithBaseLogger(logger),
@@ -78,13 +76,10 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	}
 	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
 
-	upsert, err := getLfsCustomTransferBool("lfs.customtransfer.drs.upsert", false)
-	if err != nil {
-		return nil, err
-	}
-	multiPartThresholdInt, err := getLfsCustomTransferInt("lfs.customtransfer.drs.multipart-threshold", 500)
-	if err != nil {
-		return nil, err
+	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
+	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	if multiPartThresholdInt <= 0 {
+		multiPartThresholdInt = 500
 	}
 	var multiPartThreshold int64 = multiPartThresholdInt * common.MB
 
@@ -235,31 +230,4 @@ func (cl *GitDrsIdxdClient) GetBucketName() string {
 
 func (cl *GitDrsIdxdClient) GetUpsert() bool {
 	return cl.Config.Upsert
-}
-
-// Helpers retained from original implementation
-
-func getLfsCustomTransferString(key string) (string, error) {
-	cmd := exec.Command("git", "config", key)
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-func getLfsCustomTransferInt(key string, defaultValue int64) (int64, error) {
-	valStr, err := getLfsCustomTransferString(key)
-	if err != nil || valStr == "" {
-		return defaultValue, nil
-	}
-	return strconv.ParseInt(valStr, 10, 64)
-}
-
-func getLfsCustomTransferBool(key string, defaultValue bool) (bool, error) {
-	valStr, err := getLfsCustomTransferString(key)
-	if err != nil || valStr == "" {
-		return defaultValue, nil
-	}
-	return strconv.ParseBool(valStr)
 }

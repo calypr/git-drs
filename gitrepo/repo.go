@@ -2,7 +2,9 @@ package gitrepo
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/common"
@@ -39,39 +41,44 @@ func GitTopLevel() (string, error) {
 	return wt.Filesystem.Root(), nil
 }
 
-// GetGitConfigString reads a string value from git config
+// GetGitConfigString reads a string value from git config using the git command
+// to ensure we pick up values from all scopes (system, global, local).
 func GetGitConfigString(key string) (string, error) {
-	repo, err := GetRepo()
+	cmd := exec.Command("git", "config", "--get", key)
+	out, err := cmd.Output()
 	if err != nil {
+		// git config returns exit code 1 if the key is not found
 		return "", nil
 	}
-	conf, err := repo.Config()
-	if err != nil {
-		return "", nil
-	}
-
-	// Inline the logic of GetGitConfigValue since we are removing it
-	parts := strings.Split(key, ".")
-	if len(parts) < 2 {
-		return "", nil
-	}
-
-	// Check for section.key
-	if len(parts) == 2 {
-		return conf.Raw.Section(parts[0]).Option(parts[1]), nil
-	}
-
-	// Check for section.subsection.key
-	section := parts[0]
-	subsection := strings.Join(parts[1:len(parts)-1], ".")
-	option := parts[len(parts)-1]
-
-	return conf.Raw.Section(section).Subsection(subsection).Option(option), nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // GetGitConfigInt reads an integer value from git config
+func GetGitConfigInt(key string, defaultValue int64) int64 {
+	valStr, err := GetGitConfigString(key)
+	if err != nil || valStr == "" {
+		return defaultValue
+	}
+	val, err := strconv.ParseInt(valStr, 10, 64)
+	if err != nil {
+		return defaultValue
+	}
+	return val
+}
 
-// SetGitConfigOptions updates git configuration with the provided key-value pairs
+// GetGitConfigBool reads a boolean value from git config
+func GetGitConfigBool(key string, defaultValue bool) bool {
+	valStr, err := GetGitConfigString(key)
+	if err != nil || valStr == "" {
+		return defaultValue
+	}
+	val, err := strconv.ParseBool(valStr)
+	if err != nil {
+		return defaultValue
+	}
+	return val
+}
+
 func SetGitConfigOptions(configs map[string]string) error {
 	repo, err := GetRepo()
 	if err != nil {

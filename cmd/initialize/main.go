@@ -51,8 +51,6 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error: unable to load config file: %v", err)
 		}
 
-		// setup lfs custom transfer
-		// TODO: may need to generalize for anvil
 		err = initGitConfig()
 		if err != nil {
 			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
@@ -73,23 +71,22 @@ var Cmd = &cobra.Command{
 
 func initGitConfig() error {
 	configs := map[string]string{
-		"lfs.standalonetransferagent":                "drs",
-		"lfs.customtransfer.drs.path":                "git-drs",
-		"lfs.customtransfer.drs.args":                "transfer",
-		"lfs.allowincompletepush":                    "false",
-		"lfs.customtransfer.drs.concurrent":          strconv.FormatBool(transfers > 1),
-		"lfs.customtransfer.drs.concurrenttransfers": strconv.Itoa(transfers),
+		"lfs.standalonetransferagent":       "drs",
+		"lfs.customtransfer.drs.path":       "git-drs",
+		"lfs.customtransfer.drs.args":       "transfer",
+		"lfs.allowincompletepush":           "false",
+		"lfs.customtransfer.drs.concurrent": strconv.FormatBool(transfers > 1),
+		"lfs.concurrenttransfers":           strconv.Itoa(transfers),
 	}
 
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
 		return fmt.Errorf("unable to write git config: %w", err)
 	}
-
 	return nil
 }
 
 func init() {
-	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
+	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
 }
 
 func installPrePushHook(logger *slog.Logger) error {

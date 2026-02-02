@@ -135,10 +135,8 @@ func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar
 func NewProgressCallback(streamEncoder *encoder.StreamEncoder) dataClientCommon.ProgressCallback {
 	return func(event dataClientCommon.ProgressEvent) error {
 		if event.Event == "log" {
-			streamEncoder.Encode(LogResponse{
-				Event:   "log",
-				Message: event.Message,
-			})
+			// Don't send log events to Git LFS as they are not part of the protocol
+			// and cause Git LFS to think the transfer is complete.
 			return nil
 		}
 		WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)

@@ -258,9 +258,9 @@ else
     echo "UPSERT is disabled; not setting lfs.customtransfer.drs.upsert" >&2
   fi
 
-  # verify fixtures/.drs/config.yaml exists
-  if [ ! -f ".git/drs/config.yaml" ]; then
-    echo "error: .git/drs/config.yaml not found after git drs init" >&2
+  # Ensure enable-data-client-logs is present in git config
+  if ! git config --list | grep -q -- 'enable-data-client-logs'; then
+    echo "error: git config key 'enable-data-client-logs' not found; please set it before running tests" >&2
     exit 1
   fi
 

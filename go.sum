@@ -64,6 +64,8 @@ github.com/calypr/data-client v0.0.0-20260130182737-249227ff8fc1 h1:qan9ogWrX/Oy
 github.com/calypr/data-client v0.0.0-20260130182737-249227ff8fc1/go.mod h1:S2doODN9ApF27gHEv4GIkdSwXIJl/7dSdkbwgiz5OMg=
 github.com/calypr/data-client v1.0.1-0.20260202230611-fdede077ebad h1:2tcz6TTmU72pMCHGBGP53Sp/Mjj2vkrgj2OdGNHlFM8=
 github.com/calypr/data-client v1.0.1-0.20260202230611-fdede077ebad/go.mod h1:S2doODN9ApF27gHEv4GIkdSwXIJl/7dSdkbwgiz5OMg=
+github.com/calypr/data-client v1.0.1-0.20260202233529-7a1f9156c419 h1:uEXS5OyEbNsDfHWsWZlnor8G6jZHHlAMOwa33x6fEnk=
+github.com/calypr/data-client v1.0.1-0.20260202233529-7a1f9156c419/go.mod h1:S2doODN9ApF27gHEv4GIkdSwXIJl/7dSdkbwgiz5OMg=
 github.com/clipperhouse/stringish v0.1.1 h1:+NSqMOr3GR6k1FdRhhnXrLfztGzuG+VuFDfatpWHKCs=
 github.com/clipperhouse/stringish v0.1.1/go.mod h1:v/WhFtE1q0ovMta2+m+UbpZ+2/HEXNWYXQgCt4hdOzA=
 github.com/clipperhouse/uax29/v2 v2.3.0 h1:SNdx9DVUqMoBuBoW3iLOj4FQv3dN5mDtuqwuhIGpJy4=

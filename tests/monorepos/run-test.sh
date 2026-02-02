@@ -207,8 +207,8 @@ if [ "$CLONE" = "true" ]; then
     exit 1
   fi
   echo "Finished cloning remote repository into `pwd`" >&2
-  echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/file-0001.dat:" >&2
-  if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+  echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/*file-0001.dat:" >&2
+  if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
     exit 1
   fi
@@ -216,7 +216,7 @@ if [ "$CLONE" = "true" ]; then
   git drs init
   git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
   git lfs pull origin main
-  if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/file-0001.dat; then
+  if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
     exit 1
   fi

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/maypok86/otter"
 )
 
 func TestEncodeDecodePathRoundTrip(t *testing.T) {
@@ -119,12 +121,25 @@ func TestOpenCache(t *testing.T) {
 func newTestCache(t *testing.T) *Cache {
 	t.Helper()
 	root := t.TempDir()
+
+	pc, err := otter.MustBuilder[string, *PathEntry](1000).Build()
+	if err != nil {
+		t.Fatalf("create path cache: %v", err)
+	}
+	oc, err := otter.MustBuilder[string, *OIDEntry](1000).Build()
+	if err != nil {
+		t.Fatalf("create oid cache: %v", err)
+	}
+
 	return &Cache{
 		GitDir:    root,
+		RepoRoot:  root, // Is this safe assumption for test? Yes if mock repo
 		Root:      root,
 		PathsDir:  filepath.Join(root, "paths"),
 		OIDsDir:   filepath.Join(root, "oids"),
 		StatePath: filepath.Join(root, "state.json"),
+		pathCache: pc,
+		oidCache:  oc,
 	}
 }
 

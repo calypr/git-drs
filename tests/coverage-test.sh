@@ -197,6 +197,13 @@ fi
 
 pushd "$MONOREPO_DIR" >/dev/null
 
+# remove old fixtures if any, to eliminate stale data, renames, etc
+rm -rf fixtures/TARGET-ALL-P2 || true
+rm -rd fixture/data || true
+# build fixtures
+make test-monorepos
+
+
 # Run sequence twice: (--clean, normal, --clone)
 # The first sequence ensures a clean state, the second verifies idempotency.
 
@@ -276,6 +283,39 @@ git lfs ls-files | grep " * data/simple_test_file.txt"
 # verify the file contents after pull
 cat data/simple_test_file.txt | grep "$test_string"
 
+original_add_url_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file.txt" '$0 ~ (" " path "$") {print $1; exit}')
+if [ -z "$original_add_url_oid" ]; then
+  err "unable to find LFS OID for data/simple_test_file.txt"
+  exit 1
+fi
+
+updated_test_string='simple test updated'
+echo "$updated_test_string" > /tmp/simple_test_file_updated.txt
+updated_sha256=$(sha256sum /tmp/simple_test_file_updated.txt | cut -d' ' -f1)
+mc cp /tmp/simple_test_file_updated.txt "$MINIO_ALIAS/$BUCKET/simple_test_file.txt"
+
+git drs add-url s3://$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
+  --aws-access-key-id  $ACCESS_KEY \
+  --aws-secret-access-key  $SECRET_KEY  \
+  --endpoint-url $ENDPOINT \
+  --region us-east-1
+
+git add data/simple_test_file.txt
+git commit -m "add-url update simple_test_file.txt"
+
+updated_add_url_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file.txt" '$0 ~ (" " path "$") {print $1; exit}')
+if [ -z "$updated_add_url_oid" ]; then
+  err "unable to find updated LFS OID for data/simple_test_file.txt"
+  exit 1
+fi
+if [ "$original_add_url_oid" = "$updated_add_url_oid" ]; then
+  err "expected OID to change after add-url content update"
+  exit 1
+fi
+
+git lfs pull origin main
+cat data/simple_test_file.txt | grep "$updated_test_string"
+
 # use the add-url command to add the file to project
 # we are providing the sha256, so git-drs must trust it
 git drs add-url s3://$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
@@ -285,7 +325,32 @@ git drs add-url s3://$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
   --sha256 $sha2562 \
   --region us-east-1
 
-# TODO ...
+git lfs track data/simple_test_file2.txt
+git add .gitattributes data/simple_test_file2.txt
+git commit -m "add-url simple_test_file2.txt to git lfs"
+
+simple_test_file2_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file2.txt" '$0 ~ (" " path "$") {print $1; exit}')
+if [ -z "$simple_test_file2_oid" ]; then
+  err "unable to find LFS OID for data/simple_test_file2.txt"
+  exit 1
+fi
+
+git mv data/simple_test_file2.txt data/renamed_simple_test_file2.txt
+git commit -m "rename simple_test_file2.txt path"
+
+renamed_simple_test_file2_oid=$(git lfs ls-files -l | awk -v path="data/renamed_simple_test_file2.txt" '$0 ~ (" " path "$") {print $1; exit}')
+if [ -z "$renamed_simple_test_file2_oid" ]; then
+  err "unable to find LFS OID for data/renamed_simple_test_file2.txt"
+  exit 1
+fi
+if [ "$simple_test_file2_oid" != "$renamed_simple_test_file2_oid" ]; then
+  err "expected OID to stay the same after path change"
+  exit 1
+fi
+if git lfs ls-files -l | grep -Fq " data/simple_test_file2.txt"; then
+  err "expected old path data/simple_test_file2.txt to be absent after rename"
+  exit 1
+fi
 
 #
 #
@@ -307,5 +372,4 @@ echo "Integration coverage profile saved to ${INTEGRATION_PROFILE}"
 
 echo "Combining coverage profiles..."
 tests/scripts/coverage/combine-coverage.sh
-
 

@@ -1,6 +1,7 @@
 package lfs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,16 +17,25 @@ import (
 // runGitAllowMissing treats "key not found" as empty output, not an error.
 func runGitAllowMissing(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.CombinedOutput()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
 	if err != nil {
 		// "git config --get missing.key" exits 1 with empty output.
-		s := strings.TrimSpace(string(b))
+		s := strings.TrimSpace(stdout.String())
 		if s == "" {
 			return "", nil
 		}
-		return "", fmt.Errorf("%v: %s", err, s)
+		// If stdout is not empty, it might be an actual value or a real error.
+		// However, for --get, if it failed, we usually care about stderr for the error message.
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("git %s failed: %s", strings.Join(args, " "), errMsg)
 	}
-	return string(b), nil
+	return stdout.String(), nil
 }
 
 // resolveLFSRoot implements:
@@ -61,11 +71,17 @@ func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) {
 
 func runGit(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(b)))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		errMsg := strings.TrimSpace(stderr.String())
+		if errMsg == "" {
+			errMsg = err.Error()
+		}
+		return "", fmt.Errorf("git %s failed: %s", strings.Join(args, " "), errMsg)
 	}
-	return string(b), nil
+	return stdout.String(), nil
 }
 
 func userHomeDir() (string, error) {

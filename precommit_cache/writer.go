@@ -143,22 +143,26 @@ func (c *Cache) relPath(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	clean := filepath.Clean(p)
-	if filepath.IsAbs(clean) {
-		clean, err = filepath.EvalSymlinks(clean)
-		if err != nil {
-			return "", err
-		}
-		rel, err := filepath.Rel(root, clean)
-		if err != nil {
-			return "", err
-		}
-		if strings.HasPrefix(rel, "..") {
-			return "", fmt.Errorf("path %s is outside repo root %s", clean, root)
-		}
-		return filepath.ToSlash(rel), nil
+
+	var abs string
+	if filepath.IsAbs(p) {
+		abs = filepath.Clean(p)
+	} else {
+		abs = filepath.Join(root, p)
 	}
-	return filepath.ToSlash(clean), nil
+
+	// Resolve symlinks if the path exists.
+	if evaluated, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = evaluated
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	rel, err := filepath.Rel(root, abs)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("path %s is outside repo root %s", p, root)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func writeAtomic(path string, v any) error {

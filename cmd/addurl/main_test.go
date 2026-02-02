@@ -332,3 +332,10 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))
 	}
 }
+func updatePrecommitCache(ctx context.Context, logger *slog.Logger, path, oid, externalURL string) error {
+	cache, err := precommit_cache.Open(ctx)
+	if err != nil {
+		return err
+	}
+	return cache.UpdatePathEntry(ctx, logger, path, oid, externalURL)
+}

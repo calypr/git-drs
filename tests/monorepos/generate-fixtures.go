@@ -113,11 +113,26 @@ func main() {
 				nFiles = rand.Intn(maxFilesPerSub-minFilesPerSub+1) + minFilesPerSub
 			}
 
+			largeFileNumberOfLines := 480006 // approx 20 MiB
 			for fi := 1; fi <= nFiles; fi++ {
 				filename := fmt.Sprintf("file-%0*d.dat", maxFilesDigits, fi)
 				path := filepath.Join(subdir, filename)
-				pathBytes := []byte(path)
-				if err := os.WriteFile(path, pathBytes, 0o644); err != nil {
+				// if fi is odd just write the path; if even, write the path LARGE_FILE_NUMBER_OF_LINES
+				// if fi is odd just write the path; if even, write the path LARGE_FILE_NUMBER_OF_LINES
+				var content []byte
+				if fi%2 == 1 {
+					content = []byte(path)
+				} else {
+					var b strings.Builder
+					// Pre-allocate roughly to avoid too many allocations (estimate)
+					b.Grow(len(path)*largeFileNumberOfLines + largeFileNumberOfLines)
+					for i := 0; i < largeFileNumberOfLines; i++ {
+						b.WriteString(path)
+						b.WriteByte('\n')
+					}
+					content = []byte(b.String())
+				}
+				if err := os.WriteFile(path, content, 0o644); err != nil {
 					fmt.Fprintf(os.Stderr, "write %s: %v\n", path, err)
 				}
 			}

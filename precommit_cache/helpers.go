@@ -35,8 +35,8 @@ type OIDEntry struct {
 
 type Cache struct {
 	GitDir, RepoRoot, Root, PathsDir, OIDsDir, StatePath string
-	pathCache                                            otter.Cache[string, *PathEntry]
-	oidCache                                             otter.Cache[string, *OIDEntry]
+	PathCache                                            otter.Cache[string, *PathEntry]
+	OidCache                                             otter.Cache[string, *OIDEntry]
 }
 
 func Open(ctx context.Context) (*Cache, error) {
@@ -74,8 +74,8 @@ func Open(ctx context.Context) (*Cache, error) {
 		PathsDir:  filepath.Join(root, "paths"),
 		OIDsDir:   filepath.Join(root, "oids"),
 		StatePath: filepath.Join(root, "state.json"),
-		pathCache: pc,
-		oidCache:  oc,
+		PathCache: pc,
+		OidCache:  oc,
 	}, nil
 }
 
@@ -117,8 +117,9 @@ func (c *Cache) ResolveExternalURLByPath(path string) (string, bool, error) {
 	return c.LookupExternalURLByOID(oid)
 }
 
+// ReadPathEntry reads and parses the JSON path entry for a repository-relative path.
 func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) {
-	if val, ok := c.pathCache.Get(path); ok {
+	if val, ok := c.PathCache.Get(path); ok {
 		return val, true, nil
 	}
 	f := c.pathEntryFile(path)
@@ -133,12 +134,13 @@ func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) {
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil, false, err
 	}
-	c.pathCache.Set(path, &v)
+	c.PathCache.Set(path, &v)
 	return &v, true, nil
 }
 
+// ReadOIDEntry reads and parses the JSON oid entry.
 func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) {
-	if val, ok := c.oidCache.Get(oid); ok {
+	if val, ok := c.OidCache.Get(oid); ok {
 		return val, true, nil
 	}
 	f := c.oidEntryFile(oid)
@@ -153,7 +155,7 @@ func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) {
 	if err := json.Unmarshal(b, &v); err != nil {
 		return nil, false, err
 	}
-	c.oidCache.Set(oid, &v)
+	c.OidCache.Set(oid, &v)
 	return &v, true, nil
 }
 

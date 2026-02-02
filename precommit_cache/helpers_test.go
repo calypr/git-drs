@@ -138,8 +138,8 @@ func newTestCache(t *testing.T) *Cache {
 		PathsDir:  filepath.Join(root, "paths"),
 		OIDsDir:   filepath.Join(root, "oids"),
 		StatePath: filepath.Join(root, "state.json"),
-		pathCache: pc,
-		oidCache:  oc,
+		PathCache: pc,
+		OidCache:  oc,
 	}
 }
 

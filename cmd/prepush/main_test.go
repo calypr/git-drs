@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/maypok86/otter"
 )
 
 func TestLfsFilesFromCache(t *testing.T) {
@@ -36,13 +37,12 @@ func TestLfsFilesFromCache(t *testing.T) {
 	newSHA := gitOutputString(t, repo, "rev-parse", "HEAD")
 
 	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
-	cache := &precommit_cache.Cache{
-		GitDir:    filepath.Join(repo, ".git"),
-		Root:      cacheRoot,
-		PathsDir:  filepath.Join(cacheRoot, "paths"),
-		OIDsDir:   filepath.Join(cacheRoot, "oids"),
-		StatePath: filepath.Join(cacheRoot, "state.json"),
+
+	cache, err := makeCacheForTesting(t, repo, cacheRoot)
+	if err != nil {
+		t.Fatalf("makeCacheForTesting: %v", err)
 	}
+
 	if err := os.MkdirAll(cache.PathsDir, 0o755); err != nil {
 		t.Fatalf("mkdir paths dir: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestLfsFilesFromCache(t *testing.T) {
 		RemoteSHA: oldSHA,
 	}}
 
-	lfsFiles, ok, err := lfsFilesFromCache(context.Background(), cache, refs, logger)
+	lfsFiles, ok, err := lfsFilesFromCache(context.Background(), &cache, refs, logger)
 	if err != nil {
 		t.Fatalf("lfsFilesFromCache: %v", err)
 	}
@@ -95,6 +95,28 @@ func TestLfsFilesFromCache(t *testing.T) {
 	}
 }
 
+func makeCacheForTesting(t *testing.T, repo string, cacheRoot string) (precommit_cache.Cache, error) {
+	pc, err := otter.MustBuilder[string, *precommit_cache.PathEntry](10000).Build()
+	if err != nil {
+		t.Fatalf("create path cache: %v", err)
+	}
+	oc, err := otter.MustBuilder[string, *precommit_cache.OIDEntry](1000).Build() // OIDs are fewer than paths usually
+	if err != nil {
+		t.Fatalf("create oid cache: %v", err)
+	}
+
+	cache := &precommit_cache.Cache{
+		GitDir:    filepath.Join(repo, ".git"),
+		Root:      cacheRoot,
+		PathsDir:  filepath.Join(cacheRoot, "paths"),
+		OIDsDir:   filepath.Join(cacheRoot, "oids"),
+		StatePath: filepath.Join(cacheRoot, "state.json"),
+		PathCache: pc,
+		OidCache:  oc,
+	}
+	return *cache, err
+}
+
 func TestLfsFilesFromCacheStale(t *testing.T) {
 	repo := setupGitRepo(t)
 	filePath := filepath.Join(repo, "data", "file.bin")
@@ -109,13 +131,11 @@ func TestLfsFilesFromCacheStale(t *testing.T) {
 	sha := gitOutputString(t, repo, "rev-parse", "HEAD")
 
 	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
-	cache := &precommit_cache.Cache{
-		GitDir:    filepath.Join(repo, ".git"),
-		Root:      cacheRoot,
-		PathsDir:  filepath.Join(cacheRoot, "paths"),
-		OIDsDir:   filepath.Join(cacheRoot, "oids"),
-		StatePath: filepath.Join(cacheRoot, "state.json"),
+	cache, err := makeCacheForTesting(t, repo, cacheRoot)
+	if err != nil {
+		t.Fatalf("makeCacheForTesting: %v", err)
 	}
+
 	if err := os.MkdirAll(cache.PathsDir, 0o755); err != nil {
 		t.Fatalf("mkdir paths dir: %v", err)
 	}
@@ -139,7 +159,7 @@ func TestLfsFilesFromCacheStale(t *testing.T) {
 		RemoteSHA: "0000000000000000000000000000000000000000",
 	}}
 
-	_, ok, err := lfsFilesFromCache(context.Background(), cache, refs, logger)
+	_, ok, err := lfsFilesFromCache(context.Background(), &cache, refs, logger)
 	if err != nil {
 		t.Fatalf("lfsFilesFromCache: %v", err)
 	}

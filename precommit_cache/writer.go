@@ -38,7 +38,7 @@ func (c *Cache) UpdatePathEntry(ctx context.Context, log *slog.Logger, path, oid
 	if err := writeAtomic(c.pathEntryFile(rel), pe); err != nil {
 		return err
 	}
-	c.pathCache.Set(rel, pe)
+	c.PathCache.Set(rel, pe)
 
 	if err := c.updateOID(oid, rel, extURL, now, changed); err != nil {
 		return err
@@ -70,7 +70,7 @@ func (c *Cache) DeletePathEntry(ctx context.Context, log *slog.Logger, path stri
 	if err := os.Remove(c.pathEntryFile(rel)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	c.pathCache.Delete(rel)
+	c.PathCache.Delete(rel)
 
 	if pe.LFSOID != "" {
 		_ = c.removePathFromOID(pe.LFSOID, rel, time.Now().UTC().Format(time.RFC3339))
@@ -131,7 +131,7 @@ func (c *Cache) mutateOID(oid string, fn func(*OIDEntry)) error {
 	if err := writeAtomic(c.oidEntryFile(oid), e); err != nil {
 		return err
 	}
-	c.oidCache.Set(oid, e)
+	c.OidCache.Set(oid, e)
 	return nil
 }
 

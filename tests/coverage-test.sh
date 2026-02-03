@@ -3,7 +3,6 @@
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
 
-
 usage() {
   cat <<-EOF
 Usage: $0 [options]
@@ -40,7 +39,6 @@ EOF
   exit 0
 }
 
-
 # Accept named parameters (flags override environment variables)
 POD="${POD:-}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
@@ -70,7 +68,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-
 # echo commands as they are executed
 if [ -z "${GIT_TRACE:-}" ]; then
   echo "For more verbose git output, consider setting the following environment variables before re-running the script:" >&2
@@ -93,7 +90,6 @@ gofmt -s -w .
 
 # build to ensure no compile errors
 go build
-
 
 # Derive PROJECT_ID from RESOURCE (e.g. /programs/<prog>/projects/<proj> -> <prog>-<proj>)
 _resource_clean="${RESOURCE#/}"        # drop leading slash if present
@@ -147,9 +143,6 @@ if [ ! -d "$UTIL_DIR" ]; then
   exit 1
 fi
 
-# before running tests, build the executables with coverage instrumentation
-
-
 # build git-drs with coverage instrumentation
 go build -cover -covermode=atomic -coverpkg=./... -o "${BUILD_DIR}/git-drs" .
 
@@ -157,8 +150,6 @@ export PATH="${BUILD_DIR}:${PATH}"
 
 # get rid of old binary if exists
 rm git-drs || true
-#go build
-# unit tests
 which git-drs
 rm -rf coverage/unit
 mkdir -p coverage/unit
@@ -231,14 +222,10 @@ if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $
   exit 1
 fi
 
-
 echo "coverage-test.sh: all steps completed successfully." >&2
 go tool covdata textfmt -i="${INTEGRATION_COV_DIR}" -o "${INTEGRATION_PROFILE}"
 
 echo "Integration coverage profile saved to ${INTEGRATION_PROFILE}"
 
-
 echo "Combining coverage profiles..."
 tests/scripts/coverage/combine-coverage.sh
-
-

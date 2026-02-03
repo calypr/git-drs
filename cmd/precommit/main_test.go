@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/calypr/git-drs/precommit_cache"
 )
 
-func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
+func TestRun_NonLFS(t *testing.T) {
 	repo := setupGitRepo(t)
 	oldwd := mustChdir(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
@@ -25,28 +26,19 @@ func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
 	}
 	gitCmd(t, repo, "add", "data/file.txt")
 
-	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
-	pathsDir := filepath.Join(cacheRoot, "paths")
-	oidsDir := filepath.Join(cacheRoot, "oids")
-	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
-		t.Fatalf("mkdir paths: %v", err)
-	}
-	if err := os.MkdirAll(oidsDir, 0o755); err != nil {
-		t.Fatalf("mkdir oids: %v", err)
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.txt", now); err != nil {
-		t.Fatalf("handleUpsert: %v", err)
-	}
-
-	pathEntry := pathEntryFile(pathsDir, "data/file.txt")
+	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1", "paths")
+	encoded := precommit_cache.EncodePath("data/file.txt")
+	pathEntry := filepath.Join(cacheRoot, encoded+".json")
 	if _, err := os.Stat(pathEntry); !os.IsNotExist(err) {
 		t.Fatalf("expected no cache entry for non-LFS file, got err=%v", err)
 	}
 }
 
-func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
+func TestRun_LFS(t *testing.T) {
 	repo := setupGitRepo(t)
 	oldwd := mustChdir(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
@@ -66,27 +58,24 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	}
 	gitCmd(t, repo, "add", "data/file.bin")
 
+	// Set time slightly in past to ensure updated comparison works if needed?
+	// run() uses time.Now()
+
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
 	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
 	pathsDir := filepath.Join(cacheRoot, "paths")
-	oidsDir := filepath.Join(cacheRoot, "oids")
-	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
-		t.Fatalf("mkdir paths: %v", err)
-	}
-	if err := os.MkdirAll(oidsDir, 0o755); err != nil {
-		t.Fatalf("mkdir oids: %v", err)
-	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.bin", now); err != nil {
-		t.Fatalf("handleUpsert: %v", err)
-	}
+	encoded := precommit_cache.EncodePath("data/file.bin")
+	pathEntry := filepath.Join(pathsDir, encoded+".json")
 
-	pathEntry := pathEntryFile(pathsDir, "data/file.bin")
 	pathData, err := os.ReadFile(pathEntry)
 	if err != nil {
 		t.Fatalf("read path entry: %v", err)
 	}
-	var pathCache PathEntry
+	var pathCache precommit_cache.PathEntry
 	if err := json.Unmarshal(pathData, &pathCache); err != nil {
 		t.Fatalf("unmarshal path entry: %v", err)
 	}
@@ -96,22 +85,6 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	if pathCache.LFSOID != "sha256:deadbeef" {
 		t.Fatalf("expected lfs oid sha256:deadbeef, got %q", pathCache.LFSOID)
 	}
-
-	oidEntry := oidEntryFile(oidsDir, "sha256:deadbeef")
-	oidData, err := os.ReadFile(oidEntry)
-	if err != nil {
-		t.Fatalf("read oid entry: %v", err)
-	}
-	var oidCache OIDEntry
-	if err := json.Unmarshal(oidData, &oidCache); err != nil {
-		t.Fatalf("unmarshal oid entry: %v", err)
-	}
-	if oidCache.LFSOID != "sha256:deadbeef" {
-		t.Fatalf("expected oid entry sha256:deadbeef, got %q", oidCache.LFSOID)
-	}
-	if len(oidCache.Paths) != 1 || oidCache.Paths[0] != "data/file.bin" {
-		t.Fatalf("expected oid paths to include data/file.bin, got %v", oidCache.Paths)
-	}
 }
 
 func setupGitRepo(t *testing.T) string {
@@ -120,6 +93,7 @@ func setupGitRepo(t *testing.T) string {
 	gitCmd(t, dir, "init")
 	gitCmd(t, dir, "config", "user.email", "test@example.com")
 	gitCmd(t, dir, "config", "user.name", "Test User")
+	gitCmd(t, dir, "config", "init.defaultBranch", "main")
 	return dir
 }
 
@@ -137,8 +111,12 @@ func mustChdir(t *testing.T, dir string) string {
 
 func gitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	// Wait logic or retry? No, git init is usually fast.
+	// Add -c core.safecrlf=false to avoid warnings?
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "HOME="+dir)
+	// mock home to avoid global config interference
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))

@@ -98,20 +98,26 @@ var Cmd = &cobra.Command{
 			}
 			myLogger.Debug(fmt.Sprintf("Received message: %s", msg))
 
-			// Example: handle only "init" event
-			if evt, ok := msg["event"]; ok && evt == "init" {
+			event, _ := msg["event"].(string)
+
+			switch event {
+			case "init":
 				// Log for debugging
 				myLogger.Debug(fmt.Sprintf("Handling init: %s", msg))
 
 				// Respond with an empty json object via stdout
 				encoder.Encode(struct{}{})
 				myLogger.Debug("Responding to init with empty object")
-			} else if evt, ok := msg["event"]; ok && evt == "download" {
+
+			case "download":
 				// Handle download event
 				myLogger.Debug(fmt.Sprintf("Handling download event: %s", msg))
 
 				// get download message
 				var downloadMsg lfs.DownloadMessage
+				// Re-marshal to struct? Or just use raw bytes?
+				// The original code used `scanner.Bytes()` which is the raw JSON of the *current line*.
+				// Yes, `sConfig.Unmarshal(scanner.Bytes(), &downloadMsg)` works because scanner.Bytes() is still valid for the current iteration.
 				if err := sConfig.Unmarshal(scanner.Bytes(), &downloadMsg); err != nil {
 					errMsg := fmt.Sprintf("Error parsing downloadMessage: %v\n", err)
 					myLogger.Error(errMsg)
@@ -138,7 +144,8 @@ var Cmd = &cobra.Command{
 					Path:  dstPath,
 				}
 				encoder.Encode(completeMsg)
-			} else if evt, ok := msg["event"]; ok && evt == "upload" {
+
+			case "upload":
 				// Handle upload event
 				myLogger.Info(fmt.Sprintf("Handling upload event: %s", msg))
 				myLogger.Info("skipping upload, just registering existing DRS object")
@@ -159,9 +166,13 @@ var Cmd = &cobra.Command{
 				}
 				myLogger.Info(fmt.Sprintf("Complete message: %+v", completeMsg))
 				encoder.Encode(completeMsg)
-			} else if evt, ok := msg["event"]; ok && evt == "terminate" {
+
+			case "terminate":
 				// Handle terminate event
 				myLogger.Debug(fmt.Sprintf("terminate event received: %s", msg))
+
+			default:
+				myLogger.Debug(fmt.Sprintf("Received unknown event: %s", event))
 			}
 		}
 
@@ -177,21 +188,9 @@ var Cmd = &cobra.Command{
 
 func downloadFile(remote config.Remote, sha string) (string, error) {
 	myLogger := drslog.GetLogger()
-
 	myLogger.Debug(fmt.Sprintf("Downloading file for sha %s", sha))
 
-	// get terra project
-	cfg, err := config.LoadConfig() // should this be handled only via indexd client?
-	if err != nil {
-		return "", fmt.Errorf("error loading config: %v", err)
-	}
-
-	cli, err := cfg.GetRemoteClient(remote, myLogger)
-	if err != nil {
-		return "", err
-	}
-
-	terraProject := cli.GetProjectId()
+	terraProject := drsClient.GetProjectId()
 
 	filePath, err := drsmap.GetObjectPath(projectdir.DRS_REF_DIR, sha)
 	if err != nil {
@@ -199,33 +198,12 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 	}
 	myLogger.Debug(fmt.Sprintf("File path for sha %s: %s", sha, filePath))
 
-	// get DRS URI in the second line of the file
-	file, err := os.Open(filePath)
+	drsUri, err := getDRSURIFromRef(filePath)
 	if err != nil {
-		return "", fmt.Errorf("error opening file %s: %v", filePath, err)
+		return "", err
 	}
-	defer file.Close()
-	myLogger.Debug(fmt.Sprintf("Opened file %s for reading", filePath))
-
-	scanner := bufio.NewScanner(file)
-	var drsUri string
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		myLogger.Debug(fmt.Sprintf("Reading line %d: %s", lineNum, line))
-		if lineNum == 2 {
-			// second line should be the DRS URI
-			drsUri = strings.TrimSpace(line)
-			myLogger.Debug(fmt.Sprintf("DRS URI found: %s", drsUri))
-			break
-		}
-	}
-
 	myLogger.Debug(fmt.Sprintf("DRS URI found: %s", drsUri))
-	if drsUri == "" {
-		return "", fmt.Errorf("error: file %s does not contain a valid DRS URI in the second line", filePath)
-	}
+
 	drsObj, err := drsClient.GetObject(drsUri)
 	if err != nil {
 		return "", fmt.Errorf("error fetching DRS object for URI %s: %v", drsUri, err)
@@ -236,27 +214,13 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 
 	myLogger.Debug(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
 
-	// call DRS downloader as a binary, redirect output to log file
-	logFile, err := os.OpenFile(projectdir.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return "", fmt.Errorf("error opening log file: %v", err)
-	}
-	defer logFile.Close()
-
-	//TODO: This should be done in the DRSClient code
 	// download file, make sure its name is the sha
 	dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, sha)
 	dstDir := filepath.Dir(dstPath)
-	cmd := exec.Command("drs_downloader", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
 
-	// write command to log file
-	logFile.WriteString(fmt.Sprintf("Running command: %s\n", cmd.String()))
-
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmdOut, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("error running drs_downloader for sha %s: %s", sha, cmdOut)
+	//TODO: This should be done in the DRSClient code
+	if err := runDRSDownloader(terraProject, filePath, dstDir, projectdir.DRS_LOG_FILE); err != nil {
+		return "", err
 	}
 
 	//rename file to sha
@@ -267,4 +231,41 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 	}
 
 	return dstPath, nil
+}
+
+func getDRSURIFromRef(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("error opening file %s: %v", path, err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		if lineNum == 2 {
+			return strings.TrimSpace(scanner.Text()), nil
+		}
+	}
+	return "", fmt.Errorf("error: file %s does not contain a valid DRS URI in the second line", path)
+}
+
+func runDRSDownloader(project, manifest, dest, logPath string) error {
+	logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("error opening log file: %v", err)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command("drs_downloader", "terra", "--user-project", project, "--manifest-path", manifest, "--destination-dir", dest)
+	logFile.WriteString(fmt.Sprintf("Running command: %s\n", cmd.String()))
+
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmdOut, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("error running drs_downloader: %s", cmdOut)
+	}
+	return nil
 }

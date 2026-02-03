@@ -12,7 +12,6 @@ import (
 	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drs/hash"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
-	drsstore "github.com/calypr/git-drs/drsmap/store"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
@@ -196,7 +195,8 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]dr
 			}
 		}
 
-		if err := drsstore.WriteObject(projectdir.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
+		store := drs.NewObjectStore(projectdir.DRS_OBJS_PATH, logger)
+		if err := store.WriteObject(authoritativeObj, file.Oid); err != nil {
 			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
@@ -235,7 +235,8 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
 	}
 
 	// write drs objects to DRS_OBJS_PATH
-	err = drsstore.WriteObject(projectdir.DRS_OBJS_PATH, drsObj, file.Oid)
+	store := drs.NewObjectStore(projectdir.DRS_OBJS_PATH, nil)
+	err = store.WriteObject(drsObj, file.Oid)
 	if err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 	}
@@ -244,7 +245,8 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
 
 func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	basePath := filepath.Dir(filepath.Dir(filepath.Dir(drsObjPath)))
-	return drsstore.WriteObject(basePath, drsObj, oid)
+	store := drs.NewObjectStore(basePath, nil)
+	return store.WriteObject(drsObj, oid)
 }
 
 func DrsUUID(projectId string, hash string) string {
@@ -255,11 +257,13 @@ func DrsUUID(projectId string, hash string) string {
 
 // creates drsObject record from file
 func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
-	return drsstore.ReadObject(projectdir.DRS_OBJS_PATH, oid)
+	store := drs.NewObjectStore(projectdir.DRS_OBJS_PATH, nil)
+	return store.ReadObject(oid)
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {
-	return drsstore.ObjectPath(basePath, oid)
+	store := drs.NewObjectStore(basePath, nil)
+	return store.ObjectPath(oid)
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI

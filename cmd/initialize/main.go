@@ -4,19 +4,22 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
 )
 
-var transfers int
+var (
+	transfers            int
+	upsert               bool
+	multiPartThreshold   int
+	enableDataClientLogs bool
+)
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
@@ -35,7 +38,7 @@ var Cmd = &cobra.Command{
 		logg := drslog.GetLogger()
 
 		// check if .git dir exists to ensure you're in a git repository
-		_, err := utils.GitTopLevel()
+		_, err := gitrepo.GitTopLevel()
 		if err != nil {
 			return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 		}
@@ -53,8 +56,6 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error: unable to load config file: %v", err)
 		}
 
-		// setup lfs custom transfer
-		// TODO: may need to generalize for anvil
 		err = initGitConfig()
 		if err != nil {
 			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
@@ -74,38 +75,37 @@ var Cmd = &cobra.Command{
 }
 
 func initGitConfig() error {
-	configs := [][]string{
-		{"lfs.standalonetransferagent", "drs"},
-		{"lfs.customtransfer.drs.path", "git-drs"},
-		{"lfs.customtransfer.drs.args", "transfer"},
-		// TODO: different for anvil / read-only?
-		{"lfs.allowincompletepush", "false"},
-		{"lfs.customtransfer.drs.concurrent", strconv.FormatBool(transfers > 1)},
-		{"lfs.customtransfer.drs.concurrenttransfers", strconv.Itoa(transfers)},
+	configs := map[string]string{
+		"lfs.standalonetransferagent":                    "drs",
+		"lfs.customtransfer.drs.path":                    "git-drs",
+		"lfs.customtransfer.drs.args":                    "transfer",
+		"lfs.allowincompletepush":                        "false",
+		"lfs.customtransfer.drs.concurrent":              strconv.FormatBool(transfers > 1),
+		"lfs.concurrenttransfers":                        strconv.Itoa(transfers),
+		"lfs.customtransfer.drs.upsert":                  strconv.FormatBool(upsert),
+		"lfs.customtransfer.drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
+		"lfs.customtransfer.drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
 	}
 
-	for _, args := range configs {
-		cmd := exec.Command("git", "config", args[0], args[1])
-		if cmdOut, err := cmd.Output(); err != nil {
-			return fmt.Errorf("unable to set git config %s: %s", args[0], cmdOut)
-		}
+	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
+		return fmt.Errorf("unable to write git config: %w", err)
 	}
-
 	return nil
 }
 
 func init() {
-	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 4, "Number of concurrent transfers")
+	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
+	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for indexd records")
+	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 500, "Multipart threshold in MB")
+	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 }
 
 func installPrePushHook(logger *slog.Logger) error {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmdOut, err := cmd.Output()
+	hooksDir, err := gitrepo.GetGitHooksDir()
 	if err != nil {
-		return fmt.Errorf("unable to locate git directory: %w", err)
+		return fmt.Errorf("unable to get hooks directory: %w", err)
 	}
-	gitDir := strings.TrimSpace(string(cmdOut))
-	hooksDir := filepath.Join(gitDir, "hooks")
+
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("unable to create hooks directory: %w", err)
 	}

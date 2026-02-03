@@ -1,14 +1,15 @@
 package delete
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs/hash"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsClient.GetObjectByHash(&hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+		records, err := drsClient.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -72,25 +73,30 @@ var Cmd = &cobra.Command{
 
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
-			utils.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
-			utils.DisplayField(os.Stderr, "Remote", string(remoteName))
-			utils.DisplayField(os.Stderr, "Project", projectId)
-			utils.DisplayField(os.Stderr, "OID", oid)
-			utils.DisplayField(os.Stderr, "Hash Type", hashType)
-			utils.DisplayField(os.Stderr, "DID", matchingRecord.Id)
+			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
+			common.DisplayField(os.Stderr, "Remote", string(remoteName))
+			common.DisplayField(os.Stderr, "Project", projectId)
+			common.DisplayField(os.Stderr, "OID", oid)
+			common.DisplayField(os.Stderr, "Hash Type", hashType)
+			common.DisplayField(os.Stderr, "DID", matchingRecord.Id)
 			if matchingRecord.Name != "" {
-				utils.DisplayField(os.Stderr, "Filename", matchingRecord.Name)
+				common.DisplayField(os.Stderr, "Filename", matchingRecord.Name)
 			}
-			utils.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
-			utils.DisplayFooter(os.Stderr)
+			common.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
+			common.DisplayFooter(os.Stderr)
 
-			if err := utils.PromptForConfirmation(os.Stderr, "Type 'yes' to confirm deletion", utils.ConfirmationYes, false); err != nil {
+			if err := common.PromptForConfirmation(
+				os.Stderr,
+				"Type 'yes' to confirm deletion",
+				common.ConfirmationYes,
+				false,
+			); err != nil {
 				return err
 			}
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(oid)
+		err = drsClient.DeleteRecord(context.Background(), oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

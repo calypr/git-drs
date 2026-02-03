@@ -1,13 +1,14 @@
 package deleteproject
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	indexdCl "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -43,14 +44,14 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Cast to IndexDClient to access GetProjectSample
-		indexdClient, ok := drsClient.(*indexdCl.IndexDClient)
+		// Cast to GitDrsIdxdClient to access GetProjectSample
+		indexdClient, ok := drsClient.(*indexd.GitDrsIdxdClient)
 		if !ok {
 			return fmt.Errorf("client is not an IndexDClient, cannot proceed with delete-project")
 		}
 
 		// Get a sample record to show the user what will be deleted
-		sampleRecords, err := indexdClient.GetProjectSample(projectId, 1)
+		sampleRecords, err := indexdClient.GetProjectSample(context.Background(), projectId, 1)
 		if err != nil {
 			return fmt.Errorf("error getting sample records for project %s: %v", projectId, err)
 		}
@@ -60,36 +61,36 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error: --confirm value '%s' does not match project ID '%s'", confirmFlag, projectId)
 		}
 		if confirmFlag != projectId {
-			utils.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
-			utils.DisplayField(os.Stderr, "Remote", string(remoteName))
-			utils.DisplayField(os.Stderr, "Project ID", projectId)
+			common.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
+			common.DisplayField(os.Stderr, "Remote", string(remoteName))
+			common.DisplayField(os.Stderr, "Project ID", projectId)
 
 			if len(sampleRecords) > 0 {
 				sample := sampleRecords[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
-				utils.DisplayField(os.Stderr, "  DID", sample.Id)
+				common.DisplayField(os.Stderr, "  DID", sample.Id)
 				if sample.Name != "" {
-					utils.DisplayField(os.Stderr, "  Filename", sample.Name)
+					common.DisplayField(os.Stderr, "  Filename", sample.Name)
 				}
-				utils.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
+				common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
 				if sample.CreatedTime != "" {
-					utils.DisplayField(os.Stderr, "  Created", sample.CreatedTime)
+					common.DisplayField(os.Stderr, "  Created", sample.CreatedTime)
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "\nNo records found for this project.\n")
 			}
 
 			fmt.Fprintf(os.Stderr, "\nThis will DELETE ALL records in project '%s'.\n", projectId)
-			utils.DisplayFooter(os.Stderr)
+			common.DisplayFooter(os.Stderr)
 
-			if err := utils.PromptForConfirmation(os.Stderr, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
+			if err := common.PromptForConfirmation(os.Stderr, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
 				return err
 			}
 		}
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		err = drsClient.DeleteRecordsByProject(projectId)
+		err = drsClient.DeleteRecordsByProject(context.Background(), projectId)
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}

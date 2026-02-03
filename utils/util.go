@@ -5,19 +5,10 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
-
-func GitTopLevel() (string, error) {
-	path, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSuffix(path, "\n"), nil
-}
 
 func SimpleRun(cmds []string) (string, error) {
 	exePath, err := exec.LookPath(cmds[0])
@@ -27,14 +18,6 @@ func SimpleRun(cmds []string) (string, error) {
 	cmd := exec.Command(exePath, cmds[1:]...)
 	cmdOut, err := cmd.Output()
 	return string(cmdOut), err
-}
-
-func DrsTopLevel() (string, error) {
-	base, err := GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, DRS_DIR), nil
 }
 
 // CanDownloadFile checks if a file can be downloaded from the given signed URL
@@ -108,4 +91,17 @@ func ParseS3URL(s3url string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid S3 file URL: %s", s3url)
 	}
 	return trimmed[:slashIndex], trimmed[slashIndex+1:], nil
+}
+
+// IsValidSHA256 checks if a string is a valid SHA-256 hash
+func IsValidSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
 }

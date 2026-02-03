@@ -2,6 +2,7 @@ package lfs
 
 import (
 	"github.com/bytedance/sonic/encoder"
+	dataClientCommon "github.com/calypr/data-client/common"
 )
 
 // InitMessage represents the structure of the initiation data
@@ -67,6 +68,12 @@ type ProgressResponse struct {
 	BytesSinceLast int64  `json:"bytesSinceLast"` // Bytes transferred since last progress message
 }
 
+// LogResponse provides log updates for an object transfer.
+type LogResponse struct {
+	Event   string `json:"event"`   // "log"
+	Message string `json:"message"` // The log message
+}
+
 // TerminateResponse signals the agent has completed termination.
 type TerminateResponse struct {
 	Event string `json:"event"` // "terminate"
@@ -121,4 +128,18 @@ func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar
 		BytesSinceLast: bytesSinceLast,
 	}
 	encoder.Encode(progressResponse)
+}
+
+// NewProgressCallback returns a ProgressCallback that sends progress events
+// to git-lfs via the streamEncoder
+func NewProgressCallback(streamEncoder *encoder.StreamEncoder) dataClientCommon.ProgressCallback {
+	return func(event dataClientCommon.ProgressEvent) error {
+		if event.Event == "log" {
+			// Don't send log events to Git LFS as they are not part of the protocol
+			// and cause Git LFS to think the transfer is complete.
+			return nil
+		}
+		WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
+		return nil
+	}
 }

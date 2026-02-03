@@ -2,6 +2,7 @@ package transferref
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,11 +12,11 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/spf13/cobra"
 )
 
@@ -193,7 +194,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 
 	terraProject := cli.GetProjectId()
 
-	filePath, err := drsmap.GetObjectPath(projectdir.DRS_REF_DIR, sha)
+	filePath, err := drsmap.GetObjectPath(common.DRS_REF_DIR, sha)
 	if err != nil {
 		return "", fmt.Errorf("error getting object path for sha %s: %v", sha, err)
 	}
@@ -226,7 +227,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 	if drsUri == "" {
 		return "", fmt.Errorf("error: file %s does not contain a valid DRS URI in the second line", filePath)
 	}
-	drsObj, err := drsClient.GetObject(drsUri)
+	drsObj, err := drsClient.GetObject(context.Background(), drsUri)
 	if err != nil {
 		return "", fmt.Errorf("error fetching DRS object for URI %s: %v", drsUri, err)
 	}
@@ -237,7 +238,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 	myLogger.Debug(fmt.Sprintf("DRS Object fetched: %+v", drsObj))
 
 	// call DRS downloader as a binary, redirect output to log file
-	logFile, err := os.OpenFile(projectdir.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile(common.DRS_LOG_FILE, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return "", fmt.Errorf("error opening log file: %v", err)
 	}
@@ -245,7 +246,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 
 	//TODO: This should be done in the DRSClient code
 	// download file, make sure its name is the sha
-	dstPath, err := drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, sha)
+	dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, sha)
 	dstDir := filepath.Dir(dstPath)
 	cmd := exec.Command("drs_downloader", "terra", "--user-project", terraProject, "--manifest-path", filePath, "--destination-dir", dstDir)
 

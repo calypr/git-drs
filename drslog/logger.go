@@ -5,14 +5,16 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/calypr/git-drs/projectdir"
+	"github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/gitrepo"
+
+	"github.com/calypr/data-client/logs"
 )
 
 var globalLogger *slog.Logger
@@ -95,11 +97,11 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 
 	if filename == "" {
 		// create drs dir if it doesn't exist
-		if err := os.MkdirAll(projectdir.DRS_DIR, 0755); err != nil {
+		if err := os.MkdirAll(common.DRS_DIR, 0755); err != nil {
 			return nil, err
 		}
 
-		filename = filepath.Join(projectdir.DRS_DIR, "git-drs.log")
+		filename = filepath.Join(common.DRS_DIR, "git-drs.log")
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -119,7 +121,7 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 		Level:       resolveLogLevel(),
 		ReplaceAttr: replaceSourceAttr,
 	})
-	core := slog.New(handler).With("pid", os.Getpid())
+	core := slog.New(logs.NewProgressHandler(handler)).With("pid", os.Getpid())
 
 	globalLoggerMu.Lock()
 	globalLogFile = file
@@ -187,7 +189,7 @@ func NewNoOpLogger() *slog.Logger {
 	handler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
-	return slog.New(handler)
+	return slog.New(logs.NewProgressHandler(handler))
 }
 
 // resolveLogLevel determines the effective log level.
@@ -231,18 +233,12 @@ func resolveLogLevel() slog.Level {
 // Typical callers:
 // - resolveLogLevel when initializing a logger.
 func readLogLevelFromGitConfig() (slog.Level, bool) {
-	cmd := exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
-	output, err := cmd.Output()
-	if err != nil {
+	val, err := gitrepo.GetGitConfigString("lfs.customtransfer.drs.loglevel")
+	if err != nil || val == "" {
 		return slog.LevelInfo, false
 	}
 
-	value := strings.TrimSpace(string(output))
-	if value == "" {
-		return slog.LevelInfo, false
-	}
-
-	parsed, ok := parseLogLevel(value)
+	parsed, ok := parseLogLevel(val)
 	if !ok {
 		return slog.LevelInfo, false
 	}

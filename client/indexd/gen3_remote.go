@@ -1,11 +1,13 @@
-package indexd_client
+package indexd
 
 import (
+	"context"
 	"log/slog"
 
-	"github.com/calypr/data-client/client/conf"
+	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/drslog"
 )
 
 // Gen3Server holds Gen3 server config
@@ -27,10 +29,17 @@ func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
 }
 
-func (s Gen3Remote) GetClient(params map[string]string, logger *slog.Logger) (client.DRSClient, error) {
-	cred, err := conf.NewConfigure(drslog.AsStdLogger(logger)).Load(params["remote_name"])
+func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+	manager := conf.NewConfigure(logger)
+	cred, err := manager.Load(remoteName)
 	if err != nil {
 		return nil, err
 	}
-	return NewIndexDClient(*cred, s, logger)
+
+	gen3Logger := logs.NewGen3Logger(logger, "", remoteName)
+	if err := g3client.EnsureValidCredential(context.Background(), cred, manager, gen3Logger, nil); err != nil {
+		return nil, err
+	}
+
+	return NewGitDrsIdxdClient(*cred, s, logger, opts...)
 }

@@ -1,16 +1,14 @@
 package testutils
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 
-	indexd_client "github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 // SetupTestGitRepo creates a temp directory mocking a real git repo
@@ -47,24 +45,33 @@ func SetupTestGitRepo(t *testing.T) string {
 	return tmpDir
 }
 
-// CreateTestConfig creates a test Git DRS config file with the given content
-func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) string {
+// CreateTestConfig applies the given config to the git repository using git config commands
+func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) {
 	t.Helper()
 
-	configDir := filepath.Join(tmpDir, projectdir.DRS_DIR)
-	err := os.MkdirAll(configDir, 0755)
-	require.NoError(t, err)
+	// Helper to run git config
+	setConfig := func(key, value string) {
+		cmd := exec.Command("git", "config", key, value)
+		cmd.Dir = tmpDir
+		err := cmd.Run()
+		require.NoError(t, err, "failed to set git config %s=%s", key, value)
+	}
 
-	configPath := filepath.Join(configDir, projectdir.CONFIG_YAML)
-	file, err := os.Create(configPath)
-	require.NoError(t, err)
-	defer file.Close()
+	if cfg.DefaultRemote != "" {
+		setConfig("drs.default-remote", string(cfg.DefaultRemote))
+	}
 
-	encoder := yaml.NewEncoder(file)
-	err = encoder.Encode(cfg)
-	require.NoError(t, err)
-
-	return configPath
+	for name, remote := range cfg.Remotes {
+		prefix := fmt.Sprintf("drs.remote.%s", name)
+		if remote.Gen3 != nil {
+			setConfig(prefix+".type", "gen3")
+			setConfig(prefix+".endpoint", remote.Gen3.Endpoint)
+			setConfig(prefix+".project", remote.Gen3.ProjectID)
+			setConfig(prefix+".bucket", remote.Gen3.Bucket)
+		} else if remote.Anvil != nil {
+			setConfig(prefix+".type", "anvil")
+		}
+	}
 }
 
 // CreateDefaultTestConfig creates a standard test configuration
@@ -72,9 +79,10 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 	t.Helper()
 
 	testConfig := &config.Config{
+		DefaultRemote: config.Remote(config.ORIGIN),
 		Remotes: map[config.Remote]config.RemoteSelect{
 			config.Remote(config.ORIGIN): {
-				Gen3: &indexd_client.Gen3Remote{
+				Gen3: &indexd.Gen3Remote{
 					Endpoint:  "https://test.gen3.org",
 					ProjectID: "test-project",
 					Bucket:    "test",

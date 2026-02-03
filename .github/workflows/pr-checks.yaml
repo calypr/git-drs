@@ -71,4 +71,4 @@ jobs:
         go-version-file: go.mod
 
     - name: Run tests
-      run: go test -v -race $(go list ./... | grep -v 'tests/integration/calypr' | grep -v 'client/indexd/tests')
+      run: go test -v -race $(go list ./... | grep -v 'tests/integration' | grep -v 'client/indexd/tests')

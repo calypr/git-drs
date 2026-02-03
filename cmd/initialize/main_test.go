@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
@@ -38,4 +39,53 @@ func TestInitGitConfig(t *testing.T) {
 	if err := initGitConfig(); err != nil {
 		t.Fatalf("initGitConfig error: %v", err)
 	}
+}
+func TestInitRun_Error(t *testing.T) {
+	// Not in a git repo
+	tmpDir := t.TempDir()
+	cwd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(cwd)
+
+	err := Cmd.RunE(Cmd, []string{})
+	if err == nil {
+		t.Errorf("expected error when not in git repo")
+	}
+}
+func TestInitCmdArgs(t *testing.T) {
+	err := Cmd.Args(Cmd, []string{})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	err = Cmd.Args(Cmd, []string{"extra"})
+	if err == nil {
+		t.Errorf("expected error for extra args")
+	}
+}
+func TestInitConfigValues(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	transfers = 8
+	upsert = true
+	multiPartThreshold = 100
+	enableDataClientLogs = true
+
+	if err := initGitConfig(); err != nil {
+		t.Fatalf("initGitConfig error: %v", err)
+	}
+
+	// Verify values using gitrepo (which we know works from previous steps)
+	check := func(key, expected string) {
+		val, err := gitrepo.GetGitConfigString(key)
+		if err != nil {
+			t.Errorf("error reading %s: %v", key, err)
+		}
+		if val != expected {
+			t.Errorf("expected %s to be %s, got %s", key, expected, val)
+		}
+	}
+
+	check("lfs.concurrenttransfers", "8")
+	check("lfs.customtransfer.drs.upsert", "true")
+	check("lfs.customtransfer.drs.multipart-threshold", "100")
+	check("lfs.customtransfer.drs.enable-data-client-logs", "true")
 }

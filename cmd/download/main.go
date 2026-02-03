@@ -1,13 +1,16 @@
 package download
 
 import (
+	"context"
 	"fmt"
 
+	dataClientCommon "github.com/calypr/data-client/common"
+	"github.com/calypr/data-client/download"
+	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/projectdir"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/spf13/cobra"
 )
 
@@ -50,29 +53,38 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// get signed url
-		accessUrl, err := drsClient.GetDownloadURL(oid)
+		// get the matching record for this OID
+		checksumSpec := &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid}
+		records, err := drsClient.GetObjectByHash(context.Background(), checksumSpec)
 		if err != nil {
-			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
+			return fmt.Errorf("Error looking up OID %s: %v", oid, err)
 		}
-		if accessUrl.URL == "" {
-			return fmt.Errorf("Unable to get access URL %s", oid)
+
+		matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
+		if err != nil {
+			return fmt.Errorf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
+		}
+		if matchingRecord == nil {
+			return fmt.Errorf("No matching record found for project %s and OID %s", drsClient.GetProjectId(), oid)
 		}
 
 		// download url to destination path or LFS objects if not specified
 		if dstPath == "" {
-			dstPath, err = drsmap.GetObjectPath(projectdir.LFS_OBJS_PATH, oid)
+			dstPath, err = drsmap.GetObjectPath(common.LFS_OBJS_PATH, oid)
 		}
 		if err != nil {
 			return fmt.Errorf("Error getting destination path for OID %s: %v", oid, err)
 		}
-		err = s3_utils.DownloadSignedUrl(accessUrl.URL, dstPath)
-		if err != nil {
-			return fmt.Errorf("Error downloading file for OID %s: %v", oid, err)
-		}
 
+		ctx := dataClientCommon.WithOid(context.Background(), oid)
+		err = download.DownloadToPath(
+			ctx,
+			drsClient.GetGen3Interface(),
+			matchingRecord.Id,
+			dstPath,
+		)
 		if err != nil {
-			return fmt.Errorf("\nerror downloading file object ID %s: %s", oid, err)
+			return fmt.Errorf("Error downloading file for OID %s (GUID: %s): %v", oid, matchingRecord.Id, err)
 		}
 
 		logger.Debug("file downloaded")

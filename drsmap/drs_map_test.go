@@ -1,13 +1,19 @@
 package drsmap
 
 import (
+	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/indexd/hash"
+	localCommon "github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/s3_utils"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -79,5 +85,126 @@ func TestGetObjectPathLayout(t *testing.T) {
 	}
 	if filepath.Base(path) != oid {
 		t.Fatalf("unexpected path: %s", path)
+	}
+}
+
+// MockDRSClient implements client.DRSClient for testing
+type MockDRSClient struct {
+	Objects []drs.DRSObjectResult
+	Project string
+}
+
+func (m *MockDRSClient) GetProjectId() string {
+	return m.Project
+}
+
+func (m *MockDRSClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) ListObjectsByProject(ctx context.Context, project string) (chan drs.DRSObjectResult, error) {
+	ch := make(chan drs.DRSObjectResult, len(m.Objects))
+	go func() {
+		defer close(ch)
+		for _, obj := range m.Objects {
+			ch <- obj
+		}
+	}()
+	return ch, nil
+}
+
+func (m *MockDRSClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) DeleteRecordsByProject(ctx context.Context, project string) error {
+	return nil
+}
+
+func (m *MockDRSClient) DeleteRecord(ctx context.Context, oid string) error {
+	return nil
+}
+
+func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
+	return &drs.DRSObject{
+		Id:   drsId,
+		Name: fileName,
+		Size: size,
+		Checksums: hash.HashInfo{
+			SHA256: checksum,
+		},
+	}, nil
+}
+
+func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
+	return s3_utils.S3Meta{}, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
+	return nil
+}
+
+func (m *MockDRSClient) GetBucketName() string {
+	return ""
+}
+
+func TestPullRemoteDrsObjects(t *testing.T) {
+	setupTestRepo(t)
+	// mockClient and setup
+	sha := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	mockClient := &MockDRSClient{
+		Project: "test-project",
+		Objects: []drs.DRSObjectResult{
+			{
+				Object: &drs.DRSObject{
+					Id: "obj1",
+					Checksums: hash.HashInfo{
+						SHA256: sha,
+					},
+					Name: "test-file",
+				},
+			},
+		},
+	}
+
+	// Create required directory structure (mimicking setup that might be missing)
+	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	err := PullRemoteDrsObjects(mockClient, logger)
+	if err != nil {
+		t.Fatalf("PullRemoteDrsObjects failed: %v", err)
+	}
+
+	// Verify file exists using correct project path variable
+	// PullRemoteDrsObjects uses projectdir.DRS_OBJS_PATH
+	path, err := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
+	if err != nil {
+		t.Fatalf("GetObjectPath failed: %v", err)
+	}
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Errorf("Expected DRS object file to be created at %s", path)
 	}
 }

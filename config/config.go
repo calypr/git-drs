@@ -200,7 +200,7 @@ func LoadConfig() (*Config, error) {
 		rs := RemoteSelect{}
 
 		remoteType := subsection.Option("type")
-		if remoteType == "gen3" || remoteType == "" { // Default to gen3 for compatibility/inferrence
+		if remoteType == "gen3" || remoteType == "" { // Default to gen3 for compatibility/inference
 			rs.Gen3 = &indexd.Gen3Remote{
 				Endpoint:  subsection.Option("endpoint"),
 				ProjectID: subsection.Option("project"),

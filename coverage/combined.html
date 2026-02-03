@@ -3873,7 +3873,7 @@ func LoadConfig() (*Config, error) <span class="cov9" title="63">{
                 rs := RemoteSelect{}
 
                 remoteType := subsection.Option("type")
-                if remoteType == "gen3" || remoteType == "" </span><span class="cov9" title="50">{ // Default to gen3 for compatibility/inferrence
+                if remoteType == "gen3" || remoteType == "" </span><span class="cov9" title="50">{ // Default to gen3 for compatibility/inference
                         rs.Gen3 = &amp;indexd.Gen3Remote{
                                 Endpoint:  subsection.Option("endpoint"),
                                 ProjectID: subsection.Option("project"),
@@ -5544,7 +5544,7 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
         encoder.Encode(completeResponse)
 }</span>
 
-func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov9" title="10162">{
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov9" title="10141">{
         progressResponse := ProgressResponse{
                 Event:          "progress",
                 Oid:            oid,
@@ -5557,13 +5557,13 @@ func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar
 // NewProgressCallback returns a ProgressCallback that sends progress events
 // to git-lfs via the streamEncoder
 func NewProgressCallback(streamEncoder *encoder.StreamEncoder) dataClientCommon.ProgressCallback <span class="cov3" title="8">{
-        return func(event dataClientCommon.ProgressEvent) error </span><span class="cov10" title="10207">{
+        return func(event dataClientCommon.ProgressEvent) error </span><span class="cov10" title="10186">{
                 if event.Event == "log" </span><span class="cov4" title="50">{
                         // Don't send log events to Git LFS as they are not part of the protocol
                         // and cause Git LFS to think the transfer is complete.
                         return nil
                 }</span>
-                <span class="cov9" title="10157">WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
+                <span class="cov9" title="10136">WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
                 return nil</span>
         }
 }

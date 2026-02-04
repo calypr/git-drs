@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"

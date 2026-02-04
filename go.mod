@@ -84,3 +84,6 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
+
+// point the data-client module to the local checkout
+replace github.com/calypr/data-client => /Users/walsbr/calypr/data-client

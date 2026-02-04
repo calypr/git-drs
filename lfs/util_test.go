@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/utils"
 )

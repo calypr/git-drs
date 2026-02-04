@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"

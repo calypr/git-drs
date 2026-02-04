@@ -1,16 +1,12 @@
-<<<<<<<< HEAD:cmd/addref/add-ref_test.go
-package addref
-========
 package lfs
->>>>>>>> 54686cc (feature/pre-commit-changes):drsmap/lfs/lfs_test.go
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
 )
 
 func TestCreateLfsPointer(t *testing.T) {

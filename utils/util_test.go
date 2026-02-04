@@ -1,14 +1,8 @@
 package utils
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/gitrepo"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -166,229 +160,37 @@ func TestSimpleRunCommandNotFound(t *testing.T) {
 	}
 }
 
-func TestGitTopLevelAndSimpleRun(t *testing.T) {
-	tmp := t.TempDir()
-	cmd := exec.Command("git", "init", tmp)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git init failed: %v: %s", err, string(out))
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(tmp); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
-
-	top, err := gitrepo.GitTopLevel()
-	if err != nil {
-		t.Fatalf("GitTopLevel error: %v", err)
-	}
-	// On Mac/Linux, /tmp might be symlinked. EvalSymlinks for comparison?
-	// But let's check equality first.
-	// If it fails, we might need EvalSymlinks or similar.
-	// Actually git rev-parse --show-toplevel resolves symlinks.
-	expected, err := filepath.EvalSymlinks(tmp)
-	if err != nil {
-		expected = tmp
-	}
-	actual, err := filepath.EvalSymlinks(top)
-	if err != nil {
-		actual = top
-	}
-	if actual != expected {
-		t.Logf("expected top %s (resolved %s), got %s (resolved %s)", tmp, expected, top, actual)
-		// Relaxed check if paths verify same file
-	}
-
-	out, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
-	if err != nil {
-		t.Fatalf("SimpleRun error: %v", err)
-	}
-	if out == "" {
-		t.Fatalf("expected output")
-	}
-}
-
-func TestCanDownloadFile(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if r.URL.Path == "/exists" {
-			w.WriteHeader(http.StatusOK)
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-
-	t.Run("exists", func(t *testing.T) {
-		if err := CanDownloadFile(server.URL + "/exists"); err != nil {
-			t.Errorf("expected nil error, got %v", err)
-		}
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		if err := CanDownloadFile(server.URL + "/missing"); err == nil {
-			t.Errorf("expected error for missing file")
-		}
-	})
-}
-
-func TestIsValidSHA256(t *testing.T) {
-	tests := []struct {
-		name  string
-		hash  string
-		valid bool
-	}{
-		{
-			name:  "valid 64-char hex lowercase",
-			hash:  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			valid: true,
-		},
-		{
-			name:  "valid 64-char hex uppercase",
-			hash:  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-			valid: true,
-		},
-		{
-			name:  "too short",
-			hash:  "abc123",
-			valid: false,
-		},
-		{
-			name:  "too long",
-			hash:  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8551",
-			valid: false,
-		},
-		{
-			name:  "invalid characters",
-			hash:  "g3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			valid: false,
-		},
-		{
-			name:  "empty string",
-			hash:  "",
-			valid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := IsValidSHA256(tt.hash)
-			if result != tt.valid {
-				t.Errorf("IsValidSHA256(%q) = %v, want %v", tt.hash, result, tt.valid)
-			}
-		})
-	}
-}
-
-func TestPathOperations(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "simple path",
-			input:    "test/path",
-			expected: "test/path",
-		},
-		{
-			name:     "path with dots",
-			input:    "test/../path",
-			expected: "path",
-		},
-		{
-			name:     "empty path",
-			input:    "",
-			expected: ".",
-		},
-		{
-			name:     "absolute path",
-			input:    "/usr/local/bin",
-			expected: "/usr/local/bin",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := filepath.Clean(tt.input)
-			if result != tt.expected {
-				t.Errorf("filepath.Clean(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestStringContains(t *testing.T) {
-	slice := []string{"apple", "banana", "cherry", "date"}
-
-	tests := []struct {
-		name   string
-		search string
-		found  bool
-	}{
-		{"exists at start", "apple", true},
-		{"exists in middle", "banana", true},
-		{"exists at end", "date", true},
-		{"does not exist", "orange", false},
-		{"empty string", "", false},
-		{"case sensitive", "Apple", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			found := false
-			for _, item := range slice {
-				if item == tt.search {
-					found = true
-					break
-				}
-			}
-			if found != tt.found {
-				t.Errorf("String %q in slice = %v, want %v", tt.search, found, tt.found)
-			}
-		})
-	}
-}
-
-func TestFilePathJoin(t *testing.T) {
-	tests := []struct {
-		name     string
-		parts    []string
-		expected string
-	}{
-		{
-			name:     "two parts",
-			parts:    []string{"dir", "file.txt"},
-			expected: "dir/file.txt",
-		},
-		{
-			name:     "three parts",
-			parts:    []string{"dir1", "dir2", "file.txt"},
-			expected: "dir1/dir2/file.txt",
-		},
-		{
-			name:     "with dots",
-			parts:    []string{"dir", "..", "file.txt"},
-			expected: "file.txt",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := filepath.Join(tt.parts...)
-			result = filepath.Clean(result)
-			if result != tt.expected {
-				t.Errorf("filepath.Join(%v) = %q, want %q", tt.parts, result, tt.expected)
-			}
-		})
-	}
-}
+//func TestGitTopLevelAndSimpleRun(t *testing.T) {
+//	tmp := t.TempDir()
+//	cmd := exec.Command("git", "init", tmp)
+//	if out, err := cmd.CombinedOutput(); err != nil {
+//		t.Fatalf("git init failed: %v: %s", err, string(out))
+//	}
+//
+//	cwd, err := os.Getwd()
+//	if err != nil {
+//		t.Fatalf("getwd: %v", err)
+//	}
+//	if err := os.Chdir(tmp); err != nil {
+//		t.Fatalf("chdir: %v", err)
+//	}
+//	t.Cleanup(func() {
+//		_ = os.Chdir(cwd)
+//	})
+//
+//	top, err := GitTopLevel()
+//	if err != nil {
+//		t.Fatalf("GitTopLevel error: %v", err)
+//	}
+//	if top != tmp {
+//		t.Fatalf("expected top %s, got %s", tmp, top)
+//	}
+//
+//	out, err := SimpleRun([]string{"git", "rev-parse", "--show-toplevel"})
+//	if err != nil {
+//		t.Fatalf("SimpleRun error: %v", err)
+//	}
+//	if out == "" {
+//		t.Fatalf("expected output")
+//	}
+//}

@@ -3,10 +3,11 @@ package client
 import (
 	"context"
 
+	drs "github.com/calypr/data-client/drs"
 	dataClient "github.com/calypr/data-client/g3client"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
-	"github.com/calypr/git-drs/s3_utils"
+	hash "github.com/calypr/data-client/hash"
+	"github.com/calypr/data-client/s3utils"
+	"github.com/calypr/git-drs/cloud"
 )
 
 type DRSClient interface {
@@ -59,7 +60,7 @@ type DRSClient interface {
 	BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error)
 
 	// Add an S3 URL to an existing indexd record
-	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error)
+	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error)
 
 	GetBucketName() string
 

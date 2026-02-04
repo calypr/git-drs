@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/drsmap"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/calypr/git-drs/utils"
@@ -169,12 +169,12 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	if err := writePointerFile(input.path, oid, s3Info.SizeBytes); err != nil {
 		return err
 	}
-	
+
 	//// Add the pointer file to Git
 	//if err := gitrepo.AddFile(filePath); err != nil {
 	//	return fmt.Errorf("failed to add pointer file to Git: %w", err)
 	//}
-	
+
 	if err := updatePrecommitCache(ctx, logger, input.path, oid, input.s3URL); err != nil {
 		logger.Warn("pre-commit cache update skipped", "error", err)
 	}

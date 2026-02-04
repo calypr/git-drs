@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/calypr/data-client/common"
-	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/drsmap"
 )

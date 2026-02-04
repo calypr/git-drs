@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/hash"
 	localCommon "github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/s3_utils"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	"github.com/calypr/git-drs/s3_utils"
 )
 
 func setupTestRepo(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drs"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
@@ -73,19 +73,19 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-		// get the remote client
-		cli, err := cfg.GetRemoteClient(remote, myLogger)
-		if err != nil {
-			// Print warning to stderr and return success (exit 0)
-			fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-			myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
-			// Check for GitDrsIdxdClient
-		}
-		dc, ok := cli.(*indexd.GitDrsIdxdClient)
-		if !ok {
-			return fmt.Errorf("cli is not IndexdClient: %T", cli)
-		}
-		myLogger.Debug(fmt.Sprintf("Current server: %s", dc.Config.ProjectId))
+	// get the remote client
+	cli, err := cfg.GetRemoteClient(remote, myLogger)
+	if err != nil {
+		// Print warning to stderr and return success (exit 0)
+		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
+		myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
+		// Check for GitDrsIdxdClient
+	}
+	dc, ok := cli.(*indexd.GitDrsIdxdClient)
+	if !ok {
+		return fmt.Errorf("cli is not IndexdClient: %T", cli)
+	}
+	myLogger.Debug(fmt.Sprintf("Current server: %s", dc.Config.ProjectId))
 	remoteConfig := cfg.GetRemote(remote)
 	if remoteConfig == nil {
 		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote configuration.")

@@ -3,7 +3,7 @@ package drsmap
 import (
 	"testing"
 
-	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/drs"
 )
 
 // Test DrsUUID function - it's already tested but let's add more coverage

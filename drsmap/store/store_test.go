@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/drs"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/drs/hash"
 )
 

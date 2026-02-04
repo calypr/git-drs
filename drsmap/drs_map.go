@@ -1,88 +1,28 @@
 package drsmap
 
+// Utilities to map between Git LFS files and DRS objects
+
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strings"
 
-	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
-	"github.com/calypr/data-client/upload"
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/lfs"
-	"github.com/go-git/go-git/v5"
+	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	drsstore "github.com/calypr/git-drs/drsmap/store"
+	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
-// execCommand is a variable to allow mocking in tests
-var execCommand = exec.Command
-var execCommandContext = exec.CommandContext
-
-var NAMESPACE = uuid.NewMD5(uuid.NameSpaceURL, []byte("calypr.org"))
-
-type LfsDryRunSpec struct {
-	Remote string // e.g. "origin"
-	Ref    string // e.g. "refs/heads/main" or "HEAD"
-}
-
-// RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
-func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) {
-	if spec.Remote == "" || spec.Ref == "" {
-		return "", errors.New("missing remote or ref")
-	}
-
-	// Debug-print the command to stderr
-	fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
-	logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
-
-	cmd := execCommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	out := stdout.String()
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return out, fmt.Errorf("git lfs push --dry-run failed: %s", msg)
-	}
-	return out, nil
-}
-
-// output of git lfs ls-files
-type LfsLsOutput struct {
-	Files []LfsFileInfo `json:"files"`
-}
-
-// LfsFileInfo represents the information about an LFS file
-type LfsFileInfo struct {
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	Checkout   bool   `json:"checkout"`
-	Downloaded bool   `json:"downloaded"`
-	OidType    string `json:"oid_type"`
-	Oid        string `json:"oid"`
-	Version    string `json:"version"`
-}
-
-func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client g3client.Gen3Interface, bucketName string, upsert bool, myLogger *slog.Logger) error {
+func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
-	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
+	drsLfsObjs, err := drsstore.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
 	}
@@ -138,19 +78,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, gen3Client g3client.Gen3Int
 			}
 
 		} else {
-			filePath, err := GetObjectPath(common.LFS_OBJS_PATH, drsObjKey)
-			if err != nil {
-				return err
-			}
-
-			_, err = upload.RegisterAndUploadFile(
-				context.Background(),
-				gen3Client,
-				val,
-				filePath,
-				bucketName,
-				upsert,
-			)
+			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, nil)
 			if err != nil {
 				return err
 			}
@@ -203,7 +131,7 @@ func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocatio
 	logger.Debug("Update to DRS objects started")
 
 	// get all lfs files
-	lfsFiles, err := GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+	lfsFiles, err := drslfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
 	}
@@ -266,7 +194,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]dr
 			}
 		}
 
-		if err := drsstore.WriteObject(projectdir.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
+		if err := drsstore.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
 			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
@@ -366,7 +294,7 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Convert project ID to resource path format for comparison
-	expectedAuthz, err := drs.ProjectToResource(projectId)
+	expectedAuthz, err := utils.ProjectToResource(projectId)
 	if err != nil {
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}

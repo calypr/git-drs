@@ -12,17 +12,16 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/fence"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/data-client/indexd"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/messages"
-	"github.com/calypr/git-drs/s3_utils"
-	"github.com/calypr/git-drs/projectdir"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -158,7 +157,7 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 	return inc.RegisterRecord(ctx, drsObj)
 }
 
-func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
+func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3_utils.S3Meta, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

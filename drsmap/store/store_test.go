@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/calypr/data-client/drs"
-	"github.com/calypr/git-drs/drs/hash"
+	"github.com/calypr/data-client/hash"
 )
 
 func TestWriteAndReadObject(t *testing.T) {

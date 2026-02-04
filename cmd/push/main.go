@@ -7,8 +7,6 @@ import (
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
-
-	"github.com/calypr/git-drs/client/indexd"
 )
 
 var Cmd = &cobra.Command{
@@ -47,13 +45,13 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		// Check for GitDrsIdxdClient
-		icli, ok := drsClient.(*indexd.GitDrsIdxdClient)
-		if !ok {
-			return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T), cannot push", drsClient)
-		}
+		//// Check for GitDrsIdxdClient
+		//icli, ok := drsClient.(*indexd.GitDrsIdxdClient)
+		//if !ok {
+		//	return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T), cannot push", drsClient)
+		//}
 
-		err = drsmap.PushLocalDrsObjects(drsClient, icli.GetGen3Interface(), icli.GetBucketName(), icli.GetUpsert(), myLogger)
+		err = drsmap.PushLocalDrsObjects(drsClient, myLogger)
 		if err != nil {
 			return err
 		}

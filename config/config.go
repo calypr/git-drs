@@ -3,13 +3,16 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/utils"
 	"github.com/go-git/go-git/v5"
 )
 
@@ -94,8 +97,10 @@ func (c Config) GetDefaultRemote() (Remote, error) {
 		return "", fmt.Errorf(
 			"no default remote configured.\n"+
 				"Set one with: git drs remote set <name>\n"+
-				"Available remotes: %v",
+				"Available remotes: %v\n"+
+				"Config: %v\n",
 			c.listRemoteNames(),
+			c,
 		)
 	}
 
@@ -266,3 +271,12 @@ func SaveConfig(cfg *Config) error {
 
 // GetGitConfigInt reads an integer value from git config
 // getGitConfigValue retrieves a value from git config by key
+func getConfigPath() (string, error) {
+	topLevel, err := utils.GitTopLevel()
+	if err != nil {
+		return "", err
+	}
+
+	configPath := filepath.Join(topLevel, common.DRS_DIR, common.CONFIG_YAML)
+	return configPath, nil
+}

@@ -74,15 +74,15 @@ func ParseGitAttributes(content string) ([]GitAttribute, error) {
 	return attributes, nil
 }
 
-func IsLFSTracked(gitattributesFilePath, filePath string) (bool, error) {
-	gitattributesContent, err := os.ReadFile(gitattributesFilePath)
-	if err != nil {
-		return false, fmt.Errorf("failed to read .gitattributes file: %w", err)
-	}
-
-	return isLFSTracked(string(gitattributesContent), filePath)
-}
-
+//	func IsLFSTracked(gitattributesFilePath, filePath string) (bool, error) {
+//		gitattributesContent, err := os.ReadFile(gitattributesFilePath)
+//		if err != nil {
+//			return false, fmt.Errorf("failed to read .gitattributes file: %w", err)
+//		}
+//
+//		return isLFSTracked(string(gitattributesContent), filePath)
+//	}
+//
 // isLFSTracked determines if a given file path is tracked by Git LFS
 func isLFSTracked(gitattributesContent string, filePath string) (bool, error) {
 	attributes, err := ParseGitAttributes(gitattributesContent)

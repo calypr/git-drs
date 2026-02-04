@@ -271,18 +271,20 @@ git lfs track data/simple_test_file.txt
 git add .gitattributes data/simple_test_file.txt
 git commit -m "add-url simple_test_file.txt to git lfs"
 
-# verify the sha256 matches
+echo "verify the sha256 matches"
 grep $sha256 data/simple_test_file.txt
-# should show as a pointer file
+echo "data/simple_test_file.txt should show as a pointer file"
 git lfs ls-files | grep " - data/simple_test_file.txt"
 
+echo "Pulling the file via git lfs pull"
 git lfs pull origin main
 
-# verify the file is now tracked as a local data file
+echo "verify the file is now tracked as a local data file"
 git lfs ls-files | grep " * data/simple_test_file.txt"
-# verify the file contents after pull
+echo "verify the file contents after pull"
 cat data/simple_test_file.txt | grep "$test_string"
 
+echo "checking the original oid"
 original_add_url_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file.txt" '$0 ~ (" " path "$") {print $1; exit}')
 if [ -z "$original_add_url_oid" ]; then
   err "unable to find LFS OID for data/simple_test_file.txt"

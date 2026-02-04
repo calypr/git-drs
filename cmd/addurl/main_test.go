@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/cloud"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/spf13/cobra"
@@ -36,29 +37,43 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("git init failed: %v: %s", err, out)
 	}
 
+	// Setup config for test
+	origDir, _ := os.Getwd()
+	exec.Command("git", "init", tempDir).Run()
+	os.Chdir(tempDir)
+	defer os.Chdir(origDir)
+
+	// Mock config
+	// Create dummy config using git config
 	// create a minimal drs config so runAddURL doesn't fail with
-	// "config file does not exist. Please run 'git drs init'..."
-	configPaths := []string{
-		filepath.Join(tempDir, ".git", "drs", "config.yaml"),
+	//default_remote: calypr-dev
+	//remotes:
+	//  calypr-dev:
+	//    gen3:
+	//      endpoint: https://calypr-dev.ohsu.edu
+	//      project_id: cbds-monorepos
+	//      bucket: cbds
+
+	cmds := [][]string{
+		{"config", "drs.default-remote", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.type", "gen3"},
+		{"config", "drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
+		{"config", "drs.remote.calypr-dev.bucket", "cbds"},
 	}
-	for _, p := range configPaths {
-		// ensure parent dir exists for safety (e.g. .git should already exist from git init)
-		if dir := filepath.Dir(p); dir != tempDir && dir != "." {
-			_ = os.MkdirAll(dir, 0755)
+	for _, args := range cmds {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
 		}
-		yamlConfig := `
-default_remote: calypr-dev
-remotes:
-  calypr-dev:
-    gen3:
-      endpoint: https://calypr-dev.ohsu.edu
-      project_id: cbds-monorepos
-      bucket: cbds
-`
-		if err := os.WriteFile(p, []byte(yamlConfig), 0644); err != nil {
-			t.Fatalf("write config %s: %v", p, err)
-		}
-		fmt.Fprintf(os.Stderr, "TestRunAddURL_WritesPointerAndLFSObject wrote mock config file %s\n", p)
+	}
+	loaded, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if loaded.DefaultRemote != "calypr-dev" {
+		t.Fatalf("expected default remote set, got %s", loaded.DefaultRemote)
 	}
 
 	service := NewAddURLService()

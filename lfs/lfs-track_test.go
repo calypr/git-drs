@@ -115,7 +115,7 @@ docs/**/*.pdf filter=lfs
 	}
 }
 
-func TestIsLFSTracked(t *testing.T) {
+func TestIsLFSTracked2(t *testing.T) {
 	content := `
 # LFS tracking
 *.bin filter=lfs diff=lfs merge=lfs -text

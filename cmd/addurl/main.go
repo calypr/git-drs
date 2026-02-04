@@ -15,13 +15,11 @@ import (
 	"time"
 
 	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
-	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/calypr/git-drs/utils"

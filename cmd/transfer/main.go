@@ -162,7 +162,7 @@ var Cmd = &cobra.Command{
 					errMsg := fmt.Sprintf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
 					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
-					errMsg := fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
+					errMsg = fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
 					logger.Error(errMsg)
 
 					drsObject, errG := drsmap.DrsInfoFromOid(downloadMsg.Oid)

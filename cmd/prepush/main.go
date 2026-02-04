@@ -335,3 +335,45 @@ func gitOutput(ctx context.Context, args ...string) (string, error) {
 	}
 	return string(out), nil
 }
+
+// readPushedBranches reads git push lines from the provided temp file,
+// extracts unique local branch names for refs under `refs/heads/` and
+// returns them sorted. The file is rewound to the start before returning.
+func readPushedBranches(f *os.File) ([]string, error) {
+	// Ensure we read from start
+	// example:
+	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(f)
+	set := make(map[string]struct{})
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 1 {
+			continue
+		}
+		localRef := fields[0]
+		const prefix = "refs/heads/"
+		if strings.HasPrefix(localRef, prefix) {
+			branch := strings.TrimPrefix(localRef, prefix)
+			if branch != "" {
+				set[branch] = struct{}{}
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	branches := make([]string, 0, len(set))
+	for b := range set {
+		branches = append(branches, b)
+	}
+	sort.Strings(branches)
+	// Rewind so caller can reuse the file
+	if _, err := f.Seek(0, 0); err != nil {
+		return nil, err
+	}
+	return branches, nil
+}

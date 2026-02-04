@@ -23,6 +23,21 @@ type ObjectStore struct {
 	Logger   *slog.Logger
 }
 
+func ObjectPath(basePath string, oid string) (string, error) {
+	store := NewObjectStore(basePath, nil)
+	return store.ObjectPath(oid)
+}
+
+func WriteObject(basePath string, drsObj *drs.DRSObject, oid string) error {
+	store := NewObjectStore(basePath, nil)
+	return store.WriteObject(drsObj, oid)
+}
+
+func ReadObject(basePath string, oid string) (*drs.DRSObject, error) {
+	store := NewObjectStore(basePath, nil)
+	return store.ReadObject(oid)
+}
+
 func NewObjectStore(basePath string, logger *slog.Logger) *ObjectStore {
 	return &ObjectStore{
 		BasePath: basePath,
@@ -37,11 +52,6 @@ func (s *ObjectStore) ObjectPath(oid string) (string, error) {
 	}
 
 	return filepath.Join(s.BasePath, oid[:2], oid[2:4], oid), nil
-}
-
-func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
-	basePath := filepath.Dir(filepath.Dir(filepath.Dir(drsObjPath)))
-	return drsstore.WriteObject(basePath, drsObj, oid)
 }
 
 func (s *ObjectStore) WriteObject(drsObj *drs.DRSObject, oid string) error {

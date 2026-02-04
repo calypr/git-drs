@@ -16,6 +16,7 @@ import (
 	"github.com/calypr/data-client/fence"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/data-client/indexd"
+	"github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drslog"
@@ -157,11 +158,11 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 	return inc.RegisterRecord(ctx, drsObj)
 }
 
-func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3_utils.S3Meta, error) {
+func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cfg := &s3_utils.AddURLConfig{}
+	cfg := &cloud.AddURLConfig{}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -170,27 +171,27 @@ func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, r
 		inc.Logger = drslog.NewNoOpLogger()
 	}
 
-	if err := s3_utils.ValidateInputs(s3URL, sha256); err != nil {
-		return s3_utils.S3Meta{}, err
+	if err := s3utils.ValidateInputs(s3URL, sha256); err != nil {
+		return s3utils.S3Meta{}, err
 	}
 
 	_, relPath, err := utils.ParseS3URL(s3URL)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
+		return s3utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
 
-	isLFS, err := lfs.IsLFSTracked(".gitattributes", relPath)
+	isLFS, err := lfs.IsLFSTracked(relPath)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
+		return s3utils.S3Meta{}, fmt.Errorf("unable to determine if file is tracked by LFS: %w", err)
 	}
 	if !isLFS {
-		return s3_utils.S3Meta{}, fmt.Errorf("file is not tracked by LFS")
+		return s3utils.S3Meta{}, fmt.Errorf("file is not tracked by LFS")
 	}
 
 	inc.Logger.Debug("Fetching S3 metadata...")
 	fileSize, modifiedDate, err := inc.fetchS3Metadata(ctx, s3URL, awsAccessKey, awsSecretKey, regionFlag, endpointFlag, cfg.S3Client, cfg.HttpClient, inc.Logger)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
+		return s3utils.S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
 	}
 
 	inc.Logger.Debug(fmt.Sprintf("Fetched S3 metadata successfully: %d bytes, modified: %s", fileSize, modifiedDate))
@@ -198,20 +199,20 @@ func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, r
 	inc.Logger.Debug("Processing indexd record...")
 	drsObj, err := inc.upsertIndexdRecord(ctx, s3URL, sha256, fileSize, inc.Logger)
 	if err != nil {
-		return s3_utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
+		return s3utils.S3Meta{}, fmt.Errorf("failed to create indexd record: %w", err)
 	}
 
 	drsObjPath, err := drsmap.GetObjectPath(common.DRS_OBJS_PATH, drsObj.Checksums.SHA256)
 	if err != nil {
-		return s3_utils.S3Meta{}, err
+		return s3utils.S3Meta{}, err
 	}
 	if err := drsmap.WriteDrsObj(drsObj, sha256, drsObjPath); err != nil {
-		return s3_utils.S3Meta{}, err
+		return s3utils.S3Meta{}, err
 	}
 
 	inc.Logger.Debug("Indexd updated")
 
-	return s3_utils.S3Meta{
+	return s3utils.S3Meta{
 		Size:         fileSize,
 		LastModified: modifiedDate,
 	}, nil

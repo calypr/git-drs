@@ -103,7 +103,6 @@ func TestLfsFilesFromCache(t *testing.T) {
 	}
 }
 
-
 func TestReadPushedBranches(t *testing.T) {
 	tests := []struct {
 		name     string

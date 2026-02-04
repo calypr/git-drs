@@ -12,9 +12,10 @@ import (
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
+	"github.com/calypr/data-client/s3utils"
+	"github.com/calypr/git-drs/cloud"
 	localCommon "github.com/calypr/git-drs/common"
 	drslfs "github.com/calypr/git-drs/drsmap/lfs"
-	"github.com/calypr/git-drs/s3_utils"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -184,8 +185,8 @@ func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64
 	}, nil
 }
 
-func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
-	return s3_utils.S3Meta{}, fmt.Errorf("not implemented")
+func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
+	return s3utils.S3Meta{}, fmt.Errorf("not implemented")
 }
 
 func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {

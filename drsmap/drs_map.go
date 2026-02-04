@@ -3,12 +3,17 @@ package drsmap
 // Utilities to map between Git LFS files and DRS objects
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
+	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
@@ -19,6 +24,10 @@ import (
 	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
+
+// execCommand is a variable to allow mocking in tests
+var execCommand = exec.Command
+var execCommandContext = exec.CommandContext
 
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
@@ -78,7 +87,8 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 			}
 
 		} else {
-			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, nil)
+			myLogger.Warn("TODO: Upload file to DRS server before registering file")
+			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, "TODO")
 			if err != nil {
 				return err
 			}
@@ -233,7 +243,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
 	}
 
 	// write drs objects to DRS_OBJS_PATH
-	err = drsstore.WriteObject(projectdir.DRS_OBJS_PATH, drsObj, file.Oid)
+	err = drsstore.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid)
 	if err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 	}
@@ -248,12 +258,12 @@ func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 func DrsUUID(projectId string, hash string) string {
 	// create UUID based on project ID and hash
 	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
-	return uuid.NewSHA1(NAMESPACE, []byte(hashStr)).String()
+	return uuid.NewSHA1(drs.NAMESPACE, []byte(hashStr)).String()
 }
 
 // creates drsObject record from file
 func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
-	return drsstore.ReadObject(projectdir.DRS_OBJS_PATH, oid)
+	return drsstore.ReadObject(common.DRS_OBJS_PATH, oid)
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {
@@ -314,4 +324,97 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	return nil, nil
+}
+
+// checkIfLfsFile checks if a given file is tracked by Git LFS
+// Returns true and file info if it's an LFS file, false otherwise
+func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
+	// Use git lfs ls-files -I to check if specific file is LFS tracked
+	cmd := execCommand("git", "lfs", "ls-files", "-I", fileName, "--json")
+	out, err := cmd.Output()
+	if err != nil {
+		// If git lfs ls-files returns error, the file is not LFS tracked
+		return false, nil, nil
+	}
+
+	// If output is empty, file is not LFS tracked
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return false, nil, nil
+	}
+
+	// Parse the JSON output
+	var lfsOutput LfsLsOutput
+	err = sonic.ConfigFastest.Unmarshal(out, &lfsOutput)
+	if err != nil {
+		return false, nil, fmt.Errorf("error unmarshaling git lfs ls-files output for %s: %v", fileName, err)
+	}
+
+	// If no files in output, not LFS tracked
+	if len(lfsOutput.Files) == 0 {
+		return false, nil, nil
+	}
+
+	// Convert to our LfsFileInfo struct
+	file := lfsOutput.Files[0]
+	lfsInfo := &LfsFileInfo{
+		Name:       file.Name,
+		Size:       file.Size,
+		Checkout:   file.Checkout,
+		Downloaded: file.Downloaded,
+		OidType:    file.OidType,
+		Oid:        file.Oid,
+		Version:    file.Version,
+	}
+
+	return true, lfsInfo, nil
+}
+
+// output of git lfs ls-files
+type LfsLsOutput struct {
+	Files []LfsFileInfo `json:"files"`
+}
+
+// LfsFileInfo represents the information about an LFS file
+type LfsFileInfo struct {
+	Name       string `json:"name"`
+	Size       int64  `json:"size"`
+	Checkout   bool   `json:"checkout"`
+	Downloaded bool   `json:"downloaded"`
+	OidType    string `json:"oid_type"`
+	Oid        string `json:"oid"`
+	Version    string `json:"version"`
+}
+
+type LfsDryRunSpec struct {
+	Remote string // e.g. "origin"
+	Ref    string // e.g. "refs/heads/main" or "HEAD"
+}
+
+// RunLfsPushDryRun executes: git lfs push --dry-run <remote> <ref>
+func RunLfsPushDryRun(ctx context.Context, repoDir string, spec LfsDryRunSpec, logger *slog.Logger) (string, error) {
+	if spec.Remote == "" || spec.Ref == "" {
+		return "", errors.New("missing remote or ref")
+	}
+
+	// Debug-print the command to stderr
+	fullCmd := []string{"git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref}
+	logger.Debug(fmt.Sprintf("running command: %v", fullCmd))
+
+	cmd := execCommandContext(ctx, "git", "lfs", "push", "--dry-run", spec.Remote, spec.Ref)
+	cmd.Dir = repoDir
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	out := stdout.String()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return out, fmt.Errorf("git lfs push --dry-run failed: %s", msg)
+	}
+	return out, nil
 }

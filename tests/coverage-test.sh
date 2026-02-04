@@ -331,9 +331,10 @@ git lfs track data/simple_test_file2.txt
 git add .gitattributes data/simple_test_file2.txt
 git commit -m "add-url simple_test_file2.txt to git lfs"
 
+echo "verify the sha256 matches for simple_test_file2.txt"
 simple_test_file2_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file2.txt" '$0 ~ (" " path "$") {print $1; exit}')
 if [ -z "$simple_test_file2_oid" ]; then
-  err "unable to find LFS OID for data/simple_test_file2.txt"
+  echo "unable to find LFS OID for data/simple_test_file2.txt"
   exit 1
 fi
 
@@ -342,15 +343,15 @@ git commit -m "rename simple_test_file2.txt path"
 
 renamed_simple_test_file2_oid=$(git lfs ls-files -l | awk -v path="data/renamed_simple_test_file2.txt" '$0 ~ (" " path "$") {print $1; exit}')
 if [ -z "$renamed_simple_test_file2_oid" ]; then
-  err "unable to find LFS OID for data/renamed_simple_test_file2.txt"
+  echo "unable to find LFS OID for data/renamed_simple_test_file2.txt"
   exit 1
 fi
 if [ "$simple_test_file2_oid" != "$renamed_simple_test_file2_oid" ]; then
-  err "expected OID to stay the same after path change"
+  echo "expected OID to stay the same after path change"
   exit 1
 fi
 if git lfs ls-files -l | grep -Fq " data/simple_test_file2.txt"; then
-  err "expected old path data/simple_test_file2.txt to be absent after rename"
+  echo "expected old path data/simple_test_file2.txt to be absent after rename"
   exit 1
 fi
 
@@ -361,7 +362,7 @@ popd >/dev/null
 
 echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
 if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
-  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+  echo "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
   exit 1
 fi
 

@@ -8,7 +8,6 @@ import (
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/utils"
 )
 
 // TestParseS3URL_Valid tests parsing valid S3 URLs
@@ -52,7 +51,7 @@ func TestParseS3URL_Valid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bucket, key, err := utils.ParseS3URL(tt.s3URL)
+			bucket, key, err := cloud.ParseS3URL(tt.s3URL)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseS3URL() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -106,7 +105,7 @@ func TestParseS3URL_Invalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := utils.ParseS3URL(tt.s3URL)
+			_, _, err := cloud.ParseS3URL(tt.s3URL)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseS3URL() error = %v, wantErr %v", err, tt.wantErr)
 			}

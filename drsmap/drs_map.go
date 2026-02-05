@@ -13,15 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/common"
-	drslfs "github.com/calypr/git-drs/drsmap/lfs"
-	drsstore "github.com/calypr/git-drs/drsmap/store"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
-	"github.com/calypr/git-drs/utils"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +28,7 @@ var execCommandContext = exec.CommandContext
 
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
-	drsLfsObjs, err := drsstore.GetDrsLfsObjects(myLogger)
+	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
 	}
@@ -135,13 +132,12 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 	logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
 	return nil
 }
-
 func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
 
 	logger.Debug("Update to DRS objects started")
 
 	// get all lfs files
-	lfsFiles, err := drslfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+	lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	if err != nil {
 		return fmt.Errorf("error getting all LFS files: %v", err)
 	}
@@ -151,14 +147,20 @@ func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocatio
 		return fmt.Errorf("no project configured")
 	}
 
-	return UpdateDrsObjectsWithFiles(builder, lfsFiles, nil, false, logger)
+	return UpdateDrsObjectsWithFiles(builder, lfsFiles, UpdateOptions{Logger: logger})
 }
 
-func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]drslfs.LfsFileInfo, cache *precommit_cache.Cache, preferCacheURL bool, logger *slog.Logger) error {
-	if logger == nil {
+type UpdateOptions struct {
+	Cache          *precommit_cache.Cache
+	PreferCacheURL bool
+	Logger         *slog.Logger
+}
+
+func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error {
+	if opts.Logger == nil {
 		return fmt.Errorf("logger is required")
 	}
-	logger.Debug("Update to DRS objects started")
+	opts.Logger.Debug("Update to DRS objects started")
 
 	// get project
 	if builder.ProjectID == "" {
@@ -172,7 +174,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]dr
 		drsID := DrsUUID(builder.ProjectID, file.Oid)
 		authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
 		if err != nil {
-			logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
+			opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
 
@@ -182,10 +184,10 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]dr
 		}
 
 		var hint string
-		if cache != nil {
-			externalURL, ok, err := cache.LookupExternalURLByOID(file.Oid)
+		if opts.Cache != nil {
+			externalURL, ok, err := opts.Cache.LookupExternalURLByOID(file.Oid)
 			if err != nil {
-				logger.Debug(fmt.Sprintf("cache lookup failed for %s: %v", file.Oid, err))
+				opts.Logger.Debug(fmt.Sprintf("cache lookup failed for %s: %v", file.Oid, err))
 			} else if ok {
 				hint = externalURL
 			}
@@ -193,29 +195,29 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]dr
 
 		if hint != "" {
 			if err := precommit_cache.CheckExternalURLMismatch(hint, authoritativeURL); err != nil {
-				logger.Warn(fmt.Sprintf("Warning. %s (path=%s oid=%s)", err.Error(), file.Name, file.Oid))
+				opts.Logger.Warn(fmt.Sprintf("Warning. %s (path=%s oid=%s)", err.Error(), file.Name, file.Oid))
 				fmt.Fprintln(os.Stderr, "Warning.", err.Error())
 			}
 		}
 
-		if preferCacheURL && hint != "" {
+		if opts.PreferCacheURL && hint != "" {
 			if len(authoritativeObj.AccessMethods) > 0 {
 				authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
 			}
 		}
 
-		if err := drsstore.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
-			logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
+		if err := lfs.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
+			opts.Logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
-		logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))
+		opts.Logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))
 	}
 
 	return nil
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) {
+func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) {
 
 	// determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
@@ -243,7 +245,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
 	}
 
 	// write drs objects to DRS_OBJS_PATH
-	err = drsstore.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid)
+	err = lfs.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid)
 	if err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
 	}
@@ -252,7 +254,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file drslfs.LfsFileInfo, objectPath
 
 func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	basePath := filepath.Dir(filepath.Dir(filepath.Dir(drsObjPath)))
-	return drsstore.WriteObject(basePath, drsObj, oid)
+	return lfs.WriteObject(basePath, drsObj, oid)
 }
 
 func DrsUUID(projectId string, hash string) string {
@@ -263,11 +265,11 @@ func DrsUUID(projectId string, hash string) string {
 
 // creates drsObject record from file
 func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
-	return drsstore.ReadObject(common.DRS_OBJS_PATH, oid)
+	return lfs.ReadObject(common.DRS_OBJS_PATH, oid)
 }
 
 func GetObjectPath(basePath string, oid string) (string, error) {
-	return drsstore.ObjectPath(basePath, oid)
+	return lfs.ObjectPath(basePath, oid)
 }
 
 // CreateCustomPath creates a custom path based on the DRS URI
@@ -304,7 +306,7 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	}
 
 	// Convert project ID to resource path format for comparison
-	expectedAuthz, err := utils.ProjectToResource(projectId)
+	expectedAuthz, err := common.ProjectToResource(projectId)
 	if err != nil {
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}
@@ -326,63 +328,9 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObje
 	return nil, nil
 }
 
-// checkIfLfsFile checks if a given file is tracked by Git LFS
-// Returns true and file info if it's an LFS file, false otherwise
-func CheckIfLfsFile(fileName string) (bool, *LfsFileInfo, error) {
-	// Use git lfs ls-files -I to check if specific file is LFS tracked
-	cmd := execCommand("git", "lfs", "ls-files", "-I", fileName, "--json")
-	out, err := cmd.Output()
-	if err != nil {
-		// If git lfs ls-files returns error, the file is not LFS tracked
-		return false, nil, nil
-	}
-
-	// If output is empty, file is not LFS tracked
-	if len(strings.TrimSpace(string(out))) == 0 {
-		return false, nil, nil
-	}
-
-	// Parse the JSON output
-	var lfsOutput LfsLsOutput
-	err = sonic.ConfigFastest.Unmarshal(out, &lfsOutput)
-	if err != nil {
-		return false, nil, fmt.Errorf("error unmarshaling git lfs ls-files output for %s: %v", fileName, err)
-	}
-
-	// If no files in output, not LFS tracked
-	if len(lfsOutput.Files) == 0 {
-		return false, nil, nil
-	}
-
-	// Convert to our LfsFileInfo struct
-	file := lfsOutput.Files[0]
-	lfsInfo := &LfsFileInfo{
-		Name:       file.Name,
-		Size:       file.Size,
-		Checkout:   file.Checkout,
-		Downloaded: file.Downloaded,
-		OidType:    file.OidType,
-		Oid:        file.Oid,
-		Version:    file.Version,
-	}
-
-	return true, lfsInfo, nil
-}
-
 // output of git lfs ls-files
 type LfsLsOutput struct {
-	Files []LfsFileInfo `json:"files"`
-}
-
-// LfsFileInfo represents the information about an LFS file
-type LfsFileInfo struct {
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	Checkout   bool   `json:"checkout"`
-	Downloaded bool   `json:"downloaded"`
-	OidType    string `json:"oid_type"`
-	Oid        string `json:"oid"`
-	Version    string `json:"version"`
+	Files []lfs.LfsFileInfo `json:"files"`
 }
 
 type LfsDryRunSpec struct {

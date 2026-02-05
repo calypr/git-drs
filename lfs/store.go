@@ -30,6 +30,21 @@ func NewObjectStore(basePath string, logger *slog.Logger) *ObjectStore {
 	}
 }
 
+func ObjectPath(basePath string, oid string) (string, error) {
+	store := NewObjectStore(basePath, nil)
+	return store.ObjectPath(oid)
+}
+
+func WriteObject(basePath string, drsObj *drs.DRSObject, oid string) error {
+	store := NewObjectStore(basePath, nil)
+	return store.WriteObject(drsObj, oid)
+}
+
+func ReadObject(basePath string, oid string) (*drs.DRSObject, error) {
+	store := NewObjectStore(basePath, nil)
+	return store.ReadObject(oid)
+}
+
 func (s *ObjectStore) ObjectPath(oid string) (string, error) {
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {

@@ -23,7 +23,6 @@ import (
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/messages"
-	"github.com/calypr/git-drs/utils"
 )
 
 // getBucketDetails fetches bucket details from Gen3 using data-client.
@@ -33,7 +32,7 @@ func (inc *GitDrsIdxdClient) getBucketDetails(ctx context.Context, bucket string
 
 // FetchS3MetadataWithBucketDetails fetches S3 metadata given bucket details.
 func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, bucketDetails *fence.S3Bucket, s3Client *s3.Client, logger *slog.Logger) (int64, string, error) {
-	bucket, key, err := utils.ParseS3URL(s3URL)
+	bucket, key, err := cloud.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
@@ -102,7 +101,7 @@ func FetchS3MetadataWithBucketDetails(ctx context.Context, s3URL, awsAccessKey, 
 }
 
 func (inc *GitDrsIdxdClient) fetchS3Metadata(ctx context.Context, s3URL, awsAccessKey, awsSecretKey, region, endpoint string, s3Client *s3.Client, httpClient *http.Client, logger *slog.Logger) (int64, string, error) {
-	bucket, _, err := utils.ParseS3URL(s3URL)
+	bucket, _, err := cloud.ParseS3URL(s3URL)
 	if err != nil {
 		return 0, "", fmt.Errorf("failed to parse S3 URL: %w", err)
 	}
@@ -146,7 +145,7 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 
 	// If no record exists, create one
 	logger.Debug("creating new record")
-	_, relPath, _ := utils.ParseS3URL(url)
+	_, relPath, _ := cloud.ParseS3URL(url)
 
 	drsObj, err := drs.BuildDrsObj(relPath, sha256, fileSize, uuid, inc.Config.BucketName, projectId)
 	if err != nil {
@@ -175,7 +174,7 @@ func (inc *GitDrsIdxdClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, r
 		return s3utils.S3Meta{}, err
 	}
 
-	_, relPath, err := utils.ParseS3URL(s3URL)
+	_, relPath, err := cloud.ParseS3URL(s3URL)
 	if err != nil {
 		return s3utils.S3Meta{}, fmt.Errorf("failed to parse S3 URL: %w", err)
 	}

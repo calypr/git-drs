@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/indexd/drs"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
 )

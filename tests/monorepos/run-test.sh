@@ -7,7 +7,6 @@ if [  "${GIT_TRACE:-}" ]; then
   set -x
 fi
 
-
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
 PROFILE_DEFAULT="calypr-dev"
@@ -132,10 +131,8 @@ fi
 
 # Create fixtures (Makefile target does this too)
 if [ ! -d "fixtures" ]; then
-  echo "fixtures/ not found; creating fixtures via make test-monorepos" >&2
-  make test-monorepos
-else
-  echo "fixtures/ exists; skipping fixture creation" >&2
+  echo "fixtures/ not found; please fixtures via make test-monorepos" >&2
+  exit 1
 fi
 
 # ensure git-lfs is installed
@@ -209,7 +206,7 @@ if [ "$CLONE" = "true" ]; then
   echo "Finished cloning remote repository into `pwd`" >&2
   echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/*file-0001.dat:" >&2
   if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
-    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/*file-0001.dat`" >&2
     exit 1
   fi
   echo "Pulling LFS objects from remote" >&2
@@ -331,6 +328,64 @@ for dir in */ ; do
     git lfs push --dry-run origin main | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
+
+    #
+    # start testing content and path changes
+    #
+
+    # use the first file found in the directory for testing, that will be a single part file
+    target_file=$(find "$dir" -type f -name '*file-0001.dat')
+    # strip double slashes from path if any
+    target_file=${target_file//\/\//\/}
+    if [ -z "$target_file" ]; then
+      echo "error: no files found in $dir to test content/path changes" >&2
+      exit 1
+    fi
+
+    original_oid=$(git lfs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    if [ -z "$original_oid" ]; then
+      echo "error: unable to find LFS OID for $target_file" >&2
+      exit 1
+    fi
+
+    echo "Testing content change (OID update) for $target_file" >&2
+    echo "content change $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$target_file"
+    git add "$target_file"
+    git commit -m "Update content for $target_file"
+
+    updated_oid=$(git lfs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    if [ -z "$updated_oid" ]; then
+      echo "error: unable to find updated LFS OID for $target_file" >&2
+      exit 1
+    fi
+    if [ "$original_oid" = "$updated_oid" ]; then
+      echo "error: expected OID change for $target_file after content update" >&2
+      exit 1
+    fi
+    echo "Content update OID change verified for $target_file" >&2
+
+    target_base=$(basename "$target_file")
+    target_dir=$(dirname "$target_file")
+    renamed_path="${target_dir}/renamed-${target_base}"
+    echo "Testing path change (rename) for $target_file -> $renamed_path" >&2
+    git mv "$target_file" "$renamed_path"
+    git commit -m "Rename $target_file to $renamed_path"
+
+    renamed_oid=$(git lfs ls-files -l | awk -v path="$renamed_path" '$0 ~ (" " path "$") {print $1; exit}')
+    if [ -z "$renamed_oid" ]; then
+      echo "error: unable to find LFS OID for renamed path $renamed_path" >&2
+      exit 1
+    fi
+    if [ "$renamed_oid" != "$updated_oid" ]; then
+      echo "error: expected same OID after rename for $renamed_path" >&2
+      exit 1
+    fi
+    if git lfs ls-files -l | grep -Fq " $target_file"; then
+      echo "error: expected old path $target_file to be absent after rename" >&2
+      exit 1
+    fi
+
+    git push origin main 2>&1 | tee -a lfs-console.log
     break  # uncomment for one directory at a time testing
   fi
 done

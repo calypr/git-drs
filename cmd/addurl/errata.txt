@@ -1,0 +1,50 @@
+// AddURL implements the AddURL logic ported from git-drs.
+func (c *IndexdClient) AddURL(
+	ctx context.Context,
+	fClient fence.FenceInterface,
+	s3URL string,
+	sha256 string,
+	awsAccessKey string,
+	awsSecretKey string,
+	region string,
+	endpoint string,
+	s3Client *s3.Client,
+) (S3Meta, error) {
+	if err := s3utils.ValidateInputs(s3URL, sha256); err != nil {
+		return S3Meta{}, err
+	}
+
+	bucket, _, err := s3utils.ParseS3URL(s3URL)
+	if err != nil {
+		return S3Meta{}, err
+	}
+
+	var bucketDetails *fence.S3Bucket
+	if fClient != nil {
+		bucketDetails, err = fClient.GetBucketDetails(ctx, bucket)
+		if err != nil {
+			c.logger.Debug(fmt.Sprintf("Warning: unable to get bucket details from Gen3: %v", err))
+		}
+	}
+
+	size, modifiedDate, err := s3utils.FetchS3MetadataWithBucketDetails(
+		ctx, s3URL, awsAccessKey, awsSecretKey, region, endpoint, bucketDetails, s3Client, c.logger,
+	)
+	if err != nil {
+		return S3Meta{}, fmt.Errorf("failed to fetch S3 metadata: %w", err)
+	}
+
+	// This part needs project ID. In git-drs it was in the client config.
+	projectId := "unknown-project"
+	// ... (logic to get project ID)
+
+	_, err = c.UpsertIndexdRecord(ctx, s3URL, sha256, size, projectId)
+	if err != nil {
+		return S3Meta{}, fmt.Errorf("failed to upsert indexd record: %w", err)
+	}
+
+	return S3Meta{
+		Size:         size,
+		LastModified: modifiedDate,
+	}, nil
+}

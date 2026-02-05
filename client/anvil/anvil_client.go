@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	drs "github.com/calypr/data-client/indexd/drs"
-	hash "github.com/calypr/data-client/indexd/hash"
+	drs "github.com/calypr/data-client/drs"
+	hash "github.com/calypr/data-client/hash"
 	"golang.org/x/oauth2/google"
 )
 

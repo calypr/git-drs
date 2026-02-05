@@ -15,10 +15,10 @@ import (
 	"github.com/bytedance/sonic/encoder"
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/data-client/indexd"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
 	"github.com/calypr/data-client/logs"
 )
 

@@ -58,11 +58,11 @@ func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) {
 	}
 
 	if cfg.DefaultRemote != "" {
-		setConfig("drs.default-remote", string(cfg.DefaultRemote))
+		setConfig("lfs.customtransfer.drs.default-remote", string(cfg.DefaultRemote))
 	}
 
 	for name, remote := range cfg.Remotes {
-		prefix := fmt.Sprintf("drs.remote.%s", name)
+		prefix := fmt.Sprintf("lfs.customtransfer.drs.remote.%s", name)
 		if remote.Gen3 != nil {
 			setConfig(prefix+".type", "gen3")
 			setConfig(prefix+".endpoint", remote.Gen3.Endpoint)

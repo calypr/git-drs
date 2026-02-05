@@ -3,7 +3,7 @@ package indexd_tests
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/cloud"
 )
 
 // TestValidateInputs_ValidInputs tests validation with valid S3 URL and SHA256
@@ -36,7 +36,7 @@ func TestValidateInputs_ValidInputs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(tt.s3URL, tt.sha256)
+			err := cloud.ValidateInputs(tt.s3URL, tt.sha256)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -82,7 +82,7 @@ func TestValidateInputs_InvalidS3URL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(tt.s3URL, validSHA256)
+			err := cloud.ValidateInputs(tt.s3URL, validSHA256)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -133,7 +133,7 @@ func TestValidateInputs_InvalidSHA256(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(validS3URL, tt.sha256)
+			err := cloud.ValidateInputs(validS3URL, tt.sha256)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -147,7 +147,7 @@ func TestValidateInputs_SHA256Normalization(t *testing.T) {
 	uppercaseSHA256 := "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
 
 	// Should not error on uppercase SHA256 (it gets normalized internally)
-	err := s3_utils.ValidateInputs(validS3URL, uppercaseSHA256)
+	err := cloud.ValidateInputs(validS3URL, uppercaseSHA256)
 	if err != nil {
 		t.Errorf("validateInputs() should accept uppercase SHA256, got error: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestValidateInputs_HexDecodeValidation(t *testing.T) {
 
 	// Test valid 64-character hex string
 	validHex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	err := s3_utils.ValidateInputs(validS3URL, validHex)
+	err := cloud.ValidateInputs(validS3URL, validHex)
 	if err != nil {
 		t.Errorf("validateInputs() error = %v, want nil", err)
 	}
@@ -167,7 +167,7 @@ func TestValidateInputs_HexDecodeValidation(t *testing.T) {
 	// Test that hex.DecodeString is properly checked
 	// This has correct length but invalid hex
 	invalidHex := "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-	err = s3_utils.ValidateInputs(validS3URL, invalidHex)
+	err = cloud.ValidateInputs(validS3URL, invalidHex)
 	if err == nil {
 		t.Errorf("validateInputs() should reject invalid hex, got nil error")
 	}
@@ -201,7 +201,7 @@ func TestValidateInputs_CaseSensitivity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(tt.s3URL, validSHA256)
+			err := cloud.ValidateInputs(tt.s3URL, validSHA256)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -245,7 +245,7 @@ func TestValidateInputs_EdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := s3_utils.ValidateInputs(tt.s3URL, tt.sha256)
+			err := cloud.ValidateInputs(tt.s3URL, tt.sha256)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateInputs() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -260,6 +260,6 @@ func BenchmarkValidateInputs(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = s3_utils.ValidateInputs(s3URL, sha256)
+		_ = cloud.ValidateInputs(s3URL, sha256)
 	}
 }

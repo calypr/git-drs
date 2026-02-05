@@ -107,6 +107,81 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 
 ## Common Error Messages
 
+## Git LFS-Oriented Troubleshooting Guide (Commit/Push/Clone/Pull)
+
+The checks below prioritize Git LFS guidance and documentation because Git DRS relies on Git LFS for large-file handling. If you run into issues, start with the Git LFS troubleshooting docs and logs, then move to Git DRS-specific configuration checks. Primary references: the Git LFS troubleshooting guide and the Git LFS documentation for installation, tracking, and environment variables:  
+
+- Git LFS troubleshooting: https://github.com/git-lfs/git-lfs/wiki/Troubleshooting  
+- Git LFS docs: https://github.com/git-lfs/git-lfs/tree/main/docs  
+
+### Failed Commit (Git LFS hooks or pointer issues)
+
+1. **Confirm Git LFS is installed and hooks are active**  
+   - Run: `git lfs version` and `git lfs env`  
+   - If `git lfs env` reports `git lfs install` is needed, run `git lfs install` to re-install hooks.  
+   - This is the most common cause of commits failing to convert large files into LFS pointers.  
+
+2. **Check whether the file was tracked before the commit**  
+   - Run: `git lfs track` and confirm the file pattern is listed.  
+   - If not tracked, add it (`git lfs track "*.bam"`) and stage `.gitattributes`.  
+
+3. **Verify the file is staged as an LFS pointer**  
+   - Run: `git lfs ls-files` to confirm the file is listed.  
+   - If a large file was added to Git history directly, remove it from the index and re-add it after tracking.  
+
+4. **Review Git LFS logs for hook errors**  
+   - Run: `git lfs logs last` to inspect hook failures.  
+   - Common errors include missing filters or file locking issues.  
+
+### Failed Push (LFS uploads, auth, or bandwidth issues)
+
+1. **Check Git LFS authentication and endpoint configuration**  
+   - Run: `git lfs env` and confirm `Endpoint` values are correct.  
+   - If tokens are expired, refresh credentials and re-run the push.  
+
+2. **Retry with LFS verbose logging**  
+   - Run: `GIT_TRACE=1 GIT_CURL_VERBOSE=1 git lfs push --all`  
+   - Use this output to identify `403/401` auth issues or proxy errors.  
+
+3. **Confirm the LFS objects exist locally**  
+   - Run: `git lfs ls-files` and ensure your large files are listed.  
+   - Missing objects indicate a tracking or filter issue before the push.  
+
+4. **Validate the remote supports Git LFS**  
+   - Run: `git lfs env` to confirm the remote endpoint.  
+   - Some Git servers require explicit LFS enablement or URL configuration.  
+
+### Failed Clone (LFS objects missing or blocked)
+
+1. **Confirm LFS objects were fetched**  
+   - After clone, run: `git lfs pull` to fetch large files.  
+   - If the repo only has LFS pointers, you will see pointer files until you pull.  
+
+2. **Check LFS smudge/clean filters**  
+   - Run: `git lfs env` and verify `git-lfs` filters are enabled.  
+   - If not, run `git lfs install` and re-run `git lfs pull`.  
+
+3. **Validate access and authentication**  
+   - `git lfs env` will show which endpoint is used; 401/403 errors point to invalid credentials.  
+
+4. **Inspect LFS logs for download errors**  
+   - Run: `git lfs logs last` for the most recent transfer errors.  
+
+### Failed Pull (LFS fetch/checkout issues)
+
+1. **Run `git lfs pull` separately**  
+   - This isolates LFS download errors from Git merge errors.  
+
+2. **Check LFS file locking or concurrent transfers**  
+   - If your Git host uses LFS file locking, verify the file is not locked by another user.  
+
+3. **Review filters and tracking**  
+   - Run: `git lfs track` to ensure required patterns are present.  
+   - If a file type is newly tracked, re-run `git add .gitattributes` and commit.  
+
+4. **Check for storage or bandwidth limits**  
+   - Some Git LFS hosts enforce quotas; errors will show in `git lfs logs last`.  
+
 ### Authentication Errors
 
 **Error**: `Upload error: 403 Forbidden` or `401 Unauthorized`

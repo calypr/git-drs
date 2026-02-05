@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"

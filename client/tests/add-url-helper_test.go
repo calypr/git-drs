@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/s3_utils"
 	"github.com/calypr/git-drs/utils"
 )
 
@@ -149,8 +149,8 @@ func TestGetBucketDetails_Gen3Success(t *testing.T) {
 			return
 		}
 
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.aws.amazon.com",

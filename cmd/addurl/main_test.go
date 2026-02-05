@@ -55,11 +55,11 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	//      bucket: cbds
 
 	cmds := [][]string{
-		{"config", "drs.default-remote", "calypr-dev"},
-		{"config", "drs.remote.calypr-dev.type", "gen3"},
-		{"config", "drs.remote.calypr-dev.project", "calypr-dev"},
-		{"config", "drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
-		{"config", "drs.remote.calypr-dev.bucket", "cbds"},
+		{"config", "lfs.customtransfer.drs.default-remote", "calypr-dev"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.bucket", "cbds"},
 	}
 	for _, args := range cmds {
 		cmd := exec.Command("git", args...)

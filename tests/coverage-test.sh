@@ -209,7 +209,7 @@ pushd "$MONOREPO_DIR" >/dev/null
 
 # remove old fixtures if any, to eliminate stale data, renames, etc
 rm -rf fixtures/TARGET-ALL-P2 || true
-rm -rd fixture/data || true
+rm -rd fixtures/data || true
 # build fixtures
 make test-monorepos
 

@@ -2,7 +2,7 @@
 # coverage-test.sh
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
-
+set -x
 
 usage() {
   cat <<-EOF
@@ -14,6 +14,7 @@ Options:
   --resource RES            Resource path, e.g. /programs/<prog>/projects/<proj> (env: RESOURCE)
   --minio-alias ALIAS       MinIO alias (env: MINIO_ALIAS)
   --bucket BUCKET           Bucket name (env: BUCKET)
+  --prefix PREFIX           Object key prefix (env: PREFIX)
   -h, --help                Show this help and exit
 
 Environment / defaults:
@@ -47,6 +48,7 @@ POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 RESOURCE="${RESOURCE:-}"
 MINIO_ALIAS="${MINIO_ALIAS:-}"
 BUCKET="${BUCKET:-}"
+PREFIX="${PREFIX:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -61,6 +63,8 @@ while [ $# -gt 0 ]; do
     --minio-alias) MINIO_ALIAS="$2"; shift 2 ;;
     --bucket=*) BUCKET="${1#*=}"; shift ;;
     --bucket) BUCKET="$2"; shift 2 ;;
+    --prefix=*) PREFIX="${1#*=}"; shift ;;
+    --prefix) PREFIX="$2"; shift 2 ;;
     -h|--help)
       usage
       ;;
@@ -141,6 +145,10 @@ if [ -z "$POD" ] || [ -z "$POSTGRES_PASSWORD" ] || [ -z "$RESOURCE" ] || [ -z "$
   exit 1
 fi
 
+# Normalize PREFIX to have trailing slash if set
+if [ -n "$PREFIX" ]; then PREFIX="${PREFIX%/}/"
+fi
+
 # Ensure utilities exist
 if [ ! -d "$UTIL_DIR" ]; then
   err "utils directory not found: \`$UTIL_DIR\`"
@@ -176,7 +184,7 @@ pushd "$UTIL_DIR" >/dev/null
 
 # 1) Remove objects from bucket using indexd->s3 list/delete pipeline
 echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./delete-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
-if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./delete-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
+if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./delete-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
   err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./delete-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
   exit 1
 fi
@@ -244,8 +252,10 @@ echo $test_string2 > /tmp/simple_test_file2.txt
 sha256=$(sha256sum /tmp/simple_test_file.txt | cut -d' ' -f1)
 sha2562=$(sha256sum /tmp/simple_test_file2.txt | cut -d' ' -f1)
 echo "Uploading a simple test file to the bucket via \`mc\`" >&2
-mc cp /tmp/simple_test_file.txt "$MINIO_ALIAS/$BUCKET/simple_test_file.txt"
-mc cp /tmp/simple_test_file2.txt "$MINIO_ALIAS/$BUCKET/simple_test_file2.txt"
+
+
+mc cp /tmp/simple_test_file.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file.txt"
+mc cp /tmp/simple_test_file2.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file2.txt"
 
 # get the s3 parameters from the mc alias
 MC_ALIAS_INFO_JSON=$(mc alias ls "$MINIO_ALIAS" --json)
@@ -259,7 +269,7 @@ SECRET_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.secretKey')
 
 # use the add-url command to add the file to project
 # we are not providing the sha256, so git-drs must compute it and verify it matches
-git drs add-url s3://$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
   --aws-access-key-id  $ACCESS_KEY \
   --aws-secret-access-key  $SECRET_KEY  \
   --endpoint-url $ENDPOINT \
@@ -294,9 +304,9 @@ fi
 updated_test_string='simple test updated'
 echo "$updated_test_string" > /tmp/simple_test_file_updated.txt
 updated_sha256=$(sha256sum /tmp/simple_test_file_updated.txt | cut -d' ' -f1)
-mc cp /tmp/simple_test_file_updated.txt "$MINIO_ALIAS/$BUCKET/simple_test_file.txt"
+mc cp /tmp/simple_test_file_updated.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file.txt"
 
-git drs add-url s3://$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
   --aws-access-key-id  $ACCESS_KEY \
   --aws-secret-access-key  $SECRET_KEY  \
   --endpoint-url $ENDPOINT \
@@ -320,7 +330,7 @@ cat data/simple_test_file.txt | grep "$updated_test_string"
 
 # use the add-url command to add the file to project
 # we are providing the sha256, so git-drs must trust it
-git drs add-url s3://$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
   --aws-access-key-id  $ACCESS_KEY \
   --aws-secret-access-key  $SECRET_KEY  \
   --endpoint-url $ENDPOINT \
@@ -355,14 +365,16 @@ if git lfs ls-files -l | grep -Fq " data/simple_test_file2.txt"; then
   exit 1
 fi
 
+echo "Passed checks for rename of simple_test_file2.txt"
+
 #
 #
 #
 popd >/dev/null
 
-echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
-if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$BUCKET"; then
-  echo "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $PREFIX$BUCKET\`" >&2
+if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
+  echo "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$PREFIX$BUCKET\""
   exit 1
 fi
 

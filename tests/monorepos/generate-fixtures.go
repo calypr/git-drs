@@ -113,7 +113,7 @@ func main() {
 				nFiles = rand.Intn(maxFilesPerSub-minFilesPerSub+1) + minFilesPerSub
 			}
 
-			largeFileNumberOfLines := 480006 // approx 20 MiB
+			largeFileNumberOfLines := 480008 // approx 20 MiB
 			for fi := 1; fi <= nFiles; fi++ {
 				filename := fmt.Sprintf("file-%0*d.dat", maxFilesDigits, fi)
 				path := filepath.Join(subdir, filename)

@@ -7,6 +7,7 @@ if [  "${GIT_TRACE:-}" ]; then
   set -x
 fi
 
+set -x
 
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
@@ -207,7 +208,7 @@ if [ "$CLONE" = "true" ]; then
   echo "Finished cloning remote repository into `pwd`" >&2
   echo "Verifying contents of TARGET-ALL-P2/sub-directory-1/*file-0001.dat:" >&2
   if ! grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
-    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
+    echo "error: expected LFS pointer missing in `TARGET-ALL-P2/sub-directory-1/*file-0001.dat`" >&2
     exit 1
   fi
   echo "Pulling LFS objects from remote" >&2
@@ -363,6 +364,7 @@ for dir in */ ; do
       echo "error: expected OID change for $target_file after content update" >&2
       exit 1
     fi
+    echo "Content update OID change verified for $target_file" >&2
 
     target_base=$(basename "$target_file")
     target_dir=$(dirname "$target_file")

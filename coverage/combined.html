@@ -3249,7 +3249,7 @@ func getCheckSumStr(obj drs.DRSObject) string <span class="cov1" title="1">{
         curVal := ""
         for checksumType, checksum := range hash.ConvertHashInfoToMap(obj.Checksums) </span><span class="cov2" title="2">{
                 c := getChecksumPos(hash.ChecksumType(checksumType), checksumPref)
-                if c != -1 &amp;&amp; c &lt; curPos </span><span class="cov1" title="1">{
+                if c != -1 &amp;&amp; c &lt; curPos </span><span class="cov2" title="2">{
                         curPos = c
                         curVal = checksumType + ":" + checksum
                 }</span>
@@ -8242,7 +8242,7 @@ func WriteCompleteMessage(encoder *encoder.StreamEncoder, oid string, path strin
         encoder.Encode(completeResponse)
 }</span>
 
-func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov6" title="17">{
+func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar int64, bytesSinceLast int64) <span class="cov8" title="51">{
         progressResponse := ProgressResponse{
                 Event:          "progress",
                 Oid:            oid,
@@ -8255,13 +8255,13 @@ func WriteProgressMessage(encoder *encoder.StreamEncoder, oid string, bytesSoFar
 // NewProgressCallback returns a ProgressCallback that sends progress events
 // to git-lfs via the streamEncoder
 func NewProgressCallback(streamEncoder *encoder.StreamEncoder) dataClientCommon.ProgressCallback <span class="cov5" title="10">{
-        return func(event dataClientCommon.ProgressEvent) error </span><span class="cov10" title="82">{
+        return func(event dataClientCommon.ProgressEvent) error </span><span class="cov10" title="116">{
                 if event.Event == "log" </span><span class="cov9" title="70">{
                         // Don't send log events to Git LFS as they are not part of the protocol
                         // and cause Git LFS to think the transfer is complete.
                         return nil
                 }</span>
-                <span class="cov6" title="12">WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
+                <span class="cov8" title="46">WriteProgressMessage(streamEncoder, event.Oid, event.BytesSoFar, event.BytesSinceLast)
                 return nil</span>
         }
 }

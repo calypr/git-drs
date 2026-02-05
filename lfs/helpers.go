@@ -16,14 +16,23 @@ import (
 // runGitAllowMissing treats "key not found" as empty output, not an error.
 func runGitAllowMissing(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.CombinedOutput()
+	// Use Output() to get stdout only.
+	// GIT_TRACE et al go to stderr.
+	b, err := cmd.Output()
+	//if err != nil {
+	//	// "git config --get missing.key" exits 1 with empty output.
+	//	var exitErr *exec.ExitError
+	//	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	//		return "", nil
+	//	}
+	//}
 	if err != nil {
 		// "git config --get missing.key" exits 1 with empty output.
 		s := strings.TrimSpace(string(b))
 		if s == "" {
 			return "", nil
 		}
-		return "", fmt.Errorf("%v: %s", err, s)
+		return "", fmt.Errorf("%v: >%s<", err, s)
 	}
 	return string(b), nil
 }

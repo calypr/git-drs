@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/calypr/data-client v1.0.1-0.20260202233529-7a1f9156c419
+	github.com/calypr/data-client v0.0.0-20260204193709-8173eb8f48ca
 	github.com/go-git/go-git/v5 v5.12.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
@@ -84,6 +84,3 @@ require (
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
-
-// point the data-client module to the local checkout
-replace github.com/calypr/data-client => /Users/walsbr/calypr/data-client

@@ -7,8 +7,6 @@ if [  "${GIT_TRACE:-}" ]; then
   set -x
 fi
 
-set -x
-
 # Defaults
 CREDENTIALS_PATH_DEFAULT="$HOME/.gen3/calypr-dev.json"
 PROFILE_DEFAULT="calypr-dev"

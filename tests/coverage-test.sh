@@ -2,7 +2,9 @@
 # coverage-test.sh
 # Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
-set -x
+
+# uncomment the following line to enable debug output for git commands (e.g. to troubleshoot large file uploads/downloads)
+# set -x
 
 usage() {
   cat <<-EOF

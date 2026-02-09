@@ -325,10 +325,10 @@ func mustChdir(t *testing.T, dir string) string {
 	t.Helper()
 	old, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Getwd: %v", err)
+		t.Fatalf("A fatal error occurred trying to Getwd %s: %v", dir, err)
 	}
 	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir(%s): %v", dir, err)
+		t.Fatalf("A fatal error occurred tying Chdir(%s): %v", dir, err)
 	}
 	return old
 }

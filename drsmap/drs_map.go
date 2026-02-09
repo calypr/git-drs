@@ -134,6 +134,9 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 }
 func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
 
+	if logger == nil {
+		return fmt.Errorf("logger is required")
+	}
 	logger.Debug("Update to DRS objects started")
 
 	// get all lfs files

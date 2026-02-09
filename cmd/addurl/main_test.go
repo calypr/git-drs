@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -162,9 +161,8 @@ func TestUpdatePrecommitCacheWritesEntries(t *testing.T) {
 
 	oldwd := mustChdir(t, repo)
 	t.Cleanup(func() {
-		if err := os.Chdir(oldwd); err != nil {
-			// Optionally log or ignore if oldwd doesn't exist
-			log.Printf("warning: failed to chdir back to oldwd: %v", err)
+		if _, err := os.Stat(oldwd); err == nil {
+			_ = os.Chdir(oldwd)
 		}
 	})
 

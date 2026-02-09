@@ -137,7 +137,7 @@
 				
 				<option value="file40">github.com/calypr/git-drs/drslog/logger.go (75.2%)</option>
 				
-				<option value="file41">github.com/calypr/git-drs/drsmap/drs_map.go (49.1%)</option>
+				<option value="file41">github.com/calypr/git-drs/drsmap/drs_map.go (37.0%)</option>
 				
 				<option value="file42">github.com/calypr/git-drs/git-drs.go (42.9%)</option>
 				
@@ -6209,7 +6209,10 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 }
 func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov0" title="0">{
 
-        logger.Debug("Update to DRS objects started")
+        if logger == nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("logger is required")
+        }</span>
+        <span class="cov0" title="0">logger.Debug("Update to DRS objects started")
 
         // get all lfs files
         lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
@@ -6231,21 +6234,21 @@ type UpdateOptions struct {
         Logger         *slog.Logger
 }
 
-func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error <span class="cov5" title="6">{
+func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error <span class="cov8" title="6">{
         if opts.Logger == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("logger is required")
         }</span>
-        <span class="cov5" title="6">opts.Logger.Debug("Update to DRS objects started")
+        <span class="cov8" title="6">opts.Logger.Debug("Update to DRS objects started")
 
         // get project
         if builder.ProjectID == "" </span><span class="cov0" title="0">{
                 return fmt.Errorf("no project configured")
         }</span>
-        <span class="cov5" title="6">if len(lfsFiles) == 0 </span><span class="cov2" title="2">{
+        <span class="cov8" title="6">if len(lfsFiles) == 0 </span><span class="cov3" title="2">{
                 return nil
         }</span>
 
-        <span class="cov4" title="4">for _, file := range lfsFiles </span><span class="cov5" title="6">{
+        <span class="cov6" title="4">for _, file := range lfsFiles </span><span class="cov8" title="6">{
                 drsID := DrsUUID(builder.ProjectID, file.Oid)
                 authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
                 if err != nil </span><span class="cov0" title="0">{
@@ -6253,46 +6256,46 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
                         continue</span>
                 }
 
-                <span class="cov5" title="6">authoritativeURL := ""
-                if len(authoritativeObj.AccessMethods) &gt; 0 </span><span class="cov5" title="6">{
+                <span class="cov8" title="6">authoritativeURL := ""
+                if len(authoritativeObj.AccessMethods) &gt; 0 </span><span class="cov8" title="6">{
                         authoritativeURL = authoritativeObj.AccessMethods[0].AccessURL.URL
                 }</span>
 
-                <span class="cov5" title="6">var hint string
-                if opts.Cache != nil </span><span class="cov5" title="6">{
+                <span class="cov8" title="6">var hint string
+                if opts.Cache != nil </span><span class="cov8" title="6">{
                         externalURL, ok, err := opts.Cache.LookupExternalURLByOID(file.Oid)
                         if err != nil </span><span class="cov0" title="0">{
                                 opts.Logger.Debug(fmt.Sprintf("cache lookup failed for %s: %v", file.Oid, err))
-                        }</span> else<span class="cov5" title="6"> if ok </span><span class="cov0" title="0">{
+                        }</span> else<span class="cov8" title="6"> if ok </span><span class="cov0" title="0">{
                                 hint = externalURL
                         }</span>
                 }
 
-                <span class="cov5" title="6">if hint != "" </span><span class="cov0" title="0">{
+                <span class="cov8" title="6">if hint != "" </span><span class="cov0" title="0">{
                         if err := precommit_cache.CheckExternalURLMismatch(hint, authoritativeURL); err != nil </span><span class="cov0" title="0">{
                                 opts.Logger.Warn(fmt.Sprintf("Warning. %s (path=%s oid=%s)", err.Error(), file.Name, file.Oid))
                                 fmt.Fprintln(os.Stderr, "Warning.", err.Error())
                         }</span>
                 }
 
-                <span class="cov5" title="6">if opts.PreferCacheURL &amp;&amp; hint != "" </span><span class="cov0" title="0">{
+                <span class="cov8" title="6">if opts.PreferCacheURL &amp;&amp; hint != "" </span><span class="cov0" title="0">{
                         if len(authoritativeObj.AccessMethods) &gt; 0 </span><span class="cov0" title="0">{
                                 authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
                         }</span>
                 }
 
-                <span class="cov5" title="6">if err := lfs.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil </span><span class="cov0" title="0">{
+                <span class="cov8" title="6">if err := lfs.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil </span><span class="cov0" title="0">{
                         opts.Logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
                         continue</span>
                 }
-                <span class="cov5" title="6">opts.Logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))</span>
+                <span class="cov8" title="6">opts.Logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))</span>
         }
 
-        <span class="cov4" title="4">return nil</span>
+        <span class="cov6" title="4">return nil</span>
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) <span class="cov5" title="5">{
+func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) <span class="cov5" title="3">{
 
         // determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
@@ -6315,92 +6318,92 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov5" title="5">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov4" title="4">{
+        <span class="cov5" title="3">if objectPath != nil &amp;&amp; *objectPath != "" </span><span class="cov5" title="3">{
                 drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
         }</span>
 
         // write drs objects to DRS_OBJS_PATH
-        <span class="cov5" title="5">err = lfs.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid)
+        <span class="cov5" title="3">err = lfs.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error writing DRS object for oid %s: %v", file.Oid, err)
         }</span>
-        <span class="cov5" title="5">return drsObj, nil</span>
+        <span class="cov5" title="3">return drsObj, nil</span>
 }
 
-func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov2" title="2">{
+func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error <span class="cov0" title="0">{
         basePath := filepath.Dir(filepath.Dir(filepath.Dir(drsObjPath)))
         return lfs.WriteObject(basePath, drsObj, oid)
 }</span>
 
-func DrsUUID(projectId string, hash string) string <span class="cov8" title="22">{
+func DrsUUID(projectId string, hash string) string <span class="cov10" title="9">{
         // create UUID based on project ID and hash
         hashStr := fmt.Sprintf("%s:%s", projectId, hash)
         return uuid.NewSHA1(drs.NAMESPACE, []byte(hashStr)).String()
 }</span>
 
 // creates drsObject record from file
-func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov6" title="9">{
+func DrsInfoFromOid(oid string) (*drs.DRSObject, error) <span class="cov8" title="6">{
         return lfs.ReadObject(common.DRS_OBJS_PATH, oid)
 }</span>
 
-func GetObjectPath(basePath string, oid string) (string, error) <span class="cov6" title="9">{
+func GetObjectPath(basePath string, oid string) (string, error) <span class="cov6" title="4">{
         return lfs.ObjectPath(basePath, oid)
 }</span>
 
 // CreateCustomPath creates a custom path based on the DRS URI
 // For example, DRS URI drs://&lt;namespace&gt;:&lt;drs_id&gt;
 // create custom path &lt;baseDir&gt;/&lt;namespace&gt;/&lt;drs_id&gt;
-func CreateCustomPath(baseDir, drsURI string) (string, error) <span class="cov5" title="5">{
+func CreateCustomPath(baseDir, drsURI string) (string, error) <span class="cov0" title="0">{
         const prefix = "drs://"
-        if len(drsURI) &lt;= len(prefix) || drsURI[:len(prefix)] != prefix </span><span class="cov2" title="2">{
+        if len(drsURI) &lt;= len(prefix) || drsURI[:len(prefix)] != prefix </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("invalid DRS URI: %s", drsURI)
         }</span>
-        <span class="cov3" title="3">rest := drsURI[len(prefix):]
+        <span class="cov0" title="0">rest := drsURI[len(prefix):]
 
         // Split by first colon
         colonIdx := -1
-        for i, c := range rest </span><span class="cov10" title="34">{
-                if c == ':' </span><span class="cov2" title="2">{
+        for i, c := range rest </span><span class="cov0" title="0">{
+                if c == ':' </span><span class="cov0" title="0">{
                         colonIdx = i
                         break</span>
                 }
         }
-        <span class="cov3" title="3">if colonIdx == -1 </span><span class="cov1" title="1">{
+        <span class="cov0" title="0">if colonIdx == -1 </span><span class="cov0" title="0">{
                 return "", fmt.Errorf("DRS URI missing colon: %s", drsURI)
         }</span>
-        <span class="cov2" title="2">namespace := rest[:colonIdx]
+        <span class="cov0" title="0">namespace := rest[:colonIdx]
         drsId := rest[colonIdx+1:]
         return filepath.Join(baseDir, namespace, drsId), nil</span>
 }
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov6" title="8">{
-        if len(records) == 0 </span><span class="cov1" title="1">{
+func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) <span class="cov6" title="4">{
+        if len(records) == 0 </span><span class="cov0" title="0">{
                 return nil, nil
         }</span>
 
         // Convert project ID to resource path format for comparison
-        <span class="cov5" title="7">expectedAuthz, err := common.ProjectToResource(projectId)
-        if err != nil </span><span class="cov1" title="1">{
+        <span class="cov6" title="4">expectedAuthz, err := common.ProjectToResource(projectId)
+        if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
         }</span>
 
         // Get the first record with matching authz if exists
 
-        <span class="cov5" title="6">for _, record := range records </span><span class="cov5" title="7">{
-                for _, access := range record.AccessMethods </span><span class="cov5" title="7">{
+        <span class="cov6" title="4">for _, record := range records </span><span class="cov6" title="4">{
+                for _, access := range record.AccessMethods </span><span class="cov6" title="4">{
                         // assert access has Authorizations
                         if access.Authorizations == nil </span><span class="cov0" title="0">{
                                 return nil, fmt.Errorf("access method for record %v missing authorizations", record)
                         }</span>
-                        <span class="cov5" title="7">if access.Authorizations.Value == expectedAuthz </span><span class="cov5" title="5">{
+                        <span class="cov6" title="4">if access.Authorizations.Value == expectedAuthz </span><span class="cov6" title="4">{
                                 return &amp;record, nil
                         }</span>
                 }
         }
 
-        <span class="cov1" title="1">return nil, nil</span>
+        <span class="cov0" title="0">return nil, nil</span>
 }
 
 // output of git lfs ls-files

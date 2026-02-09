@@ -13,7 +13,6 @@ import (
 	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/git-drs/utils"
 	"github.com/go-git/go-git/v5"
 )
 
@@ -324,7 +323,7 @@ func SaveConfig(cfg *Config) error {
 // GetGitConfigInt reads an integer value from git config
 // getGitConfigValue retrieves a value from git config by key
 func getConfigPath() (string, error) {
-	topLevel, err := utils.GitTopLevel()
+	topLevel, err := gitrepo.GitTopLevel()
 	if err != nil {
 		return "", err
 	}

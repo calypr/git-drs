@@ -17,7 +17,7 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
-	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ var Cmd = &cobra.Command{
 type PrePushService struct {
 	newLogger        func(string, bool) (*slog.Logger, error)
 	loadConfig       func() (*config.Config, error)
-	updateDrsObjects func(drs.ObjectBuilder, map[string]drslfs.LfsFileInfo, *precommit_cache.Cache, bool, *slog.Logger) error
+	updateDrsObjects func(drs.ObjectBuilder, map[string]lfs.LfsFileInfo, drsmap.UpdateOptions) error
 	createTempFile   func(dir, pattern string) (*os.File, error)
 }
 
@@ -121,7 +121,11 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	}
 
 	myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v (cache=%v)", branches, usedCache))
-	err = s.updateDrsObjects(builder, lfsFiles, cache, usedCache, myLogger)
+	err = s.updateDrsObjects(builder, lfsFiles, drsmap.UpdateOptions{
+		Cache:          cache,
+		PreferCacheURL: usedCache,
+		Logger:         myLogger,
+	})
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 		return err
@@ -238,7 +242,7 @@ func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache
 	return cache, true
 }
 
-func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheReady bool, gitRemoteName, gitRemoteLocation string, branches []string, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) {
+func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheReady bool, gitRemoteName, gitRemoteLocation string, branches []string, refs []pushedRef, logger *slog.Logger) (map[string]lfs.LfsFileInfo, bool, error) {
 	if cacheReady {
 		lfsFiles, ok, err := lfsFilesFromCache(ctx, cache, refs, logger)
 		if err != nil {
@@ -248,7 +252,7 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 		}
 		logger.Debug("pre-commit cache incomplete or stale; falling back to LFS discovery")
 	}
-	lfsFiles, err := drslfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+	lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	if err != nil {
 		return nil, false, err
 	}
@@ -257,7 +261,7 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 
 const cacheMaxAge = 24 * time.Hour
 
-func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]drslfs.LfsFileInfo, bool, error) {
+func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]lfs.LfsFileInfo, bool, error) {
 	if cache == nil {
 		return nil, false, nil
 	}
@@ -265,7 +269,7 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 	if err != nil {
 		return nil, false, err
 	}
-	lfsFiles := make(map[string]drslfs.LfsFileInfo, len(paths))
+	lfsFiles := make(map[string]lfs.LfsFileInfo, len(paths))
 	for _, path := range paths {
 		entry, ok, err := cache.ReadPathEntry(path)
 		if err != nil {
@@ -282,7 +286,7 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 			logger.Debug(fmt.Sprintf("cache path stat failed for %s: %v", path, err))
 			return nil, false, nil
 		}
-		lfsFiles[path] = drslfs.LfsFileInfo{
+		lfsFiles[path] = lfs.LfsFileInfo{
 			Name:    path,
 			Size:    stat.Size(),
 			OidType: "sha256",

@@ -15,7 +15,7 @@ import (
 	"github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	localCommon "github.com/calypr/git-drs/common"
-	drslfs "github.com/calypr/git-drs/drsmap/lfs"
+	"github.com/calypr/git-drs/lfs"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -94,7 +94,7 @@ func TestWriteDrsFile(t *testing.T) {
 	setupTestRepo(t)
 
 	builder := drs.NewObjectBuilder("bucket", "prog-project")
-	file := drslfs.LfsFileInfo{
+	file := lfs.LfsFileInfo{
 		Name: "file.txt",
 		Size: 12,
 		Oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",

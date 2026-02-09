@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/calypr/git-drs/utils"
+	"github.com/calypr/git-drs/gitrepo"
 )
 
 // runGitAllowMissing treats "key not found" as empty output, not an error.
@@ -120,7 +120,7 @@ func GitLFSTrackReadOnly(ctx context.Context, path string) (bool, error) {
 		return false, fmt.Errorf("git lfs track failed: %w", err)
 	}
 
-	repoRoot, err := utils.GitTopLevel()
+	repoRoot, err := gitrepo.GitTopLevel()
 	if err != nil {
 		return false, err
 	}

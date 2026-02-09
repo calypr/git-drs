@@ -1,5 +1,10 @@
 package common
 
+import (
+	"fmt"
+	"strings"
+)
+
 // AddUnique appends items from 'toAdd' to 'existing' only if they're not already present.
 // Returns the updated slice with unique items.
 func AddUnique[T comparable](existing []T, toAdd []T) []T {
@@ -20,4 +25,12 @@ func AddUnique[T comparable](existing []T, toAdd []T) []T {
 		}
 	}
 	return existing
+}
+
+func ProjectToResource(project string) (string, error) {
+	if !strings.Contains(project, "-") {
+		return "", fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", project)
+	}
+	projectIdArr := strings.SplitN(project, "-", 2)
+	return "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1], nil
 }

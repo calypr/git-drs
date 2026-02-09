@@ -9,9 +9,9 @@ import (
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -64,7 +64,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	case fenceToken != "":
 		accessToken = fenceToken
 		var err error
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(accessToken)
+		apiEndpoint, err = common.ParseAPIEndpointFromToken(accessToken)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from provided access token: %w", err)
 		}
@@ -78,7 +78,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 		apiKey = cred.APIKey
 		keyID = cred.KeyID
 
-		apiEndpoint, err = utils.ParseAPIEndpointFromToken(cred.APIKey)
+		apiEndpoint, err = common.ParseAPIEndpointFromToken(cred.APIKey)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from API key in credentials file: %w", err)
 		}

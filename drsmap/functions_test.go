@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/calypr/data-client/drs"
+	"github.com/calypr/git-drs/lfs"
 )
 
 // Test DrsUUID function - it's already tested but let's add more coverage
@@ -42,22 +43,22 @@ func TestDrsUUID_DifferentInputs(t *testing.T) {
 func TestLfsDryRunSpec_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		spec    LfsDryRunSpec
+		spec    lfs.DryRunSpec
 		isValid bool
 	}{
 		{
 			name:    "valid spec",
-			spec:    LfsDryRunSpec{Remote: "origin", Ref: "main"},
+			spec:    lfs.DryRunSpec{Remote: "origin", Ref: "main"},
 			isValid: true,
 		},
 		{
 			name:    "missing remote",
-			spec:    LfsDryRunSpec{Remote: "", Ref: "main"},
+			spec:    lfs.DryRunSpec{Remote: "", Ref: "main"},
 			isValid: false,
 		},
 		{
 			name:    "missing ref",
-			spec:    LfsDryRunSpec{Remote: "origin", Ref: ""},
+			spec:    lfs.DryRunSpec{Remote: "origin", Ref: ""},
 			isValid: false,
 		},
 	}
@@ -73,7 +74,7 @@ func TestLfsDryRunSpec_Validation(t *testing.T) {
 }
 
 func TestLfsFileInfo_Fields(t *testing.T) {
-	info := LfsFileInfo{
+	info := lfs.LfsFileInfo{
 		Name:       "test.bin",
 		Size:       2048,
 		Checkout:   true,

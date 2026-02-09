@@ -2,6 +2,7 @@ package lfs
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/git-drs/utils"
 )
 
 func TestObjectWalk(t *testing.T) {
@@ -92,9 +92,9 @@ func TestDrsTopLevel(t *testing.T) {
 	}
 
 	// Initialize git repo so git commands work
-	_, err = utils.SimpleRun([]string{"git", "-C", tmp, "init"})
-	if err != nil {
-		t.Fatalf("git init: %v", err)
+	cmd := exec.Command("git", "-C", tmp, "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, string(out))
 	}
 
 	cwd, _ := os.Getwd()

@@ -46,6 +46,9 @@ func ReadObject(basePath string, oid string) (*drs.DRSObject, error) {
 }
 
 func (s *ObjectStore) ObjectPath(oid string) (string, error) {
+	// normalize oid - strip sha256: prefix if present
+	oid = strings.TrimPrefix(oid, "sha256:")
+
 	// check that oid is a valid sha256 hash
 	if len(oid) != 64 {
 		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)

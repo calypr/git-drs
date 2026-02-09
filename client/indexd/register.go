@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/calypr/data-client/common"
@@ -21,7 +22,17 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 	// load the DRS object from oid created by prepush
 	drsObject, err := drsmap.DrsInfoFromOid(oid)
 	if err != nil {
-		return nil, fmt.Errorf("error getting drs object for oid %s: %v", oid, err)
+		// Fallback: if record is missing locally, try to build it from the file on disk
+		stat, statErr := os.Stat(path)
+		if statErr != nil {
+			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, path, statErr)
+		}
+
+		drsId := drsmap.DrsUUID(cl.Config.ProjectId, oid)
+		drsObject, err = cl.BuildDrsObj(filepath.Base(path), oid, stat.Size(), drsId)
+		if err != nil {
+			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
+		}
 	}
 
 	cl.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))

@@ -8,6 +8,7 @@ import (
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/download"
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
@@ -130,7 +131,8 @@ func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid s
 	}
 
 	// Find a record that matches the client's project ID
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.Config.ProjectId)
+	// FindMatchingRecord now requires the organization from the client
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetOrganization(), cl.Config.ProjectId)
 	if err != nil {
 		cl.Logger.Debug(fmt.Sprintf("error finding matching record for project %s: %s", cl.Config.ProjectId, err))
 		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.Config.ProjectId, err)
@@ -214,7 +216,7 @@ func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRS
 }
 
 func (c *GitDrsIdxdClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.ProjectId)
+	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, "", c.Config.ProjectId)
 }
 
 func (cl *GitDrsIdxdClient) GetGen3Interface() g3client.Gen3Interface {
@@ -225,6 +227,15 @@ func (cl *GitDrsIdxdClient) GetBucketName() string {
 	return cl.Config.BucketName
 }
 
+func (cl *GitDrsIdxdClient) GetOrganization() string {
+	return ""
+}
+
 func (cl *GitDrsIdxdClient) GetUpsert() bool {
 	return cl.Config.Upsert
+}
+
+func (cl *GitDrsIdxdClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
+	strategy := download.NewGen3DownloadStrategy(cl.G3)
+	return download.DownloadToPath(ctx, strategy, cl.G3.Logger().Logger, oid, destPath, "")
 }

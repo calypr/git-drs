@@ -103,7 +103,8 @@ func TestLfsFileInfo_Fields(t *testing.T) {
 
 func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	// Test with empty list
-	result, err := FindMatchingRecord([]drs.DRSObject{}, "test-project")
+	// pass empty org for test
+	result, err := FindMatchingRecord([]drs.DRSObject{}, "", "test-project")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -208,7 +209,8 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID)
+	// pass empty org for test
+	result, err := FindMatchingRecord(records, "", projectID)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -237,7 +239,8 @@ func TestFindMatchingRecord_NoMatch(t *testing.T) {
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID)
+	// pass empty org for test
+	result, err := FindMatchingRecord(records, "", projectID)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -247,7 +250,7 @@ func TestFindMatchingRecord_NoMatch(t *testing.T) {
 }
 
 func TestFindMatchingRecord_InvalidProjectID(t *testing.T) {
-	projectID := "invalid" // Missing hyphen
+	projectId := "invalid" // Missing hyphen
 
 	records := []drs.DRSObject{
 		{
@@ -263,7 +266,8 @@ func TestFindMatchingRecord_InvalidProjectID(t *testing.T) {
 		},
 	}
 
-	_, err := FindMatchingRecord(records, projectID)
+	// pass empty org for test
+	_, err := FindMatchingRecord(records, "", projectId)
 	if err == nil {
 		t.Error("Expected error for invalid project ID")
 	}

@@ -16,7 +16,7 @@ import (
 	"github.com/calypr/data-client/fence"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/data-client/indexd"
-	"github.com/calypr/data-client/s3utils"
+	s3utils "github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drslog"
@@ -147,7 +147,7 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 	logger.Debug("creating new record")
 	_, relPath, _ := cloud.ParseS3URL(url)
 
-	drsObj, err := drs.BuildDrsObj(relPath, sha256, fileSize, uuid, inc.Config.BucketName, projectId)
+	drsObj, err := drs.BuildDrsObj(relPath, sha256, fileSize, uuid, inc.Config.BucketName, "", projectId)
 	if err != nil {
 		return nil, err
 	}

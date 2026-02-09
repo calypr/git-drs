@@ -2,12 +2,11 @@ package common
 
 import (
 	"testing"
-
-	dataClientCommon "github.com/calypr/data-client/common"
 )
 
 func TestProjectToResource(t *testing.T) {
-	resource, err := dataClientCommon.ProjectToResource("prog-project")
+	// Test legacy format (no org)
+	resource, err := ProjectToResource("", "prog-project")
 	if err != nil {
 		t.Fatalf("ProjectToResource error: %v", err)
 	}
@@ -15,7 +14,17 @@ func TestProjectToResource(t *testing.T) {
 		t.Fatalf("unexpected resource: %s", resource)
 	}
 
-	if _, err := dataClientCommon.ProjectToResource("invalid"); err == nil {
+	// Test new format (with org)
+	resource, err = ProjectToResource("myorg", "myproject")
+	if err != nil {
+		t.Fatalf("ProjectToResource error: %v", err)
+	}
+	if resource != "/programs/myorg/projects/myproject" {
+		t.Fatalf("unexpected resource: %s", resource)
+	}
+
+	// Test invalid legacy format
+	if _, err := ProjectToResource("", "invalid"); err == nil {
 		t.Fatalf("expected error for invalid project")
 	}
 }

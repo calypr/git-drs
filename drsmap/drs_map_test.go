@@ -12,7 +12,7 @@ import (
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/s3utils"
+	s3utils "github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 	localCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
@@ -194,7 +194,15 @@ func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
 }
 
 func (m *MockDRSClient) GetBucketName() string {
+	return "mock-bucket"
+}
+
+func (m *MockDRSClient) GetOrganization() string {
 	return ""
+}
+
+func (m *MockDRSClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
+	return fmt.Errorf("not implemented")
 }
 
 func TestPullRemoteDrsObjects(t *testing.T) {

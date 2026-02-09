@@ -58,8 +58,6 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 			continue
 		}
 		found := false
-		// Warning: The loop overwrites map entries if multiple records have the same SHA256 hash.
-		// If there are multiple records with SHA256 checksums, only the last one will be stored in the map
 		for i, rec := range records {
 			if rec.Checksums.SHA256 != "" {
 				found = true
@@ -84,8 +82,8 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 			}
 
 		} else {
-			myLogger.Warn("TODO: Upload file to DRS server before registering file")
-			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, "TODO")
+			myLogger.Debug(fmt.Sprintf("Object record found locally, and file exists locally. Registering File %s", val.Name))
+			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, val.Name)
 			if err != nil {
 				return err
 			}
@@ -171,11 +169,20 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 	}
 
 	for _, file := range lfsFiles {
-		drsID := DrsUUID(builder.ProjectID, file.Oid)
-		authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
-		if err != nil {
-			opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
-			continue
+		var authoritativeObj *drs.DRSObject
+		existing, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
+		if err == nil && existing != nil {
+			authoritativeObj = existing
+			// Update basic info if necessary
+			authoritativeObj.Name = file.Name
+			authoritativeObj.Size = file.Size
+		} else {
+			drsID := DrsUUID(builder.ProjectID, file.Oid)
+			authoritativeObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
+			if err != nil {
+				opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
+				continue
+			}
 		}
 
 		authoritativeURL := ""
@@ -203,6 +210,11 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		if opts.PreferCacheURL && hint != "" {
 			if len(authoritativeObj.AccessMethods) > 0 {
 				authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
+			} else {
+				authoritativeObj.AccessMethods = append(authoritativeObj.AccessMethods, drs.AccessMethod{
+					Type:      "s3",
+					AccessURL: drs.AccessURL{URL: hint},
+				})
 			}
 		}
 
@@ -224,24 +236,30 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	// if file is in cache, hasn't been committed to git or pushed to indexd
 	// create a local DRS object for it
 	// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
-	drsId := DrsUUID(builder.ProjectID, file.Oid)
-	// logger.Printf("File: %s, OID: %s, DRS ID: %s\n", file.Name, file.Oid, drsId)
-
-	// get file info needed to create indexd record
-	//path, err := GetObjectPath(projectdir.LFS_OBJS_PATH, file.Oid)
-	//if err != nil {
-	//	return fmt.Errorf("error getting object path for oid %s: %v", file.Oid, err)
-	//}
-	//if _, err := os.Stat(path); os.IsNotExist(err) {
-	//	return fmt.Errorf("error: File %s does not exist in LFS objects path %s. Aborting", file.Name, path)
-	//}
-
-	drsObj, err := builder.Build(file.Name, file.Oid, file.Size, drsId)
-	if err != nil {
-		return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
+	// If objectPath is provided, we use it. Otherwise compute default.
+	existing, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
+	var drsObj *drs.DRSObject
+	if err == nil && existing != nil {
+		drsObj = existing
+		drsObj.Name = file.Name
+		drsObj.Size = file.Size
+	} else {
+		drsId := DrsUUID(builder.ProjectID, file.Oid)
+		drsObj, err = builder.Build(file.Name, file.Oid, file.Size, drsId)
+		if err != nil {
+			return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
+		}
 	}
+
 	if objectPath != nil && *objectPath != "" {
-		drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
+		if len(drsObj.AccessMethods) > 0 {
+			drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
+		} else {
+			drsObj.AccessMethods = append(drsObj.AccessMethods, drs.AccessMethod{
+				Type:      "s3",
+				AccessURL: drs.AccessURL{URL: *objectPath},
+			})
+		}
 	}
 
 	// write drs objects to DRS_OBJS_PATH
@@ -258,6 +276,9 @@ func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 }
 
 func DrsUUID(projectId string, hash string) string {
+	// normalize hash - strip sha256: prefix if present
+	hash = strings.TrimPrefix(hash, "sha256:")
+
 	// create UUID based on project ID and hash
 	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
 	return uuid.NewSHA1(drs.NAMESPACE, []byte(hashStr)).String()
@@ -300,26 +321,37 @@ func CreateCustomPath(baseDir, drsURI string) (string, error) {
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []drs.DRSObject, projectId string) (*drs.DRSObject, error) {
+func FindMatchingRecord(records []drs.DRSObject, organization, projectId string) (*drs.DRSObject, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
 
 	// Convert project ID to resource path format for comparison
-	expectedAuthz, err := common.ProjectToResource(projectId)
+	expectedAuthz, err := common.ProjectToResource(organization, projectId)
 	if err != nil {
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}
 
 	// Get the first record with matching authz if exists
-
 	for _, record := range records {
 		for _, access := range record.AccessMethods {
 			// assert access has Authorizations
 			if access.Authorizations == nil {
 				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
 			}
+
+			// Check primary Value
 			if access.Authorizations.Value == expectedAuthz {
+				return &record, nil
+			}
+
+			// Check BearerAuthIssuers using a map for O(1) lookup (ref: "lists suck")
+			issuersMap := make(map[string]struct{}, len(access.Authorizations.BearerAuthIssuers))
+			for _, issuer := range access.Authorizations.BearerAuthIssuers {
+				issuersMap[issuer] = struct{}{}
+			}
+
+			if _, ok := issuersMap[expectedAuthz]; ok {
 				return &record, nil
 			}
 		}

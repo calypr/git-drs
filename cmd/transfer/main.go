@@ -9,9 +9,9 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
 	dataClientCommon "github.com/calypr/data-client/common"
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/common"
 
-	"github.com/calypr/data-client/download"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/config"
@@ -157,7 +157,8 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
+				var matchingRecord *drs.DRSObject
+				matchingRecord, err = drsmap.FindMatchingRecord(records, drsClient.GetOrganization(), drsClient.GetProjectId())
 				if err != nil {
 					errMsg := fmt.Sprintf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
 					logger.ErrorContext(ctx, errMsg)
@@ -192,9 +193,8 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				err = download.DownloadToPath(
+				err = drsClient.DownloadFile(
 					ctx,
-					drsClient.GetGen3Interface(),
 					matchingRecord.Id,
 					dstPath,
 				)

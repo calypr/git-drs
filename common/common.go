@@ -27,7 +27,13 @@ func AddUnique[T comparable](existing []T, toAdd []T) []T {
 	return existing
 }
 
-func ProjectToResource(project string) (string, error) {
+// ProjectToResource converts a project ID (and optional organization) to a GA4GH resource path.
+// If org is provided, it returns /programs/{org}/projects/{project}.
+// If org is empty, it expects project to be in "program-project" format and splits it.
+func ProjectToResource(org, project string) (string, error) {
+	if org != "" {
+		return "/programs/" + org + "/projects/" + project, nil
+	}
 	if !strings.Contains(project, "-") {
 		return "", fmt.Errorf("error: invalid project ID %s in config file, ID should look like <program>-<project>", project)
 	}

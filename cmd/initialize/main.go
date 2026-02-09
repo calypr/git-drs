@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/gitrepo"
@@ -56,6 +57,16 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			logg.Debug(fmt.Sprintf("We should probably fix this: %v", err))
 			return fmt.Errorf("error: unable to load config file: %v", err)
+		}
+
+		// create drs directories
+		drsDir := common.DRS_DIR
+		drsLfsObjsDir := common.DRS_OBJS_PATH
+		if err := os.MkdirAll(drsDir, 0755); err != nil {
+			return fmt.Errorf("error: unable to create drs directory: %v", err)
+		}
+		if err := os.MkdirAll(drsLfsObjsDir, 0755); err != nil {
+			return fmt.Errorf("error: unable to create drs lfs objects directory: %v", err)
 		}
 
 		err = initGitConfig()

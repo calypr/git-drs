@@ -6,7 +6,7 @@ import (
 	drs "github.com/calypr/data-client/drs"
 	dataClient "github.com/calypr/data-client/g3client"
 	hash "github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/s3utils"
+	s3utils "github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/cloud"
 )
 
@@ -36,6 +36,10 @@ type DRSClient interface {
 	// no corresponding DRS endpoint exists, so this is custom code
 	GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error)
 
+	// Download file using the appropriate strategy for the client type
+	// This delegates to data-client logic (progress bars etc) but allows for flexible auth/URL resolution
+	DownloadFile(ctx context.Context, oid string, destPath string) error
+
 	///////////////////////
 	// DRS WRITE METHODS //
 	///////////////////////
@@ -63,6 +67,7 @@ type DRSClient interface {
 	AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error)
 
 	GetBucketName() string
+	GetOrganization() string
 
 	// Get the underlying Gen3Interface
 	GetGen3Interface() dataClient.Gen3Interface

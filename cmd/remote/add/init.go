@@ -10,6 +10,7 @@ var (
 	fenceToken   string
 	project      string
 	terraProject string
+	organization string
 )
 
 // Cmd line declaration
@@ -29,4 +30,9 @@ func init() {
 
 	Cmd.AddCommand(Gen3Cmd)
 	Cmd.AddCommand(AnvilCmd)
+	Cmd.AddCommand(AnvilCmd)
+	LocalCmd.Flags().StringVarP(&project, "project", "p", "", "Project ID")
+	LocalCmd.Flags().StringVar(&bucket, "bucket", "", "Bucket Name")
+	LocalCmd.Flags().StringVar(&organization, "organization", "", "Organization Name")
+	Cmd.AddCommand(LocalCmd)
 }

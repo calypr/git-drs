@@ -255,7 +255,7 @@ func downloadFile(remote config.Remote, sha string) (string, error) {
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmdOut, err := cmd.CombinedOutput()
+	cmdOut, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("error running drs_downloader for sha %s: %s", sha, cmdOut)
 	}

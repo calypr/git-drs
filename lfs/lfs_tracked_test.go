@@ -62,3 +62,39 @@ func TestIsLFSTracked(t *testing.T) {
 		t.Fatalf("expected data/file.txt to NOT be LFS tracked")
 	}
 }
+
+func TestIsLFSTrackedFiltersNoise(t *testing.T) {
+	fakeGitDir := t.TempDir()
+	fakeGitPath := filepath.Join(fakeGitDir, "git")
+
+	script := `#!/bin/sh
+path="$4"
+echo 'debug: verbose output'
+echo 'other/file: filter: lfs'
+if [ "$path" = "match/file" ]; then
+  printf '%s: filter: lfs\n' "$path"
+fi
+`
+
+	if err := os.WriteFile(fakeGitPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake git: %v", err)
+	}
+
+	t.Setenv("PATH", fakeGitDir)
+
+	got, err := IsLFSTracked("no/match")
+	if err != nil {
+		t.Fatalf("IsLFSTracked no match: %v", err)
+	}
+	if got {
+		t.Fatalf("expected no/match to be NOT tracked")
+	}
+
+	got, err = IsLFSTracked("match/file")
+	if err != nil {
+		t.Fatalf("IsLFSTracked match: %v", err)
+	}
+	if !got {
+		t.Fatalf("expected match/file to be LFS tracked")
+	}
+}

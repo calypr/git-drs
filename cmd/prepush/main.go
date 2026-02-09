@@ -333,7 +333,7 @@ func listPushedPaths(ctx context.Context, refs []pushedRef) ([]string, error) {
 func gitOutput(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}

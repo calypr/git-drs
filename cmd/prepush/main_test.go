@@ -246,7 +246,7 @@ func gitOutputString(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))
 	}

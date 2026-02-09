@@ -160,11 +160,7 @@ func TestUpdatePrecommitCacheWritesEntries(t *testing.T) {
 	}
 
 	oldwd := mustChdir(t, repo)
-	t.Cleanup(func() {
-		if _, err := os.Stat(oldwd); err == nil {
-			_ = os.Chdir(oldwd)
-		}
-	})
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	oid := "sha256deadbeef"
@@ -325,7 +321,10 @@ func mustChdir(t *testing.T, dir string) string {
 	t.Helper()
 	old, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("A fatal error occurred trying to Getwd %s: %v", dir, err)
+		// non-fatal since we just want to return something that won't cause Chdir to fail, but log it for visibility
+		// The issue is specific to GitHub Actions because cleanup order can vary between test runners. The temp directory cleanup happens before your t.Cleanup runs, making the current directory invalid.
+		t.Logf("An error occurred trying to Getwd, continuing with '' old dir: %v", err)
+		old = ""
 	}
 	if err := os.Chdir(dir); err != nil {
 		t.Fatalf("A fatal error occurred tying Chdir(%s): %v", dir, err)

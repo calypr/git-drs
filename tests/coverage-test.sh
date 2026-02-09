@@ -172,7 +172,7 @@ rm git-drs || true
 which git-drs
 rm -rf coverage/unit
 mkdir -p coverage/unit
-go test  -cover -covermode=atomic -coverprofile=coverage/unit/coverage.out -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
+go test  -cover -covermode=atomic -coverprofile=coverage/unit/coverage.out -coverpkg=./... $( go list ./... | grep -v tests/integration ) || { echo "error: unit tests failed" >&2; exit 1; }
 #
 echo "Unit tests completed successfully. Coverage profile saved to coverage/unit/coverage.out" >&2
 

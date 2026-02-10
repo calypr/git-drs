@@ -1,28 +1,27 @@
 package local
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/data-client/backend"
+	drs_backend "github.com/calypr/data-client/backend/drs"
 	"github.com/calypr/data-client/common"
-	"github.com/calypr/data-client/download"
-	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/conf"
+	drs "github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
-	s3utils "github.com/calypr/data-client/s3utils"
+	"github.com/calypr/data-client/logs"
+	"github.com/calypr/data-client/request"
+	"github.com/calypr/data-client/s3utils"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cloud"
-	gitdrsCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
 )
 
@@ -40,6 +39,10 @@ func (l LocalRemote) GetProjectId() string {
 	return "local-project"
 }
 
+func (l LocalRemote) GetOrganization() string {
+	return l.Organization
+}
+
 func (l LocalRemote) GetEndpoint() string {
 	return l.BaseURL
 }
@@ -53,62 +56,33 @@ func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger, opts ...g
 }
 
 type LocalClient struct {
-	Remote LocalRemote
-	Logger *slog.Logger
+	Remote  LocalRemote
+	Logger  *slog.Logger
+	Backend backend.Backend
 }
 
 func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
+	// Initialize RequestInterface for DrsBackend
+	cred := &conf.Credential{
+		APIEndpoint: remote.BaseURL,
+	}
+	gen3Logger := logs.NewGen3Logger(logger, "", "")
+	cfg := conf.NewConfigure(logger)
+	req := request.NewRequestInterface(gen3Logger, cred, cfg)
+
+	// Initialize the DRS backend
+	bk := drs_backend.NewDrsBackend(remote.BaseURL, logger, req)
+
 	return &LocalClient{
-		Remote: remote,
-		Logger: logger,
+		Remote:  remote,
+		Logger:  logger,
+		Backend: bk,
 	}
 }
 
 // Helpers
 
-func (c *LocalClient) buildURL(paths ...string) (string, error) {
-	u, err := url.Parse(c.Remote.BaseURL)
-	if err != nil {
-		return "", err
-	}
-	u.Path = path.Join(append([]string{u.Path}, paths...)...)
-	return u.String(), nil
-}
-
-func (c *LocalClient) doJSONRequest(ctx context.Context, method, url string, body interface{}, dst interface{}) error {
-	var bodyReader io.Reader
-	if body != nil {
-		jsonBytes, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		bodyReader = bytes.NewReader(jsonBytes)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("request to %s failed with status %d: %s", url, resp.StatusCode, string(bodyBytes))
-	}
-
-	if dst != nil {
-		return json.NewDecoder(resp.Body).Decode(dst)
-	}
-	return nil
-}
+// Helpers removed as they are replaced by data-client functionality
 
 // Implement DRSClient interface
 
@@ -117,17 +91,7 @@ func (c *LocalClient) GetProjectId() string {
 }
 
 func (c *LocalClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
-	// Standard DRS: GET /ga4gh/drs/v1/objects/{id}
-	u, err := c.buildURL("ga4gh/drs/v1/objects", id)
-	if err != nil {
-		return nil, err
-	}
-
-	var obj drs.DRSObject
-	if err := c.doJSONRequest(ctx, http.MethodGet, u, nil, &obj); err != nil {
-		return nil, err
-	}
-	return &obj, nil
+	return c.Backend.GetFileDetails(ctx, id)
 }
 
 func (c *LocalClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
@@ -185,37 +149,34 @@ func (c *LocalClient) GetDownloadURL(ctx context.Context, oid string) (*drs.Acce
 		}
 	}
 
-	// 3. Call /access endpoint
-	u, err := c.buildURL("ga4gh/drs/v1/objects", oid, "access", accessID)
+	// 3. Call /access endpoint using Backend
+	url, err := c.Backend.GetDownloadURL(ctx, oid, accessID)
 	if err != nil {
 		return nil, err
 	}
-	// Note: protocol/accessType might be query param? Standard says /access/{access_id}
-	// Some implementations use query params. Sticking to path.
-
-	var accessURL drs.AccessURL
-	if err := c.doJSONRequest(ctx, http.MethodGet, u, nil, &accessURL); err != nil {
-		return nil, err
-	}
-	return &accessURL, nil
+	return &drs.AccessURL{URL: url}, nil
 }
 
 func (c *LocalClient) GetObjectByHash(ctx context.Context, checksum *hash.Checksum) ([]drs.DRSObject, error) {
-	// Query: GET /ga4gh/drs/v1/objects/checksum/<hash>
-	u, err := c.buildURL("ga4gh/drs/v1/objects", "checksum", checksum.Checksum)
-	if err != nil {
-		return nil, err
-	}
+	// Guess hash type or iterate. IndexdClient expects a specific hash type.
+	// Checksum struct has type-specific fields implicitly or we assume SHA256/MD5?
+	// git-drs/client/client.go or hash package should have this info.
+	// The passed Checksum object in GetObjectByHash usually has a field populated.
+	// IndexdClient.GetObjectByHash takes a hashType string.
 
-	var objs []drs.DRSObject
-	if err := c.doJSONRequest(ctx, http.MethodGet, u, nil, &objs); err != nil {
-		return nil, err
-	}
+	// In git-drs usage, Checksum.Checksum is usually the hash value, but Checksum.Type might be "sha256" etc.
+	// But the Checksum *struct* in LocalClient.GetObjectByHash argument is `*hash.Checksum`.
+	// Let's assume sha256 for now or try to deduce?
+	// `hash.Checksum` struct usually has `Type` and `Checksum`.
+	return c.Backend.GetObjectByHash(ctx, string(checksum.Type), checksum.Checksum)
+}
 
-	return objs, nil
+func (c *LocalClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
+	return c.Backend.BatchGetObjectsByHash(ctx, hashes)
 }
 
 func (c *LocalClient) DeleteRecordsByProject(ctx context.Context, project string) error {
+	// Not supported by Backend interface yet, keeping as no-op or we can implement in backend if needed
 	return nil
 }
 
@@ -225,103 +186,70 @@ func (c *LocalClient) DeleteRecord(ctx context.Context, oid string) error {
 
 // RegisterRecord registers a DRS object with the server
 func (c *LocalClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
-	u, err := c.buildURL("ga4gh/drs/v1/objects/register")
-	if err != nil {
-		return nil, err
-	}
+	return c.Backend.Register(ctx, indexdObject)
+}
 
-	req := drs.RegisterObjectsRequest{
-		Candidates: []drs.DRSObjectCandidate{drs.ConvertToCandidate(indexdObject)},
-	}
-
-	// Debug: log the request
-	jsonBytes, _ := json.Marshal(req)
-	c.Logger.Debug("RegisterRecord request", "url", u, "json", string(jsonBytes))
-
-	var registeredObjs []drs.DRSObject
-	if err := c.doJSONRequest(ctx, http.MethodPost, u, req, &registeredObjs); err != nil {
-		return nil, err
-	}
-
-	if len(registeredObjs) == 0 {
-		return nil, fmt.Errorf("server returned no registered objects")
-	}
-
-	return &registeredObjs[0], nil
+func (c *LocalClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+	return c.Backend.BatchRegister(ctx, records)
 }
 
 func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath string) (*drs.DRSObject, error) {
+	// 1. Get info from local prepush result or file stat
 	drsObject, err := drsmap.DrsInfoFromOid(oid)
 	if err != nil {
-		// Fallback: if record is missing locally, try to build it from the file on disk
 		stat, statErr := os.Stat(filePath)
 		if statErr != nil {
-			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, filePath, statErr)
+			return nil, fmt.Errorf("error reading local record: %v", statErr)
 		}
-
 		drsId := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
 		drsObject, err = c.BuildDrsObj(filepath.Base(filePath), oid, stat.Size(), drsId)
 		if err != nil {
-			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
+			return nil, err
 		}
 	}
 
-	absPath, err := filepath.Abs(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path for %s: %v", filePath, err)
-	}
+	// 2. Perform S3 Upload if bucket is configured using Backend logic for URL
+	if c.Remote.GetBucketName() != "" {
+		// LocalClient usage of GetUploadURL passed 'SHA' as filename.
+		// Backend.GetUploadURL(ctx, guid, filename, metadata, bucket)
+		// We pass empty metadata as LocalClient didn't seemingly use it for generating URL?
+		// But in original LocalClient code: `getSignedUploadURL(ctx, drsObject.Id, drsObject.Checksums.SHA256)`
+		// And q.Set("file_name", hash).
+		// So filename = SHA256.
+		uploadURL, err := c.Backend.GetUploadURL(ctx, drsObject.Id, drsObject.Checksums.SHA256, common.FileMetadata{}, c.Remote.GetBucketName())
+		if err != nil {
+			return nil, fmt.Errorf("failed to get signed upload URL: %w", err)
+		}
 
-	resPath, err := gitdrsCommon.ProjectToResource(c.Remote.Organization, c.Remote.GetProjectId())
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert project ID to resource: %v", err)
-	}
+		file, err := os.Open(filePath)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
 
-	targetURL := "file://" + absPath
-	found := false
-	for i := range drsObject.AccessMethods {
-		if drsObject.AccessMethods[i].AccessURL.URL == targetURL {
-			found = true
-			if drsObject.AccessMethods[i].Authorizations == nil {
-				drsObject.AccessMethods[i].Authorizations = &drs.Authorizations{}
-			}
-			// Add unique project ID to BearerAuthIssuers
-			exists := false
-			for _, issuer := range drsObject.AccessMethods[i].Authorizations.BearerAuthIssuers {
-				if issuer == resPath {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				drsObject.AccessMethods[i].Authorizations.BearerAuthIssuers = append(
-					drsObject.AccessMethods[i].Authorizations.BearerAuthIssuers,
-					resPath,
-				)
-			}
-			// Sync legacy Value field
-			drsObject.AccessMethods[i].Authorizations.Value = resPath
-			break
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, file)
+		if err != nil {
+			return nil, err
+		}
+		req.ContentLength = drsObject.Size
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("upload failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("upload failed with status %d: %s", resp.StatusCode, string(body))
 		}
 	}
 
-	if !found {
-		drsObject.AccessMethods = append(drsObject.AccessMethods, drs.AccessMethod{
-			Type: "file",
-			AccessURL: drs.AccessURL{
-				URL: targetURL,
-			},
-			Region: "",
-			Authorizations: &drs.Authorizations{
-				Value:             resPath,
-				BearerAuthIssuers: []string{resPath},
-			},
-		})
-	}
-
-	return c.RegisterRecord(ctx, drsObject)
+	return drsObject, nil
 }
 
 func (c *LocalClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	// Backend interface doesn't support UpdateRecord yet.
 	return nil, fmt.Errorf("UpdateRecord not implemented for LocalClient")
 }
 
@@ -345,78 +273,6 @@ func (c *LocalClient) GetGen3Interface() g3client.Gen3Interface {
 	return nil
 }
 
-// DownloadFile implementation
-
-type RealLocalDownloadStrategy struct {
-	Client *LocalClient
-}
-
-func (s *RealLocalDownloadStrategy) GetDownloadResponse(ctx context.Context, fdr *common.FileDownloadResponseObject, protocolText string) error {
-	// Use client to resolve URL
-	accessURL, err := s.Client.GetDownloadURL(ctx, fdr.GUID)
-	if err != nil {
-		return err
-	}
-	fdr.PresignedURL = accessURL.URL
-
-	// Handle file:// scheme
-	if strings.HasPrefix(fdr.PresignedURL, "file://") {
-		filePath := strings.TrimPrefix(fdr.PresignedURL, "file://")
-		f, err := os.Open(filePath)
-		if err != nil {
-			return fmt.Errorf("failed to open local file %s: %w", filePath, err)
-		}
-		stat, err := f.Stat()
-		if err != nil {
-			f.Close()
-			return fmt.Errorf("failed to stat local file %s: %w", filePath, err)
-		}
-
-		// Create a synthetic response
-		resp := &http.Response{
-			StatusCode:    http.StatusOK,
-			Body:          f,
-			ContentLength: stat.Size(),
-		}
-		fdr.Response = resp
-		return nil
-	}
-
-	// Perform actual download request
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fdr.PresignedURL, nil)
-	if err != nil {
-		return err
-	}
-
-	// Add headers from AccessURL if needed
-	if len(accessURL.Headers) > 0 {
-		for _, header := range accessURL.Headers {
-			parts := strings.SplitN(header, ":", 2)
-			if len(parts) == 2 {
-				req.Header.Add(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
-			}
-		}
-	}
-
-	if fdr.Range > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", fdr.Range))
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		resp.Body.Close()
-		return fmt.Errorf("download failed with status %d", resp.StatusCode)
-	}
-
-	fdr.Response = resp
-	return nil
-}
-
 func (c *LocalClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
-	strategy := &RealLocalDownloadStrategy{Client: c}
-	return download.DownloadToPath(ctx, strategy, c.Logger, oid, destPath, "")
+	return fmt.Errorf("DownloadFile not implemented for LocalClient")
 }

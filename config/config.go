@@ -55,9 +55,9 @@ func IsValidRemoteType(mode string) error {
 	return fmt.Errorf("invalid mode '%s'. Valid options are: %s", mode, strings.Join(modeOptions, ", "))
 }
 
-// DRSRemote holds pointers to remote types
 type DRSRemote interface {
 	GetProjectId() string
+	GetOrganization() string
 	GetEndpoint() string
 	GetBucketName() string
 	GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error)
@@ -183,6 +183,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		remoteSubsection.SetOption("endpoint", remote.Gen3.Endpoint)
 		remoteSubsection.SetOption("project", remote.Gen3.ProjectID)
 		remoteSubsection.SetOption("bucket", remote.Gen3.Bucket)
+		if remote.Gen3.Organization != "" {
+			remoteSubsection.SetOption("organization", remote.Gen3.Organization)
+		}
 	} else if remote.Anvil != nil {
 		remoteSubsection.SetOption("type", "anvil")
 	} else if remote.Local != nil {
@@ -224,9 +227,10 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 
 	if remoteType == "gen3" || remoteType == "" {
 		rs.Gen3 = &indexd.Gen3Remote{
-			Endpoint:  endpoint,
-			ProjectID: project,
-			Bucket:    bucket,
+			Endpoint:     endpoint,
+			ProjectID:    project,
+			Bucket:       bucket,
+			Organization: organization,
 		}
 	} else if remoteType == "anvil" {
 		rs.Anvil = &anvil_client.AnvilRemote{}

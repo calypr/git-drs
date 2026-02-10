@@ -12,13 +12,18 @@ import (
 
 // Gen3Server holds Gen3 server config
 type Gen3Remote struct {
-	Endpoint  string `yaml:"endpoint"`
-	ProjectID string `yaml:"project_id"`
-	Bucket    string `yaml:"bucket"`
+	Endpoint     string `yaml:"endpoint"`
+	ProjectID    string `yaml:"project_id"`
+	Bucket       string `yaml:"bucket"`
+	Organization string `yaml:"organization"`
 }
 
 func (s Gen3Remote) GetProjectId() string {
 	return s.ProjectID
+}
+
+func (s Gen3Remote) GetOrganization() string {
+	return s.Organization
 }
 
 func (s Gen3Remote) GetEndpoint() string {

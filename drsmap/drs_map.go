@@ -33,63 +33,64 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 		return err
 	}
 
-	// Make this a map if it does not exist when hitting the server
-	sums := make([]*hash.Checksum, 0)
-	for _, obj := range drsLfsObjs {
-		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
-			if sumType == hash.ChecksumTypeSHA256.String() {
-				sums = append(sums, &hash.Checksum{
-					Checksum: sum,
-					Type:     hash.ChecksumTypeSHA256,
-				})
-			}
+	return SyncObjectsWithServer(drsClient, drsLfsObjs, myLogger)
+}
+
+func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*drs.DRSObject, myLogger *slog.Logger) error {
+	if len(drsObjects) == 0 {
+		return nil
+	}
+
+	// 1. Bulk lookup all hashes on server
+	hashes := make([]string, 0, len(drsObjects))
+	for h := range drsObjects {
+		hashes = append(hashes, h)
+	}
+
+	myLogger.Debug(fmt.Sprintf("Bulk looking up %d hashes on server", len(hashes)))
+	serverRecords, err := drsClient.BatchGetObjectsByHash(context.Background(), hashes)
+	if err != nil {
+		return fmt.Errorf("error in bulk hash lookup: %v", err)
+	}
+
+	// 2. Identify missing records
+	missingRecords := make([]*drs.DRSObject, 0)
+	for h, localObj := range drsObjects {
+		if records, ok := serverRecords[h]; !ok || len(records) == 0 {
+			myLogger.Debug(fmt.Sprintf("Record missing on server for hash %s, adding to registration queue", h))
+			missingRecords = append(missingRecords, localObj)
 		}
 	}
 
-	outobjs := map[string]*drs.DRSObject{}
-	for _, sum := range sums {
-		records, err := drsClient.GetObjectByHash(context.Background(), sum)
-		if err != nil {
-			return err
-		}
-
-		if len(records) == 0 {
-			outobjs[sum.Checksum] = nil
-			continue
-		}
-		found := false
-		for i, rec := range records {
-			if rec.Checksums.SHA256 != "" {
-				found = true
-				outobjs[rec.Checksums.SHA256] = &records[i]
+	// 3. Bulk register missing records
+	if len(missingRecords) > 0 {
+		myLogger.Info(fmt.Sprintf("Bulk registering %d missing records", len(missingRecords)))
+		const chunkSize = 500
+		for i := 0; i < len(missingRecords); i += chunkSize {
+			end := i + chunkSize
+			if end > len(missingRecords) {
+				end = len(missingRecords)
 			}
-		}
-		if !found {
-			outobjs[sum.Checksum] = nil
-		}
-	}
-
-	for drsObjKey := range outobjs {
-		val, ok := drsLfsObjs[drsObjKey]
-		if !ok {
-			myLogger.Debug(fmt.Sprintf("Drs record not found in sha256 map %s", drsObjKey))
-		}
-		if _, statErr := os.Stat(val.Name); os.IsNotExist(statErr) {
-			myLogger.Debug(fmt.Sprintf("Error: Object record found locally, but file does not exist locally. Registering Record %s", val.Name))
-			_, err = drsClient.RegisterRecord(context.Background(), val)
+			_, err := drsClient.BatchRegisterRecords(context.Background(), missingRecords[i:end])
 			if err != nil {
-				return err
-			}
-
-		} else {
-			myLogger.Debug(fmt.Sprintf("Object record found locally, and file exists locally. Registering File %s", val.Name))
-			_, err = drsClient.RegisterFile(context.Background(), drsObjKey, val.Name)
-			if err != nil {
-				return err
+				return fmt.Errorf("error in bulk registration: %v", err)
 			}
 		}
 	}
+
+	myLogger.Info(fmt.Sprintf("Successfully synced %d objects with server (registered %d new)", len(drsObjects), len(missingRecords)))
 	return nil
+}
+
+func SyncFilesWithServer(drsClient client.DRSClient, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
+	objectsToSync := make(map[string]*drs.DRSObject)
+	for _, file := range lfsFiles {
+		obj, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
+		if err == nil && obj != nil {
+			objectsToSync[file.Oid] = obj
+		}
+	}
+	return SyncObjectsWithServer(drsClient, objectsToSync, logger)
 }
 
 func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error {

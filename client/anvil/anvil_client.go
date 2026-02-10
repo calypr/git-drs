@@ -11,7 +11,10 @@ import (
 
 	"github.com/bytedance/sonic"
 	drs "github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/g3client"
 	hash "github.com/calypr/data-client/hash"
+	"github.com/calypr/data-client/s3utils"
+	"github.com/calypr/git-drs/cloud"
 	"golang.org/x/oauth2/google"
 )
 
@@ -83,8 +86,79 @@ func (an *AnvilClient) GetObject(ctx context.Context, objectID string) (*drs.DRS
 	}, nil
 }
 
+func (an *AnvilClient) GetProjectId() string {
+	return ""
+}
+
+func (an *AnvilClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) ListObjectsByProject(ctx context.Context, project string) (chan drs.DRSObjectResult, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
+	return errors.New("method not implemented")
+}
+
+func (an *AnvilClient) DeleteRecordsByProject(ctx context.Context, project string) error {
+	return errors.New("method not implemented")
+}
+
+func (an *AnvilClient) DeleteRecord(ctx context.Context, oid string) error {
+	return errors.New("method not implemented")
+}
+
+func (an *AnvilClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
+	return nil, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
+	return s3utils.S3Meta{}, errors.New("method not implemented")
+}
+
+func (an *AnvilClient) GetBucketName() string {
+	return ""
+}
+
+func (an *AnvilClient) GetOrganization() string {
+	return ""
+}
+
+func (an *AnvilClient) GetGen3Interface() g3client.Gen3Interface {
+	return nil
+}
+
 // GetAuthToken fetches a Google Cloud authentication token using Application Default Credentials.
-// The user must run `gcloud auth application-default login` before using this.
 func GetAuthToken() (string, error) {
 	ctx := context.Background()
 	creds, err := google.FindDefaultCredentials(ctx)

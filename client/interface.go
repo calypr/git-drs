@@ -36,6 +36,9 @@ type DRSClient interface {
 	// no corresponding DRS endpoint exists, so this is custom code
 	GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error)
 
+	// given multiple hashes, get the objects describing them in bulk
+	BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error)
+
 	// Download file using the appropriate strategy for the client type
 	// This delegates to data-client logic (progress bars etc) but allows for flexible auth/URL resolution
 	DownloadFile(ctx context.Context, oid string, destPath string) error
@@ -52,6 +55,9 @@ type DRSClient interface {
 
 	// Register a DRS object directly in indexd
 	RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error)
+
+	// Register multiple DRS objects in bulk
+	BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error)
 
 	// Put file into object storage and obtain a DRS record pointing to it
 	RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error)

@@ -90,7 +90,8 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	}
 
 	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
-	myLogger.Debug(fmt.Sprintf("Current server project: %s", builder.ProjectID))
+	builder.Organization = remoteConfig.GetOrganization()
+	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
 
 	tmp, err := bufferStdin(stdin, s.createTempFile)
 	if err != nil {
@@ -126,6 +127,14 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 		return err
 	}
+
+	// Bulk sync records to server
+	myLogger.Info(fmt.Sprintf("Syncing %d DRS objects to server", len(lfsFiles)))
+	if err := drsmap.SyncFilesWithServer(cli, lfsFiles, myLogger); err != nil {
+		myLogger.Error(fmt.Sprintf("DRS metadata sync to server failed: %v", err))
+		return fmt.Errorf("DRS metadata sync to server failed: %w", err)
+	}
+
 	myLogger.Info("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 	return nil
 }

@@ -23,6 +23,10 @@ func (s AnvilRemote) GetProjectId() string {
 	return s.Auth.TerraProject
 }
 
+func (s AnvilRemote) GetOrganization() string {
+	return ""
+}
+
 func (s AnvilRemote) GetEndpoint() string {
 	return s.Endpoint
 }

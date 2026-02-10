@@ -154,6 +154,10 @@ func (m *MockDRSClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *MockDRSClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (m *MockDRSClient) DeleteRecordsByProject(ctx context.Context, project string) error {
 	return nil
 }
@@ -163,6 +167,10 @@ func (m *MockDRSClient) DeleteRecord(ctx context.Context, oid string) error {
 }
 
 func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

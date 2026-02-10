@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 
+	"github.com/calypr/data-client/backend/gen3"
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
 	"github.com/calypr/data-client/download"
@@ -22,6 +23,7 @@ import (
 type Config struct {
 	ProjectId          string
 	BucketName         string
+	Organization       string
 	Upsert             bool
 	MultiPartThreshold int64
 }
@@ -84,6 +86,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	config := &Config{
 		ProjectId:          projectId,
 		BucketName:         bucketName,
+		Organization:       remote.GetOrganization(),
 		Upsert:             upsert,
 		MultiPartThreshold: multiPartThreshold,
 	}
@@ -174,7 +177,7 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 	}
 
 	// Filter by project ID logic is git-drs specific business logic (ensure we only see our project's files)
-	resourcePath, err := common.ProjectToResource(cl.Config.ProjectId)
+	resourcePath, err := drs.ProjectToResource(cl.Config.Organization, cl.Config.ProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -190,6 +193,36 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 		}
 		if found {
 			filtered = append(filtered, o)
+		}
+	}
+	return filtered, nil
+}
+
+func (cl *GitDrsIdxdClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
+	res, err := cl.G3.Indexd().BatchGetObjectsByHash(ctx, hashes)
+	if err != nil {
+		return nil, err
+	}
+
+	resourcePath, err := drs.ProjectToResource(cl.Config.Organization, cl.Config.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter by project ID
+	filtered := make(map[string][]drs.DRSObject)
+	for h, objs := range res {
+		for _, o := range objs {
+			found := false
+			for _, am := range o.AccessMethods {
+				if am.Authorizations != nil && am.Authorizations.Value == resourcePath {
+					found = true
+					break
+				}
+			}
+			if found {
+				filtered[h] = append(filtered[h], o)
+			}
 		}
 	}
 	return filtered, nil
@@ -211,12 +244,16 @@ func (c *GitDrsIdxdClient) RegisterRecord(ctx context.Context, record *drs.DRSOb
 	return c.G3.Indexd().RegisterRecord(ctx, record)
 }
 
+func (c *GitDrsIdxdClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+	return c.G3.Indexd().RegisterRecords(ctx, records)
+}
+
 func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
 	return c.G3.Indexd().UpdateRecord(ctx, updateInfo, did)
 }
 
 func (c *GitDrsIdxdClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, "", c.Config.ProjectId)
+	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.Organization, c.Config.ProjectId)
 }
 
 func (cl *GitDrsIdxdClient) GetGen3Interface() g3client.Gen3Interface {
@@ -228,7 +265,7 @@ func (cl *GitDrsIdxdClient) GetBucketName() string {
 }
 
 func (cl *GitDrsIdxdClient) GetOrganization() string {
-	return ""
+	return cl.Config.Organization
 }
 
 func (cl *GitDrsIdxdClient) GetUpsert() bool {
@@ -236,6 +273,6 @@ func (cl *GitDrsIdxdClient) GetUpsert() bool {
 }
 
 func (cl *GitDrsIdxdClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
-	strategy := download.NewGen3DownloadStrategy(cl.G3)
-	return download.DownloadToPath(ctx, strategy, cl.G3.Logger().Logger, oid, destPath, "")
+	bk := gen3.NewGen3Backend(cl.G3)
+	return download.DownloadToPath(ctx, bk, cl.Logger, oid, destPath, "")
 }

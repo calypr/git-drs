@@ -91,6 +91,8 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 
 	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
+	// git-drs native backend uses CAS-style paths
+	builder.PathStyle = "CAS"
 	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
 
 	tmp, err := bufferStdin(stdin, s.createTempFile)

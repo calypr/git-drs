@@ -7,6 +7,7 @@ import (
 
 	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/local"
 )
 
 func setupTestRepo(t *testing.T) string {
@@ -264,5 +265,59 @@ func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
 	newRemote := cfg.Remotes[Remote("new")]
 	if newRemote.Gen3 == nil || newRemote.Gen3.Endpoint != "https://new.example" {
 		t.Fatalf("expected namespaced gen3 remote loaded, got %#v", newRemote)
+	}
+	// Existing tests...
+	// ...
+}
+
+func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+
+	remoteName := Remote("local-dev")
+	remoteSelect := RemoteSelect{
+		Local: &local.LocalRemote{
+			BaseURL: "http://localhost:8080",
+		},
+	}
+
+	// 1. Update (Write) Config
+	cfg, err := UpdateRemote(remoteName, remoteSelect)
+	if err != nil {
+		t.Fatalf("UpdateRemote failed: %v", err)
+	}
+
+	// Verify immediate returned config has it
+	if r := cfg.GetRemote(remoteName); r == nil {
+		t.Fatalf("Expected remote %s to exist in returned config", remoteName)
+	}
+
+	// 2. Inspect git config file directly (optional but good for debugging)
+	cmd := exec.Command("git", "config", "--list")
+	cmd.Dir = tmpDir
+	out, _ := cmd.CombinedOutput()
+	t.Logf("Git Config:\n%s", string(out))
+
+	// 3. Load (Read) Config from disk
+	loadedCfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+
+	r := loadedCfg.GetRemote(remoteName)
+	if r == nil {
+		t.Fatalf("Remote %s missing from loaded config", remoteName)
+	}
+
+	localRemote, ok := r.(*local.LocalRemote)
+	if !ok {
+		// If it's not LocalRemote, it likely defaulted to Gen3Remote due to missing type
+		if _, isGen3 := r.(*indexd.Gen3Remote); isGen3 {
+			t.Fatalf("Remote %s loaded as Gen3Remote (default fallback), expected LocalRemote. Type missing?", remoteName)
+		}
+		t.Fatalf("Remote %s loaded as unexpected type: %T", remoteName, r)
+	}
+
+	if localRemote.BaseURL != "http://localhost:8080" {
+		t.Errorf("Expected BaseURL http://localhost:8080, got %s", localRemote.BaseURL)
 	}
 }

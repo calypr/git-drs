@@ -186,8 +186,15 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 	for _, o := range res {
 		found := false
 		for _, am := range o.AccessMethods {
-			if am.Authorizations != nil && am.Authorizations.Value == resourcePath {
-				found = true
+			if am.Authorizations != nil {
+				for _, issuer := range am.Authorizations.BearerAuthIssuers {
+					if issuer == resourcePath {
+						found = true
+						break
+					}
+				}
+			}
+			if found {
 				break
 			}
 		}
@@ -199,33 +206,16 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 }
 
 func (cl *GitDrsIdxdClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
-	res, err := cl.G3.Indexd().BatchGetObjectsByHash(ctx, hashes)
-	if err != nil {
-		return nil, err
-	}
-
-	resourcePath, err := drs.ProjectToResource(cl.Config.Organization, cl.Config.ProjectId)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter by project ID
-	filtered := make(map[string][]drs.DRSObject)
-	for h, objs := range res {
-		for _, o := range objs {
-			found := false
-			for _, am := range o.AccessMethods {
-				if am.Authorizations != nil && am.Authorizations.Value == resourcePath {
-					found = true
-					break
-				}
-			}
-			if found {
-				filtered[h] = append(filtered[h], o)
-			}
-		}
-	}
-	return filtered, nil
+	// Not truly supported by backend yet appropriately, returning error for now or partial implementation
+	// The user requested to keep these in LocalClient, which implies the interface needs them.
+	// We can implement a naive loop here if needed, or just return error "not supported" to force fallback in mapped code?
+	// ACTUALLY, the user said "there is just no support for them in indexd".
+	// So for IndexdClient, we should probably return error so caller handles it?
+	// But wait, SynObjectsWithServer relies on them.
+	// If I return error, SyncObjectsWithServer fails.
+	// Check loop implementation in SyncObjects again... I refactored it to NOT use batch methods.
+	// So these methods might proceed unused by SyncObjects, but required by interface.
+	return nil, fmt.Errorf("BatchGetObjectsByHash not supported for IndexdClient")
 }
 
 func (cl *GitDrsIdxdClient) DeleteRecordsByProject(ctx context.Context, projectId string) error {
@@ -245,7 +235,7 @@ func (c *GitDrsIdxdClient) RegisterRecord(ctx context.Context, record *drs.DRSOb
 }
 
 func (c *GitDrsIdxdClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
-	return c.G3.Indexd().RegisterRecords(ctx, records)
+	return nil, fmt.Errorf("BatchRegisterRecords not supported for IndexdClient")
 }
 
 func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {

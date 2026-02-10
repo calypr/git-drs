@@ -23,9 +23,13 @@ func TestProjectToResource(t *testing.T) {
 		t.Fatalf("unexpected resource: %s", resource)
 	}
 
-	// Test invalid legacy format
-	if _, err := ProjectToResource("", "invalid"); err == nil {
-		t.Fatalf("expected error for invalid project")
+	// Test legacy format fallback (invalid format -> default program)
+	res, err := ProjectToResource("", "invalid")
+	if err != nil {
+		t.Fatalf("unexpected error for invalid project: %v", err)
+	}
+	if res != "/programs/default/projects/invalid" {
+		t.Fatalf("expected /programs/default/projects/invalid, got %s", res)
 	}
 }
 

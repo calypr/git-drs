@@ -126,11 +126,11 @@ func (an *AnvilClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRS
 	return nil, errors.New("method not implemented")
 }
 
-func (an *AnvilClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+func (an *AnvilClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
 	return nil, errors.New("method not implemented")
 }
 
-func (an *AnvilClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+func (an *AnvilClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
 	return nil, errors.New("method not implemented")
 }
 

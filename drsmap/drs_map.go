@@ -42,38 +42,35 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	}
 
 	// 1. Bulk lookup all hashes on server
-	hashes := make([]string, 0, len(drsObjects))
-	for h := range drsObjects {
-		hashes = append(hashes, h)
-	}
-
-	myLogger.Debug(fmt.Sprintf("Bulk looking up %d hashes on server", len(hashes)))
-	serverRecords, err := drsClient.BatchGetObjectsByHash(context.Background(), hashes)
-	if err != nil {
-		return fmt.Errorf("error in bulk hash lookup: %v", err)
-	}
-
-	// 2. Identify missing records
+	// 1. Identify missing records by looking up each hash
 	missingRecords := make([]*drs.DRSObject, 0)
 	for h, localObj := range drsObjects {
-		if records, ok := serverRecords[h]; !ok || len(records) == 0 {
+		// Use SHA256 as default type if not specified in localObj (which uses SHA256 as key mostly)
+		ctx := context.Background()
+		recs, err := drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: h})
+		foundOnServer := false
+		if err == nil && len(recs) > 0 {
+			// Check if any record matches our project
+			matched, _ := FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+			if matched != nil {
+				foundOnServer = true
+			}
+		}
+
+		if !foundOnServer {
 			myLogger.Debug(fmt.Sprintf("Record missing on server for hash %s, adding to registration queue", h))
 			missingRecords = append(missingRecords, localObj)
 		}
 	}
 
-	// 3. Bulk register missing records
+	// 2. Register missing records one by one
 	if len(missingRecords) > 0 {
-		myLogger.Info(fmt.Sprintf("Bulk registering %d missing records", len(missingRecords)))
-		const chunkSize = 500
-		for i := 0; i < len(missingRecords); i += chunkSize {
-			end := i + chunkSize
-			if end > len(missingRecords) {
-				end = len(missingRecords)
-			}
-			_, err := drsClient.BatchRegisterRecords(context.Background(), missingRecords[i:end])
+		myLogger.Info(fmt.Sprintf("Registering %d missing records", len(missingRecords)))
+		for _, rec := range missingRecords {
+			_, err := drsClient.RegisterRecord(context.Background(), rec)
 			if err != nil {
-				return fmt.Errorf("error in bulk registration: %v", err)
+				myLogger.Error(fmt.Sprintf("Failed to register record %s: %v", rec.Id, err))
+				return fmt.Errorf("error in registration: %v", err)
 			}
 		}
 	}
@@ -177,6 +174,21 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 			// Update basic info if necessary
 			authoritativeObj.Name = file.Name
 			authoritativeObj.Size = file.Size
+
+			// Ensure Authorizations are populated (backwards compatibility for old local records)
+			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
+			for i := range authoritativeObj.AccessMethods {
+				if authoritativeObj.AccessMethods[i].Authorizations == nil {
+					authoritativeObj.AccessMethods[i].Authorizations = &drs.Authorizations{}
+				}
+				if len(authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers) == 0 {
+					authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers = []string{authzStr}
+				}
+				// Ensure URL matches current policy of CAS-style s3://bucket/HASH
+				if builder.Bucket != "" {
+					authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
+				}
+			}
 		} else {
 			drsID := DrsUUID(builder.ProjectID, file.Oid)
 			authoritativeObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
@@ -209,12 +221,18 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		}
 
 		if opts.PreferCacheURL && hint != "" {
+			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
+			authz := &drs.Authorizations{
+				BearerAuthIssuers: []string{authzStr},
+			}
 			if len(authoritativeObj.AccessMethods) > 0 {
 				authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
+				authoritativeObj.AccessMethods[0].Authorizations = authz
 			} else {
 				authoritativeObj.AccessMethods = append(authoritativeObj.AccessMethods, drs.AccessMethod{
-					Type:      "s3",
-					AccessURL: drs.AccessURL{URL: hint},
+					Type:           "s3",
+					AccessURL:      drs.AccessURL{URL: hint},
+					Authorizations: authz,
 				})
 			}
 		}
@@ -339,11 +357,6 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 			// assert access has Authorizations
 			if access.Authorizations == nil {
 				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
-			}
-
-			// Check primary Value
-			if access.Authorizations.Value == expectedAuthz {
-				return &record, nil
 			}
 
 			// Check BearerAuthIssuers using a map for O(1) lookup (ref: "lists suck")

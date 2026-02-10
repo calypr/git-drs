@@ -1,4 +1,4 @@
-package s3_utils
+package cloud
 
 import (
 	"net/http"
@@ -37,4 +37,34 @@ func TestAddURLOptions(t *testing.T) {
 	if cfg.S3Client != s3Client || cfg.HttpClient != httpClient || cfg.Logger != logger {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
+}
+
+func TestParseS3URL(t *testing.T) {
+	bucket, key, err := ParseS3URL("s3://my-bucket/path/to/file.txt")
+	if err != nil {
+		t.Fatalf("ParseS3URL error: %v", err)
+	}
+	if bucket != "my-bucket" || key != "path/to/file.txt" {
+		t.Fatalf("unexpected bucket/key: %s/%s", bucket, key)
+	}
+}
+
+func TestParseS3URLErrors(t *testing.T) {
+	t.Run("missing prefix", func(t *testing.T) {
+		if _, _, err := ParseS3URL("http://bucket/key"); err == nil {
+			t.Fatalf("expected error for missing s3 prefix")
+		}
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		if _, _, err := ParseS3URL("s3://bucket"); err == nil {
+			t.Fatalf("expected error for missing key")
+		}
+	})
+
+	t.Run("trailing slash", func(t *testing.T) {
+		if _, _, err := ParseS3URL("s3://bucket/"); err == nil {
+			t.Fatalf("expected error for trailing slash")
+		}
+	})
 }

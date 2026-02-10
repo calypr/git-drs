@@ -1,8 +1,10 @@
-package s3_utils
+package cloud
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -75,4 +77,39 @@ func WithLogger(logger *slog.Logger) AddURLOption {
 	return func(cfg *AddURLConfig) {
 		cfg.Logger = logger
 	}
+}
+
+func ParseS3URL(s3url string) (string, string, error) {
+	s3Prefix := "s3://"
+	if !strings.HasPrefix(s3url, s3Prefix) {
+		return "", "", fmt.Errorf("S3 URL requires prefix 's3://': %s", s3url)
+	}
+	trimmed := strings.TrimPrefix(s3url, s3Prefix)
+	slashIndex := strings.Index(trimmed, "/")
+	if slashIndex == -1 || slashIndex == len(trimmed)-1 {
+		return "", "", fmt.Errorf("invalid S3 file URL: %s", s3url)
+	}
+	return trimmed[:slashIndex], trimmed[slashIndex+1:], nil
+}
+
+// CanDownloadFile checks if a file can be downloaded from the given signed URL
+// by issuing a ranged GET for a single byte to mimic HEAD behavior.
+func CanDownloadFile(signedURL string) error {
+	req, err := http.NewRequest("GET", signedURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Range", "bytes=0-0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("error while sending the request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	return fmt.Errorf("failed to access file, HTTP status: %d", resp.StatusCode)
 }

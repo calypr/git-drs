@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/indexd/drs"
-	"github.com/calypr/data-client/indexd/hash"
+	"github.com/calypr/data-client/hash"
+	"github.com/calypr/data-client/s3utils"
+	"github.com/calypr/git-drs/cloud"
 	localCommon "github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/s3_utils"
+	"github.com/calypr/git-drs/lfs"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -88,6 +90,33 @@ func TestGetObjectPathLayout(t *testing.T) {
 	}
 }
 
+func TestWriteDrsFile(t *testing.T) {
+	setupTestRepo(t)
+
+	builder := drs.NewObjectBuilder("bucket", "prog-project")
+	file := lfs.LfsFileInfo{
+		Name: "file.txt",
+		Size: 12,
+		Oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+
+	drsObj, err := WriteDrsFile(builder, file, nil)
+	if err != nil {
+		t.Fatalf("WriteDrsFile error: %v", err)
+	}
+	if drsObj.Id == "" {
+		t.Fatalf("expected drs object id")
+	}
+
+	read, err := DrsInfoFromOid(file.Oid)
+	if err != nil {
+		t.Fatalf("DrsInfoFromOid error: %v", err)
+	}
+	if read.Checksums.SHA256 != file.Oid {
+		t.Fatalf("unexpected checksum: %+v", read.Checksums)
+	}
+}
+
 // MockDRSClient implements client.DRSClient for testing
 type MockDRSClient struct {
 	Objects []drs.DRSObjectResult
@@ -156,8 +185,8 @@ func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64
 	}, nil
 }
 
-func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...s3_utils.AddURLOption) (s3_utils.S3Meta, error) {
-	return s3_utils.S3Meta{}, fmt.Errorf("not implemented")
+func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
+	return s3utils.S3Meta{}, fmt.Errorf("not implemented")
 }
 
 func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {

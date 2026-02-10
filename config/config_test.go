@@ -199,3 +199,70 @@ func TestConfig_MultipleRemotes(t *testing.T) {
 		t.Errorf("Expected 3 remotes, got %d", len(cfg.Remotes))
 	}
 }
+
+func TestLoadConfig_LegacyKeysRemainSupported(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+
+	commands := [][]string{
+		{"config", "drs.default-remote", "legacy"},
+		{"config", "drs.remote.legacy.type", "gen3"},
+		{"config", "drs.remote.legacy.endpoint", "https://legacy.example"},
+		{"config", "drs.remote.legacy.project", "legacy-proj"},
+		{"config", "drs.remote.legacy.bucket", "legacy-bucket"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, string(out))
+		}
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if cfg.DefaultRemote != Remote("legacy") {
+		t.Fatalf("expected legacy default remote, got %s", cfg.DefaultRemote)
+	}
+	legacy := cfg.Remotes[Remote("legacy")]
+	if legacy.Gen3 == nil || legacy.Gen3.Endpoint != "https://legacy.example" {
+		t.Fatalf("expected legacy gen3 remote loaded, got %#v", legacy)
+	}
+}
+
+func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+
+	commands := [][]string{
+		{"config", "drs.default-remote", "legacy"},
+		{"config", "drs.remote.legacy.type", "gen3"},
+		{"config", "drs.remote.legacy.endpoint", "https://legacy.example"},
+		{"config", "drs.remote.legacy.project", "legacy-proj"},
+		{"config", "drs.remote.legacy.bucket", "legacy-bucket"},
+		{"config", "lfs.customtransfer.drs.default-remote", "new"},
+		{"config", "lfs.customtransfer.drs.remote.new.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.new.endpoint", "https://new.example"},
+		{"config", "lfs.customtransfer.drs.remote.new.project", "new-proj"},
+		{"config", "lfs.customtransfer.drs.remote.new.bucket", "new-bucket"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, string(out))
+		}
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if cfg.DefaultRemote != Remote("new") {
+		t.Fatalf("expected namespaced default remote, got %s", cfg.DefaultRemote)
+	}
+	newRemote := cfg.Remotes[Remote("new")]
+	if newRemote.Gen3 == nil || newRemote.Gen3.Endpoint != "https://new.example" {
+		t.Fatalf("expected namespaced gen3 remote loaded, got %#v", newRemote)
+	}
+}

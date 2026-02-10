@@ -23,9 +23,9 @@ func TestTransferRefCmd_Init(t *testing.T) {
 	// Mock config
 	// Create dummy config using git config
 	cmds := [][]string{
-		{"config", "drs.default-remote", "origin"},
-		{"config", "drs.remote.origin.type", "gen3"},
-		{"config", "drs.remote.origin.project", "prog-proj"},
+		{"config", "lfs.customtransfer.drs.default-remote", "origin"},
+		{"config", "lfs.customtransfer.drs.remote.origin.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.origin.project", "prog-proj"},
 		// api_key is not used in LoadConfig structs currently for gen3 remote, but we set what we can
 	}
 	for _, args := range cmds {
@@ -89,9 +89,9 @@ func TestTransferRefCmd_Download(t *testing.T) {
 
 	// Mock config
 	cmds := [][]string{
-		{"config", "drs.default-remote", "origin"},
-		{"config", "drs.remote.origin.type", "gen3"},
-		{"config", "drs.remote.origin.project", "prog-proj"},
+		{"config", "lfs.customtransfer.drs.default-remote", "origin"},
+		{"config", "lfs.customtransfer.drs.remote.origin.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.origin.project", "prog-proj"},
 	}
 	for _, args := range cmds {
 		cmd := exec.Command("git", args...)

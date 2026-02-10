@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic/encoder"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/s3_utils"
-	"github.com/calypr/git-drs/utils"
 )
 
 // TestParseS3URL_Valid tests parsing valid S3 URLs
@@ -52,7 +51,7 @@ func TestParseS3URL_Valid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bucket, key, err := utils.ParseS3URL(tt.s3URL)
+			bucket, key, err := cloud.ParseS3URL(tt.s3URL)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseS3URL() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -106,7 +105,7 @@ func TestParseS3URL_Invalid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := utils.ParseS3URL(tt.s3URL)
+			_, _, err := cloud.ParseS3URL(tt.s3URL)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseS3URL() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -149,8 +148,8 @@ func TestGetBucketDetails_Gen3Success(t *testing.T) {
 			return
 		}
 
-		response := s3_utils.S3BucketsResponse{
-			S3Buckets: map[string]*s3_utils.S3Bucket{
+		response := cloud.S3BucketsResponse{
+			S3Buckets: map[string]*cloud.S3Bucket{
 				"test-bucket": {
 					Region:      "us-west-2",
 					EndpointURL: "https://s3.aws.amazon.com",

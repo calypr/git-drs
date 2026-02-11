@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Find latest tag excluding major v0
-LATEST_TAG=$(git tag --list --sort=-v:refname | grep -v '^v0' | head -n1 || true)
+LATEST_TAG=$(git tag --list --sort=-v:refname | head -n1 || true)
 if [ -z "$LATEST_TAG" ]; then
   echo "No suitable tag found (excluding v0). Aborting." >&2
   exit 1

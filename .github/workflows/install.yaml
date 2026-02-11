@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Install Default Version (Latest Release)
         run: |
-          TAG=${{ github.event.release.tag_name }}
+          TAG=${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
           /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/tags/$TAG/install.sh)"
           source $HOME/.bashrc
           which git-drs

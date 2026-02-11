@@ -1,8 +1,9 @@
 name: Install Script Test
 
 on:
-  push:
   release:
+    types:
+      - published
   workflow_dispatch:
 
 permissions:
@@ -24,8 +25,8 @@ jobs:
     steps:
       - name: Install Default Version (Latest Release)
         run: |
-          BRANCH=${{ github.ref_name }}
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/$BRANCH/install.sh)"
+          TAG=${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/tags/$TAG/install.sh)"
           source $HOME/.bashrc
           which git-drs
           git-drs --help

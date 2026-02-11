@@ -3,7 +3,7 @@ name: Install Script Test
 on:
   release:
     types:
-      published
+      - published
   workflow_dispatch:
 
 permissions:

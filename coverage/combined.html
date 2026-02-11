@@ -137,7 +137,7 @@
 				
 				<option value="file40">github.com/calypr/git-drs/drslog/logger.go (75.2%)</option>
 				
-				<option value="file41">github.com/calypr/git-drs/drsmap/drs_map.go (37.0%)</option>
+				<option value="file41">github.com/calypr/git-drs/drsmap/drs_map.go (36.3%)</option>
 				
 				<option value="file42">github.com/calypr/git-drs/git-drs.go (42.9%)</option>
 				
@@ -6209,12 +6209,12 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 }
 func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error <span class="cov0" title="0">{
 
-        if logger == nil </span><span class="cov0" title="0">{
+        if logger == nil </span>{
                 return fmt.Errorf("logger is required")
-        }</span>
-        <span class="cov0" title="0">logger.Debug("Update to DRS objects started")
+        }
+        logger.Debug("Update to DRS objects started")
 
-        // get all lfs files
+</span></span>        // get all lfs files
         lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("error getting all LFS files: %v", err)

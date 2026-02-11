@@ -25,7 +25,7 @@ jobs:
       - name: Install Default Version (Latest Release)
         run: |
           BRANCH=${{ github.ref_name }}
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/$BRANCH/install.sh)"
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/$BRANCH/install.sh)"
           source $HOME/.bashrc
           which git-drs
           git-drs --help

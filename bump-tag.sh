@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Find latest tag excluding major v0
-LATEST_TAG=$(git tag --list --sort=-v:refname | grep -v '^v0' | head -n1 || true)
+LATEST_TAG=$(git tag --list --sort=-v:refname | head -n1 || true)
 if [ -z "$LATEST_TAG" ]; then
   echo "No suitable tag found (excluding v0). Aborting." >&2
   exit 1
@@ -112,6 +112,7 @@ fi
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
+
 echo "Latest branch: $BRANCH"
 echo "Latest tag: $LATEST_TAG"
 echo "New tag: $NEW_TAG (files will use ${NEW_FILE_VER})"
@@ -138,11 +139,14 @@ fi
 
 # Run tests/builds (non-fatal for Python tests)
 
+
 # Commit, tag and push
+NEW_TAG="v${NEW_TAG}"
 git commit -m "chore(release): bump to ${NEW_TAG}" || echo "No changes to commit"
 git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG}"
-echo "Created tag. Please push tag ${NEW_TAG} on branch ${BRANCH}."
 
+echo "Created tag. Please push tag ${NEW_TAG} on branch ${BRANCH}."
+echo "To push, run:"
 echo git push origin "${BRANCH}"
 echo git push origin "${NEW_TAG}"
 

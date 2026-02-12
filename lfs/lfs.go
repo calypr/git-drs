@@ -137,14 +137,30 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 		if len(parts) < 2 {
 			continue
 		}
-		oid := parts[1]
-		path := parts[len(parts)-1]
+		var oid string
+		var pathStart int
+		for i, p := range parts {
+			if sha256Re.MatchString(p) {
+				oid = p
+				pathStart = i + 1
+				break
+			}
+		}
 
-		// Validate OID looks like a SHA256 hex string.
-		if !sha256Re.MatchString(oid) {
-			logger.Debug(fmt.Sprintf("skipping LFS line with invalid oid %q: %q", oid, line))
+		if oid == "" || pathStart >= len(parts) {
+			logger.Debug(fmt.Sprintf("skipping LFS line with no valid oid: %q", line))
 			continue
 		}
+
+		// Skip leading '=>' or '->' if present
+		if parts[pathStart] == "=>" || parts[pathStart] == "->" {
+			pathStart++
+		}
+
+		if pathStart >= len(parts) {
+			continue
+		}
+		path := strings.Join(parts[pathStart:], " ")
 
 		// see https://github.com/calypr/git-drs/issues/124#issuecomment-3721837089
 		if oid == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" && strings.Contains(path, ".gitattributes") {

@@ -266,3 +266,95 @@ func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
 		t.Fatalf("expected namespaced gen3 remote loaded, got %#v", newRemote)
 	}
 }
+
+func TestRemoveRemote(t *testing.T) {
+	setupTestRepo(t)
+
+	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
+	if err != nil {
+		t.Fatalf("UpdateRemote origin error: %v", err)
+	}
+	_, err = UpdateRemote(Remote("staging"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://staging.example", ProjectID: "staging-proj", Bucket: "staging-bucket"}})
+	if err != nil {
+		t.Fatalf("UpdateRemote staging error: %v", err)
+	}
+
+	if err := RemoveRemote(Remote("origin")); err != nil {
+		t.Fatalf("RemoveRemote error: %v", err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if _, ok := cfg.Remotes[Remote("origin")]; ok {
+		t.Fatalf("expected origin to be removed")
+	}
+	if cfg.DefaultRemote != Remote("staging") {
+		t.Fatalf("expected default remote to switch to staging, got %s", cfg.DefaultRemote)
+	}
+}
+
+func TestRemoveRemote_LastRemoteClearsDefault(t *testing.T) {
+	setupTestRepo(t)
+
+	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
+	if err != nil {
+		t.Fatalf("UpdateRemote origin error: %v", err)
+	}
+
+	if err := RemoveRemote(Remote("origin")); err != nil {
+		t.Fatalf("RemoveRemote error: %v", err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+	if cfg.DefaultRemote != "" {
+		t.Fatalf("expected default remote to be cleared, got %s", cfg.DefaultRemote)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("expected no remotes, got %d", len(cfg.Remotes))
+	}
+}
+
+func TestRemoveRemote_LegacyRemote(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+
+	commands := [][]string{
+		{"config", "drs.default-remote", "legacy"},
+		{"config", "drs.remote.legacy.type", "gen3"},
+		{"config", "drs.remote.legacy.endpoint", "https://legacy.example"},
+		{"config", "drs.remote.legacy.project", "legacy-proj"},
+		{"config", "drs.remote.legacy.bucket", "legacy-bucket"},
+		{"config", "lfs.customtransfer.drs.remote.new.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.new.endpoint", "https://new.example"},
+		{"config", "lfs.customtransfer.drs.remote.new.project", "new-proj"},
+		{"config", "lfs.customtransfer.drs.remote.new.bucket", "new-bucket"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v: %s", args, err, string(out))
+		}
+	}
+
+	if err := RemoveRemote(Remote("legacy")); err != nil {
+		t.Fatalf("RemoveRemote legacy error: %v", err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig error: %v", err)
+	}
+
+	if _, ok := cfg.Remotes[Remote("legacy")]; ok {
+		t.Fatalf("expected legacy remote to be removed")
+	}
+	if cfg.DefaultRemote != Remote("new") {
+		t.Fatalf("expected default remote to be reassigned to new, got %s", cfg.DefaultRemote)
+	}
+}

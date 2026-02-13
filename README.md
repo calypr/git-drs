@@ -75,6 +75,7 @@ For detailed setup and usage information:
 
 - **[Getting Started](docs/getting-started.md)** - Repository setup and basic workflows
 - **[Commands Reference](docs/commands.md)** - Complete command documentation
+- **[Remote Remove Use Cases](docs/remote-remove-use-cases.md)** - Practical scenarios for remote cleanup
 - **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
@@ -98,6 +99,7 @@ For detailed setup and usage information:
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |
 | `git drs remote set`   | Set default remote                    |
+| `git drs remote remove`| Remove a configured remote            |
 | `git drs add-url`      | Add files via S3 URLs                 |
 | `git lfs track`        | Track file patterns with LFS          |
 | `git lfs ls-files`     | List tracked files                    |

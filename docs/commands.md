@@ -157,6 +157,29 @@ git drs remote set production
 git drs remote list
 ```
 
+
+#### `git drs remote remove <name>` / `git drs remote rm <name>`
+
+Remove a configured DRS remote. If you remove the current default remote, Git DRS automatically selects another configured remote as the new default.
+
+**Usage:**
+
+```bash
+git drs remote remove <remote-name>
+# alias
+git drs remote rm <remote-name>
+```
+
+**Examples:**
+
+```bash
+# Remove an old staging remote
+git drs remote remove staging
+
+# Confirm remaining remotes and default
+git drs remote list
+```
+
 ### `git drs fetch [remote-name]`
 
 Fetch DRS object metadata from remote server. Downloads metadata only, not actual files.

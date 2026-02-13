@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/calypr/data-client/g3client"
@@ -299,6 +300,75 @@ func GetProjectId(remote Remote) (string, error) {
 		return "", fmt.Errorf("no remote configuration found for current remote: %s", remote)
 	}
 	return rmt.GetProjectId(), nil
+}
+
+// RemoveRemote removes a configured remote and updates default-remote when required
+func RemoveRemote(name Remote) error {
+	repo, err := getRepo()
+	if err != nil {
+		return err
+	}
+
+	conf, err := repo.Config()
+	if err != nil {
+		return err
+	}
+
+	section := conf.Raw.Section(newConfigSection)
+	legacySection := conf.Raw.Section(legacyConfigSection)
+	root := section.Subsection(newConfigSubsectionRoot)
+
+	remoteSubsectionName := fmt.Sprintf("%s.%s%s", newConfigSubsectionRoot, remoteSubsectionPrefix, name)
+	legacyRemoteSubsectionName := fmt.Sprintf("%s%s", remoteSubsectionPrefix, name)
+
+	hasNamespaced := section.HasSubsection(remoteSubsectionName)
+	hasLegacy := legacySection.HasSubsection(legacyRemoteSubsectionName)
+	if !hasNamespaced && !hasLegacy {
+		return fmt.Errorf("remote '%s' not found", name)
+	}
+
+	if hasNamespaced {
+		section.RemoveSubsection(remoteSubsectionName)
+	}
+	if hasLegacy {
+		legacySection.RemoveSubsection(legacyRemoteSubsectionName)
+	}
+
+	defaultRemote := root.Option("default-remote")
+	if defaultRemote == "" {
+		defaultRemote = legacySection.Option("default-remote")
+	}
+
+	if defaultRemote == string(name) {
+		remainingSet := make(map[string]struct{})
+		for _, subsection := range section.Subsections {
+			if !strings.HasPrefix(subsection.Name, newConfigSubsectionRoot+"."+remoteSubsectionPrefix) {
+				continue
+			}
+			rest := strings.TrimPrefix(subsection.Name, newConfigSubsectionRoot+".")
+			remainingSet[strings.TrimPrefix(rest, remoteSubsectionPrefix)] = struct{}{}
+		}
+		for _, subsection := range legacySection.Subsections {
+			if !strings.HasPrefix(subsection.Name, remoteSubsectionPrefix) {
+				continue
+			}
+			remainingSet[strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)] = struct{}{}
+		}
+
+		remaining := make([]string, 0, len(remainingSet))
+		for remoteName := range remainingSet {
+			remaining = append(remaining, remoteName)
+		}
+		sort.Strings(remaining)
+
+		root.RemoveOption("default-remote")
+		legacySection.RemoveOption("default-remote")
+		if len(remaining) > 0 {
+			root.SetOption("default-remote", remaining[0])
+		}
+	}
+
+	return repo.Storer.SetConfig(conf)
 }
 
 // SaveConfig writes the configuration using go-git

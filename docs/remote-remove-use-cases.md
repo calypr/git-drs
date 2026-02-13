@@ -7,7 +7,7 @@ This guide provides practical scenarios for removing Git DRS remotes safely.
 
 To remove **Git DRS** remotes under `lfs.customtransfer.drs.remote.*` in `.git/config`.
 
-Use `git drs remove`.  For example, to remove a remote named `foobar`:
+Use `git drs remote remove`.  For example, to remove a remote named `foobar`:
 
 ```bash
 # view a remote named 'foobar' that is no longer needed

@@ -170,15 +170,15 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 
 		// If the file is small, read it and detect LFS pointer signature.
 		// Pointer files are textual and include the LFS spec version + an oid line.
-		if size > 0 && size < 2048 {
-			if data, readErr := os.ReadFile(absPath); readErr == nil {
-				s := strings.TrimSpace(string(data))
-				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
-					logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
-					continue
-				}
-			}
-		}
+		//if size > 0 && size < 2048 {
+		//	if data, readErr := os.ReadFile(absPath); readErr == nil {
+		//		s := strings.TrimSpace(string(data))
+		//		if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
+		//			logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
+		//			continue
+		//		}
+		//	}
+		//}
 
 		lfsFileMap[path] = LfsFileInfo{
 			Name:    path,

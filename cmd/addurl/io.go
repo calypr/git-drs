@@ -72,7 +72,7 @@ Key            : %s
 Worktree name  : %s
 Size (bytes)   : %d
 SHA256 (meta)  : %s
-ETag           : %s
+ETag           : >%s<
 Last modified  : %s
 
 Worktree

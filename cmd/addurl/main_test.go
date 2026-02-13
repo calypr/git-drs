@@ -24,7 +24,8 @@ import (
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	content := "hello world"
-	sum := sha256.Sum256([]byte(content))
+	etag := "abcd1234"
+	sum := sha256.Sum256([]byte(etag))
 	shaHex := fmt.Sprintf("%x", sum[:])
 
 	tempDir := t.TempDir()
@@ -85,7 +86,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 				Path:        "file.bin",
 				SizeBytes:   int64(len(content)),
 				MetaSHA256:  "",
-				ETag:        "abcd1234",
+				ETag:        etag,
 				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 			}, nil
 		},
@@ -134,7 +135,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
 	if _, err := os.Stat(lfsObject); err != nil {
-		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
+		t.Fatalf("Expect a LFS object at %s: %v", lfsObject, err)
 	}
 
 	drsObject, err := drsmap.DrsInfoFromOid(shaHex)

@@ -2,6 +2,8 @@ package addurl
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -136,26 +138,32 @@ func (s *AddURLService) ensureLFSObject(ctx context.Context, s3Info *cloud.S3Obj
 		return input.sha256, nil
 	}
 
-	computedSHA, tmpObj, err := s.download(ctx, s3Info, input.s3Params, lfsRoot)
-	if err != nil {
-		return "", err
+	if s3Info == nil || s3Info.ETag == "" {
+		return "", fmt.Errorf("missing S3 ETag for object; cannot compute SHA256")
 	}
+
+	computedSHA := getSHA256(s3Info.ETag)
 
 	oid := computedSHA
 	dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
 	dstObj := filepath.Join(dstDir, oid)
-
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir %s: %w", dstDir, err)
 	}
-
-	if err := os.Rename(tmpObj, dstObj); err != nil {
-		return "", fmt.Errorf("rename %s to %s: %w", tmpObj, dstObj, err)
+	sentinelData := []byte("git-drs:SENTINEL DATA")
+	if err := os.WriteFile(dstObj, sentinelData, 0644); err != nil {
+		return "", fmt.Errorf("write sentinel to %s: %w", dstObj, err)
 	}
 
-	if _, err := fmt.Fprintf(os.Stderr, "Added data file at %s\n", dstObj); err != nil {
+	if _, err := fmt.Fprintf(os.Stderr, "Added data file at etag:%s sha256:%s path:%s\n", s3Info.ETag, computedSHA, s3Info.Path); err != nil {
 		return "", fmt.Errorf("stderr write: %w", err)
 	}
 
 	return computedSHA, nil
+}
+
+// getSHA256 computes the SHA256 hash of the input string and returns it as a hex-encoded string.
+func getSHA256(s string) string {
+	h := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(h[:])
 }

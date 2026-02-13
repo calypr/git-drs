@@ -251,10 +251,13 @@ test_string='simple test'
 test_string2='simple test2'
 echo $test_string > /tmp/simple_test_file.txt
 echo $test_string2 > /tmp/simple_test_file2.txt
-sha256=$(sha256sum /tmp/simple_test_file.txt | cut -d' ' -f1)
-sha2562=$(sha256sum /tmp/simple_test_file2.txt | cut -d' ' -f1)
-echo "Uploading a simple test file to the bucket via \`mc\`" >&2
 
+echo "Uploading a simple test file to the bucket via \`mc\`" >&2
+md5=$(md5sum /tmp/simple_test_file.txt | cut -d' ' -f1)
+md52=$(md5sum /tmp/simple_test_file2.txt | cut -d' ' -f1)
+
+sha256=$(echo -n $md5 | sha256sum | cut -d' ' -f1)
+sha2562=$(echo -n $md52 | sha256sum | cut -d' ' -f1)
 
 mc cp /tmp/simple_test_file.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file.txt"
 mc cp /tmp/simple_test_file2.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file2.txt"
@@ -283,10 +286,13 @@ git lfs track data/simple_test_file.txt
 git add .gitattributes data/simple_test_file.txt
 git commit -m "add-url simple_test_file.txt to git lfs"
 
-echo "verify the sha256 matches"
+echo "verify the sha256 matches $sha256"
 grep $sha256 data/simple_test_file.txt
 echo "data/simple_test_file.txt should show as a pointer file"
 git lfs ls-files | grep " - data/simple_test_file.txt"
+
+# push to remote to ensure the indexd record is created with the sha256 and to test the push of LFS pointer file
+git push origin main
 
 echo "Pulling the file via git lfs pull"
 git lfs pull origin main

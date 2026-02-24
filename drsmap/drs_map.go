@@ -33,7 +33,13 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shou
 		return err
 	}
 
+	processed := 0
+	total := len(drsLfsObjs)
 	for drsObjKey, val := range drsLfsObjs {
+		processed++
+		if processed%100 == 0 || processed == total {
+			myLogger.Info(fmt.Sprintf("Pushing local DRS objects: %d/%d...", processed, total))
+		}
 		records, err := drsClient.GetObjectByHash(context.Background(), &hash.Checksum{
 			Checksum: drsObjKey,
 			Type:     hash.ChecksumTypeSHA256,
@@ -43,7 +49,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shou
 		}
 
 		if len(records) > 0 {
-			myLogger.Info(fmt.Sprintf("Object %s already exists on DRS server, skipping registration", drsObjKey))
+			myLogger.Debug(fmt.Sprintf("Object %s (path: %s) already exists on DRS server, skipping registration", drsObjKey, val.Name))
 		} else {
 			// Check if we have the actual blob locally
 			hasBlob := false
@@ -67,7 +73,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shou
 					return fmt.Errorf("failed to register record for %s: %v", val.Name, err)
 				}
 			} else {
-				myLogger.Info(fmt.Sprintf("Pushing file %s (OID: %s) to DRS server", val.Name, drsObjKey))
+				myLogger.Info(fmt.Sprintf("Pushing file %s to DRS server (OID: %s)", val.Name, drsObjKey))
 				_, err = drsClient.RegisterFile(context.Background(), drsObjKey, val.Name)
 				if err != nil {
 					return fmt.Errorf("failed to register file %s: %v", val.Name, err)
@@ -141,31 +147,72 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 	logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
 	return nil
 }
-func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
+func UpdateDrsObjects(drsClient client.DRSClient, builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, checkAll bool, logger *slog.Logger) error {
 
 	if logger == nil {
 		return fmt.Errorf("logger is required")
 	}
 	logger.Debug("Update to DRS objects started")
 
-	// get all lfs files
-	lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+	lfsFileMap := make(map[string]lfs.LfsFileInfo)
+	repoDir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("error getting all LFS files: %v", err)
+		return err
 	}
 
-	// get project
-	if builder.ProjectID == "" {
-		return fmt.Errorf("no project configured")
+	if checkAll {
+		logger.Debug("Performing deep LFS file scan (checkAll=true)")
+		if err := addFilesFromLsFiles(repoDir, logger, lfsFileMap); err != nil {
+			logger.Warn(fmt.Sprintf("Warning: deep discovery encountered issues: %v", err))
+		}
+	} else {
+		// Normal case: use push dry-run
+		if gitRemoteName == "" {
+			gitRemoteName = "origin"
+		}
+		for _, branch := range branches {
+			ref := branch
+			if branch != "HEAD" && !strings.HasPrefix(branch, "refs/") {
+				ref = fmt.Sprintf("refs/heads/%s", branch)
+			}
+			out, err := lfs.RunPushDryRun(context.Background(), repoDir, lfs.DryRunSpec{Remote: gitRemoteName, Ref: ref}, logger)
+			if err != nil {
+				return err
+			}
+			if err := parseLfsPushDryRun(out, logger, lfsFileMap); err != nil {
+				return err
+			}
+		}
+
+		// Enrich normal discovery with sizes
+		for oid, info := range lfsFileMap {
+			absPath := info.Name
+			if !filepath.IsAbs(absPath) {
+				absPath = filepath.Join(repoDir, info.Name)
+			}
+			if stat, err := os.Stat(absPath); err == nil {
+				info.Size = stat.Size()
+				lfsFileMap[oid] = info
+			} else {
+				// If not on disk, try reaching into DRS cache since dry-run found it
+				if drsObj, err := DrsInfoFromOid(oid); err == nil {
+					info.Size = drsObj.Size
+					lfsFileMap[oid] = info
+				} else {
+					logger.Warn(fmt.Sprintf("Object %s (path %s) identified for push but missing from disk and local DRS cache. This record may be broken.", oid, info.Name))
+				}
+			}
+		}
 	}
 
-	return UpdateDrsObjectsWithFiles(builder, lfsFiles, UpdateOptions{Logger: logger})
+	return UpdateDrsObjectsWithFiles(builder, lfsFileMap, UpdateOptions{Logger: logger, DrsClient: drsClient})
 }
 
 type UpdateOptions struct {
 	Cache          *precommit_cache.Cache
 	PreferCacheURL bool
 	Logger         *slog.Logger
+	DrsClient      client.DRSClient
 }
 
 func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error {
@@ -182,7 +229,31 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		return nil
 	}
 
+	processed := 0
+	total := len(lfsFiles)
 	for _, file := range lfsFiles {
+		processed++
+		if processed%100 == 0 || processed == total {
+			opts.Logger.Info(fmt.Sprintf("Updating DRS objects: %d/%d...", processed, total))
+		}
+
+		// Optimization: If local record exists, we've already prepared it
+		if _, err := DrsInfoFromOid(file.Oid); err == nil {
+			continue
+		}
+
+		// check if record already exists remotely
+		if opts.DrsClient != nil {
+			records, err := opts.DrsClient.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: file.Oid})
+			if err == nil && len(records) > 0 {
+				matching, _ := FindMatchingRecord(records, opts.DrsClient.GetProjectId(), file.Name)
+				if matching != nil {
+					opts.Logger.Debug(fmt.Sprintf("Object %s (path: %s) already indexed remote, skipping local preparation", file.Oid, file.Name))
+					continue
+				}
+			}
+		}
+
 		drsID := DrsUUID(builder.ProjectID, file.Oid)
 		authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
 		if err != nil {
@@ -222,7 +293,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 			opts.Logger.Error(fmt.Sprintf("Could not WriteDrsFile for %s OID %s %v", file.Name, file.Oid, err))
 			continue
 		}
-		opts.Logger.Info(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))
+		opts.Logger.Debug(fmt.Sprintf("Prepared File %s OID %s with DRS ID %s for commit", file.Name, file.Oid, authoritativeObj.Id))
 	}
 
 	return nil
@@ -416,4 +487,143 @@ func parseLfsPushDryRun(out string, logger *slog.Logger, lfsFileMap map[string]l
 		}
 	}
 	return nil
+}
+
+func addFilesFromLsFiles(repoDir string, logger *slog.Logger, lfsFileMap map[string]lfs.LfsFileInfo) error {
+	cmd := exec.Command("git", "lfs", "ls-files")
+	cmd.Dir = repoDir
+	out, err := cmd.Output()
+	if err != nil {
+		logger.Debug(fmt.Sprintf("git lfs ls-files failed: %v", err))
+		return nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var truncatedMap map[string]string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		oid := parts[0]
+		path := parts[2]
+
+		if _, exists := lfsFileMap[path]; !exists {
+			absPath := path
+			if repoDir != "" && !filepath.IsAbs(path) {
+				absPath = filepath.Join(repoDir, path)
+			}
+
+			size := int64(0)
+			fullOid := ""
+
+			// Stage 1: Try reading as pointer from disk
+			if stat, err := os.Stat(absPath); err == nil {
+				if stat.Size() < 2048 {
+					if data, err := os.ReadFile(absPath); err == nil {
+						s := string(data)
+						if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
+							fullOid, size = parsePointer(s)
+						}
+					}
+				} else {
+					size = stat.Size()
+				}
+			}
+
+			// Stage 2: Try getting pointer from git index (fallback for non-checked-out files)
+			if len(fullOid) != 64 {
+				cmd := exec.Command("git", "show", ":"+path)
+				cmd.Dir = repoDir
+				if out, err := cmd.Output(); err == nil {
+					s := string(out)
+					if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
+						fullOid, size = parsePointer(s)
+					}
+				}
+			}
+
+			// Stage 3: Resolve truncated OID via local cache
+			if len(fullOid) != 64 && len(oid) < 64 {
+				if truncatedMap == nil {
+					truncatedMap = buildTruncatedOidMap(logger)
+				}
+				if full, ok := truncatedMap[oid]; ok {
+					fullOid = full
+					if size == 0 {
+						if drsObj, err := DrsInfoFromOid(fullOid); err == nil {
+							size = drsObj.Size
+						}
+					}
+				}
+			} else if len(oid) == 64 {
+				fullOid = oid
+			}
+
+			// Stage 4: Last resort - use git lfs ls-files --debug <path>
+			if len(fullOid) != 64 {
+				cmd := exec.Command("git", "lfs", "ls-files", "--debug", path)
+				cmd.Dir = repoDir
+				if out, err := cmd.Output(); err == nil {
+					lines := strings.Split(string(out), "\n")
+					for _, l := range lines {
+						l = strings.TrimSpace(l)
+						if strings.HasPrefix(l, "oid: sha256:") {
+							fullOid = strings.TrimPrefix(l, "oid: sha256:")
+						} else if strings.HasPrefix(l, "size: ") {
+							fmt.Sscanf(l, "size: %d", &size)
+						}
+					}
+				}
+			}
+
+			if len(fullOid) == 64 {
+				lfsFileMap[path] = lfs.LfsFileInfo{
+					Name:    path,
+					Size:    size,
+					OidType: "sha256",
+					Oid:     fullOid,
+					Version: "https://git-lfs.github.com/spec/v1",
+				}
+			} else {
+				logger.Warn(fmt.Sprintf("Skipping %s: could not resolve truncated OID %s to a full SHA256. Ensure this file exists in the repository as a valid LFS pointer or has a local DRS record.", path, oid))
+			}
+		}
+	}
+	return nil
+}
+
+func parsePointer(content string) (string, int64) {
+	var oid string
+	var size int64
+	lines := strings.Split(content, "\n")
+	for _, pl := range lines {
+		pl = strings.TrimSpace(pl)
+		if strings.HasPrefix(pl, "oid sha256:") {
+			oid = strings.TrimPrefix(pl, "oid sha256:")
+		} else if strings.HasPrefix(pl, "size ") {
+			fmt.Sscanf(pl, "size %d", &size)
+		}
+	}
+	return oid, size
+}
+
+func buildTruncatedOidMap(logger *slog.Logger) map[string]string {
+	m := make(map[string]string)
+	objs, err := lfs.GetPendingObjects(logger)
+	if err != nil {
+		return m
+	}
+	for _, obj := range objs {
+		if len(obj.OID) >= 10 {
+			prefix := obj.OID[:10]
+			m[prefix] = obj.OID
+		}
+	}
+	return m
 }

@@ -151,7 +151,7 @@ var Cmd = &cobra.Command{
 				checksumSpec := &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: downloadMsg.Oid}
 				records, err := drsClient.GetObjectByHash(ctx, checksumSpec)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error looking up OID %s: %v", downloadMsg.Oid, err)
+					errMsg := fmt.Sprintf("Error looking up file %s (OID %s): %v", downloadMsg.Path, downloadMsg.Oid, err)
 					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
 					continue
@@ -159,10 +159,10 @@ var Cmd = &cobra.Command{
 
 				matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId(), downloadMsg.Path)
 				if err != nil {
-					errMsg := fmt.Sprintf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
+					errMsg := fmt.Sprintf("Error finding matching record for project %s (file: %s): %v", drsClient.GetProjectId(), downloadMsg.Path, err)
 					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
-					errMsg = fmt.Sprintf("Error getting signed URL for OID %s: %v", downloadMsg.Oid, err)
+					errMsg = fmt.Sprintf("Error getting signed URL for file %s (OID %s): %v", downloadMsg.Path, downloadMsg.Oid, err)
 					logger.Error(errMsg)
 
 					drsObject, errG := drsmap.DrsInfoFromOid(downloadMsg.Oid)
@@ -177,7 +177,7 @@ var Cmd = &cobra.Command{
 					continue
 				}
 				if matchingRecord == nil {
-					errMsg := fmt.Sprintf("No matching record found for project %s and OID %s", drsClient.GetProjectId(), downloadMsg.Oid)
+					errMsg := fmt.Sprintf("No matching record found for project %s and file %s (OID %s)", drsClient.GetProjectId(), downloadMsg.Path, downloadMsg.Oid)
 					logger.ErrorContext(ctx, errMsg)
 					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 404, errMsg)
 					continue

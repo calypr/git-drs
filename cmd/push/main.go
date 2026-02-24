@@ -13,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var stage bool
+var (
+	stage bool
+	all   bool
+)
 
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
@@ -60,7 +63,7 @@ var Cmd = &cobra.Command{
 						if remoteConfig != nil {
 							builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
 							// Discover LFS files (including missing blobs via our fix) and update records
-							drsmap.UpdateDrsObjects(builder, string(defaultRemote), "", []string{"HEAD"}, myLogger)
+							drsmap.UpdateDrsObjects(drsClient, builder, string(defaultRemote), "", []string{"HEAD"}, all, myLogger)
 							// Push existing/new records to the default DRS server and stage if requested
 							drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
 						}
@@ -83,7 +86,7 @@ var Cmd = &cobra.Command{
 			myLogger.Info("Proactively updating DRS objects before push...")
 			builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
 			// Automatically discover LFS files on current branch to ensure we have records for them
-			err = drsmap.UpdateDrsObjects(builder, string(remote), "", []string{"HEAD"}, myLogger)
+			err = drsmap.UpdateDrsObjects(drsClient, builder, string(remote), "", []string{"HEAD"}, all, myLogger)
 			if err != nil {
 				myLogger.Warn(fmt.Sprintf("Warning: could not proactively update DRS objects: %v", err))
 			}
@@ -100,4 +103,5 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVarP(&stage, "stage", "s", false, "Locally stage LFS objects from DRS server if they don't already exist in git index")
+	Cmd.Flags().BoolVarP(&all, "all", "a", false, "Check all LFS-tracked files in the current branch for missing DRS records (slower)")
 }

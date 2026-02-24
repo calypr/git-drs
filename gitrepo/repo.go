@@ -1,6 +1,7 @@
 package gitrepo
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,4 +133,42 @@ func AddFile(path string) error {
 	}
 	_, err = wt.Add(path)
 	return err
+}
+
+// IsGitRemote checks if the given remote name exists in the Git repository
+func IsGitRemote(remoteName string) bool {
+	repo, err := GetRepo()
+	if err != nil {
+		return false
+	}
+	remotes, err := repo.Remotes()
+	if err != nil {
+		return false
+	}
+	for _, r := range remotes {
+		if r.Config().Name == remoteName {
+			return true
+		}
+	}
+	return false
+}
+
+// InitializeLfsConfig sets up the Git LFS custom transfer agent configuration for Git DRS.
+func InitializeLfsConfig(transfers int, upsert bool, multiPartThreshold int, enableDataClientLogs bool) error {
+	configs := map[string]string{
+		"lfs.standalonetransferagent":                    "drs",
+		"lfs.customtransfer.drs.path":                    "git-drs",
+		"lfs.customtransfer.drs.args":                    "transfer",
+		"lfs.allowincompletepush":                        "false",
+		"lfs.customtransfer.drs.concurrent":              strconv.FormatBool(transfers > 1),
+		"lfs.concurrenttransfers":                        strconv.Itoa(transfers),
+		"lfs.customtransfer.drs.upsert":                  strconv.FormatBool(upsert),
+		"lfs.customtransfer.drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
+		"lfs.customtransfer.drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
+	}
+
+	if err := SetGitConfigOptions(configs); err != nil {
+		return fmt.Errorf("unable to write git config: %w", err)
+	}
+	return nil
 }

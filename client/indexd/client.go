@@ -130,7 +130,7 @@ func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid s
 	}
 
 	// Find a record that matches the client's project ID
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.Config.ProjectId)
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.Config.ProjectId, "")
 	if err != nil {
 		cl.Logger.Debug(fmt.Sprintf("error finding matching record for project %s: %s", cl.Config.ProjectId, err))
 		return nil, fmt.Errorf("error finding matching record for project %s: %v", cl.Config.ProjectId, err)

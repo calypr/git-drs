@@ -94,9 +94,9 @@ var Cmd = &cobra.Command{
 		}
 
 		// Determine remote
-		remote, err := cfg.GetDefaultRemote()
+		remote, err := cfg.GetRemoteOrDefault(initMsg.Remote)
 		if err != nil {
-			logger.Error(fmt.Sprintf("Error getting default remote: %v", err))
+			logger.Error(fmt.Sprintf("Error determining remote (init remote: '%s'): %v", initMsg.Remote, err))
 			lfs.WriteInitErrorMessage(streamEncoder, 400, err.Error())
 			return err
 		}
@@ -157,7 +157,7 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId())
+				matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetProjectId(), downloadMsg.Path)
 				if err != nil {
 					errMsg := fmt.Sprintf("Error finding matching record for project %s: %v", drsClient.GetProjectId(), err)
 					logger.ErrorContext(ctx, errMsg)

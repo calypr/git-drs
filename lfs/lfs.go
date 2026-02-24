@@ -14,6 +14,7 @@ import (
 
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
+	"github.com/calypr/git-drs/common"
 )
 
 type DryRunSpec struct {
@@ -177,22 +178,33 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 		if repoDir != "" && !filepath.IsAbs(path) {
 			absPath = filepath.Join(repoDir, path)
 		}
+
+		// Try to get size from disk
+		foundOnDisk := false
 		if stat, err := os.Stat(absPath); err == nil {
 			size = stat.Size()
-		} else {
-			logger.Error(fmt.Sprintf("could not stat file %s: %v", path, err))
-			continue
+			foundOnDisk = true
+
+			// If it's a small file, check if it's an LFS pointer
+			if size > 0 && size < 2048 {
+				if data, readErr := os.ReadFile(absPath); readErr == nil {
+					s := strings.TrimSpace(string(data))
+					if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
+						logger.Debug(fmt.Sprintf("Detected LFS pointer for %s, will try fallback to DRS cache for real size", path))
+						foundOnDisk = false
+					}
+				}
+			}
 		}
 
-		// If the file is small, read it and detect LFS pointer signature.
-		// Pointer files are textual and include the LFS spec version + an oid line.
-		if size > 0 && size < 2048 {
-			if data, readErr := os.ReadFile(absPath); readErr == nil {
-				s := strings.TrimSpace(string(data))
-				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
-					logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
-					continue
-				}
+		// If not found on disk or it's a pointer, try falling back to local DRS cache
+		if !foundOnDisk {
+			if drsObj, err := ReadObject(common.DRS_OBJS_PATH, oid); err == nil {
+				size = drsObj.Size
+				logger.Debug(fmt.Sprintf("Found metadata for %s in DRS cache (OID: %s, Size: %d)", path, oid, size))
+			} else {
+				logger.Warn(fmt.Sprintf("could not find file %s on disk or in DRS cache: %v", path, err))
+				continue
 			}
 		}
 

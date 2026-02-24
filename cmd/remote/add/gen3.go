@@ -12,6 +12,7 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -134,5 +135,13 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	}
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
+
+	// Ensure Git LFS is configured for this repo
+	if err := gitrepo.InitializeLfsConfig(1, false, 500, false); err != nil {
+		logg.Warn(fmt.Sprintf("Warning: failed to automatically configure Git LFS: %v", err))
+	} else {
+		logg.Debug("Automatically configured Git LFS transfer agent")
+	}
+
 	return nil
 }

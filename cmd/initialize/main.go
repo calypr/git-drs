@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -82,22 +81,7 @@ var Cmd = &cobra.Command{
 }
 
 func initGitConfig() error {
-	configs := map[string]string{
-		"lfs.standalonetransferagent":                    "drs",
-		"lfs.customtransfer.drs.path":                    "git-drs",
-		"lfs.customtransfer.drs.args":                    "transfer",
-		"lfs.allowincompletepush":                        "false",
-		"lfs.customtransfer.drs.concurrent":              strconv.FormatBool(transfers > 1),
-		"lfs.concurrenttransfers":                        strconv.Itoa(transfers),
-		"lfs.customtransfer.drs.upsert":                  strconv.FormatBool(upsert),
-		"lfs.customtransfer.drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
-		"lfs.customtransfer.drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
-	}
-
-	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
-		return fmt.Errorf("unable to write git config: %w", err)
-	}
-	return nil
+	return gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs)
 }
 
 func init() {

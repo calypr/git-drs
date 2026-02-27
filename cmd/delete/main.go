@@ -63,7 +63,7 @@ var Cmd = &cobra.Command{
 
 		// Find matching record for current project
 		projectId := drsClient.GetProjectId()
-		matchingRecord, err := drsmap.FindMatchingRecord(records, projectId)
+		matchingRecord, err := drsmap.FindMatchingRecord(records, projectId, "")
 		if err != nil {
 			return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
 		}

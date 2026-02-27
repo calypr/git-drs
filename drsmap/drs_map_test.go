@@ -237,3 +237,60 @@ func TestPullRemoteDrsObjects(t *testing.T) {
 		t.Errorf("Expected DRS object file to be created at %s", path)
 	}
 }
+
+func (m *MockDRSClient) GetDownloadURLFromRecords(ctx context.Context, oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
+	return nil, nil
+}
+
+type PushMockClient struct {
+	MockDRSClient
+	RegisterFileCalled bool
+	RegisteredFile     string
+	RegisteredOid      string
+}
+
+func (m *PushMockClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+	m.RegisterFileCalled = true
+	m.RegisteredFile = path
+	m.RegisteredOid = oid
+	return nil, nil
+}
+
+func (m *PushMockClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
+	return nil, nil // Return empty to trigger push
+}
+
+func TestPushLocalDrsObjects(t *testing.T) {
+	setupTestRepo(t)
+	sha := "f3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	// Create local DRS object
+	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
+	obj := &drs.DRSObject{
+		Id:   "did-push-test",
+		Name: "test-push.txt",
+		Checksums: hash.HashInfo{
+			SHA256: sha,
+		},
+	}
+	path, _ := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
+	WriteDrsObj(obj, sha, path)
+
+	// Mock file on disk
+	os.WriteFile("test-push.txt", []byte("hello"), 0644)
+
+	mockClient := &PushMockClient{}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	err := PushLocalDrsObjects(mockClient, logger, false)
+	if err != nil {
+		t.Fatalf("PushLocalDrsObjects failed: %v", err)
+	}
+
+	if !mockClient.RegisterFileCalled {
+		t.Errorf("Expected RegisterFile to be called")
+	}
+	if mockClient.RegisteredFile != "test-push.txt" {
+		t.Errorf("Expected RegisteredFile to be test-push.txt, got %s", mockClient.RegisteredFile)
+	}
+}

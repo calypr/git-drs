@@ -103,7 +103,7 @@ func TestLfsFileInfo_Fields(t *testing.T) {
 
 func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	// Test with empty list
-	result, err := FindMatchingRecord([]drs.DRSObject{}, "test-project")
+	result, err := FindMatchingRecord([]drs.DRSObject{}, "test-project", "")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID)
+	result, err := FindMatchingRecord(records, projectID, "")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestFindMatchingRecord_NoMatch(t *testing.T) {
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID)
+	result, err := FindMatchingRecord(records, projectID, "")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -263,8 +263,53 @@ func TestFindMatchingRecord_InvalidProjectID(t *testing.T) {
 		},
 	}
 
-	_, err := FindMatchingRecord(records, projectID)
+	_, err := FindMatchingRecord(records, projectID, "")
 	if err == nil {
 		t.Error("Expected error for invalid project ID")
+	}
+}
+func TestFindMatchingRecord_FilenameDisambiguation(t *testing.T) {
+	projectID := "PROG-PROJ"
+	expectedAuthz := "/programs/PROG/projects/PROJ"
+
+	records := []drs.DRSObject{
+		{
+			Id:   "wrong-file",
+			Name: "path/to/wrong.json",
+			AccessMethods: []drs.AccessMethod{
+				{
+					Type:           "s3",
+					Authorizations: &drs.Authorizations{Value: expectedAuthz},
+				},
+			},
+		},
+		{
+			Id:   "right-file",
+			Name: "path/to/correct.offsets.json",
+			AccessMethods: []drs.AccessMethod{
+				{
+					Type:           "s3",
+					Authorizations: &drs.Authorizations{Value: expectedAuthz},
+				},
+			},
+		},
+	}
+
+	// Should match "right-file" when filename hint is provided
+	result, err := FindMatchingRecord(records, projectID, "correct.offsets.json")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if result == nil || result.Id != "right-file" {
+		t.Errorf("Expected to match 'right-file' using filename hint, got %v", result)
+	}
+
+	// Should match first candidate ("wrong-file") when no hint is provided
+	result, err = FindMatchingRecord(records, projectID, "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if result == nil || result.Id != "wrong-file" {
+		t.Errorf("Expected to match 'wrong-file' with no hint, got %v", result)
 	}
 }

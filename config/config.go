@@ -191,6 +191,11 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		return nil, err
 	}
 
+	// Ensure LFS is configured for DRS
+	if err := gitrepo.InitializeLfsConfig(1, false, 500, false); err != nil {
+		log.Printf("Warning: failed to initialize LFS config: %v", err)
+	}
+
 	return LoadConfig()
 }
 

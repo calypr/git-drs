@@ -147,25 +147,6 @@ func printGitStatus() error {
 }
 
 func printLFSConfig() error {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Printf("Could not load config: %v\n", err)
-	} else {
-		// Try to show default remote info
-		rmt, err := cfg.GetDefaultRemote()
-		if err == nil {
-			fmt.Printf("Active Profile/Remote: %s\n", rmt)
-			rc := cfg.GetRemote(rmt)
-			if rc != nil {
-				fmt.Printf("  Bucket: %s\n", rc.GetBucketName())
-				fmt.Printf("  Project: %s\n", rc.GetProjectId())
-				fmt.Printf("  Endpoint: %s\n", rc.GetEndpoint())
-			}
-		} else {
-			fmt.Println("Active Profile: None")
-		}
-	}
-
 	cmd := exec.Command("git", "config", "-l")
 	out, err := cmd.Output()
 	if err != nil {
@@ -176,6 +157,10 @@ func printLFSConfig() error {
 	hasLfs := false
 	for _, line := range lines {
 		if strings.Contains(line, "lfs.") {
+			// Skip remote-specific DRS configs, they will be shown in the Ping section
+			if strings.Contains(line, "lfs.customtransfer.drs.remote.") {
+				continue
+			}
 			fmt.Printf("  %s\n", line)
 			hasLfs = true
 		}
@@ -215,11 +200,50 @@ func pingServer(logger *slog.Logger) {
 
 	for _, nameStr := range remoteNames {
 		name := config.Remote(nameStr)
-		fmt.Printf("Ping Remote: %s\n", name)
+		rc := cfg.GetRemote(name)
+
+		fmt.Printf("Remote: %s\n", name)
+
+		// Print the raw git config for this specific remote
+		prefix := fmt.Sprintf("lfs.customtransfer.drs.remote.%s.", name)
+		cmd := exec.Command("git", "config", "-l")
+		out, _ := cmd.Output()
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.HasPrefix(line, prefix) {
+				fmt.Printf("  %s\n", line)
+			}
+		}
 
 		drsClient, err := cfg.GetRemoteClient(name, logger)
 		if err != nil {
-			fmt.Println(color.RedString("  ❌ Failed to get client: %v", err))
+			errStr := err.Error()
+			if strings.Contains(errStr, "profile not found in config file") ||
+				strings.Contains(errStr, "no gen3 project specified") ||
+				strings.Contains(errStr, "no gen3 bucket specified") {
+
+				fmt.Println(color.RedString("  ❌ Failed: Remote profile '%s' is not fully configured.", name))
+
+				// Build a helpful suggestion with pre-filled fields
+				proj := "<PROJECT>"
+				buck := "<BUCKET>"
+				en := "<URL>"
+
+				if rc != nil {
+					if p := rc.GetProjectId(); p != "" {
+						proj = p
+					}
+					if b := rc.GetBucketName(); b != "" {
+						buck = b
+					}
+					if e := rc.GetEndpoint(); e != "" {
+						en = e
+					}
+				}
+
+				fmt.Println(color.RedString("     Fix with: git drs remote add gen3 %s --bucket %s --project %s --url %s --cred <CRED_PATH>", name, buck, proj, en))
+			} else {
+				fmt.Println(color.RedString("  ❌ Failed to get client: %v", err))
+			}
 			continue
 		}
 

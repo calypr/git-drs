@@ -32,6 +32,7 @@ func init() {
 	prepush.Cmd.Hidden = true
 	transfer.Cmd.Hidden = true
 	transferref.Cmd.Hidden = true
+	initialize.Cmd.Hidden = true
 
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(version.Cmd)

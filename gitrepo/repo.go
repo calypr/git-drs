@@ -31,15 +31,31 @@ func GetRepo() (*git.Repository, error) {
 
 // GitTopLevel returns the absolute path of the git repository root
 func GitTopLevel() (string, error) {
-	repo, err := GetRepo()
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("unable to get git top level: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// GetGitDir returns the absolute path to the git directory (.git)
+func GetGitDir() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("unable to get git directory: %w", err)
+	}
+	path := strings.TrimSpace(string(out))
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	top, err := GitTopLevel()
 	if err != nil {
 		return "", err
 	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return "", err
-	}
-	return wt.Filesystem.Root(), nil
+	return filepath.Join(top, path), nil
 }
 
 // GetGitConfigString reads a string value from git config using the git command
@@ -106,19 +122,23 @@ func SetGitConfigOptions(configs map[string]string) error {
 	return repo.Storer.SetConfig(conf)
 }
 
-// GetGitHooksDir returns the absolute path to the .git/hooks directory
+// GetGitHooksDir returns the absolute path to the git hooks directory
 func GetGitHooksDir() (string, error) {
-	repo, err := GetRepo()
+	cmd := exec.Command("git", "rev-parse", "--git-path", "hooks")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("unable to get git hooks directory: %w", err)
+	}
+	path := strings.TrimSpace(string(out))
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+
+	top, err := GitTopLevel()
 	if err != nil {
 		return "", err
 	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return "", err
-	}
-	// This is a simplification; for complex setups (submodules, worktrees),
-	// we might need more robust logic, but this matches previous behavior.
-	return filepath.Join(wt.Filesystem.Root(), ".git", "hooks"), nil
+	return filepath.Join(top, path), nil
 }
 
 // AddFile adds a file to the git staging area (index)

@@ -37,51 +37,109 @@ var Cmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
-
-		// check if .git dir exists to ensure you're in a git repository
-		_, err := gitrepo.GitTopLevel()
-		if err != nil {
-			return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
+		if initialized, _ := IsRepoInitialized(); initialized {
+			logg.Debug("Git DRS already initialized, skipping...")
+			return nil
 		}
-
-		// create config file if it doesn't exist
-		err = config.CreateEmptyConfig()
-		if err != nil {
-			return fmt.Errorf("error: unable to create config file: %v", err)
-		}
-
-		// load the config
-		_, err = config.LoadConfig()
-		if err != nil {
-			logg.Debug(fmt.Sprintf("We should probably fix this: %v", err))
-			return fmt.Errorf("error: unable to load config file: %v", err)
-		}
-
-		err = initGitConfig()
-		if err != nil {
-			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
-		}
-
-		// install pre-push hook
-		err = installPrePushHook(logg)
-		if err != nil {
-			return fmt.Errorf("error installing pre-push hook: %v", err)
-		}
-		// install pre-commit hook
-		err = installPreCommitHook(logg)
-		if err != nil {
-			return fmt.Errorf("error installing pre-commit hook: %v", err)
-		}
-
-		// final logs
-		logg.Debug("Git DRS initialized")
-		logg.Debug(fmt.Sprintf("Using %d concurrent transfers", transfers))
-		return nil
+		_, err := InitializeRepo(logg, transfers, upsert, multiPartThreshold, enableDataClientLogs)
+		return err
 	},
 }
 
-func initGitConfig() error {
-	return gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs)
+// IsRepoInitialized checks if the repository has already been configured for git-drs
+func IsRepoInitialized() (bool, error) {
+	// 1. Check if LFS transfer agent is set to drs
+	agent, err := gitrepo.GetGitConfigString("lfs.standalonetransferagent")
+	if err != nil || agent != "drs" {
+		return false, nil
+	}
+
+	// 2. Check for git hooks directory
+	hooksDir, err := gitrepo.GetGitHooksDir()
+	if err != nil {
+		return false, nil
+	}
+
+	// 3. Check for pre-push hook containing git-drs
+	prePushPath := filepath.Join(hooksDir, "pre-push")
+	contentPush, err := os.ReadFile(prePushPath)
+	if err != nil || !strings.Contains(string(contentPush), "git drs pre-push-prepare") {
+		return false, nil
+	}
+
+	// 4. Check for pre-commit hook containing git-drs
+	preCommitPath := filepath.Join(hooksDir, "pre-commit")
+	contentCommit, err := os.ReadFile(preCommitPath)
+	if err != nil || !strings.Contains(string(contentCommit), "git drs precommit") {
+		return false, nil
+	}
+
+	// 5. Check if DRS directory exists (.git/drs)
+	drsDir, err := gitrepo.DrsTopLevel()
+	if err != nil {
+		return false, nil
+	}
+	if _, err := os.Stat(drsDir); os.IsNotExist(err) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// InitializeRepo performs the full repository initialization for git-drs.
+// Returns (true, nil) if initialization was performed, (false, nil) if already initialized.
+func InitializeRepo(logger *slog.Logger, transfers int, upsert bool, multiPartThreshold int, enableDataClientLogs bool) (bool, error) {
+	// check if already initialized to avoid redundant work
+	initialized, err := IsRepoInitialized()
+	if err != nil {
+		return false, err
+	}
+	if initialized {
+		return false, nil
+	}
+
+	// Ensure DRS directory (.git/drs) exists
+	drsDir, err := gitrepo.DrsTopLevel()
+	if err != nil {
+		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
+	}
+	if err := os.MkdirAll(drsDir, 0755); err != nil {
+		return false, fmt.Errorf("error: unable to create DRS directory: %v", err)
+	}
+
+	// create config file if it doesn't exist
+	err = config.CreateEmptyConfig()
+	if err != nil {
+		return false, fmt.Errorf("error: unable to create config file: %v", err)
+	}
+
+	// load the config
+	_, err = config.LoadConfig()
+	if err != nil {
+		logger.Debug(fmt.Sprintf("We should probably fix this: %v", err))
+		return false, fmt.Errorf("error: unable to load config file: %v", err)
+	}
+
+	err = gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs)
+	if err != nil {
+		return false, fmt.Errorf("error initializing custom transfer for DRS: %v", err)
+	}
+
+	// install pre-push hook
+	err = installPrePushHook(logger)
+	if err != nil {
+		return false, fmt.Errorf("error installing pre-push hook: %v", err)
+	}
+	// install pre-commit hook
+	err = installPreCommitHook(logger)
+	if err != nil {
+		return false, fmt.Errorf("error installing pre-commit hook: %v", err)
+	}
+
+	// final logs
+	logger.Debug("Git DRS initialized")
+	logger.Debug(fmt.Sprintf("Using %d concurrent transfers", transfers))
+	return true, nil
 }
 
 func init() {

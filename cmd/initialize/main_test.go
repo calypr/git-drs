@@ -58,8 +58,8 @@ func TestInstallPreCommitHook(t *testing.T) {
 func TestInitGitConfig(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	transfers = 2
-	if err := initGitConfig(); err != nil {
-		t.Fatalf("initGitConfig error: %v", err)
+	if err := gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs); err != nil {
+		t.Fatalf("InitializeLfsConfig error: %v", err)
 	}
 }
 func TestInitRun_Error(t *testing.T) {
@@ -91,8 +91,8 @@ func TestInitConfigValues(t *testing.T) {
 	multiPartThreshold = 100
 	enableDataClientLogs = true
 
-	if err := initGitConfig(); err != nil {
-		t.Fatalf("initGitConfig error: %v", err)
+	if err := gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs); err != nil {
+		t.Fatalf("InitializeLfsConfig error: %v", err)
 	}
 
 	// Verify values using gitrepo (which we know works from previous steps)

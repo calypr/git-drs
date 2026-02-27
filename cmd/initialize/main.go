@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -206,13 +205,11 @@ exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
 }
 
 func installPreCommitHook(logger *slog.Logger) error {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmdOut, err := cmd.Output()
+	hooksDir, err := gitrepo.GetGitHooksDir()
 	if err != nil {
-		return fmt.Errorf("unable to locate git directory: %w", err)
+		return fmt.Errorf("unable to get hooks directory: %w", err)
 	}
-	gitDir := strings.TrimSpace(string(cmdOut))
-	hooksDir := filepath.Join(gitDir, "hooks")
+
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("unable to create hooks directory: %w", err)
 	}

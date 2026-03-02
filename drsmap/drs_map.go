@@ -22,10 +22,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// execCommand is a variable to allow mocking in tests
-var execCommand = exec.Command
-var execCommandContext = exec.CommandContext
-
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shouldStage bool) error {
 	// Gather all objects in .git/drs/lfs/objects store
 	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
@@ -48,8 +44,9 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shou
 			return fmt.Errorf("error checking server for %s: %v", drsObjKey, err)
 		}
 
-		if len(records) > 0 {
-			myLogger.Debug(fmt.Sprintf("Object %s (path: %s) already exists on DRS server, skipping registration", drsObjKey, val.Name))
+		matching, _ := FindMatchingRecord(records, drsClient.GetProjectId(), val.Name)
+		if matching != nil {
+			myLogger.Debug(fmt.Sprintf("Object %s (path: %s) already indexed for project %s, skipping registration", drsObjKey, val.Name, drsClient.GetProjectId()))
 		} else {
 			// Check if we have the actual blob locally
 			hasBlob := false

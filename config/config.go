@@ -191,8 +191,13 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		return nil, err
 	}
 
-	// Ensure LFS is configured for DRS
-	if err := gitrepo.InitializeLfsConfig(1, false, 500, false); err != nil {
+	// Ensure LFS is configured for DRS (don't overwrite existing high-level tuning)
+	numTransfers := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 1))
+	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
+	threshold := int(gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500))
+	enableLogs := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.enable-data-client-logs", false)
+
+	if err := gitrepo.InitializeLfsConfig(numTransfers, upsert, threshold, enableLogs); err != nil {
 		log.Printf("Warning: failed to initialize LFS config: %v", err)
 	}
 

@@ -419,10 +419,21 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string, filenameHint 
 		}
 	}
 
-	// Return nil if no perfect name match was found among project matches.
-	// This ensures we only skip registration/preparation when an exact (project, name) match exists,
-	// avoiding cases where a hash exists in the project but under a different name.
-	return nil, nil
+	// If no records match the project authz, there is no valid match.
+	if len(projectMatches) == 0 {
+		return nil, nil
+	}
+
+	// If caller supplied a filename hint, require an exact/suffix name match.
+	// This keeps push/preparation logic strict to avoid skipping registration for
+	// same-hash objects that are different files.
+	if filenameHint != "" {
+		return nil, nil
+	}
+
+	// No filename hint: return the first project-scoped match for legacy call sites
+	// (download/delete/url lookup) that only need project-level disambiguation.
+	return projectMatches[0], nil
 }
 
 // output of git lfs ls-files

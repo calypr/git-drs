@@ -312,4 +312,14 @@ func TestFindMatchingRecord_FilenameDisambiguation(t *testing.T) {
 	if result == nil || result.Id != "wrong-file" {
 		t.Errorf("Expected to match 'wrong-file' with no hint, got %v", result)
 	}
+
+	// If a filename hint is provided but does not match any project-scoped record,
+	// the function should return nil (strict disambiguation mode).
+	result, err = FindMatchingRecord(records, projectID, "missing-file.txt")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("Expected nil when filename hint does not match, got %v", result)
+	}
 }

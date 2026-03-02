@@ -419,11 +419,9 @@ func FindMatchingRecord(records []drs.DRSObject, projectId string, filenameHint 
 		}
 	}
 
-	// If we have any project matches but no perfect name match, return the first project match
-	if len(projectMatches) > 0 {
-		return projectMatches[0], nil
-	}
-
+	// Return nil if no perfect name match was found among project matches.
+	// This ensures we only skip registration/preparation when an exact (project, name) match exists,
+	// avoiding cases where a hash exists in the project but under a different name.
 	return nil, nil
 }
 
@@ -463,15 +461,14 @@ func parseLfsPushDryRun(out string, logger *slog.Logger, lfsFileMap map[string]l
 			continue
 		}
 
-		// Skip leading '=>' or '->' if present
-		if parts[pathStart] == "=>" || parts[pathStart] == "->" {
-			pathStart++
-		}
+		// Find the OID in the line to get the remainder (preserving exact whitespace in path)
+		oidPos := strings.Index(line, oid)
+		path := strings.TrimSpace(line[oidPos+len(oid):])
 
-		if pathStart >= len(parts) {
-			continue
-		}
-		path := strings.Join(parts[pathStart:], " ")
+		// Clean up common separators if they exist
+		path = strings.TrimPrefix(path, "->")
+		path = strings.TrimPrefix(path, "=>")
+		path = strings.TrimSpace(path)
 
 		// Remove size suffix if present: "path/to/file.dat (100 KB)"
 		if idx := strings.LastIndex(path, " ("); idx != -1 && strings.HasSuffix(path, ")") {

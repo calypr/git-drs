@@ -100,17 +100,19 @@ func TestGetRemoteOrDefault(t *testing.T) {
 		DefaultRemote: Remote("origin"),
 		Remotes: map[Remote]RemoteSelect{
 			Remote("origin"): {},
+			Remote("other"):  {},
 		},
 	}
 	if remote, err := cfg.GetRemoteOrDefault(""); err != nil || remote != Remote("origin") {
 		t.Fatalf("expected default remote, got %s (%v)", remote, err)
 	}
+	// Case 1: Provided remote is configure, should return it
 	if remote, err := cfg.GetRemoteOrDefault("other"); err != nil || remote != Remote("other") {
-		// GetRemoteOrDefault just returns the string if provided, doesn't validate existence?
-		// Check implementation: yes, it returns Remote(remote)
-		if remote != Remote("other") {
-			t.Fatalf("expected provided remote, got %s (%v)", remote, err)
-		}
+		t.Fatalf("expected 'other' remote, got %s (%v)", remote, err)
+	}
+	// Case 2: Provided remote (e.g., Git remote 'git-origin') is NOT configured, should fall back to default
+	if remote, err := cfg.GetRemoteOrDefault("git-origin"); err != nil || remote != Remote("origin") {
+		t.Fatalf("expected default remote as fallback for 'git-origin', got %s (%v)", remote, err)
 	}
 }
 

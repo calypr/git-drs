@@ -125,12 +125,16 @@ func (c Config) GetDefaultRemote() (Remote, error) {
 
 // GetRemoteOrDefault returns the specified remote if it is a configured DRS profile.
 // If remote is empty, it returns the default remote.
-// If an explicit remote is provided but not found in configuration, it returns an error.
+// If the provided name is a valid Git remote (but not a DRS profile), it also returns the default remote.
+// If an explicit remote is provided that is neither a DRS profile nor a Git remote, it returns an error.
 func (c Config) GetRemoteOrDefault(remote string) (Remote, error) {
 	if remote != "" {
 		r := Remote(remote)
 		if _, ok := c.Remotes[r]; ok {
 			return r, nil
+		}
+		if gitrepo.IsGitRemote(remote) {
+			return c.GetDefaultRemote()
 		}
 		return "", fmt.Errorf("remote '%s' not found in configuration.\nAvailable remotes: %v", remote, c.listRemoteNames())
 	}

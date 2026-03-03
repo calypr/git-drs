@@ -2,8 +2,6 @@ package push
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/config"
@@ -33,89 +31,51 @@ var Cmd = &cobra.Command{
 		myLogger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
 			return err
 		}
 
-		var remote config.Remote
+		var remoteInput string
 		if len(args) > 0 {
-			remote = config.Remote(args[0])
-		} else {
-			remote, err = cfg.GetDefaultRemote()
-			if err != nil {
-				myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
-				return err
-			}
+			remoteInput = args[0]
+		}
+
+		remote, err := cfg.GetRemoteOrDefault(remoteInput)
+		if err != nil {
+			return err
+		}
+
+		// Determine which Git remote name to use for discovery (dry-run)
+		gitRemote := remoteInput
+		if !gitrepo.IsGitRemote(gitRemote) {
+			gitRemote = "origin"
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			if gitrepo.IsGitRemote(string(remote)) {
-				myLogger.Info(fmt.Sprintf("Remote '%s' is a Git remote. Recording LFS metadata and pushing to Git...", remote))
-
-				// We need a DRS client to record metadata if it results in new records.
-				// Use default DRS remote for metadata registration.
-				defaultRemote, dErr := cfg.GetDefaultRemote()
-				if dErr != nil {
-					return fmt.Errorf("error getting default remote: %v", dErr)
-				}
-				drsClient, dErr = cfg.GetRemoteClient(defaultRemote, myLogger)
-				if dErr != nil {
-					return fmt.Errorf("error getting default remote client: %v", dErr)
-				}
-				remoteConfig := cfg.GetRemote(defaultRemote)
-				if remoteConfig == nil {
-					return fmt.Errorf("error getting default remote config: %v", dErr)
-				}
-
-				// Discover LFS files (including missing blobs via our fix) and update records
-				err = drsmap.UpdateDrsObjects(
-					drsClient,
-					drs.NewObjectBuilder(remoteConfig.GetBucketName(),
-						remoteConfig.GetProjectId()),
-					string(defaultRemote),
-					"",
-					[]string{"HEAD"},
-					all,
-					myLogger,
-				)
-				if err != nil {
-					return fmt.Errorf("Warning: could not proactively update DRS objects: %v", err)
-				}
-				// Push existing/new records to the default DRS server and stage if requested
-				err = drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
-				if err != nil {
-					return fmt.Errorf("error pushing local DRS objects: %v", err)
-				}
-
-				// Now push to the actual Git remote
-				myLogger.Info(fmt.Sprintf("Executing: git push %s HEAD", remote))
-				cmd := exec.Command("git", "push", string(remote), "HEAD")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				return cmd.Run()
-			}
-			myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
-			return err
+			return fmt.Errorf("error creating DRS client: %v", err)
 		}
 
 		remoteConfig := cfg.GetRemote(remote)
-		if remoteConfig != nil {
-			myLogger.Info("Proactively updating DRS objects before push...")
-			builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
-			// Automatically discover LFS files on current branch to ensure we have records for them
-			err = drsmap.UpdateDrsObjects(drsClient, builder, string(remote), "", []string{"HEAD"}, all, myLogger)
-			if err != nil {
-				myLogger.Warn(fmt.Sprintf("Warning: could not proactively update DRS objects: %v", err))
-			}
+		if remoteConfig == nil {
+			return fmt.Errorf("no configuration found for remote: %s", remote)
 		}
 
-		err = drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
+		myLogger.Info(fmt.Sprintf("Updating DRS objects for remote '%s' (discovery via '%s')...", remote, gitRemote))
+		builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+		err = drsmap.UpdateDrsObjects(
+			drsClient,
+			builder,
+			gitRemote,
+			"",
+			[]string{"HEAD"},
+			all,
+			myLogger,
+		)
 		if err != nil {
-			return err
+			return fmt.Errorf("error updating DRS objects: %v", err)
 		}
 
-		return nil
+		return drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
 	},
 }
 

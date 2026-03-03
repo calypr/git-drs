@@ -110,9 +110,9 @@ func TestGetRemoteOrDefault(t *testing.T) {
 	if remote, err := cfg.GetRemoteOrDefault("other"); err != nil || remote != Remote("other") {
 		t.Fatalf("expected 'other' remote, got %s (%v)", remote, err)
 	}
-	// Case 2: Provided remote (e.g., Git remote 'git-origin') is NOT configured, should fall back to default
-	if remote, err := cfg.GetRemoteOrDefault("git-origin"); err != nil || remote != Remote("origin") {
-		t.Fatalf("expected default remote as fallback for 'git-origin', got %s (%v)", remote, err)
+	// Case 2: Provided remote (e.g., Git remote 'git-origin') is NOT configured, should return an error
+	if _, err := cfg.GetRemoteOrDefault("git-origin"); err == nil {
+		t.Fatal("expected error for non-existent remote 'git-origin', got nil")
 	}
 }
 

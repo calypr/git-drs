@@ -56,18 +56,36 @@ var Cmd = &cobra.Command{
 				// We need a DRS client to record metadata if it results in new records.
 				// Use default DRS remote for metadata registration.
 				defaultRemote, dErr := cfg.GetDefaultRemote()
-				if dErr == nil {
-					drsClient, dErr = cfg.GetRemoteClient(defaultRemote, myLogger)
-					if dErr == nil {
-						remoteConfig := cfg.GetRemote(defaultRemote)
-						if remoteConfig != nil {
-							builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
-							// Discover LFS files (including missing blobs via our fix) and update records
-							drsmap.UpdateDrsObjects(drsClient, builder, string(defaultRemote), "", []string{"HEAD"}, all, myLogger)
-							// Push existing/new records to the default DRS server and stage if requested
-							drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
-						}
-					}
+				if dErr != nil {
+					return fmt.Errorf("error getting default remote: %v", dErr)
+				}
+				drsClient, dErr = cfg.GetRemoteClient(defaultRemote, myLogger)
+				if dErr != nil {
+					return fmt.Errorf("error getting default remote client: %v", dErr)
+				}
+				remoteConfig := cfg.GetRemote(defaultRemote)
+				if remoteConfig == nil {
+					return fmt.Errorf("error getting default remote config: %v", dErr)
+				}
+
+				// Discover LFS files (including missing blobs via our fix) and update records
+				err = drsmap.UpdateDrsObjects(
+					drsClient,
+					drs.NewObjectBuilder(remoteConfig.GetBucketName(),
+						remoteConfig.GetProjectId()),
+					string(defaultRemote),
+					"",
+					[]string{"HEAD"},
+					all,
+					myLogger,
+				)
+				if err != nil {
+					return fmt.Errorf("Warning: could not proactively update DRS objects: %v", err)
+				}
+				// Push existing/new records to the default DRS server and stage if requested
+				err = drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
+				if err != nil {
+					return fmt.Errorf("error pushing local DRS objects: %v", err)
 				}
 
 				// Now push to the actual Git remote

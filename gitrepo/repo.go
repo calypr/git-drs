@@ -134,11 +134,8 @@ func GetGitHooksDir() (string, error) {
 		return path, nil
 	}
 
-	top, err := GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(top, path), nil
+	// git rev-parse --git-path returns paths relative to the current working directory
+	return filepath.Abs(path)
 }
 
 // AddFile adds a file to the git staging area (index)

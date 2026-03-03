@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -19,9 +20,12 @@ import (
 	"github.com/calypr/data-client/logs"
 	"github.com/calypr/data-client/request"
 	"github.com/calypr/data-client/s3utils"
+	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/gitrepo"
+	"golang.org/x/sync/errgroup"
 )
 
 type LocalRemote struct {
@@ -58,6 +62,12 @@ type LocalClient struct {
 	Remote  LocalRemote
 	Logger  *slog.Logger
 	Backend backend.Backend
+	Config  *LocalConfig
+}
+
+type LocalConfig struct {
+	MultiPartThreshold int64
+	UploadConcurrency  int
 }
 
 func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
@@ -71,11 +81,21 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 
 	// Initialize the DRS backend
 	bk := drs_backend.NewDrsBackend(remote.BaseURL, logger, req)
+	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	multiPartThreshold := int64(multiPartThresholdInt) * common.MB
+	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
+	if uploadConcurrency < 1 {
+		uploadConcurrency = 1
+	}
 
 	return &LocalClient{
 		Remote:  remote,
 		Logger:  logger,
 		Backend: bk,
+		Config: &LocalConfig{
+			MultiPartThreshold: multiPartThreshold,
+			UploadConcurrency:  uploadConcurrency,
+		},
 	}
 }
 
@@ -217,14 +237,9 @@ func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath str
 	}
 	drsObject = registeredObj
 
-	// 3. Perform S3 Upload if bucket is configured using Backend logic for URL
+	// 3. Perform upload if bucket is configured using Backend logic for URL
 	if c.Remote.GetBucketName() != "" {
-		// Use CAS key (HASH) for upload to match Record URL
-		uploadKey := drsObject.Checksums.SHA256
-		uploadURL, err := c.Backend.GetUploadURL(ctx, drsObject.Id, uploadKey, common.FileMetadata{}, c.Remote.GetBucketName())
-		if err != nil {
-			return nil, fmt.Errorf("failed to get signed upload URL: %w", err)
-		}
+		uploadKey := drsObject.Checksums.SHA256 // CAS key matches object URL semantics
 
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -232,13 +247,93 @@ func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath str
 		}
 		defer file.Close()
 
-		c.Logger.DebugContext(ctx, "performing S3 upload", "url", uploadURL)
-		if err := c.Backend.Upload(ctx, uploadURL, file, drsObject.Size); err != nil {
-			return nil, err
+		threshold := int64(500 * common.MB)
+		if c.Config != nil && c.Config.MultiPartThreshold > 0 {
+			threshold = c.Config.MultiPartThreshold
+		}
+
+		if drsObject.Size < threshold {
+			uploadURL, err := c.Backend.GetUploadURL(ctx, drsObject.Id, uploadKey, common.FileMetadata{}, c.Remote.GetBucketName())
+			if err != nil {
+				return nil, fmt.Errorf("failed to get signed upload URL: %w", err)
+			}
+			c.Logger.DebugContext(ctx, "performing single-part upload", "url", uploadURL)
+			if err := c.Backend.Upload(ctx, uploadURL, file, drsObject.Size); err != nil {
+				return nil, err
+			}
+		} else {
+			c.Logger.DebugContext(ctx, "performing multipart upload", "size", drsObject.Size, "threshold", threshold)
+			if err := c.uploadMultipart(ctx, file, uploadKey, drsObject); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	return drsObject, nil
+}
+
+func (c *LocalClient) uploadMultipart(ctx context.Context, file *os.File, key string, drsObject *drs.DRSObject) error {
+	initResp, err := c.Backend.InitMultipartUpload(ctx, drsObject.Id, key, c.Remote.GetBucketName())
+	if err != nil {
+		return fmt.Errorf("failed to init multipart upload: %w", err)
+	}
+	if initResp == nil || initResp.UploadID == "" {
+		return fmt.Errorf("multipart init returned empty uploadId")
+	}
+
+	chunkSize := upload.OptimalChunkSize(drsObject.Size)
+	numChunks := int((drsObject.Size + chunkSize - 1) / chunkSize)
+	parts := make([]common.MultipartUploadPart, numChunks)
+	concurrency := 4
+	if c.Config != nil && c.Config.UploadConcurrency > 0 {
+		concurrency = c.Config.UploadConcurrency
+	}
+
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(concurrency)
+
+	for partNum := 1; partNum <= numChunks; partNum++ {
+		partNum := partNum
+		eg.Go(func() error {
+			offset := int64(partNum-1) * chunkSize
+			size := chunkSize
+			if offset+size > drsObject.Size {
+				size = drsObject.Size - offset
+			}
+
+			partURL, err := c.Backend.GetMultipartUploadURL(egCtx, key, initResp.UploadID, int32(partNum), c.Remote.GetBucketName())
+			if err != nil {
+				return fmt.Errorf("failed to get signed url for part %d: %w", partNum, err)
+			}
+
+			section := io.NewSectionReader(file, offset, size)
+			etag, err := c.Backend.UploadPart(egCtx, partURL, section, size)
+			if err != nil {
+				return fmt.Errorf("failed uploading multipart part %d: %w", partNum, err)
+			}
+
+			parts[partNum-1] = common.MultipartUploadPart{
+				PartNumber: int32(partNum),
+				ETag:       etag,
+			}
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	for i := range parts {
+		if parts[i].PartNumber == 0 || parts[i].ETag == "" {
+			return fmt.Errorf("multipart upload incomplete: missing metadata for part index %d", i)
+		}
+	}
+
+	if err := c.Backend.CompleteMultipartUpload(ctx, key, initResp.UploadID, parts, c.Remote.GetBucketName()); err != nil {
+		return fmt.Errorf("failed completing multipart upload: %w", err)
+	}
+	return nil
 }
 
 func (c *LocalClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {

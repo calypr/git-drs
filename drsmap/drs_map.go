@@ -351,12 +351,17 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}
 
+	var fallback *drs.DRSObject
 	// Get the first record with matching authz if exists
 	for _, record := range records {
+		if fallback == nil {
+			r := record
+			fallback = &r
+		}
 		for _, access := range record.AccessMethods {
-			// assert access has Authorizations
+			// If no per-access authz is provided, fall back to first record.
 			if access.Authorizations == nil {
-				return nil, fmt.Errorf("access method for record %v missing authorizations", record)
+				continue
 			}
 
 			// Check BearerAuthIssuers using a map for O(1) lookup (ref: "lists suck")
@@ -371,7 +376,9 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 		}
 	}
 
-	return nil, nil
+	// In simplified auth model, record-level authz may not be repeated in access methods.
+	// Fallback to first record for checksum-scoped lookups.
+	return fallback, nil
 }
 
 // output of git lfs ls-files

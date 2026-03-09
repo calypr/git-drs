@@ -93,7 +93,7 @@ func InspectS3ForLFS(ctx context.Context, in S3ObjectParameters) (*S3Object, err
 	metaSHA := extractSHA256FromMetadata(head.Metadata)
 
 	// Optional: validate provided SHA256 against metadata if both exist.
-	expected := normalizeSHA256(in.SHA256)
+	expected := NormalizeSHA256(in.SHA256)
 	if expected != "" && metaSHA != "" && !strings.EqualFold(expected, metaSHA) {
 		return nil, fmt.Errorf("sha256 mismatch: expected=%s head.meta=%s", expected, metaSHA)
 	}
@@ -211,7 +211,7 @@ func newS3Client(ctx context.Context, in S3ObjectParameters) (*s3.Client, error)
 
 var sha256HexRe = regexp.MustCompile(`(?i)^[0-9a-f]{64}$`)
 
-func normalizeSHA256(s string) string {
+func NormalizeSHA256(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(strings.ToLower(s), "sha256:")
 	s = strings.TrimSpace(s)
@@ -243,7 +243,7 @@ func extractSHA256FromMetadata(md map[string]string) string {
 
 	for _, k := range candidates {
 		if v, ok := md[k]; ok {
-			n := normalizeSHA256(v)
+			n := NormalizeSHA256(v)
 			if n != "" {
 				return n
 			}
@@ -252,7 +252,7 @@ func extractSHA256FromMetadata(md map[string]string) string {
 
 	// Sometimes people stash "sha256:<hex>"
 	for _, v := range md {
-		if n := normalizeSHA256(v); n != "" {
+		if n := NormalizeSHA256(v); n != "" {
 			return n
 		}
 	}

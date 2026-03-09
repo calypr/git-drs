@@ -3,16 +3,23 @@ package push
 import (
 	"fmt"
 
+	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
+)
+
+var (
+	stage bool
+	all   bool
 )
 
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "push local objects to drs server.",
-	Long:  "push local objects to drs server. Any local files that do not have drs records are written to a bucket.",
+	Long:  "push local objects to drs server. This command ensures all local DRS records and their corresponding files are synced to the remote DRS server.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -24,38 +31,55 @@ var Cmd = &cobra.Command{
 		myLogger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
 			return err
 		}
 
-		var remote config.Remote
+		var remoteInput string
 		if len(args) > 0 {
-			remote = config.Remote(args[0])
-		} else {
-			remote, err = cfg.GetDefaultRemote()
-			if err != nil {
-				myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
-				return err
-			}
+			remoteInput = args[0]
+		}
+
+		remote, err := cfg.GetRemoteOrDefault(remoteInput)
+		if err != nil {
+			return err
+		}
+
+		// Determine which Git remote name to use for discovery (dry-run)
+		gitRemote := remoteInput
+		if !gitrepo.IsGitRemote(gitRemote) {
+			gitRemote = "origin"
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
-			return err
+			return fmt.Errorf("error creating DRS client: %v", err)
 		}
 
-		//// Check for GitDrsIdxdClient
-		//icli, ok := drsClient.(*indexd.GitDrsIdxdClient)
-		//if !ok {
-		//	return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T), cannot push", drsClient)
-		//}
+		remoteConfig := cfg.GetRemote(remote)
+		if remoteConfig == nil {
+			return fmt.Errorf("no configuration found for remote: %s", remote)
+		}
 
-		err = drsmap.PushLocalDrsObjects(drsClient, myLogger)
+		myLogger.Info(fmt.Sprintf("Updating DRS objects for remote '%s' (discovery via '%s')...", remote, gitRemote))
+		builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+		err = drsmap.UpdateDrsObjects(
+			drsClient,
+			builder,
+			gitRemote,
+			"",
+			[]string{"HEAD"},
+			all,
+			myLogger,
+		)
 		if err != nil {
-			return err
+			return fmt.Errorf("error updating DRS objects: %v", err)
 		}
 
-		return nil
+		return drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
 	},
+}
+
+func init() {
+	Cmd.Flags().BoolVarP(&stage, "stage", "s", false, "Locally stage LFS objects from DRS server if they don't already exist in git index")
+	Cmd.Flags().BoolVarP(&all, "all", "a", false, "Check all LFS-tracked files in the current branch for missing DRS records (slower)")
 }

@@ -123,10 +123,20 @@ func (c Config) GetDefaultRemote() (Remote, error) {
 	return c.DefaultRemote, nil
 }
 
-// GetRemoteOrDefault returns the specified remote if provided, otherwise returns the default remote
+// GetRemoteOrDefault returns the specified remote if it is a configured DRS profile.
+// If remote is empty, it returns the default remote.
+// If the provided name is a valid Git remote (but not a DRS profile), it also returns the default remote.
+// If an explicit remote is provided that is neither a DRS profile nor a Git remote, it returns an error.
 func (c Config) GetRemoteOrDefault(remote string) (Remote, error) {
 	if remote != "" {
-		return Remote(remote), nil
+		r := Remote(remote)
+		if _, ok := c.Remotes[r]; ok {
+			return r, nil
+		}
+		if gitrepo.IsGitRemote(remote) {
+			return c.GetDefaultRemote()
+		}
+		return "", fmt.Errorf("remote '%s' not found in configuration.\nAvailable remotes: %v", remote, c.listRemoteNames())
 	}
 	return c.GetDefaultRemote()
 }
@@ -189,6 +199,16 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	// Save config
 	if err := repo.Storer.SetConfig(conf); err != nil {
 		return nil, err
+	}
+
+	// Ensure LFS is configured for DRS (don't overwrite existing high-level tuning)
+	numTransfers := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 1))
+	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
+	threshold := int(gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500))
+	enableLogs := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.enable-data-client-logs", false)
+
+	if err := gitrepo.InitializeLfsConfig(numTransfers, upsert, threshold, enableLogs); err != nil {
+		log.Printf("Warning: failed to initialize LFS config: %v", err)
 	}
 
 	return LoadConfig()

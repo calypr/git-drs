@@ -49,15 +49,15 @@ func TestParseS3URL_HTTPSVirtualHosted(t *testing.T) {
 func TestNormalizeSHA256(t *testing.T) {
 	hex := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-	if got := normalizeSHA256(hex); got != hex {
+	if got := NormalizeSHA256(hex); got != hex {
 		t.Fatalf("expected %q, got %q", hex, got)
 	}
 
-	if got := normalizeSHA256("sha256:" + strings.ToUpper(hex)); got != hex {
+	if got := NormalizeSHA256("sha256:" + strings.ToUpper(hex)); got != hex {
 		t.Fatalf("expected %q, got %q", hex, got)
 	}
 
-	if got := normalizeSHA256("not-a-sha"); got != "" {
+	if got := NormalizeSHA256("not-a-sha"); got != "" {
 		t.Fatalf("expected empty for invalid, got %q", got)
 	}
 }

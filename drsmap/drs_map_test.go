@@ -244,9 +244,13 @@ func (m *MockDRSClient) GetDownloadURLFromRecords(ctx context.Context, oid strin
 
 type PushMockClient struct {
 	MockDRSClient
-	RegisterFileCalled bool
-	RegisteredFile     string
-	RegisteredOid      string
+	RegisterFileCalled   bool
+	RegisteredFile       string
+	RegisteredOid        string
+	RegisterRecordCalled bool
+	UpdateRecordCalled   bool
+	RecordedRecord       *drs.DRSObject
+	RegisterRecordError  error
 }
 
 func (m *PushMockClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
@@ -254,6 +258,18 @@ func (m *PushMockClient) RegisterFile(ctx context.Context, oid string, path stri
 	m.RegisteredFile = path
 	m.RegisteredOid = oid
 	return nil, nil
+}
+
+func (m *PushMockClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
+	m.RegisterRecordCalled = true
+	m.RecordedRecord = indexdObject
+	return indexdObject, m.RegisterRecordError
+}
+
+func (m *PushMockClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	m.UpdateRecordCalled = true
+	m.RecordedRecord = updateInfo
+	return updateInfo, nil
 }
 
 func (m *PushMockClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
@@ -292,5 +308,48 @@ func TestPushLocalDrsObjects(t *testing.T) {
 	}
 	if mockClient.RegisteredFile != "test-push.txt" {
 		t.Errorf("Expected RegisteredFile to be test-push.txt, got %s", mockClient.RegisteredFile)
+	}
+}
+
+func TestPushLocalDrsObjects_MetadataOnly(t *testing.T) {
+	setupTestRepo(t)
+	sha := "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	// Create local DRS object
+	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
+	url := "s3://bucket/path/to/file.bin"
+	obj := &drs.DRSObject{
+		Id:   "did-metadata-test",
+		Name: "test-metadata.bin",
+		Checksums: hash.HashInfo{
+			SHA256: sha,
+		},
+		AccessMethods: []drs.AccessMethod{
+			{AccessURL: drs.AccessURL{URL: url}},
+		},
+	}
+	path, _ := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
+	WriteDrsObj(obj, sha, path)
+
+	// NO local file exists (simulating add-url case)
+
+	mockClient := &PushMockClient{
+		RegisterRecordError: fmt.Errorf("already exists"),
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+
+	err := PushLocalDrsObjects(mockClient, logger, false)
+	if err != nil {
+		t.Fatalf("PushLocalDrsObjects failed: %v", err)
+	}
+
+	if !mockClient.RegisterRecordCalled {
+		t.Errorf("Expected RegisterRecord to be called")
+	}
+	if !mockClient.UpdateRecordCalled {
+		t.Errorf("Expected UpdateRecord to be called on 'already exists'")
+	}
+	if mockClient.RecordedRecord.AccessMethods[0].AccessURL.URL != url {
+		t.Errorf("Expected URL %s, got %s", url, mockClient.RecordedRecord.AccessMethods[0].AccessURL.URL)
 	}
 }

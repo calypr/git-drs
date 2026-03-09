@@ -65,9 +65,8 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger, shou
 
 			if !hasBlob {
 				myLogger.Info(fmt.Sprintf("Object record found locally, but blob does not exist locally. Registering metadata only for %s", val.Name))
-				_, err = drsClient.RegisterRecord(context.Background(), val)
-				if err != nil {
-					return fmt.Errorf("failed to register record for %s: %v", val.Name, err)
+				if err := RegisterMetadataOnlyWithUpsert(context.Background(), drsClient, val, myLogger); err != nil {
+					return fmt.Errorf("failed to register metadata for %s: %v", val.Name, err)
 				}
 			} else {
 				myLogger.Info(fmt.Sprintf("Pushing file %s to DRS server (OID: %s)", val.Name, drsObjKey))
@@ -631,4 +630,30 @@ func buildTruncatedOidMap(logger *slog.Logger) map[string]string {
 		}
 	}
 	return m
+}
+
+// RegisterMetadataOnlyWithUpsert is a specialized helper used when a
+// file exists locally only as a pointer (no blob). It attempts to register the
+// DRS metadata in Indexd, and if it already exists, it performs an update to
+// ensure URLs/authz are synced. This avoids interfering with the base case
+// (blob upload) while supporting the 'add-url' workflow.
+func RegisterMetadataOnlyWithUpsert(ctx context.Context, drsClient client.DRSClient, drsObj *drs.DRSObject, logger *slog.Logger) error {
+	_, err := drsClient.RegisterRecord(ctx, drsObj)
+	if err == nil {
+		logger.Debug(fmt.Sprintf("Successfully registered new metadata-only record for %s (DID: %s)", drsObj.Name, drsObj.Id))
+		return nil
+	}
+
+	// If it already exists, we want to ensure the metadata is up-to-date (e.g. includes the S3 URL from add-url)
+	if strings.Contains(err.Error(), "already exists") {
+		logger.Debug(fmt.Sprintf("Metadata-only record already exists for %s (DID: %s), attempting update", drsObj.Name, drsObj.Id))
+		_, err = drsClient.UpdateRecord(ctx, drsObj, drsObj.Id)
+		if err != nil {
+			return fmt.Errorf("error updating existing metadata record: %w", err)
+		}
+		logger.Debug(fmt.Sprintf("Successfully updated existing metadata-only record for %s (DID: %s)", drsObj.Name, drsObj.Id))
+		return nil
+	}
+
+	return fmt.Errorf("error registering metadata record: %w", err)
 }

@@ -120,8 +120,16 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		Size: s3Info.SizeBytes,
 		Oid:  oid,
 	}
-	if _, err := drsmap.WriteDrsFile(builder, file, &input.s3URL); err != nil {
+	drsObj, err := drsmap.WriteDrsFile(builder, file, &input.s3URL)
+	if err != nil {
 		return fmt.Errorf("error WriteDrsFile: %v", err)
+	}
+
+	// Register with Indexd immediately if a remote is configured
+	if drsClient, err := cfg.GetRemoteClient(remote, logger); err == nil {
+		if err := drsmap.RegisterMetadataOnlyWithUpsert(ctx, drsClient, drsObj, logger); err == nil {
+			fmt.Fprintf(os.Stderr, "Registered record in Indexd (DID: %s)\n", drsObj.Id)
+		}
 	}
 
 	return nil

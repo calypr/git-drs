@@ -1,8 +1,6 @@
 package cloud
 
 import (
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -96,28 +94,4 @@ func TestExtractSHA256FromMetadata_SearchValues(t *testing.T) {
 	if got != hex {
 		t.Fatalf("expected %q, got %q", hex, got)
 	}
-}
-
-// --- test helpers ---
-
-func mustRun(t *testing.T, dir string, name string, args ...string) {
-	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("command failed: %s %v\nerr=%v\nout=%s", name, args, err, string(out))
-	}
-}
-
-func mustChdir(t *testing.T, dir string) string {
-	t.Helper()
-	old, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("Chdir(%s): %v", dir, err)
-	}
-	return old
 }

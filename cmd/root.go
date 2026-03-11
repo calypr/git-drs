@@ -7,6 +7,8 @@ import (
 	"github.com/calypr/git-drs/cmd/deleteproject"
 	"github.com/calypr/git-drs/cmd/fetch"
 	"github.com/calypr/git-drs/cmd/initialize"
+	"github.com/calypr/git-drs/cmd/list"
+	"github.com/calypr/git-drs/cmd/lsfiles"
 	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/prepush"
 	"github.com/calypr/git-drs/cmd/push"
@@ -46,6 +48,8 @@ func init() {
 	RootCmd.AddCommand(deleteCmd.Cmd)
 	RootCmd.AddCommand(deleteproject.Cmd)
 	RootCmd.AddCommand(query.Cmd)
+	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(lsfiles.Cmd)
 
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true

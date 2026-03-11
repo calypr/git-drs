@@ -6,6 +6,7 @@ import (
 
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
+	"github.com/calypr/git-drs/common"
 )
 
 type fakeChecksumClient struct {
@@ -44,11 +45,11 @@ func TestQueryByChecksumTypes(t *testing.T) {
 
 func TestPrintDRSObject(t *testing.T) {
 	obj := drs.DRSObject{Id: "test-id"}
-	err := printDRSObject(obj, false)
+	err := common.PrintDRSObject(obj, false)
 	if err != nil {
 		t.Errorf("printDRSObject failed: %v", err)
 	}
-	err = printDRSObject(obj, true)
+	err = common.PrintDRSObject(obj, true)
 	if err != nil {
 		t.Errorf("printDRSObject pretty failed: %v", err)
 	}

@@ -51,8 +51,16 @@ var ListCmd = &cobra.Command{
 			if remote != nil {
 				endpoint = remote.GetEndpoint()
 			}
+			storageName := "N/A"
+			if remote != nil {
+				storageName = remote.GetBucketName()
+			}
+			projectId := "N/A"
+			if remote != nil {
+				projectId = remote.GetProjectId()
+			}
 
-			fmt.Printf("%s %-10s %-8s %s\n", marker, name, remoteType, endpoint)
+			fmt.Printf("%s %-10s %-8s %s %s %s\n", marker, name, remoteType, endpoint, projectId, storageName)
 		}
 		return nil
 	},

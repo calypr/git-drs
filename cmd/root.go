@@ -14,6 +14,7 @@ import (
 	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/remote"
+	"github.com/calypr/git-drs/cmd/status"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
 	"github.com/calypr/git-drs/cmd/upload"
@@ -34,12 +35,14 @@ func init() {
 	prepush.Cmd.Hidden = true
 	transfer.Cmd.Hidden = true
 	transferref.Cmd.Hidden = true
+	initialize.Cmd.Hidden = true
 
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(fetch.Cmd)
 	RootCmd.AddCommand(push.Cmd)
+	RootCmd.AddCommand(status.Cmd)
 	RootCmd.AddCommand(precommit.Cmd)
 	RootCmd.AddCommand(prepush.Cmd)
 	RootCmd.AddCommand(transfer.Cmd)

@@ -151,6 +151,11 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 	if err != nil {
 		return nil, err
 	}
+	if len(drsObj.AccessMethods) > 0 {
+		drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: url}
+	} else {
+		drsObj.AccessMethods = append(drsObj.AccessMethods, drs.AccessMethod{AccessURL: drs.AccessURL{URL: url}})
+	}
 
 	// Add authz explicitly since BuildDrsObj might not set it exactly as needed for all cases
 	// Actually BuildDrsObj does set authz.

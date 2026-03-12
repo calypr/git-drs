@@ -5,7 +5,9 @@ import (
 	"log/slog"
 
 	anvil_client "github.com/calypr/git-drs/client/anvil"
+	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +44,13 @@ func anvilInit(terraProject string, logger *slog.Logger) error {
 			return fmt.Errorf("Error: unable to update config file: %v\n", err)
 		}
 
+		// Ensure Git DRS is fully initialized (hooks, LFS config, etc.)
+		logg := drslog.GetLogger()
+		if newlyInitialized, err := initialize.InitializeRepo(logg, 1, false, 500, false); err != nil {
+			logg.Warn(fmt.Sprintf("Warning: failed to automatically initialize Git DRS: %v", err))
+		} else if newlyInitialized {
+			logg.Debug("Automatically initialized Git DRS (hooks and LFS config)")
+		}
 	}
 
 	return nil

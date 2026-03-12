@@ -16,6 +16,7 @@ import (
 	"github.com/calypr/git-drs/cmd/remote"
 	"github.com/calypr/git-drs/cmd/transfer"
 	"github.com/calypr/git-drs/cmd/transferref"
+	"github.com/calypr/git-drs/cmd/upload"
 	"github.com/calypr/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
@@ -50,6 +51,7 @@ func init() {
 	RootCmd.AddCommand(query.Cmd)
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(lsfiles.Cmd)
+	RootCmd.AddCommand(upload.Cmd)
 
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true

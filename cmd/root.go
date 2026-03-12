@@ -5,6 +5,7 @@ import (
 	"github.com/calypr/git-drs/cmd/addurl"
 	deleteCmd "github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
+	"github.com/calypr/git-drs/cmd/download"
 	"github.com/calypr/git-drs/cmd/fetch"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/list"
@@ -55,6 +56,7 @@ func init() {
 	RootCmd.AddCommand(list.Cmd)
 	RootCmd.AddCommand(lsfiles.Cmd)
 	RootCmd.AddCommand(upload.Cmd)
+	RootCmd.AddCommand(download.Cmd)
 
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true

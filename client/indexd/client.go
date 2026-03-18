@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"sort"
+	"strings"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
@@ -43,8 +45,6 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		return nil, fmt.Errorf("no gen3 project specified")
 	}
 
-	bucketName := remote.GetBucketName()
-
 	// Initialize data-client Gen3Interface with slog-adapted logger if needed,
 	// or assume we use the one passed in if we update data-client to take slog.
 	// For now we assume data-client/logs/TeeLogger is still used by data-client internals,
@@ -76,6 +76,15 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	}
 	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
 
+	bucketName := remote.GetBucketName()
+	if bucketName == "" {
+		resolvedBucket, err := resolveBucketName(context.Background(), g3, projectId)
+		if err != nil {
+			return nil, fmt.Errorf("no gen3 bucket specified and automatic resolution failed: %w", err)
+		}
+		bucketName = resolvedBucket
+	}
+
 	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
 	var multiPartThreshold int64 = multiPartThresholdInt * common.MB
@@ -93,6 +102,39 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		G3:     g3,
 		Config: config,
 	}, nil
+}
+
+func resolveBucketName(ctx context.Context, g3 g3client.Gen3Interface, projectID string) (string, error) {
+	projectParts := strings.SplitN(projectID, "-", 2)
+	if len(projectParts) != 2 || projectParts[0] == "" {
+		return "", fmt.Errorf("invalid project ID %q; expected <program>-<project>", projectID)
+	}
+	program := projectParts[0]
+
+	pingResp, err := g3.Fence().UserPing(ctx)
+	if err != nil {
+		return "", fmt.Errorf("unable to read Fence bucket permissions: %w", err)
+	}
+	if pingResp == nil || len(pingResp.BucketPrograms) == 0 {
+		return "", fmt.Errorf("no bucket mappings available from Fence for program %q", program)
+	}
+
+	matches := make([]string, 0)
+	for bucket, programsText := range pingResp.BucketPrograms {
+		for _, programName := range strings.Split(programsText, ",") {
+			if strings.TrimSpace(programName) == program {
+				matches = append(matches, bucket)
+				break
+			}
+		}
+	}
+
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no bucket found for program %q", program)
+	}
+
+	sort.Strings(matches)
+	return matches[0], nil
 }
 
 func (cl *GitDrsIdxdClient) GetProjectId() string {

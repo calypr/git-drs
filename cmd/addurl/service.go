@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/calypr/data-client/drs"
+	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -113,7 +114,21 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error getting remote configuration for %s", remote)
 	}
 
-	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+	bucketName := remoteConfig.GetBucketName()
+	var drsClient client.DRSClient
+	remoteClient, clientErr := cfg.GetRemoteClient(remote, logger)
+	if clientErr == nil && remoteClient != nil {
+		drsClient = remoteClient
+		if resolved := remoteClient.GetBucketName(); resolved != "" {
+			bucketName = resolved
+		}
+	}
+
+	if bucketName == "" {
+		return fmt.Errorf("no bucket configured for remote %s and automatic bucket resolution failed", remote)
+	}
+
+	builder := drs.NewObjectBuilder(bucketName, remoteConfig.GetProjectId())
 
 	file := lfs.LfsFileInfo{
 		Name: input.path,
@@ -126,7 +141,7 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Register with Indexd immediately if a remote is configured
-	if drsClient, err := cfg.GetRemoteClient(remote, logger); err == nil {
+	if drsClient != nil {
 		if err := drsmap.RegisterMetadataOnlyWithUpsert(ctx, drsClient, drsObj, logger); err == nil {
 			fmt.Fprintf(os.Stderr, "Registered record in Indexd (DID: %s)\n", drsObj.Id)
 		}

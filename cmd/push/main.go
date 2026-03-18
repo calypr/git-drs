@@ -61,7 +61,7 @@ var Cmd = &cobra.Command{
 		}
 
 		myLogger.Info(fmt.Sprintf("Updating DRS objects for remote '%s' (discovery via '%s')...", remote, gitRemote))
-		builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+		builder := drs.NewObjectBuilder(drsClient.GetBucketName(), remoteConfig.GetProjectId())
 		err = drsmap.UpdateDrsObjects(
 			drsClient,
 			builder,

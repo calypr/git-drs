@@ -33,17 +33,12 @@ var Gen3Cmd = &cobra.Command{
 			return fmt.Errorf("error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs remote add gen3 --help' for more details")
 		}
 
-		// When adding a new remote, bucket field is required.
-		if bucket == "" {
-			return fmt.Errorf("error: Gen3 requires a bucket name to be specified when adding a new remote. Please specify a bucket with --bucket flag. See 'git drs remote add gen3 --help' for more details")
-		}
-
 		remoteName := config.ORIGIN
 		if len(args) > 0 {
 			remoteName = args[0]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, project, bucket, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, project, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -51,12 +46,12 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
-	if project == "" || bucket == "" {
-		return fmt.Errorf("project and bucket are required for Gen3 remote")
+	if project == "" {
+		return fmt.Errorf("project is required for Gen3 remote")
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
@@ -104,7 +99,6 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 		Gen3: &indexd.Gen3Remote{
 			Endpoint:  apiEndpoint,
 			ProjectID: project,
-			Bucket:    bucket,
 		},
 	}
 
@@ -112,7 +106,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
 		return fmt.Errorf("failed to update remote config: %w", err)
 	}
-	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket))
+	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s)", remoteName, apiEndpoint, project))
 
 	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
 	cred := &conf.Credential{

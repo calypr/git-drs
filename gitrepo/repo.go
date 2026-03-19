@@ -94,7 +94,7 @@ func SetGitConfigOptions(configs map[string]string) error {
 		if len(parts) == 2 {
 			conf.Raw.Section(parts[0]).SetOption(parts[1], value)
 		} else if len(parts) > 2 {
-			// Handle subsections e.g. lfs.customtransfer.drs.path
+			// Handle subsections e.g. lfs.customtransfer.drs.path or drs.remote.origin.type
 			section := parts[0]
 			subsection := strings.Join(parts[1:len(parts)-1], ".")
 			key := parts[len(parts)-1]
@@ -103,6 +103,19 @@ func SetGitConfigOptions(configs map[string]string) error {
 	}
 
 	return repo.Storer.SetConfig(conf)
+}
+
+// UnsetGitConfigOptions removes git config keys from local repo config.
+// Missing keys are ignored.
+func UnsetGitConfigOptions(keys []string) error {
+	for _, key := range keys {
+		cmd := exec.Command("git", "config", "--unset-all", key)
+		if err := cmd.Run(); err != nil {
+			// git exits non-zero when the key doesn't exist; this is safe to ignore.
+			continue
+		}
+	}
+	return nil
 }
 
 // GetGitHooksDir returns the absolute path to the .git/hooks directory

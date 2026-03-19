@@ -2,14 +2,12 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"path/filepath"
 	"strings"
 
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
-	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/client/local"
 	"github.com/calypr/git-drs/common"
@@ -25,19 +23,14 @@ const (
 	ORIGIN = "origin"
 
 	Gen3ServerType  RemoteType = "gen3"
-	AnvilServerType RemoteType = "anvil"
 	LocalServerType RemoteType = "local"
 
-	newConfigSection           = "lfs"
-	newConfigSubsectionRoot    = "customtransfer.drs"
-	legacyConfigSection        = "drs"
-	remoteSubsectionPrefix     = "remote."
-	legacyDefaultRemoteKey     = "drs.default-remote"
-	namespacedDefaultRemoteKey = "lfs.customtransfer.drs.default-remote"
+	configSection          = "drs"
+	remoteSubsectionPrefix = "remote."
 )
 
 func AllRemoteTypes() []RemoteType {
-	return []RemoteType{Gen3ServerType, AnvilServerType, LocalServerType}
+	return []RemoteType{Gen3ServerType, LocalServerType}
 }
 
 func IsValidRemoteType(mode string) error {
@@ -65,7 +58,6 @@ type DRSRemote interface {
 
 type RemoteSelect struct {
 	Gen3  *indexd.Gen3Remote
-	Anvil *anvil_client.AnvilRemote
 	Local *local.LocalRemote
 }
 
@@ -82,8 +74,6 @@ func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger, opts ...g3cl
 	}
 	if x.Gen3 != nil {
 		return x.Gen3.GetClient(string(remote), logger, opts...)
-	} else if x.Anvil != nil {
-		return x.Anvil.GetClient(string(remote), logger, opts...)
 	} else if x.Local != nil {
 		// Local client doesn't support options or named profiles in the same way, but follows pattern
 		return local.NewLocalClient(*x.Local, logger), nil
@@ -98,8 +88,6 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 	}
 	if x.Gen3 != nil {
 		return x.Gen3
-	} else if x.Anvil != nil {
-		return x.Anvil
 	} else if x.Local != nil {
 		return x.Local
 	}
@@ -174,9 +162,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		return nil, err
 	}
 
-	// Update lfs.customtransfer.drs.remote.<name> subsection
-	remoteSubsectionName := fmt.Sprintf("%s.%s%s", newConfigSubsectionRoot, remoteSubsectionPrefix, name)
-	remoteSubsection := conf.Raw.Section(newConfigSection).Subsection(remoteSubsectionName)
+	// Update drs.remote.<name> subsection
+	remoteSubsectionName := fmt.Sprintf("%s%s", remoteSubsectionPrefix, name)
+	remoteSubsection := conf.Raw.Section(configSection).Subsection(remoteSubsectionName)
 
 	if remote.Gen3 != nil {
 		remoteSubsection.SetOption("type", "gen3")
@@ -186,8 +174,6 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		if remote.Gen3.Organization != "" {
 			remoteSubsection.SetOption("organization", remote.Gen3.Organization)
 		}
-	} else if remote.Anvil != nil {
-		remoteSubsection.SetOption("type", "anvil")
 	} else if remote.Local != nil {
 		remoteSubsection.SetOption("type", "local")
 		remoteSubsection.SetOption("endpoint", remote.Local.BaseURL)
@@ -203,7 +189,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	}
 
 	// Set default remote if not set
-	configRoot := conf.Raw.Section(newConfigSection).Subsection(newConfigSubsectionRoot)
+	configRoot := conf.Raw.Section(configSection)
 	defaultRemote := configRoot.Option("default-remote")
 	if defaultRemote == "" {
 		configRoot.SetOption("default-remote", string(name))
@@ -232,8 +218,6 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 			Bucket:       bucket,
 			Organization: organization,
 		}
-	} else if remoteType == "anvil" {
-		rs.Anvil = &anvil_client.AnvilRemote{}
 	} else if remoteType == "local" {
 		rs.Local = &local.LocalRemote{
 			BaseURL:      endpoint,
@@ -262,26 +246,25 @@ func LoadConfig() (*Config, error) {
 		Remotes: make(map[Remote]RemoteSelect),
 	}
 
-	// Iterate over all sections to find 'lfs' and its subsections
+	// Iterate over all sections to find 'drs' and its subsections
 	for _, section := range conf.Raw.Sections {
-		if section.Name != newConfigSection {
+		if section.Name != configSection {
 			continue
 		}
 
-		// Check for default-remote in the root subsection
-		dr := section.Subsection(newConfigSubsectionRoot).Option("default-remote")
+		// Check for default-remote in the section root.
+		dr := section.Option("default-remote")
 		if dr != "" {
 			cfg.DefaultRemote = Remote(dr)
 		}
 
 		for _, subsection := range section.Subsections {
-			if !strings.HasPrefix(subsection.Name, newConfigSubsectionRoot+".") {
+			if !strings.HasPrefix(subsection.Name, remoteSubsectionPrefix) {
 				continue
 			}
-			relativeName := strings.TrimPrefix(subsection.Name, newConfigSubsectionRoot+".")
 			parseAndAddRemote(
 				cfg,
-				relativeName,
+				subsection.Name,
 				subsection.Option("type"),
 				subsection.Option("endpoint"),
 				subsection.Option("project"),
@@ -289,37 +272,6 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("organization"),
 			)
 		}
-	}
-
-	if cfg.DefaultRemote == "" {
-		legacyRoot := conf.Raw.Section(legacyConfigSection)
-		legacyDefault := legacyRoot.Option("default-remote")
-		if legacyDefault != "" {
-			log.Printf("Warning: git-drs config key '%s' is deprecated; use '%s'", legacyDefaultRemoteKey, namespacedDefaultRemoteKey)
-			cfg.DefaultRemote = Remote(legacyDefault)
-		}
-	}
-
-	// Also check legacy drs section for remotes
-	legacyRoot := conf.Raw.Section(legacyConfigSection)
-	for _, subsection := range legacyRoot.Subsections {
-		if !strings.HasPrefix(subsection.Name, remoteSubsectionPrefix) {
-			continue
-		}
-		remoteName := Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix))
-		if _, exists := cfg.Remotes[remoteName]; exists {
-			continue
-		}
-		log.Printf("Warning: git-drs config key prefix 'drs.%s' is deprecated; use 'lfs.customtransfer.drs.%s'", subsection.Name, subsection.Name)
-		parseAndAddRemote(
-			cfg,
-			subsection.Name,
-			subsection.Option("type"),
-			subsection.Option("endpoint"),
-			subsection.Option("project"),
-			subsection.Option("bucket"),
-			subsection.Option("organization"),
-		)
 	}
 
 	return cfg, nil
@@ -358,7 +310,7 @@ func SaveConfig(cfg *Config) error {
 	}
 
 	if cfg.DefaultRemote != "" {
-		conf.Raw.Section(newConfigSection).Subsection(newConfigSubsectionRoot).SetOption("default-remote", string(cfg.DefaultRemote))
+		conf.Raw.Section(configSection).SetOption("default-remote", string(cfg.DefaultRemote))
 	}
 
 	return repo.Storer.SetConfig(conf)

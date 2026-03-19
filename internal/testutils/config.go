@@ -58,18 +58,21 @@ func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) {
 	}
 
 	if cfg.DefaultRemote != "" {
-		setConfig("lfs.customtransfer.drs.default-remote", string(cfg.DefaultRemote))
+		setConfig("drs.default-remote", string(cfg.DefaultRemote))
 	}
 
 	for name, remote := range cfg.Remotes {
-		prefix := fmt.Sprintf("lfs.customtransfer.drs.remote.%s", name)
+		prefix := fmt.Sprintf("drs.remote.%s", name)
 		if remote.Gen3 != nil {
 			setConfig(prefix+".type", "gen3")
 			setConfig(prefix+".endpoint", remote.Gen3.Endpoint)
 			setConfig(prefix+".project", remote.Gen3.ProjectID)
 			setConfig(prefix+".bucket", remote.Gen3.Bucket)
-		} else if remote.Anvil != nil {
-			setConfig(prefix+".type", "anvil")
+		} else if remote.Local != nil {
+			setConfig(prefix+".type", "local")
+			setConfig(prefix+".endpoint", remote.Local.BaseURL)
+			setConfig(prefix+".project", remote.Local.ProjectID)
+			setConfig(prefix+".bucket", remote.Local.Bucket)
 		}
 	}
 }

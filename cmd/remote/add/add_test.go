@@ -14,7 +14,3 @@ func TestAddCmd(t *testing.T) {
 func TestGen3Cmd(t *testing.T) {
 	assert.Equal(t, "gen3 [remote-name]", Gen3Cmd.Use)
 }
-
-func TestAnvilCmd(t *testing.T) {
-	assert.Equal(t, "anvil [remote-name]", AnvilCmd.Use)
-}

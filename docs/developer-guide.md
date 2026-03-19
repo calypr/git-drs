@@ -94,7 +94,6 @@ cmd/                    # CLI command implementations
 client/                # DRS client implementations
 ├── interface.go       # Client interface definitions
 ├── indexd.go         # Gen3/indexd client
-├── anvil.go          # AnVIL client
 └── drs-map.go        # File mapping utilities
 
 config/                # Configuration management

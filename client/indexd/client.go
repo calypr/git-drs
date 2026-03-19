@@ -57,7 +57,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	// We also disable data-client's separate message file by default to aggregate logs in git-drs.log,
 	// but allow re-enabling it via config.
 	// but allow re-enabling it via config.
-	enableDataClientLogs := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.enable-data-client-logs", false)
+	enableDataClientLogs := gitrepo.GetGitConfigBool("drs.enable-data-client-logs", false)
 
 	logOpts := []logs.Option{
 		logs.WithBaseLogger(logger),
@@ -79,8 +79,8 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	}
 	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
 
-	upsert := gitrepo.GetGitConfigBool("lfs.customtransfer.drs.upsert", false)
-	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	upsert := gitrepo.GetGitConfigBool("drs.upsert", false)
+	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
 	var multiPartThreshold int64 = multiPartThresholdInt * common.MB
 
 	config := &Config{
@@ -264,5 +264,11 @@ func (cl *GitDrsIdxdClient) GetUpsert() bool {
 
 func (cl *GitDrsIdxdClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
 	bk := gen3.NewGen3Backend(cl.G3)
-	return download.DownloadToPath(ctx, bk, cl.Logger, oid, destPath, "")
+	opts := download.DownloadOptions{
+		MultipartThreshold: int64(5 * common.GB),
+	}
+	if cl.Config != nil && cl.Config.MultiPartThreshold > 0 {
+		opts.MultipartThreshold = cl.Config.MultiPartThreshold
+	}
+	return download.DownloadToPathWithOptions(ctx, bk, cl.Logger, oid, destPath, "", opts)
 }

@@ -11,12 +11,12 @@ git-drs is not yet fully compliant with DRS. It currently works against Gen3's i
 
 **Git-LFS file management for DRS servers**
 
-Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with data platforms like Gen3 and AnVIL while maintaining your familiar Git workflow.
+Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with Gen3-backed workflows while maintaining your familiar Git workflow.
 
 ## Key Features
 
 - **Unified Workflow**: Manage both code and large data files using standard Git commands
-- **DRS Integration**: Built-in support for Gen3 DRS servers (AnVIL support under active development)
+- **DRS Integration**: Built-in support for Gen3 DRS servers
 - **Multi-Remote Support**: Work with development, staging, and production servers in one repository
 - **Automatic Processing**: Files are processed automatically during commits and pushes
 - **Flexible Tracking**: Track individual files, patterns, or entire directories
@@ -83,7 +83,6 @@ For detailed setup and usage information:
 ## Supported Servers
 
 - **Gen3 Data Commons** (e.g., CALYPR)
-- **AnVIL/Terra** DRS servers (under active development)
 
 ## Supported Environments
 

@@ -10,7 +10,7 @@ type InitMessage struct {
 	Event               string `json:"event"`               // Always "init" to identify this message
 	Operation           string `json:"operation"`           // "upload" or "download" depending on transfer direction
 	Remote              string `json:"remote"`              // Git remote name or URL
-	Concurrent          bool   `json:"concurrent"`          // Reflects lfs.customtransfer.<name>.concurrent
+	Concurrent          bool   `json:"concurrent"`          // Reflects concurrent transfer capability for this adapter
 	ConcurrentTransfers int    `json:"concurrenttransfers"` // Reflects lfs.concurrenttransfers value
 }
 

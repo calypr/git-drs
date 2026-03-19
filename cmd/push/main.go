@@ -1,18 +1,26 @@
 package push
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.CombinedOutput()
+}
+
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
-	Short: "push local objects to drs server.",
-	Long:  "push local objects to drs server. Any local files that do not have drs records are written to a bucket.",
+	Short: "Upload/register DRS objects and push Git refs",
+	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -41,21 +49,29 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			myLogger.Debug(fmt.Sprintf("Error creating indexd client: %s", err))
+			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))
 			return err
 		}
-
-		//// Check for GitDrsIdxdClient
-		//icli, ok := drsClient.(*indexd.GitDrsIdxdClient)
-		//if !ok {
-		//	return fmt.Errorf("remote client is not an *indexdCl.IndexDClient (got %T), cannot push", drsClient)
-		//}
-
-		err = drsmap.PushLocalDrsObjects(drsClient, myLogger)
+		lfsFiles, err := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, myLogger)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
 
+		ctx := context.Background()
+		for _, file := range lfsFiles {
+			if _, err := drsClient.RegisterFile(ctx, file.Oid, file.Name); err != nil {
+				return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+			}
+		}
+
+		out, err := runCommand("git", "push", string(remote))
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = err.Error()
+			}
+			return fmt.Errorf("git push failed for remote %q: %s", remote, msg)
+		}
 		return nil
 	},
 }

@@ -17,7 +17,7 @@ var remote string
 var Cmd = &cobra.Command{
 	Use:   "add-ref <drs_uri> <dst path>",
 	Short: "Add a reference to an existing DRS object via URI",
-	Long:  "Add a reference to an existing DRS object, eg passing a DRS URI from AnVIL. Requires that the sha256 of the file is already in the cache",
+	Long:  "Add a reference to an existing DRS object via URI. Requires that the sha256 of the file is already in the cache",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		drsUri := args[0]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/calypr/data-client/conf"
 	"github.com/calypr/data-client/g3client"
@@ -12,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -131,6 +133,18 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 
 	if err := configure.Save(cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
+	}
+	// Configure stock git credential plumbing for lfs + persist the refreshed token locally.
+	if err := gitrepo.ConfigureCredentialHelperForRepo(); err != nil {
+		return fmt.Errorf("failed to configure git credential helper: %w", err)
+	}
+	if err := gitrepo.SetRemoteLFSURL(remoteName, apiEndpoint); err != nil {
+		return fmt.Errorf("failed to set lfs url for remote %s: %w", remoteName, err)
+	}
+	if strings.TrimSpace(cred.AccessToken) != "" {
+		if err := gitrepo.SetRemoteToken(remoteName, strings.TrimSpace(cred.AccessToken)); err != nil {
+			return fmt.Errorf("failed to persist repo token for remote %s: %w", remoteName, err)
+		}
 	}
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))

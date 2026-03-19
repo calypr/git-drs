@@ -5,6 +5,7 @@ import (
 
 	"github.com/calypr/git-drs/client/local"
 	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +34,9 @@ var LocalCmd = &cobra.Command{
 		newConfig, err := config.UpdateRemote(config.Remote(remoteName), remoteSelect)
 		if err != nil {
 			return err
+		}
+		if err := gitrepo.SetRemoteLFSURL(remoteName, url); err != nil {
+			return fmt.Errorf("failed to configure lfs url for remote %q: %w", remoteName, err)
 		}
 
 		fmt.Printf("Added remote '%s'. Config: %v\n", remoteName, newConfig.GetRemote(config.Remote(remoteName)))

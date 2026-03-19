@@ -81,7 +81,7 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 
 	// Initialize the DRS backend
 	bk := drs_backend.NewDrsBackend(remote.BaseURL, logger, req)
-	multiPartThresholdInt := gitrepo.GetGitConfigInt("lfs.customtransfer.drs.multipart-threshold", 500)
+	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
 	multiPartThreshold := int64(multiPartThresholdInt) * common.MB
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
 	if uploadConcurrency < 1 {
@@ -365,5 +365,11 @@ func (c *LocalClient) GetGen3Interface() g3client.Gen3Interface {
 }
 
 func (c *LocalClient) DownloadFile(ctx context.Context, guid string, destPath string) error {
-	return download.DownloadToPath(ctx, c.Backend, c.Logger, guid, destPath, "")
+	opts := download.DownloadOptions{
+		MultipartThreshold: int64(5 * common.GB),
+	}
+	if c.Config != nil && c.Config.MultiPartThreshold > 0 {
+		opts.MultipartThreshold = c.Config.MultiPartThreshold
+	}
+	return download.DownloadToPathWithOptions(ctx, c.Backend, c.Logger, guid, destPath, "", opts)
 }

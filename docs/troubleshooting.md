@@ -333,9 +333,6 @@ git drs remote add gen3 production \
     --project my-project \
     --bucket my-bucket
 
-# For AnVIL
-git drs remote add anvil development --terraProject <project-id>
-
 # Verify configuration
 git drs remote list
 ```

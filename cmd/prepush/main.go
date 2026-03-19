@@ -2,10 +2,13 @@ package prepush
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"sort"
@@ -16,6 +19,7 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/spf13/cobra"
@@ -72,16 +76,6 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-	// get the remote client
-	cli, err := cfg.GetRemoteClient(remote, myLogger)
-	if err != nil {
-		// Print warning to stderr and return success (exit 0) to allow push to continue
-		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-		myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
-		return nil
-	}
-
-	myLogger.Debug(fmt.Sprintf("Current server: %s", cli.GetProjectId()))
 	remoteConfig := cfg.GetRemote(remote)
 	if remoteConfig == nil {
 		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote configuration.")
@@ -130,14 +124,76 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return err
 	}
 
-	// Bulk sync records to server
-	myLogger.Info(fmt.Sprintf("Syncing %d DRS objects to server", len(lfsFiles)))
-	if err := drsmap.SyncFilesWithServer(cli, lfsFiles, myLogger); err != nil {
-		myLogger.Error(fmt.Sprintf("DRS metadata sync to server failed: %v", err))
-		return fmt.Errorf("DRS metadata sync to server failed: %w", err)
+	// Stage metadata in one packet; server consumes it at LFS verify-time.
+	myLogger.Info(fmt.Sprintf("Staging %d DRS metadata records for LFS verify", len(lfsFiles)))
+	if err := submitPendingLFSMeta(ctx, remote, remoteConfig.GetEndpoint(), lfsFiles, myLogger); err != nil {
+		myLogger.Error(fmt.Sprintf("DRS metadata staging failed: %v", err))
+		return fmt.Errorf("DRS metadata staging failed: %w", err)
 	}
 
 	myLogger.Info("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
+	return nil
+}
+
+type metadataSubmitRequest struct {
+	Candidates []drs.DRSObjectCandidate `json:"candidates"`
+	TTLSeconds int64                    `json:"ttl_seconds,omitempty"`
+}
+
+func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint string, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
+	base := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if base == "" {
+		return fmt.Errorf("remote endpoint is empty")
+	}
+	url := base + "/info/lfs/objects/metadata"
+
+	candidates := make([]drs.DRSObjectCandidate, 0, len(lfsFiles))
+	for _, file := range lfsFiles {
+		obj, err := drsmap.DrsInfoFromOid(file.Oid)
+		if err != nil || obj == nil {
+			logger.Debug(fmt.Sprintf("skipping oid %s: local DRS object not found", file.Oid))
+			continue
+		}
+		candidates = append(candidates, drs.ConvertToCandidate(obj))
+	}
+	if len(candidates) == 0 {
+		logger.Debug("no metadata candidates to stage")
+		return nil
+	}
+
+	reqBody := metadataSubmitRequest{
+		Candidates: candidates,
+		TTLSeconds: int64((20 * time.Minute).Seconds()),
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to encode pending metadata request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create pending metadata request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
+
+	if token, err := gitrepo.GetRemoteToken(string(remote)); err == nil {
+		if token = strings.TrimSpace(token); token != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("pending metadata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("pending metadata request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }
 

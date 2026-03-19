@@ -92,28 +92,6 @@ git drs remote add gen3 staging \
 
 **Note:** The first remote you add automatically becomes the default remote.
 
-#### `git drs remote add anvil <name>`
-
-Add an AnVIL/Terra DRS server configuration.
-
-> **Note:** AnVIL support is under active development. For production use, we recommend Gen3 workflows or version 0.2.2 for AnVIL functionality.
-
-**Usage:**
-
-```bash
-git drs remote add anvil <remote-name> --terraProject <project-id>
-```
-
-**Options:**
-
-- `--terraProject <id>`: Terra/Google Cloud project ID (required)
-
-**Example:**
-
-```bash
-git drs remote add anvil development --terraProject my-terra-project
-```
-
 #### `git drs remote list`
 
 List all configured DRS remotes.
@@ -279,14 +257,6 @@ git drs add-url s3://bucket/path/file \
 - `--endpoint <url>`: Custom S3 endpoint
 - `--region <region>`: AWS region
 
-### `git drs create-cache`
-
-Create a cache from a manifest file (Terra/AnVIL).
-
-```bash
-git drs create-cache manifest.tsv
-```
-
 ### `git drs version`
 
 Display Git DRS version information.
@@ -301,8 +271,7 @@ These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
 - `git drs prepush`: Update DRS objects before push
-- `git drs transfer`: Handle file transfers during push/pull
-- `git drs transferref`: Handle reference transfers (AnVIL/Terra)
+- `git lfs pre-push`: Standard Git LFS push flow (invoked by pre-push hook)
 
 ## Git LFS Commands
 
@@ -533,8 +502,6 @@ Git DRS respects these environment variables:
 
 - `AWS_ACCESS_KEY_ID`: AWS access key (for S3 operations)
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key (for S3 operations)
-- `GOOGLE_PROJECT`: Google Cloud project ID (for AnVIL)
-- `WORKSPACE_BUCKET`: Terra workspace bucket (for AnVIL)
 
 ## Help and Documentation
 

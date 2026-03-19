@@ -239,20 +239,20 @@ else
   # Set multipart-threshold to 10 (MB) for testing purposes
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)
-  git config --local lfs.customtransfer.drs.multipart-threshold 10
+  git config --local drs.multipart-threshold 10
 
   # Set multipart-min-chunk-size to 5 (MB) for testing purposes
   # Using a smaller chunk size to will force a large number of parts for testing
   # To test this, you will need to disable data_clients.OptimalChunkSize in code
   # We used this to test a 5GB+ file upload with many parts which causes a minio error
-  # git config --local lfs.customtransfer.drs.multipart-min-chunk-size 5
+  # git config --local drs.multipart-min-chunk-size 5
 
   # Enable upsert for testing purposes, when adding files to indexd, if the object already exists, delete and re-add it
   if [ "$UPSERT" = "true" ]; then
-    git config --local lfs.customtransfer.drs.upsert true
-    echo "UPSERT is enabled; set lfs.customtransfer.drs.upsert to true" >&2
+    git config --local drs.upsert true
+    echo "UPSERT is enabled; set drs.upsert to true" >&2
   else
-    echo "UPSERT is disabled; not setting lfs.customtransfer.drs.upsert" >&2
+    echo "UPSERT is disabled; not setting drs.upsert" >&2
   fi
 
   # Ensure enable-data-client-logs is present in git config

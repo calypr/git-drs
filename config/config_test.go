@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"testing"
 
-	anvil_client "github.com/calypr/git-drs/client/anvil"
 	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/client/local"
 )
@@ -138,7 +137,7 @@ func TestConfig_FindRemote(t *testing.T) {
 	cfg := &Config{
 		Remotes: map[Remote]RemoteSelect{
 			remote1: {Gen3: &indexd.Gen3Remote{}},
-			remote2: {Anvil: &anvil_client.AnvilRemote{}},
+			remote2: {Local: &local.LocalRemote{}},
 		},
 	}
 
@@ -156,8 +155,8 @@ func TestConfig_FindRemote(t *testing.T) {
 	if foundName == "" {
 		t.Error("Expected to find remote2")
 	}
-	if foundSelect.Anvil == nil {
-		t.Error("Expected found remote to have Anvil config")
+	if foundSelect.Local == nil {
+		t.Error("Expected found remote to have Local config")
 	}
 }
 
@@ -169,7 +168,7 @@ func TestRemote_Validation(t *testing.T) {
 		isValid bool
 	}{
 		{"valid gen3", "gen3", true},
-		{"valid anvil", "anvil", true},
+		{"valid local", "local", true},
 		{"invalid", "foo", false},
 		{"empty", "", false},
 	}
@@ -190,7 +189,7 @@ func TestConfig_MultipleRemotes(t *testing.T) {
 		Remotes: make(map[Remote]RemoteSelect),
 	}
 
-	remotes := []Remote{"origin", "backup", "anvil"}
+	remotes := []Remote{"origin", "backup", "local"}
 
 	for _, r := range remotes {
 		cfg.Remotes[r] = RemoteSelect{Gen3: &indexd.Gen3Remote{}}
@@ -201,7 +200,7 @@ func TestConfig_MultipleRemotes(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_LegacyKeysRemainSupported(t *testing.T) {
+func TestLoadConfig_DRSKeys(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 
 	commands := [][]string{
@@ -224,15 +223,15 @@ func TestLoadConfig_LegacyKeysRemainSupported(t *testing.T) {
 		t.Fatalf("LoadConfig error: %v", err)
 	}
 	if cfg.DefaultRemote != Remote("legacy") {
-		t.Fatalf("expected legacy default remote, got %s", cfg.DefaultRemote)
+		t.Fatalf("expected default remote, got %s", cfg.DefaultRemote)
 	}
 	legacy := cfg.Remotes[Remote("legacy")]
 	if legacy.Gen3 == nil || legacy.Gen3.Endpoint != "https://legacy.example" {
-		t.Fatalf("expected legacy gen3 remote loaded, got %#v", legacy)
+		t.Fatalf("expected gen3 remote loaded, got %#v", legacy)
 	}
 }
 
-func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
+func TestLoadConfig_LastWriteWinsDefaultRemote(t *testing.T) {
 	tmpDir := setupTestRepo(t)
 
 	commands := [][]string{
@@ -241,11 +240,11 @@ func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
 		{"config", "drs.remote.legacy.endpoint", "https://legacy.example"},
 		{"config", "drs.remote.legacy.project", "legacy-proj"},
 		{"config", "drs.remote.legacy.bucket", "legacy-bucket"},
-		{"config", "lfs.customtransfer.drs.default-remote", "new"},
-		{"config", "lfs.customtransfer.drs.remote.new.type", "gen3"},
-		{"config", "lfs.customtransfer.drs.remote.new.endpoint", "https://new.example"},
-		{"config", "lfs.customtransfer.drs.remote.new.project", "new-proj"},
-		{"config", "lfs.customtransfer.drs.remote.new.bucket", "new-bucket"},
+		{"config", "drs.default-remote", "new"},
+		{"config", "drs.remote.new.type", "gen3"},
+		{"config", "drs.remote.new.endpoint", "https://new.example"},
+		{"config", "drs.remote.new.project", "new-proj"},
+		{"config", "drs.remote.new.bucket", "new-bucket"},
 	}
 	for _, args := range commands {
 		cmd := exec.Command("git", args...)
@@ -260,14 +259,12 @@ func TestLoadConfig_NamespacedKeysTakePrecedence(t *testing.T) {
 		t.Fatalf("LoadConfig error: %v", err)
 	}
 	if cfg.DefaultRemote != Remote("new") {
-		t.Fatalf("expected namespaced default remote, got %s", cfg.DefaultRemote)
+		t.Fatalf("expected default remote new, got %s", cfg.DefaultRemote)
 	}
 	newRemote := cfg.Remotes[Remote("new")]
 	if newRemote.Gen3 == nil || newRemote.Gen3.Endpoint != "https://new.example" {
-		t.Fatalf("expected namespaced gen3 remote loaded, got %#v", newRemote)
+		t.Fatalf("expected gen3 remote loaded, got %#v", newRemote)
 	}
-	// Existing tests...
-	// ...
 }
 
 func TestUpdateRemote_LocalTypePersistence(t *testing.T) {

@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	transfers            int
+	transfers            = 1
 	upsert               bool
-	multiPartThreshold   int
+	multiPartThreshold   = 5120
 	enableDataClientLogs bool
 )
 
@@ -94,19 +94,29 @@ var Cmd = &cobra.Command{
 
 func initGitConfig() error {
 	configs := map[string]string{
-		"lfs.standalonetransferagent":                    "drs",
-		"lfs.customtransfer.drs.path":                    "git-drs",
-		"lfs.customtransfer.drs.args":                    "transfer",
-		"lfs.allowincompletepush":                        "false",
-		"lfs.customtransfer.drs.concurrent":              strconv.FormatBool(transfers > 1),
-		"lfs.concurrenttransfers":                        strconv.Itoa(transfers),
-		"lfs.customtransfer.drs.upsert":                  strconv.FormatBool(upsert),
-		"lfs.customtransfer.drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
-		"lfs.customtransfer.drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
+		"lfs.allowincompletepush": "false",
+		"lfs.concurrenttransfers": strconv.Itoa(transfers),
+		// Canonical git-drs config keys consumed by clients.
+		"drs.upsert":                  strconv.FormatBool(upsert),
+		"drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
+		"drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
+		"drs.concurrenttransfers":     strconv.Itoa(transfers),
 	}
 
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
 		return fmt.Errorf("unable to write git config: %w", err)
+	}
+	// Explicitly disable custom transfer agent wiring.
+	if err := gitrepo.UnsetGitConfigOptions([]string{
+		"lfs.standalonetransferagent",
+		"lfs.customtransfer.drs.path",
+		"lfs.customtransfer.drs.args",
+		"lfs.customtransfer.drs.concurrent",
+		"lfs.customtransfer.drs.upsert",
+		"lfs.customtransfer.drs.multipart-threshold",
+		"lfs.customtransfer.drs.enable-data-client-logs",
+	}); err != nil {
+		return fmt.Errorf("unable to unset legacy custom transfer settings: %w", err)
 	}
 	return nil
 }
@@ -114,7 +124,7 @@ func initGitConfig() error {
 func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
 	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for indexd records")
-	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 500, "Multipart threshold in MB")
+	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 5120, "Multipart threshold in MB")
 	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 }
 

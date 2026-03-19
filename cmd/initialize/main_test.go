@@ -87,9 +87,6 @@ func TestInitCmdArgs(t *testing.T) {
 func TestInitConfigValues(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	transfers = 8
-	upsert = true
-	multiPartThreshold = 100
-	enableDataClientLogs = true
 
 	if err := initGitConfig(); err != nil {
 		t.Fatalf("initGitConfig error: %v", err)
@@ -107,7 +104,8 @@ func TestInitConfigValues(t *testing.T) {
 	}
 
 	check("lfs.concurrenttransfers", "8")
-	check("lfs.customtransfer.drs.upsert", "true")
-	check("lfs.customtransfer.drs.multipart-threshold", "100")
-	check("lfs.customtransfer.drs.enable-data-client-logs", "true")
+	check("lfs.allowincompletepush", "false")
+	check("lfs.standalonetransferagent", "")
+	check("lfs.customtransfer.drs.path", "")
+	check("lfs.customtransfer.drs.args", "")
 }

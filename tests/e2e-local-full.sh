@@ -5,7 +5,7 @@ set -euo pipefail
 # Local end-to-end test for git-drs + drs-server local mode.
 # Covers:
 # - single-part upload/download
-# - multipart upload/download (forced via low multipart threshold)
+# - multipart upload/download (forced via low multipart thresholds)
 #
 # Requirements:
 # - git, git-lfs, git-drs in PATH
@@ -15,15 +15,16 @@ set -euo pipefail
 # Defaults aligned with legacy local e2e script values.
 REPO_NAME="${REPO_NAME:-git-drs-e2e-test}"
 GIT_USER="${GIT_USER:-cbds}"
-REMOTE_URL="${REMOTE_URL:-git@source.ohsu.edu:${GIT_USER}/${REPO_NAME}.git}"
-
 DRS_URL="${DRS_URL:-http://localhost:8080}"
 BUCKET="${BUCKET:-cbds}"
 ORGANIZATION="${ORGANIZATION:-cbdsTest}"
 PROJECT="${PROJECT:-git_drs_e2e_test}"
 WORK_ROOT="${WORK_ROOT:-$(mktemp -d -t git-drs-e2e-local-XXXX)}"
+REMOTE_URL="${REMOTE_URL:-$WORK_ROOT/${REPO_NAME}.git}"
 KEEP_WORKDIR="${KEEP_WORKDIR:-false}"
 MULTIPART_THRESHOLD_MB="${MULTIPART_THRESHOLD_MB:-5}"
+UPLOAD_MULTIPART_THRESHOLD_MB="${UPLOAD_MULTIPART_THRESHOLD_MB:-$MULTIPART_THRESHOLD_MB}"
+DOWNLOAD_MULTIPART_THRESHOLD_MB="${DOWNLOAD_MULTIPART_THRESHOLD_MB:-$MULTIPART_THRESHOLD_MB}"
 LARGE_FILE_MB="${LARGE_FILE_MB:-12}"
 PUSH_MODE="${PUSH_MODE:-force}" # force|normal
 
@@ -83,19 +84,25 @@ main() {
   log "Using REMOTE_URL=$REMOTE_URL"
   log "Working directory: $WORK_ROOT"
   mkdir -p "$SOURCE_REPO" "$CLONE_REPO"
+  if [[ "$REMOTE_URL" != git@* && "$REMOTE_URL" != http* ]]; then
+    log "Initializing local bare remote at $REMOTE_URL"
+    rm -rf "$REMOTE_URL"
+    git init --bare "$REMOTE_URL" >/dev/null
+    git --git-dir="$REMOTE_URL" symbolic-ref HEAD refs/heads/main >/dev/null
+  fi
 
   log "Initializing source repository"
   cd "$SOURCE_REPO"
   git init -b main >/dev/null
   git config user.email "git-drs-e2e@example.local"
   git config user.name "git-drs-e2e"
+  git remote add origin "$REMOTE_URL"
 
   log "Setting up git-drs"
   git drs init
+  git config --local lfs.basictransfersonly true
   git drs remote add local origin "$DRS_URL" --bucket "$BUCKET" --organization "$ORGANIZATION" --project "$PROJECT"
-  git config --local lfs.customtransfer.drs.multipart-threshold "$MULTIPART_THRESHOLD_MB"
-
-  git remote add origin "$REMOTE_URL"
+  git config --local drs.multipart-threshold "$UPLOAD_MULTIPART_THRESHOLD_MB"
 
   log "Creating test payloads"
   mkdir -p data
@@ -112,16 +119,18 @@ main() {
   git add .gitattributes data/single.bin data/multipart.bin
   git commit -m "e2e: add single and multipart test files" >/dev/null
 
-  log "Pushing source repo (triggers git-drs pre-push + uploads)"
+  log "Pushing source repo via git-drs push (register + upload; multipart expected for large file)"
   if [[ "$PUSH_MODE" == "force" ]]; then
-    git push -f --set-upstream origin main
+    git config --local push.default current
+    git drs push origin
   else
-    git push --set-upstream origin main
+    git config --local push.default current
+    git drs push origin
   fi
 
   log "Cloning fresh repository"
   rm -rf "$CLONE_REPO"
-  GIT_LFS_SKIP_SMUDGE=1 git clone "$REMOTE_URL" "$CLONE_REPO" >/dev/null
+  GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$REMOTE_URL" "$CLONE_REPO" >/dev/null
 
   cd "$CLONE_REPO"
   git config user.email "git-drs-e2e@example.local"
@@ -129,10 +138,12 @@ main() {
 
   log "Setting up git-drs in clone"
   git drs init
+  git config --local lfs.basictransfersonly true
   git drs remote add local origin "$DRS_URL" --bucket "$BUCKET" --organization "$ORGANIZATION" --project "$PROJECT"
+  git config --local drs.multipart-threshold "$DOWNLOAD_MULTIPART_THRESHOLD_MB"
 
-  log "Pulling LFS objects through git-drs transfer"
-  git lfs pull origin main
+  log "Pulling via git-drs pull (download path; multipart expected for large file)"
+  git drs pull origin
 
   log "Verifying downloaded content"
   local single_hash_clone
@@ -152,7 +163,10 @@ main() {
     exit 1
   fi
 
-  log "SUCCESS: single and multipart upload/download passed"
+  log "SUCCESS: single + multipart upload/download passed through git-drs push/pull workflow"
+  log "- upload multipart threshold (MB):   $UPLOAD_MULTIPART_THRESHOLD_MB"
+  log "- download multipart threshold (MB): $DOWNLOAD_MULTIPART_THRESHOLD_MB"
+  log "- large file size (MB):              $LARGE_FILE_MB"
   log "- source single sha256:    $single_hash_src"
   log "- source multipart sha256: $multi_hash_src"
 }

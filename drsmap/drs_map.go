@@ -41,20 +41,34 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 		return nil
 	}
 
-	// 1. Bulk lookup all hashes on server
-	// 1. Identify missing records by looking up each hash
+	// 1. Bulk lookup all hashes on server.
+	hashes := make([]string, 0, len(drsObjects))
+	for h := range drsObjects {
+		hashes = append(hashes, h)
+	}
+	bulkByHash, bulkErr := drsClient.BatchGetObjectsByHash(context.Background(), hashes)
+	if bulkErr != nil {
+		myLogger.Warn(fmt.Sprintf("bulk hash lookup failed, falling back to per-hash checks: %v", bulkErr))
+	}
+
+	// 2. Identify missing records by hash.
 	missingRecords := make([]*drs.DRSObject, 0)
 	for h, localObj := range drsObjects {
-		// Use SHA256 as default type if not specified in localObj (which uses SHA256 as key mostly)
-		ctx := context.Background()
-		recs, err := drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: h})
 		foundOnServer := false
-		if err == nil && len(recs) > 0 {
-			// Check if any record matches our project
-			matched, _ := FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
-			if matched != nil {
-				foundOnServer = true
+		recs := bulkByHash[h]
+		if len(recs) == 0 {
+			// Use SHA256 as default type if not specified in localObj (which uses SHA256 as key mostly).
+			ctx := context.Background()
+			var err error
+			recs, err = drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: h})
+			if err != nil {
+				myLogger.Debug(fmt.Sprintf("hash lookup failed for %s: %v", h, err))
 			}
+		}
+		if len(recs) > 0 {
+			// Check if any record matches our project.
+			matched, _ := FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+			foundOnServer = matched != nil
 		}
 
 		if !foundOnServer {
@@ -63,15 +77,12 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 		}
 	}
 
-	// 2. Register missing records one by one
+	// 3. Register missing records in one bulk request when possible.
 	if len(missingRecords) > 0 {
 		myLogger.Info(fmt.Sprintf("Registering %d missing records", len(missingRecords)))
-		for _, rec := range missingRecords {
-			_, err := drsClient.RegisterRecord(context.Background(), rec)
-			if err != nil {
-				myLogger.Error(fmt.Sprintf("Failed to register record %s: %v", rec.Id, err))
-				return fmt.Errorf("error in registration: %v", err)
-			}
+		if _, err := drsClient.BatchRegisterRecords(context.Background(), missingRecords); err != nil {
+			myLogger.Error(fmt.Sprintf("Failed to register records in bulk: %v", err))
+			return fmt.Errorf("error in bulk registration: %v", err)
 		}
 	}
 

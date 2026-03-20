@@ -34,17 +34,12 @@ var Gen3Cmd = &cobra.Command{
 			return fmt.Errorf("error: Gen3 requires a credentials file or accessToken to setup project locally. Please provide either a --cred or --token flag. See 'git drs remote add gen3 --help' for more details")
 		}
 
-		// When adding a new remote, bucket field is required.
-		if bucket == "" {
-			return fmt.Errorf("error: Gen3 requires a bucket name to be specified when adding a new remote. Please specify a bucket with --bucket flag. See 'git drs remote add gen3 --help' for more details")
-		}
-
 		remoteName := config.ORIGIN
 		if len(args) > 0 {
 			remoteName = args[0]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, project, bucket, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, project, organization, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -52,12 +47,37 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
-	if project == "" || bucket == "" {
-		return fmt.Errorf("project and bucket are required for Gen3 remote")
+	if project == "" {
+		return fmt.Errorf("project is required for Gen3 remote")
+	}
+
+	resolvedBucket := strings.TrimSpace(bucket)
+	resolvedStoragePrefix := ""
+	if strings.TrimSpace(organization) != "" {
+		m, ok, err := gitrepo.GetBucketMapping(organization, project)
+		if err != nil {
+			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
+		}
+		if ok {
+			if resolvedBucket == "" {
+				resolvedBucket = strings.TrimSpace(m.Bucket)
+			} else if strings.TrimSpace(m.Bucket) != "" && !strings.EqualFold(strings.TrimSpace(m.Bucket), resolvedBucket) {
+				return fmt.Errorf("bucket %q conflicts with mapping bucket %q for organization=%q project=%q", resolvedBucket, m.Bucket, organization, project)
+			}
+			resolvedStoragePrefix = strings.TrimSpace(m.Prefix)
+		}
+	}
+	if resolvedBucket == "" {
+		if strings.TrimSpace(organization) == "" {
+			return fmt.Errorf("bucket is required when organization is empty")
+		}
+		if strings.TrimSpace(resolvedBucket) == "" {
+			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add --organization %s --project %s --bucket <name> [--path ...]`)", organization, project)
+		}
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
@@ -103,9 +123,11 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 
 	remoteGen3 := config.RemoteSelect{
 		Gen3: &indexd.Gen3Remote{
-			Endpoint:  apiEndpoint,
-			ProjectID: project,
-			Bucket:    bucket,
+			Endpoint:      apiEndpoint,
+			ProjectID:     project,
+			Organization:  organization,
+			Bucket:        resolvedBucket,
+			StoragePrefix: resolvedStoragePrefix,
 		},
 	}
 
@@ -113,7 +135,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, bucket string, logg *sl
 	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
 		return fmt.Errorf("failed to update remote config: %w", err)
 	}
-	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s)", remoteName, apiEndpoint, project, bucket))
+	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s, storage_prefix: %s)", remoteName, apiEndpoint, project, resolvedBucket, resolvedStoragePrefix))
 
 	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
 	cred := &conf.Credential{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,10 +30,11 @@ import (
 )
 
 type LocalRemote struct {
-	BaseURL      string
-	ProjectID    string
-	Bucket       string
-	Organization string
+	BaseURL       string
+	ProjectID     string
+	Bucket        string
+	Organization  string
+	StoragePrefix string
 }
 
 func (l LocalRemote) GetProjectId() string {
@@ -52,6 +54,10 @@ func (l LocalRemote) GetEndpoint() string {
 
 func (l LocalRemote) GetBucketName() string {
 	return l.Bucket
+}
+
+func (l LocalRemote) GetStoragePrefix() string {
+	return l.StoragePrefix
 }
 
 func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
@@ -239,7 +245,7 @@ func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath str
 
 	// 3. Perform upload if bucket is configured using Backend logic for URL
 	if c.Remote.GetBucketName() != "" {
-		uploadKey := drsObject.Checksums.SHA256 // CAS key matches object URL semantics
+		uploadKey := uploadKeyFromObject(drsObject, c.Remote.GetBucketName())
 
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -344,6 +350,7 @@ func (c *LocalClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObjec
 func (c *LocalClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
 	builder := drs.NewObjectBuilder(c.Remote.GetBucketName(), c.Remote.GetProjectId())
 	builder.Organization = c.Remote.Organization
+	builder.StoragePrefix = c.Remote.StoragePrefix
 	builder.PathStyle = "CAS"
 	return builder.Build(fileName, checksum, size, drsId)
 }
@@ -372,4 +379,24 @@ func (c *LocalClient) DownloadFile(ctx context.Context, guid string, destPath st
 		opts.MultipartThreshold = c.Config.MultiPartThreshold
 	}
 	return download.DownloadToPathWithOptions(ctx, c.Backend, c.Logger, guid, destPath, "", opts)
+}
+
+func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
+	if obj != nil && len(obj.AccessMethods) > 0 {
+		raw := strings.TrimSpace(obj.AccessMethods[0].AccessURL.URL)
+		if raw != "" {
+			if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "s3") {
+				if strings.TrimSpace(u.Host) == strings.TrimSpace(bucket) {
+					key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
+					if key != "" {
+						return key
+					}
+				}
+			}
+		}
+	}
+	if obj != nil {
+		return obj.Checksums.SHA256
+	}
+	return ""
 }

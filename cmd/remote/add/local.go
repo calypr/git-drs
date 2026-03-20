@@ -24,10 +24,10 @@ var LocalCmd = &cobra.Command{
 
 		remoteSelect := config.RemoteSelect{
 			Local: &local.LocalRemote{
-				BaseURL:      url,
-				ProjectID:    project,
-				Bucket:       bucket,
-				Organization: organization,
+				BaseURL:       url,
+				ProjectID:     project,
+				Bucket:        bucket,
+				Organization:  organization,
 			},
 		}
 

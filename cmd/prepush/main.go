@@ -85,6 +85,7 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 
 	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
+	builder.StoragePrefix = remoteConfig.GetStoragePrefix()
 	// git-drs native backend uses CAS-style paths
 	builder.PathStyle = "CAS"
 	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
@@ -136,8 +137,85 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 }
 
 type metadataSubmitRequest struct {
-	Candidates []drs.DRSObjectCandidate `json:"candidates"`
-	TTLSeconds int64                    `json:"ttl_seconds,omitempty"`
+	Candidates []metadataCandidate `json:"candidates"`
+	TTLSeconds int64               `json:"ttl_seconds,omitempty"`
+}
+
+type metadataChecksum struct {
+	Type     string `json:"type"`
+	Checksum string `json:"checksum"`
+}
+
+type metadataAuthorizations struct {
+	BearerAuthIssuers []string `json:"bearer_auth_issuers,omitempty"`
+}
+
+type metadataAccessURL struct {
+	URL string `json:"url,omitempty"`
+}
+
+type metadataAccessMethod struct {
+	Type           string                  `json:"type,omitempty"`
+	AccessURL      metadataAccessURL       `json:"access_url,omitempty"`
+	AccessID       string                  `json:"access_id,omitempty"`
+	Region         string                  `json:"region,omitempty"`
+	Authorizations *metadataAuthorizations `json:"authorizations,omitempty"`
+}
+
+type metadataCandidate struct {
+	Id            string                 `json:"id,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	Size          int64                  `json:"size"`
+	Version       string                 `json:"version,omitempty"`
+	MimeType      string                 `json:"mime_type,omitempty"`
+	Checksums     []metadataChecksum     `json:"checksums"`
+	AccessMethods []metadataAccessMethod `json:"access_methods,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	Aliases       []string               `json:"aliases,omitempty"`
+}
+
+func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
+	out := metadataCandidate{
+		Id:          c.Id,
+		Name:        c.Name,
+		Size:        c.Size,
+		Version:     c.Version,
+		MimeType:    c.MimeType,
+		Description: c.Description,
+		Aliases:     append([]string(nil), c.Aliases...),
+	}
+
+	if len(c.Checksums) > 0 {
+		out.Checksums = make([]metadataChecksum, 0, len(c.Checksums))
+		for _, cs := range c.Checksums {
+			out.Checksums = append(out.Checksums, metadataChecksum{
+				Type:     string(cs.Type),
+				Checksum: cs.Checksum,
+			})
+		}
+	}
+
+	if len(c.AccessMethods) > 0 {
+		out.AccessMethods = make([]metadataAccessMethod, 0, len(c.AccessMethods))
+		for _, am := range c.AccessMethods {
+			m := metadataAccessMethod{
+				Type:     am.Type,
+				AccessID: am.AccessID,
+				Region:   am.Region,
+				AccessURL: metadataAccessURL{
+					URL: am.AccessURL.URL,
+				},
+			}
+			if am.Authorizations != nil {
+				m.Authorizations = &metadataAuthorizations{
+					BearerAuthIssuers: append([]string(nil), am.Authorizations.BearerAuthIssuers...),
+				}
+			}
+			out.AccessMethods = append(out.AccessMethods, m)
+		}
+	}
+
+	return out
 }
 
 func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint string, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
@@ -147,14 +225,14 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	}
 	url := base + "/info/lfs/objects/metadata"
 
-	candidates := make([]drs.DRSObjectCandidate, 0, len(lfsFiles))
+	candidates := make([]metadataCandidate, 0, len(lfsFiles))
 	for _, file := range lfsFiles {
 		obj, err := drsmap.DrsInfoFromOid(file.Oid)
 		if err != nil || obj == nil {
 			logger.Debug(fmt.Sprintf("skipping oid %s: local DRS object not found", file.Oid))
 			continue
 		}
-		candidates = append(candidates, drs.ConvertToCandidate(obj))
+		candidates = append(candidates, toMetadataCandidate(drs.ConvertToCandidate(obj)))
 	}
 	if len(candidates) == 0 {
 		logger.Debug("no metadata candidates to stage")

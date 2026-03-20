@@ -114,6 +114,8 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+	builder.Organization = remoteConfig.GetOrganization()
+	builder.StoragePrefix = remoteConfig.GetStoragePrefix()
 
 	file := lfs.LfsFileInfo{
 		Name: input.path,

@@ -23,6 +23,7 @@ func init() {
 	Gen3Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
 	Gen3Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Specify the token to be used as a replacement for a credential file for temporary access")
 	Gen3Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
+	Gen3Cmd.Flags().StringVar(&organization, "organization", "", "[gen3] Optional organization/program scope (use with --project as project id)")
 
 	Cmd.AddCommand(Gen3Cmd)
 	LocalCmd.Flags().StringVarP(&project, "project", "p", "", "Project ID")

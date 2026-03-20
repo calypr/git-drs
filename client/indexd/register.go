@@ -3,6 +3,7 @@ package indexd
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,9 +96,10 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 
 	if drsObject.Size < multiPartThreshold {
 		cl.Logger.DebugContext(ctx, fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
+		objectKey := uploadKeyFromObject(drsObject, cl.Config.BucketName)
 		req := common.FileUploadRequestObject{
 			SourcePath: filePath,
-			ObjectKey:  drsObject.Checksums.SHA256,
+			ObjectKey:  objectKey,
 			GUID:       drsObject.Id,
 			Bucket:     cl.Config.BucketName,
 		}
@@ -107,12 +109,13 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 		}
 	} else {
 		cl.Logger.DebugContext(ctx, fmt.Sprintf("MultipartUpload size: %d path: %s", drsObject.Size, filePath))
+		objectKey := uploadKeyFromObject(drsObject, cl.Config.BucketName)
 		err = upload.MultipartUpload(
 			ctx,
 			g3,
 			common.FileUploadRequestObject{
 				SourcePath:   filePath,
-				ObjectKey:    drsObject.Checksums.SHA256,
+				ObjectKey:    objectKey,
 				GUID:         drsObject.Id,
 				FileMetadata: common.FileMetadata{},
 				Bucket:       cl.Config.BucketName,
@@ -141,4 +144,24 @@ func (cl *GitDrsIdxdClient) isFileDownloadable(ctx context.Context, drsObject *d
 	// Check if the URL is accessible
 	err = common.CanDownloadFile(res.URL)
 	return err == nil, nil
+}
+
+func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
+	if obj != nil && len(obj.AccessMethods) > 0 {
+		raw := strings.TrimSpace(obj.AccessMethods[0].AccessURL.URL)
+		if raw != "" {
+			if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "s3") {
+				if strings.TrimSpace(u.Host) == strings.TrimSpace(bucket) {
+					key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
+					if key != "" {
+						return key
+					}
+				}
+			}
+		}
+	}
+	if obj != nil {
+		return obj.Checksums.SHA256
+	}
+	return ""
 }

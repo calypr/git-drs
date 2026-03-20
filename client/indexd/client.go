@@ -24,6 +24,7 @@ type Config struct {
 	ProjectId          string
 	BucketName         string
 	Organization       string
+	StoragePrefix      string
 	Upsert             bool
 	MultiPartThreshold int64
 }
@@ -87,6 +88,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		ProjectId:          projectId,
 		BucketName:         bucketName,
 		Organization:       remote.GetOrganization(),
+		StoragePrefix:      remote.GetStoragePrefix(),
 		Upsert:             upsert,
 		MultiPartThreshold: multiPartThreshold,
 	}
@@ -243,7 +245,7 @@ func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRS
 }
 
 func (c *GitDrsIdxdClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	return drs.BuildDrsObj(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.Organization, c.Config.ProjectId)
+	return drs.BuildDrsObjWithPrefix(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.Organization, c.Config.ProjectId, c.Config.StoragePrefix)
 }
 
 func (cl *GitDrsIdxdClient) GetGen3Interface() g3client.Gen3Interface {

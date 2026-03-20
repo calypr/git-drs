@@ -91,6 +91,7 @@ git drs remote add gen3 staging \
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
+**Important:** A bucket mapping for the target `organization/project` must already exist (typically created once by a steward/admin via `git drs bucket add ...`). Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
 

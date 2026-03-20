@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/calypr/git-drs/cmd/addref"
 	"github.com/calypr/git-drs/cmd/addurl"
+	"github.com/calypr/git-drs/cmd/bucket"
 	deleteCmd "github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
 	"github.com/calypr/git-drs/cmd/fetch"
@@ -42,6 +43,7 @@ func init() {
 	RootCmd.AddCommand(deleteCmd.Cmd)
 	RootCmd.AddCommand(deleteproject.Cmd)
 	RootCmd.AddCommand(query.Cmd)
+	RootCmd.AddCommand(bucket.Cmd)
 
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true
 	RootCmd.SilenceUsage = true

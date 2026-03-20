@@ -12,10 +12,11 @@ import (
 
 // Gen3Server holds Gen3 server config
 type Gen3Remote struct {
-	Endpoint     string `yaml:"endpoint"`
-	ProjectID    string `yaml:"project_id"`
-	Bucket       string `yaml:"bucket"`
-	Organization string `yaml:"organization"`
+	Endpoint      string `yaml:"endpoint"`
+	ProjectID     string `yaml:"project_id"`
+	Bucket        string `yaml:"bucket"`
+	Organization  string `yaml:"organization"`
+	StoragePrefix string `yaml:"storage_prefix"`
 }
 
 func (s Gen3Remote) GetProjectId() string {
@@ -32,6 +33,10 @@ func (s Gen3Remote) GetEndpoint() string {
 
 func (s Gen3Remote) GetBucketName() string {
 	return s.Bucket
+}
+
+func (s Gen3Remote) GetStoragePrefix() string {
+	return s.StoragePrefix
 }
 
 func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {

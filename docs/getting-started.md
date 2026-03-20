@@ -69,8 +69,10 @@ Every Git repository using Git DRS requires configuration, whether you're creati
 
    Contact your data coordinator for:
    - DRS server URL
+   - Organization name
    - Project ID
    - Bucket name
+   - Confirmation that bucket mapping exists for your organization/project
 
 5. **Initialize Git DRS**
 
@@ -100,6 +102,8 @@ Every Git repository using Git DRS requires configuration, whether you're creati
    ```
    * production  gen3    https://calypr-public.ohsu.edu
    ```
+
+   **Important:** `git drs remote add` alone is not enough. Push/pull requires an existing bucket mapping for your `organization/project` (usually provisioned once by a steward/admin).
 
 **Managing Additional Remotes**
 

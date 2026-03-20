@@ -53,6 +53,7 @@ type DRSRemote interface {
 	GetOrganization() string
 	GetEndpoint() string
 	GetBucketName() string
+	GetStoragePrefix() string
 	GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error)
 }
 
@@ -174,6 +175,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		if remote.Gen3.Organization != "" {
 			remoteSubsection.SetOption("organization", remote.Gen3.Organization)
 		}
+		if remote.Gen3.StoragePrefix != "" {
+			remoteSubsection.SetOption("storage_prefix", remote.Gen3.StoragePrefix)
+		}
 	} else if remote.Local != nil {
 		remoteSubsection.SetOption("type", "local")
 		remoteSubsection.SetOption("endpoint", remote.Local.BaseURL)
@@ -185,6 +189,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		}
 		if remote.Local.Organization != "" {
 			remoteSubsection.SetOption("organization", remote.Local.Organization)
+		}
+		if remote.Local.StoragePrefix != "" {
+			remoteSubsection.SetOption("storage_prefix", remote.Local.StoragePrefix)
 		}
 	}
 
@@ -203,7 +210,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	return LoadConfig()
 }
 
-func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string) {
+func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string) {
 	if !strings.HasPrefix(subsectionName, remoteSubsectionPrefix) {
 		return
 	}
@@ -213,17 +220,19 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 
 	if remoteType == "gen3" || remoteType == "" {
 		rs.Gen3 = &indexd.Gen3Remote{
-			Endpoint:     endpoint,
-			ProjectID:    project,
-			Bucket:       bucket,
-			Organization: organization,
+			Endpoint:      endpoint,
+			ProjectID:     project,
+			Bucket:        bucket,
+			Organization:  organization,
+			StoragePrefix: storagePrefix,
 		}
 	} else if remoteType == "local" {
 		rs.Local = &local.LocalRemote{
-			BaseURL:      endpoint,
-			ProjectID:    project,
-			Bucket:       bucket,
-			Organization: organization,
+			BaseURL:       endpoint,
+			ProjectID:     project,
+			Bucket:        bucket,
+			Organization:  organization,
+			StoragePrefix: storagePrefix,
 		}
 	}
 
@@ -270,6 +279,7 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("project"),
 				subsection.Option("bucket"),
 				subsection.Option("organization"),
+				subsection.Option("storage_prefix"),
 			)
 		}
 	}

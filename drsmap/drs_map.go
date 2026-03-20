@@ -195,9 +195,18 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 				if len(authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers) == 0 {
 					authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers = []string{authzStr}
 				}
-				// Ensure URL matches current policy of CAS-style s3://bucket/HASH
+				// Ensure URL matches current policy of namespaced CAS-style
+				// s3://bucket/{org}/{project}/HASH.
 				if builder.Bucket != "" {
-					authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
+					prefix := strings.Trim(strings.TrimSpace(builder.StoragePrefix), "/")
+					if prefix == "" {
+						prefix = drs.StoragePrefix(builder.Organization, builder.ProjectID)
+					}
+					if prefix != "" {
+						authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)
+					} else {
+						authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
+					}
 				}
 			}
 		} else {

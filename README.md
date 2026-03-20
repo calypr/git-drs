@@ -53,8 +53,17 @@ git drs init
 git drs remote add gen3 production \
     --cred /path/to/credentials.json \
     --url https://calypr-public.ohsu.edu \
+    --organization my-program \
     --project my-project \
     --bucket my-bucket
+
+# Required prerequisite (usually steward/admin setup):
+# map org/project to bucket + prefix before users run push/pull
+git drs bucket add production \
+    --organization my-program \
+    --project my-project \
+    --bucket my-bucket \
+    --path my-program/my-project
 
 # Track files
 git lfs track "*.bam"

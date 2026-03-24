@@ -2,11 +2,9 @@ module github.com/calypr/git-drs
 
 go 1.24.2
 
-replace github.com/calypr/data-client => ../data-client
-
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/calypr/data-client v0.0.0-20260205143646-d495680d2ea4
+	github.com/calypr/data-client v0.0.0-20260324162126-2abc99a7ddb0
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
@@ -16,7 +14,6 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ProtonMail/go-crypto v1.1.3 // indirect
@@ -82,7 +79,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sys v0.39.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )

@@ -20,8 +20,6 @@ const (
 
 	minFilesPerSub = 100
 	maxFilesPerSub = 1000
-
-	fileSizeBytes = 1024
 )
 
 // main reads directory names from stdin (one per line) and creates a set of

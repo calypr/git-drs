@@ -116,6 +116,7 @@ func (inc *GitDrsIdxdClient) fetchS3Metadata(ctx context.Context, s3URL, awsAcce
 
 func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string, sha256 string, fileSize int64, logger *slog.Logger) (*drs.DRSObject, error) {
 	projectId := inc.GetProjectId()
+	sha256 = drs.NormalizeOid(sha256)
 	uuid := drsmap.DrsUUID(projectId, sha256)
 
 	records, err := inc.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: sha256})
@@ -125,7 +126,8 @@ func (inc *GitDrsIdxdClient) upsertIndexdRecord(ctx context.Context, url string,
 
 	var matchingRecord *drs.DRSObject
 	for i := range records {
-		if records[i].Id == uuid {
+		// Hard cutover: match by checksum content identity only.
+		if records[i].Checksums.SHA256 == sha256 {
 			matchingRecord = &records[i]
 			break
 		}

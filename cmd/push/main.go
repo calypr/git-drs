@@ -12,6 +12,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type batchPushSyncer interface {
+	BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error
+}
+
+var pushWithHooks bool
+
 var runCommand = func(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	return cmd.CombinedOutput()
@@ -20,7 +26,7 @@ var runCommand = func(name string, args ...string) ([]byte, error) {
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "Upload/register DRS objects and push Git refs",
-	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push.",
+	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push (without pre-push hooks by default).",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -58,13 +64,24 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		for _, file := range lfsFiles {
-			if _, err := drsClient.RegisterFile(ctx, file.Oid, file.Name); err != nil {
-				return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+		if syncer, ok := drsClient.(batchPushSyncer); ok {
+			if err := syncer.BatchSyncForPush(ctx, lfsFiles); err != nil {
+				return fmt.Errorf("failed batch register/upload workflow: %w", err)
+			}
+		} else {
+			for _, file := range lfsFiles {
+				if _, err := drsClient.RegisterFile(ctx, file.Oid, file.Name); err != nil {
+					return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+				}
 			}
 		}
 
-		out, err := runCommand("git", "push", string(remote))
+		pushArgs := []string{"push"}
+		if !pushWithHooks {
+			pushArgs = append(pushArgs, "--no-verify")
+		}
+		pushArgs = append(pushArgs, string(remote))
+		out, err := runCommand("git", pushArgs...)
 		if err != nil {
 			msg := strings.TrimSpace(string(out))
 			if msg == "" {
@@ -74,4 +91,8 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func init() {
+	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
 }

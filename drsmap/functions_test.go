@@ -222,7 +222,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 	}
 }
 
-func TestFindMatchingRecord_NoAuthzMatchFallsBackToFirstRecord(t *testing.T) {
+func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
 	projectID := "PROG-PROJ"
 
 	records := []drs.DRSObject{
@@ -244,11 +244,8 @@ func TestFindMatchingRecord_NoAuthzMatchFallsBackToFirstRecord(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
-	if result == nil {
-		t.Fatal("Expected fallback record, got nil")
-	}
-	if result.Id != "no-match" {
-		t.Errorf("Expected fallback record id 'no-match', got %q", result.Id)
+	if result != nil {
+		t.Fatalf("expected nil when no authz matches, got id=%q", result.Id)
 	}
 }
 

@@ -27,6 +27,7 @@ type Config struct {
 	StoragePrefix      string
 	Upsert             bool
 	MultiPartThreshold int64
+	UploadConcurrency  int
 }
 
 type GitDrsIdxdClient struct {
@@ -57,7 +58,6 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	// We disable data-client's console output because drslog already handles stderr/file logging.
 	// We also disable data-client's separate message file by default to aggregate logs in git-drs.log,
 	// but allow re-enabling it via config.
-	// but allow re-enabling it via config.
 	enableDataClientLogs := gitrepo.GetGitConfigBool("drs.enable-data-client-logs", false)
 
 	logOpts := []logs.Option{
@@ -83,6 +83,10 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	upsert := gitrepo.GetGitConfigBool("drs.upsert", false)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
 	var multiPartThreshold int64 = multiPartThresholdInt * common.MB
+	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
+	if uploadConcurrency < 1 {
+		uploadConcurrency = 1
+	}
 
 	config := &Config{
 		ProjectId:          projectId,
@@ -91,6 +95,7 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		StoragePrefix:      remote.GetStoragePrefix(),
 		Upsert:             upsert,
 		MultiPartThreshold: multiPartThreshold,
+		UploadConcurrency:  uploadConcurrency,
 	}
 
 	return &GitDrsIdxdClient{
@@ -208,16 +213,7 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 }
 
 func (cl *GitDrsIdxdClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
-	// Not truly supported by backend yet appropriately, returning error for now or partial implementation
-	// The user requested to keep these in LocalClient, which implies the interface needs them.
-	// We can implement a naive loop here if needed, or just return error "not supported" to force fallback in mapped code?
-	// ACTUALLY, the user said "there is just no support for them in indexd".
-	// So for IndexdClient, we should probably return error so caller handles it?
-	// But wait, SynObjectsWithServer relies on them.
-	// If I return error, SyncObjectsWithServer fails.
-	// Check loop implementation in SyncObjects again... I refactored it to NOT use batch methods.
-	// So these methods might proceed unused by SyncObjects, but required by interface.
-	return nil, fmt.Errorf("BatchGetObjectsByHash not supported for IndexdClient")
+	return cl.G3.Indexd().BatchGetObjectsByHash(ctx, hashes)
 }
 
 func (cl *GitDrsIdxdClient) DeleteRecordsByProject(ctx context.Context, projectId string) error {
@@ -237,7 +233,7 @@ func (c *GitDrsIdxdClient) RegisterRecord(ctx context.Context, record *drs.DRSOb
 }
 
 func (c *GitDrsIdxdClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
-	return nil, fmt.Errorf("BatchRegisterRecords not supported for IndexdClient")
+	return c.G3.Indexd().RegisterRecords(ctx, records)
 }
 
 func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {

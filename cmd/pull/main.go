@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
+	datadrs "github.com/calypr/data-client/drs"
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/common"
@@ -81,6 +82,40 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
+		missingOIDs := make([]string, 0, len(parsed.Files))
+		seenMissing := make(map[string]struct{}, len(parsed.Files))
+		for _, f := range parsed.Files {
+			if f.Downloaded {
+				continue
+			}
+			if _, seen := seenMissing[f.Oid]; seen {
+				continue
+			}
+			seenMissing[f.Oid] = struct{}{}
+			missingOIDs = append(missingOIDs, f.Oid)
+		}
+
+		if len(missingOIDs) > 0 {
+			if byHash, err := drsClient.BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
+				prefetched := make(map[string]datadrs.DRSObject, len(missingOIDs))
+				for _, oid := range missingOIDs {
+					recs := byHash[oid]
+					if len(recs) == 0 {
+						continue
+					}
+					match, matchErr := drsmap.FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+					if matchErr != nil || match == nil {
+						continue
+					}
+					prefetched[oid] = *match
+				}
+				ctx = datadrs.WithPrefetchedBySHA(ctx, prefetched)
+				logg.Debug(fmt.Sprintf("prefetched %d objects for pull", len(prefetched)))
+			} else {
+				logg.Debug(fmt.Sprintf("bulk prefetch failed; continuing per-object: %v", err))
+			}
+		}
+
 		for _, f := range parsed.Files {
 			if f.Downloaded {
 				continue

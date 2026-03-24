@@ -212,7 +212,7 @@ func upsertServerBucket(ctx context.Context, endpoint, token string, payload put
 	if err != nil {
 		return fmt.Errorf("failed to encode bucket request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/user/data/buckets", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/upload/buckets", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build request: %w", err)
 	}

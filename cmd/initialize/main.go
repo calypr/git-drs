@@ -100,7 +100,6 @@ func initGitConfig() error {
 		"drs.upsert":                  strconv.FormatBool(upsert),
 		"drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
 		"drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
-		"drs.concurrenttransfers":     strconv.Itoa(transfers),
 	}
 
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {

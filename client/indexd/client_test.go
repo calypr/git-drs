@@ -33,7 +33,7 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {
-		case r.Method == http.MethodGet && path == "/index/index":
+		case r.Method == http.MethodGet && path == "/index":
 			if hashQuery := r.URL.Query().Get("hash"); hashQuery != "" {
 				record := sampleDataClientOutputInfo()
 				page := indexd.ListRecords{Records: []indexd.OutputInfo{record}}
@@ -55,7 +55,7 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 				return
 			}
 
-		case r.Method == http.MethodPost && path == "/index/index":
+		case r.Method == http.MethodPost && path == "/index":
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"did":"did-1"}`))
 			return
@@ -77,13 +77,13 @@ func (m *mockIndexdServer) handler(t *testing.T) http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 			_ = encoder.NewStreamEncoder(w).Encode(obj)
 			return
-		case r.Method == http.MethodGet && strings.HasPrefix(path, "/index/index/"):
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/index/"):
 			record := sampleDataClientOutputInfo()
 			record.Rev = "rev-1"
 			w.WriteHeader(http.StatusOK)
 			_ = encoder.NewStreamEncoder(w).Encode(record)
 			return
-		case r.Method == http.MethodPut && strings.HasPrefix(path, "/index/index/"):
+		case r.Method == http.MethodPut && strings.HasPrefix(path, "/index/"):
 			body, _ := ioReadAll(r)
 			payload := indexd.UpdateInputInfo{}
 			_ = sonic.ConfigFastest.Unmarshal(body, &payload)

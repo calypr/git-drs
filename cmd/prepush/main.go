@@ -270,7 +270,21 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("pending metadata request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+		bodyText := strings.TrimSpace(string(body))
+		// Some deployments do not yet expose /info/lfs/objects/metadata.
+		// Treat this as optional capability and continue with push flow.
+		switch resp.StatusCode {
+		case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+			logger.Warn(fmt.Sprintf("metadata staging endpoint unavailable (status=%d); continuing without staged metadata", resp.StatusCode))
+			return nil
+		}
+		// Some reverse proxies/frontends may return HTML 404/maintenance pages with 5xx.
+		// If this looks like non-API HTML and not a structured LFS error, degrade gracefully.
+		if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+			logger.Warn(fmt.Sprintf("metadata staging returned HTML response (status=%d); continuing without staged metadata", resp.StatusCode))
+			return nil
+		}
+		return fmt.Errorf("pending metadata request failed: status=%d body=%s", resp.StatusCode, bodyText)
 	}
 	return nil
 }

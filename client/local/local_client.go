@@ -1,14 +1,18 @@
 package local
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
+	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/calypr/data-client/backend"
 	drs_backend "github.com/calypr/data-client/backend/drs"
@@ -26,6 +30,7 @@ import (
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/lfs"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -221,65 +226,271 @@ func (c *LocalClient) BatchRegisterRecords(ctx context.Context, records []*drs.D
 }
 
 func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath string) (*drs.DRSObject, error) {
-	// 1. Get info from local prepush result or file stat
-	drsObject, err := drsmap.DrsInfoFromOid(oid)
+	oid = drs.NormalizeOid(oid)
+	drsObject, err := c.loadOrBuildDrsObject(oid, filePath)
 	if err != nil {
-		stat, statErr := os.Stat(filePath)
-		if statErr != nil {
-			return nil, fmt.Errorf("error reading local record: %v", statErr)
-		}
-		drsId := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
-		drsObject, err = c.BuildDrsObj(filepath.Base(filePath), oid, stat.Size(), drsId)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
-	// 2. Register Record
 	c.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS server (did: %s)", oid, drsObject.Id))
 	registeredObj, err := c.RegisterRecord(ctx, drsObject)
 	if err != nil {
 		return nil, fmt.Errorf("error registering record: %v", err)
 	}
 	drsObject = registeredObj
+	if err := c.uploadFileForObject(ctx, filePath, drsObject); err != nil {
+		return nil, err
+	}
+	return drsObject, nil
+}
 
-	// 3. Perform upload if bucket is configured using Backend logic for URL
-	if c.Remote.GetBucketName() != "" {
-		uploadKey := uploadKeyFromObject(drsObject, c.Remote.GetBucketName())
+func (c *LocalClient) loadOrBuildDrsObject(oid string, filePath string) (*drs.DRSObject, error) {
+	drsObject, err := drsmap.DrsInfoFromOid(oid)
+	if err == nil && drsObject != nil {
+		return drsObject, nil
+	}
+	stat, statErr := os.Stat(filePath)
+	if statErr != nil {
+		return nil, fmt.Errorf("error reading local record: %v", statErr)
+	}
+	drsId := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
+	return c.BuildDrsObj(filepath.Base(filePath), oid, stat.Size(), drsId)
+}
 
-		file, err := os.Open(filePath)
+func (c *LocalClient) uploadFileForObject(ctx context.Context, filePath string, drsObject *drs.DRSObject) error {
+	if c.Remote.GetBucketName() == "" {
+		return nil
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	threshold := int64(500 * common.MB)
+	if c.Config != nil && c.Config.MultiPartThreshold > 0 {
+		threshold = c.Config.MultiPartThreshold
+	}
+
+	if drsObject.Size < threshold {
+		uploadURL, err := c.Backend.GetUploadURL(ctx, drsObject.Id, "", common.FileMetadata{}, c.Remote.GetBucketName())
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("failed to get signed upload URL: %w", err)
 		}
-		defer file.Close()
+		c.Logger.DebugContext(ctx, "performing single-part upload", "url", uploadURL)
+		return c.Backend.Upload(ctx, uploadURL, file, drsObject.Size)
+	}
 
-		threshold := int64(500 * common.MB)
-		if c.Config != nil && c.Config.MultiPartThreshold > 0 {
-			threshold = c.Config.MultiPartThreshold
+	c.Logger.DebugContext(ctx, "performing multipart upload", "size", drsObject.Size, "threshold", threshold)
+	return c.uploadMultipart(ctx, file, drsObject)
+}
+
+// BatchSyncForPush performs checksum-first push preparation:
+//  1. Bulk lookup by sha256
+//  2. Bulk register missing metadata
+//  3. Upload only objects that are missing/invalid in storage
+func (c *LocalClient) BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error {
+	if len(files) == 0 {
+		return nil
+	}
+
+	filesByOID := make(map[string]lfs.LfsFileInfo, len(files))
+	oids := make([]string, 0, len(files))
+	for _, f := range files {
+		oid := drs.NormalizeOid(f.Oid)
+		if oid == "" {
+			continue
 		}
+		if _, exists := filesByOID[oid]; exists {
+			continue
+		}
+		f.Oid = oid
+		filesByOID[oid] = f
+		oids = append(oids, oid)
+	}
+	sort.Strings(oids)
 
-		if drsObject.Size < threshold {
-			uploadURL, err := c.Backend.GetUploadURL(ctx, drsObject.Id, uploadKey, common.FileMetadata{}, c.Remote.GetBucketName())
-			if err != nil {
-				return nil, fmt.Errorf("failed to get signed upload URL: %w", err)
+	existingByHash, err := c.BatchGetObjectsByHash(ctx, oids)
+	if err != nil {
+		return fmt.Errorf("bulk hash lookup failed: %w", err)
+	}
+
+	validityByHash, err := c.getSHA256ValidityMap(ctx, oids)
+	if err != nil {
+		c.Logger.WarnContext(ctx, "sha256 validity probe unavailable; reusing index-only presence", "err", err)
+		validityByHash = nil
+	}
+
+	drsObjByOID := make(map[string]*drs.DRSObject, len(oids))
+	toRegister := make([]*drs.DRSObject, 0)
+	registeredOids := make(map[string]struct{})
+
+	for _, oid := range oids {
+		file := filesByOID[oid]
+		obj, loadErr := c.loadOrBuildDrsObject(oid, file.Name)
+		if loadErr != nil {
+			return loadErr
+		}
+		drsObjByOID[oid] = obj
+		if len(existingByHash[oid]) == 0 {
+			toRegister = append(toRegister, obj)
+			registeredOids[oid] = struct{}{}
+		}
+	}
+
+	if len(toRegister) > 0 {
+		c.Logger.InfoContext(ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
+		registered, regErr := c.BatchRegisterRecords(ctx, toRegister)
+		if regErr != nil {
+			return fmt.Errorf("bulk register failed: %w", regErr)
+		}
+		for _, obj := range registered {
+			if obj == nil {
+				continue
 			}
-			c.Logger.DebugContext(ctx, "performing single-part upload", "url", uploadURL)
-			if err := c.Backend.Upload(ctx, uploadURL, file, drsObject.Size); err != nil {
-				return nil, err
-			}
-		} else {
-			c.Logger.DebugContext(ctx, "performing multipart upload", "size", drsObject.Size, "threshold", threshold)
-			if err := c.uploadMultipart(ctx, file, uploadKey, drsObject); err != nil {
-				return nil, err
+			oid := drs.NormalizeOid(obj.Checksums.SHA256)
+			if oid != "" {
+				drsObjByOID[oid] = obj
 			}
 		}
 	}
 
-	return drsObject, nil
+	type uploadCandidate struct {
+		oid  string
+		obj  *drs.DRSObject
+		file lfs.LfsFileInfo
+		size int64
+	}
+	uploadCandidates := make([]uploadCandidate, 0, len(oids))
+
+	for _, oid := range oids {
+		exists := len(existingByHash[oid]) > 0
+		_, wasMissing := registeredOids[oid]
+		needsUpload := wasMissing
+		if !needsUpload {
+			if validityByHash == nil {
+				needsUpload = !exists
+			} else {
+				needsUpload = !validityByHash[oid]
+			}
+		}
+		if !needsUpload {
+			continue
+		}
+		obj := drsObjByOID[oid]
+		if obj == nil {
+			return fmt.Errorf("missing drs object context for oid %s", oid)
+		}
+		file := filesByOID[oid]
+		size := file.Size
+		if size <= 0 {
+			if stat, statErr := os.Stat(file.Name); statErr == nil {
+				size = stat.Size()
+			} else {
+				return fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, statErr)
+			}
+		}
+		uploadCandidates = append(uploadCandidates, uploadCandidate{
+			oid:  oid,
+			obj:  obj,
+			file: file,
+			size: size,
+		})
+	}
+
+	if len(uploadCandidates) == 0 {
+		return nil
+	}
+
+	threshold := int64(5 * 1024 * 1024 * 1024)
+	if c.Config != nil && c.Config.MultiPartThreshold > 0 {
+		threshold = c.Config.MultiPartThreshold
+	}
+	concurrency := 1
+	if c.Config != nil && c.Config.UploadConcurrency > 0 {
+		concurrency = c.Config.UploadConcurrency
+	}
+
+	smallCandidates := make([]uploadCandidate, 0, len(uploadCandidates))
+	largeCandidates := make([]uploadCandidate, 0, len(uploadCandidates))
+	for _, candidate := range uploadCandidates {
+		if candidate.size < threshold {
+			smallCandidates = append(smallCandidates, candidate)
+		} else {
+			largeCandidates = append(largeCandidates, candidate)
+		}
+	}
+
+	c.Logger.InfoContext(ctx, "upload plan prepared",
+		"total", len(uploadCandidates),
+		"small_singlepart_parallel", len(smallCandidates),
+		"large_multipart_sequential", len(largeCandidates),
+		"upload_concurrency", concurrency,
+		"multipart_threshold_bytes", threshold,
+	)
+
+	if len(smallCandidates) > 0 {
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(concurrency)
+		for _, candidate := range smallCandidates {
+			candidate := candidate
+			eg.Go(func() error {
+				if err := c.uploadFileForObject(egCtx, candidate.file.Name, candidate.obj); err != nil {
+					return fmt.Errorf("upload failed for %s (%s): %w", candidate.file.Name, candidate.oid, err)
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return err
+		}
+	}
+
+	for _, candidate := range largeCandidates {
+		if err := c.uploadFileForObject(ctx, candidate.file.Name, candidate.obj); err != nil {
+			return fmt.Errorf("upload failed for %s (%s): %w", candidate.file.Name, candidate.oid, err)
+		}
+	}
+
+	return nil
 }
 
-func (c *LocalClient) uploadMultipart(ctx context.Context, file *os.File, key string, drsObject *drs.DRSObject) error {
-	initResp, err := c.Backend.InitMultipartUpload(ctx, drsObject.Id, key, c.Remote.GetBucketName())
+func (c *LocalClient) getSHA256ValidityMap(ctx context.Context, oids []string) (map[string]bool, error) {
+	base := strings.TrimRight(strings.TrimSpace(c.Remote.BaseURL), "/")
+	if base == "" {
+		return nil, fmt.Errorf("missing local endpoint for validity check")
+	}
+	reqBody, err := json.Marshal(map[string][]string{"sha256": oids})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/index/bulk/sha256/validity", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return nil, fmt.Errorf("validity endpoint status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var out map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *LocalClient) uploadMultipart(ctx context.Context, file *os.File, drsObject *drs.DRSObject) error {
+	// Canonical key is server-owned; multipart session resolves it server-side from GUID.
+	initResp, err := c.Backend.InitMultipartUpload(ctx, drsObject.Id, "", c.Remote.GetBucketName())
 	if err != nil {
 		return fmt.Errorf("failed to init multipart upload: %w", err)
 	}
@@ -307,7 +518,7 @@ func (c *LocalClient) uploadMultipart(ctx context.Context, file *os.File, key st
 				size = drsObject.Size - offset
 			}
 
-			partURL, err := c.Backend.GetMultipartUploadURL(egCtx, key, initResp.UploadID, int32(partNum), c.Remote.GetBucketName())
+			partURL, err := c.Backend.GetMultipartUploadURL(egCtx, "", initResp.UploadID, int32(partNum), c.Remote.GetBucketName())
 			if err != nil {
 				return fmt.Errorf("failed to get signed url for part %d: %w", partNum, err)
 			}
@@ -336,7 +547,7 @@ func (c *LocalClient) uploadMultipart(ctx context.Context, file *os.File, key st
 		}
 	}
 
-	if err := c.Backend.CompleteMultipartUpload(ctx, key, initResp.UploadID, parts, c.Remote.GetBucketName()); err != nil {
+	if err := c.Backend.CompleteMultipartUpload(ctx, "", initResp.UploadID, parts, c.Remote.GetBucketName()); err != nil {
 		return fmt.Errorf("failed completing multipart upload: %w", err)
 	}
 	return nil
@@ -379,24 +590,4 @@ func (c *LocalClient) DownloadFile(ctx context.Context, guid string, destPath st
 		opts.MultipartThreshold = c.Config.MultiPartThreshold
 	}
 	return download.DownloadToPathWithOptions(ctx, c.Backend, c.Logger, guid, destPath, "", opts)
-}
-
-func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
-	if obj != nil && len(obj.AccessMethods) > 0 {
-		raw := strings.TrimSpace(obj.AccessMethods[0].AccessURL.URL)
-		if raw != "" {
-			if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "s3") {
-				if strings.TrimSpace(u.Host) == strings.TrimSpace(bucket) {
-					key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
-					if key != "" {
-						return key
-					}
-				}
-			}
-		}
-	}
-	if obj != nil {
-		return obj.Checksums.SHA256
-	}
-	return ""
 }

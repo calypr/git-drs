@@ -13,6 +13,31 @@ git-drs is not yet fully compliant with DRS. It currently works against Gen3's i
 
 Use [`tests/e2e-gen3-remote-full.sh`](/Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs/tests/e2e-gen3-remote-full.sh) for a comprehensive developer-run test against a live Gen3-mode drs-server (not for CI).
 
+This same script also supports a GitHub-backed git remote (temporary private repo created + deleted by the test) when `TEST_GITHUB_MODE=true`.
+
+Example:
+
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
+
+TEST_GITHUB_TOKEN='<github-pat>' \
+TEST_GITHUB_OWNER='your-user-or-org' \
+GEN3_PROFILE='my-profile' \
+TEST_ORGANIZATION='cbdsTest' \
+TEST_PROJECT_ID='git_drs_e2e_test' \
+TEST_BUCKET='cbds' \
+TEST_GITHUB_MODE=true \
+bash tests/e2e-gen3-remote-full.sh
+```
+
+GitHub-backed specific env vars:
+
+- `TEST_GITHUB_TOKEN` (required): GitHub PAT with repo create/delete + push rights.
+- `TEST_GITHUB_OWNER` (required): owner for temporary repo (user or org).
+- `TEST_GITHUB_IS_ORG` (`true|false`, default `false`): set true for org-owned repos.
+- `TEST_GITHUB_REPO_NAME` (optional): custom temp repo name (default auto-generated).
+- `TEST_DELETE_GITHUB_REPO_AFTER` (`true|false`, default `true`): keep repo for debugging by setting `false`.
+
 ## Manual Local E2E
 
 Use [`tests/e2e-local-full.sh`](/Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs/tests/e2e-local-full.sh) against a locally running `drs-server`.
@@ -79,39 +104,54 @@ Example:
 ```bash
 cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-GEN3_TOKEN='<bearer-token>' \
-ORGANIZATION='cbdsTest' \
-PROJECT_ID='git_drs_e2e_test' \
-BUCKET='cbds' \
-DRS_URL='https://caliper-training.ohsu.edu' \
-UPLOAD_MULTIPART_THRESHOLD_MB=5 \
-DOWNLOAD_MULTIPART_THRESHOLD_MB=5 \
-LARGE_FILE_MB=12 \
+# Option A: direct bearer token
+TEST_GEN3_TOKEN='<bearer-token>' \
+TEST_ORGANIZATION='cbdsTest' \
+TEST_PROJECT_ID='git_drs_e2e_test' \
+TEST_BUCKET='cbds' \
+TEST_DRS_URL='https://caliper-training.ohsu.edu' \
+TEST_UPLOAD_MULTIPART_THRESHOLD_MB=5 \
+TEST_DOWNLOAD_MULTIPART_THRESHOLD_MB=5 \
+TEST_LARGE_FILE_MB=12 \
+bash tests/e2e-gen3-remote-full.sh
+
+# Option B: derive access token from ~/.gen3/gen3_client_config.ini profile
+GEN3_PROFILE='my-profile' \
+TEST_ORGANIZATION='cbdsTest' \
+TEST_PROJECT_ID='git_drs_e2e_test' \
+TEST_BUCKET='cbds' \
 bash tests/e2e-gen3-remote-full.sh
 ```
 
 Optional:
 
-- `KEEP_WORKDIR=true` to inspect artifacts after run.
-- `RUN_OPTIONAL_MUTATIONS=true` to include write/update endpoint checks requiring broader privileges.
-- `CREATE_BUCKET_BEFORE_TEST=true` to create a bucket credential on drs-server first and run the test against it.
+- `TEST_KEEP_WORKDIR=true` to inspect artifacts after run.
+- `TEST_RUN_OPTIONAL_MUTATIONS=true` to include write/update endpoint checks requiring broader privileges.
+- `TEST_PUSH_MODE=drs|git|both` (default `drs`) controls push path selection. Compatibility `git`/`both` modes require `TEST_ENABLE_GIT_PUSH_COMPAT=true`; otherwise the script runs `drs` only.
+- `TEST_LFS_PULL_COMPAT=true` (default) to run an additional stock `git lfs pull` compatibility check.
+- `TEST_GITHUB_MODE=true` to run the same remote E2E against a temporary GitHub repo as the git remote.
+- `TEST_GITHUB_TOKEN`, `TEST_GITHUB_OWNER` required when `TEST_GITHUB_MODE=true`.
+- `TEST_GITHUB_IS_ORG=true|false` (default `false`) for org-owned temporary repos.
+- `TEST_GITHUB_REPO_NAME` optional custom temporary repo name.
+- `TEST_DELETE_GITHUB_REPO_AFTER=true|false` (default `true`) to keep repo for debugging.
+- `TEST_CREATE_BUCKET_BEFORE_TEST=true` to create a bucket credential on drs-server first and run the test against it.
 - `ENV_FILE=/path/to/.env` to load shared env vars; default is `<git-drs-root>/.env`.
-- `FULL_SERVER_SWEEP=true|false` (default `true`) to enable/disable expanded endpoint sweeps.
-- `EXTRA_SMALL_FILES`, `EXTRA_SMALL_FILE_KB`, `EXTRA_LARGE_FILES`, `EXTRA_LARGE_FILE_MB` to control dataset richness for endpoint sweeps.
-- `CLEANUP_RECORDS=true|false` (default `true`) to remove test-created records from drs-server at script exit.
-- `STRICT_CLEANUP=true|false` (default `true`) to enforce successful cleanup responses.
+- `TEST_FULL_SERVER_SWEEP=true|false` (default `true`) to enable/disable expanded endpoint sweeps.
+- `TEST_EXTRA_SMALL_FILES`, `TEST_EXTRA_SMALL_FILE_KB`, `TEST_EXTRA_LARGE_FILES`, `TEST_EXTRA_LARGE_FILE_MB` to control dataset richness for endpoint sweeps.
+- `TEST_CLEANUP_RECORDS=true|false` (default `true`) to remove test-created records from drs-server at script exit.
+- `TEST_STRICT_CLEANUP=true|false` (default `true`) to enforce successful cleanup responses.
 
 Bucket lifecycle example:
 
 ```bash
 cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-GEN3_TOKEN='<bearer-token>' \
-ORGANIZATION='cbdsTest' \
-PROJECT_ID='git_drs_e2e_test' \
-BUCKET='cbds' \
-DRS_URL='https://caliper-training.ohsu.edu' \
-CREATE_BUCKET_BEFORE_TEST=true \
+TEST_GEN3_TOKEN='<bearer-token>' \
+TEST_ORGANIZATION='cbdsTest' \
+TEST_PROJECT_ID='git_drs_e2e_test' \
+TEST_BUCKET='cbds' \
+TEST_DRS_URL='https://caliper-training.ohsu.edu' \
+TEST_CREATE_BUCKET_BEFORE_TEST=true \
 TEST_BUCKET_NAME='cbds-e2e-temporary' \
 TEST_BUCKET_REGION='us-east-1' \
 TEST_BUCKET_ACCESS_KEY='<access-key>' \
@@ -119,7 +159,22 @@ TEST_BUCKET_SECRET_KEY='<secret-key>' \
 TEST_BUCKET_ENDPOINT='https://s3.amazonaws.com' \
 TEST_BUCKET_ORGANIZATION='cbdsTest' \
 TEST_BUCKET_PROJECT_ID='git_drs_e2e_test' \
-DELETE_TEST_BUCKET_AFTER=true \
+TEST_DELETE_BUCKET_AFTER=true \
+bash tests/e2e-gen3-remote-full.sh
+```
+
+GitHub-backed mode (same script):
+
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
+
+GEN3_PROFILE='my-profile' \
+TEST_ORGANIZATION='cbdsTest' \
+TEST_PROJECT_ID='git_drs_e2e_test' \
+TEST_BUCKET='cbds' \
+TEST_GITHUB_MODE=true \
+TEST_GITHUB_TOKEN='<github-pat>' \
+TEST_GITHUB_OWNER='your-user-or-org' \
 bash tests/e2e-gen3-remote-full.sh
 ```
 

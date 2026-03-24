@@ -143,7 +143,7 @@ func TestDrsUUID(t *testing.T) {
 func TestGetBucketDetails_Gen3Success(t *testing.T) {
 	// Mock Gen3 server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/user/data/buckets" {
+		if r.URL.Path != "/upload/buckets" {
 			http.NotFound(w, r)
 			return
 		}

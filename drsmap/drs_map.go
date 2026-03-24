@@ -48,7 +48,7 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	}
 	bulkByHash, bulkErr := drsClient.BatchGetObjectsByHash(context.Background(), hashes)
 	if bulkErr != nil {
-		myLogger.Warn(fmt.Sprintf("bulk hash lookup failed, falling back to per-hash checks: %v", bulkErr))
+		return fmt.Errorf("bulk hash lookup failed: %w", bulkErr)
 	}
 
 	// 2. Identify missing records by hash.
@@ -56,15 +56,6 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	for h, localObj := range drsObjects {
 		foundOnServer := false
 		recs := bulkByHash[h]
-		if len(recs) == 0 {
-			// Use SHA256 as default type if not specified in localObj (which uses SHA256 as key mostly).
-			ctx := context.Background()
-			var err error
-			recs, err = drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: h})
-			if err != nil {
-				myLogger.Debug(fmt.Sprintf("hash lookup failed for %s: %v", h, err))
-			}
-		}
 		if len(recs) > 0 {
 			// Check if any record matches our project.
 			matched, _ := FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
@@ -371,15 +362,8 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
 	}
 
-	var fallback *drs.DRSObject
-	// Get the first record with matching authz if exists
 	for _, record := range records {
-		if fallback == nil {
-			r := record
-			fallback = &r
-		}
 		for _, access := range record.AccessMethods {
-			// If no per-access authz is provided, fall back to first record.
 			if access.Authorizations == nil {
 				continue
 			}
@@ -395,10 +379,7 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 			}
 		}
 	}
-
-	// In simplified auth model, record-level authz may not be repeated in access methods.
-	// Fallback to first record for checksum-scoped lookups.
-	return fallback, nil
+	return nil, nil
 }
 
 // output of git lfs ls-files

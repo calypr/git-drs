@@ -96,21 +96,35 @@ func TestCreateEmptyConfigAndSave(t *testing.T) {
 }
 
 func TestGetRemoteOrDefault(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	// Add a git remote to the repo
+	cmd := exec.Command("git", "remote", "add", "git-origin", "https://github.com/example/repo.git")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to add git remote: %v", err)
+	}
+
 	cfg := Config{
 		DefaultRemote: Remote("origin"),
 		Remotes: map[Remote]RemoteSelect{
 			Remote("origin"): {},
+			Remote("other"):  {},
 		},
 	}
 	if remote, err := cfg.GetRemoteOrDefault(""); err != nil || remote != Remote("origin") {
 		t.Fatalf("expected default remote, got %s (%v)", remote, err)
 	}
+	// Case 1: Provided remote is configured DRS profile, should return it
 	if remote, err := cfg.GetRemoteOrDefault("other"); err != nil || remote != Remote("other") {
-		// GetRemoteOrDefault just returns the string if provided, doesn't validate existence?
-		// Check implementation: yes, it returns Remote(remote)
-		if remote != Remote("other") {
-			t.Fatalf("expected provided remote, got %s (%v)", remote, err)
-		}
+		t.Fatalf("expected 'other' remote, got %s (%v)", remote, err)
+	}
+	// Case 2: Provided remote is a Git remote but NOT a DRS profile, should fall back to default
+	if remote, err := cfg.GetRemoteOrDefault("git-origin"); err != nil || remote != Remote("origin") {
+		t.Fatalf("expected default remote as fallback for 'git-origin', got %s (%v)", remote, err)
+	}
+	// Case 3: Provided remote is neither, should return an error
+	if _, err := cfg.GetRemoteOrDefault("typo"); err == nil {
+		t.Fatal("expected error for non-existent remote 'typo', got nil")
 	}
 }
 

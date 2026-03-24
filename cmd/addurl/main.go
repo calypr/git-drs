@@ -97,9 +97,13 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
 		return addURLInput{}, err
 	}
 
-	sha256Param, err := cmd.Flags().GetString("sha256")
+	sha256ParamRaw, err := cmd.Flags().GetString("sha256")
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag sha256: %w", err)
+	}
+	sha256Param := cloud.NormalizeSHA256(sha256ParamRaw)
+	if sha256ParamRaw != "" && sha256Param == "" {
+		return addURLInput{}, fmt.Errorf("invalid sha256: %s", sha256ParamRaw)
 	}
 
 	awsKey, err := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)

@@ -24,7 +24,7 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 		return nil, fmt.Errorf("error getting drs object for oid %s: %v", oid, err)
 	}
 
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))
+	cl.Logger.DebugContext(ctx, fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))
 	_, err = cl.RegisterRecord(ctx, drsObject)
 	if err != nil {
 		// handle "already exists" error ie upsert behavior
@@ -46,10 +46,10 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 			return nil, fmt.Errorf("error saving oid %s indexd record: %v", oid, err)
 		}
 	}
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("indexd record registration complete for oid %s", oid))
+	cl.Logger.DebugContext(ctx, fmt.Sprintf("indexd record registration complete for oid %s", oid))
 
 	// Now attempt to upload the file if not already available
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", oid))
+	cl.Logger.DebugContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", oid))
 	downloadable, err := cl.isFileDownloadable(ctx, drsObject)
 	if err != nil {
 		return nil, fmt.Errorf("error checking if file is downloadable: oid %s %v", oid, err)
@@ -58,7 +58,7 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 		cl.Logger.DebugContext(ctx, fmt.Sprintf("file %s is already available for download, skipping upload", oid))
 		return drsObject, nil
 	}
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", oid))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", path))
 
 	// Proceed to upload the file
 	// Reuse the Gen3 interface

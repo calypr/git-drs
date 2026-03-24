@@ -93,7 +93,7 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+	builder := drs.NewObjectBuilder(dc.GetBucketName(), remoteConfig.GetProjectId())
 	myLogger.Debug(fmt.Sprintf("Current server project: %s", builder.ProjectID))
 
 	tmp, err := bufferStdin(stdin, s.createTempFile)

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drsmap"
@@ -135,6 +137,113 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
 	if _, err := os.Stat(lfsObject); err != nil {
 		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
+	}
+
+	drsObject, err := drsmap.DrsInfoFromOid(shaHex)
+	if err != nil {
+		t.Fatalf("read drs object: %v", err)
+	}
+	if len(drsObject.AccessMethods) == 0 {
+		t.Fatalf("expected access methods in drs object")
+	}
+	if got := drsObject.AccessMethods[0].AccessURL.URL; got != "s3://bucket/path/to/file.bin" {
+		t.Fatalf("unexpected access URL: %s", got)
+	}
+}
+
+func TestRunAddURL_WithProvidedSHA256(t *testing.T) {
+	content := "hello world"
+	sum := sha256.Sum256([]byte(content))
+	shaHex := fmt.Sprintf("%x", sum[:])
+	providedSHA := "sha256:" + strings.ToUpper(shaHex)
+
+	tempDir := t.TempDir()
+	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
+
+	// ensure a git repository exists
+	cmdInit := exec.Command("git", "init")
+	cmdInit.Dir = tempDir
+	if out, err := cmdInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v: %s", err, out)
+	}
+
+	oldwd := mustChdir(t, tempDir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	// Mock config
+	cmds := [][]string{
+		{"config", "lfs.customtransfer.drs.default-remote", "calypr-dev"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.type", "gen3"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
+		{"config", "lfs.customtransfer.drs.remote.calypr-dev.bucket", "cbds"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("git %v failed: %v", args, err)
+		}
+	}
+
+	service := NewAddURLService()
+	downloadCalled := false
+	resetStubs := stubAddURLDeps(t, service,
+		func(ctx context.Context, in cloud.S3ObjectParameters) (*cloud.S3Object, error) {
+			return &cloud.S3Object{
+				Bucket:      "bucket",
+				Key:         "path/to/file.bin",
+				Path:        "file.bin",
+				SizeBytes:   int64(len(content)),
+				MetaSHA256:  shaHex,
+				ETag:        "abcd1234",
+				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+			}, nil
+		},
+		func(path string) (bool, error) {
+			return true, nil
+		},
+		func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRootPath string) (string, string, error) {
+			downloadCalled = true
+			return "", "", fmt.Errorf("download should not be called")
+		},
+	)
+	t.Cleanup(resetStubs)
+
+	cmd := NewCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	requireFlags(t, cmd)
+	if err := cmd.Flags().Set("sha256", providedSHA); err != nil {
+		t.Fatalf("set sha256 flag: %v", err)
+	}
+
+	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
+		t.Fatalf("service.Run error: %v", err)
+	}
+
+	if downloadCalled {
+		t.Fatalf("expected download NOT to be called")
+	}
+
+	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
+	pointerBytes, err := os.ReadFile(pointerPath)
+	if err != nil {
+		t.Fatalf("read pointer file: %v", err)
+	}
+	expectedPointer := fmt.Sprintf(
+		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
+		shaHex,
+		len(content),
+	)
+	if string(pointerBytes) != expectedPointer {
+		t.Fatalf("pointer mismatch: expected %q, got %q", expectedPointer, string(pointerBytes))
+	}
+
+	// The LFS object should NOT be in the local storage because we didn't download it
+	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
+	if _, err := os.Stat(lfsObject); err == nil {
+		t.Fatalf("expected LFS object NOT to exist at %s", lfsObject)
 	}
 
 	drsObject, err := drsmap.DrsInfoFromOid(shaHex)
@@ -335,13 +444,13 @@ func mustChdir(t *testing.T, dir string) string {
 func setupGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	gitCmd(t, dir, "init")
-	gitCmd(t, dir, "config", "user.email", "test@example.com")
-	gitCmd(t, dir, "config", "user.name", "Test User")
+	gitCmdRunner(t, dir, "init")
+	gitCmdRunner(t, dir, "config", "user.email", "test@example.com")
+	gitCmdRunner(t, dir, "config", "user.name", "Test User")
 	return dir
 }
 
-func gitCmd(t *testing.T, dir string, args ...string) {
+func gitCmdRunner(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -350,3 +459,17 @@ func gitCmd(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))
 	}
 }
+
+type MockDRSClient struct {
+	client.DRSClient
+}
+
+func (m *MockDRSClient) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
+	return record, nil
+}
+
+func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	return updateInfo, nil
+}
+
+func (m *MockDRSClient) GetProjectId() string { return "project" }

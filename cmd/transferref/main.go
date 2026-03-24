@@ -64,15 +64,20 @@ var Cmd = &cobra.Command{
 
 		// Handle "init" event and extract remote
 		if evt, ok := initMsg["event"]; ok && evt == "init" {
-			// if no remote name specified, use default remote
-			defaultRemote, err := cfg.GetDefaultRemote()
+			// Extract remote from init message if present
+			remoteNameStr := ""
+			if r, ok := initMsg["remote"].(string); ok {
+				remoteNameStr = r
+			}
+
+			remote, err := cfg.GetRemoteOrDefault(remoteNameStr)
 			if err != nil {
-				myLogger.Error(fmt.Sprintf("Error getting default remote: %v", err))
+				myLogger.Error(fmt.Sprintf("Error determining remote: %v", err))
 				lfs.WriteErrorMessage(encoder, "", 400, err.Error())
 				return err
 			}
-			remoteName = string(defaultRemote)
-			myLogger.Debug(fmt.Sprintf("Initializing connection, remote not specified — using default: %s", remoteName))
+			remoteName = string(remote)
+			myLogger.Debug(fmt.Sprintf("Initializing connection using remote: %s", remoteName))
 
 			// Respond with an empty json object via stdout
 			encoder.Encode(struct{}{})

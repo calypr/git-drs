@@ -326,9 +326,9 @@ func runMigration(cmd *cobra.Command, migrateItem migrationFunc) error {
 					if !dryRun {
 						// Remodel: Since Indexd's UpdateRecord (PUT) can be additive or merge-only depending on server config,
 						// we use a Delete + Register cycle to ensure the record exactly matches our pruned/remodeled state.
-						
+
 						// 1. Attempt to delete existing record by its ID (GUID)
-						// We ignore the error here because the record might not exist or might fail, 
+						// We ignore the error here because the record might not exist or might fail,
 						// and RegisterRecord will handle the "id already exists" case if delete failed.
 						_ = drsClient.GetGen3Interface().Indexd().DeleteIndexdRecord(context.Background(), item.obj.Id)
 

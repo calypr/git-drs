@@ -100,7 +100,7 @@ func TestWriteDrsFile(t *testing.T) {
 		Oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	}
 
-	drsObj, err := WriteDrsFile(builder, file, nil)
+	drsObj, err := WriteDrsFile(builder, file, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("WriteDrsFile error: %v", err)
 	}

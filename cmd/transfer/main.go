@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/bytedance/sonic"
 	"github.com/bytedance/sonic/encoder"
 	dataClientCommon "github.com/calypr/data-client/common"
+	"github.com/calypr/data-client/drs"
+	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/common"
 
 	"github.com/calypr/data-client/download"
@@ -183,29 +186,133 @@ var Cmd = &cobra.Command{
 					continue
 				}
 
-				// download using data-client
+				logger.InfoContext(ctx, fmt.Sprintf("Found matching record with ID %s for OID %s %v", matchingRecord.Id, downloadMsg.Oid, matchingRecord.Aliases))
+
+				// download directly when record points to an external remote URL.
+				downloadUsingDataClient := true
+				for _, alias := range matchingRecord.Aliases {
+					if alias == "git-drs-remote-url:true" {
+						logger.InfoContext(ctx, fmt.Sprintf(
+							"OID %s marked as remote URL (alias=%q); downloading directly. (not using server)",
+							downloadMsg.Oid,
+							alias,
+						))
+						downloadUsingDataClient = false
+						break
+					}
+				}
+
 				dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, downloadMsg.Oid)
-				if err != nil {
-					errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
-					logger.ErrorContext(ctx, errMsg)
-					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
-					continue
-				}
 
-				err = download.DownloadToPath(
-					ctx,
-					drsClient.GetGen3Interface(),
-					matchingRecord.Id,
-					dstPath,
-				)
-				if err != nil {
-					errMsg := fmt.Sprintf("Error downloading file for OID %s (GUID: %s): %v", downloadMsg.Oid, matchingRecord.Id, err)
-					logger.ErrorContext(ctx, errMsg)
-					lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
-					continue
-				}
+				if downloadUsingDataClient {
 
-				lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
+					// download using data-client
+					if err != nil {
+						errMsg := fmt.Sprintf("Error getting destination path for OID %s: %v", downloadMsg.Oid, err)
+						logger.ErrorContext(ctx, errMsg)
+						lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 400, errMsg)
+						continue
+					}
+
+					err = download.DownloadToPath(
+						ctx,
+						drsClient.GetGen3Interface(),
+						matchingRecord.Id,
+						dstPath,
+					)
+					if err != nil {
+						errMsg := fmt.Sprintf("Error downloading file for OID %s (GUID: %s): %v", downloadMsg.Oid, matchingRecord.Id, err)
+						logger.ErrorContext(ctx, errMsg)
+						lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+						continue
+					}
+
+					lfs.WriteProgressMessage(streamEncoder, downloadMsg.Oid, downloadMsg.Size, downloadMsg.Size)
+
+				} else {
+					computedSHA, dstPath, err := cloud.Download(ctx, matchingRecord)
+					if err != nil {
+						errMsg := fmt.Sprintf("Error downloading file from remote url %s oid %s (GUID: %s): %v", matchingRecord.AccessMethods[0].AccessURL, downloadMsg.Oid, matchingRecord.Id, err)
+						logger.ErrorContext(ctx, errMsg)
+						lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+						continue
+					}
+					logger.InfoContext(ctx, fmt.Sprintf("Successfully downloaded OID %s from remote URL to %s", downloadMsg.Oid, dstPath))
+
+					if computedSHA != matchingRecord.Checksums.SHA256 {
+						// we have a sentinel file with the ETag as content, but the computed SHA256 doesn't match the expected value from the DRS objec
+						// write the sentinel file
+						logger.InfoContext(ctx, fmt.Sprintf("computedSHA %s does not match expected SHA256 %s for OID %s", computedSHA, matchingRecord.Checksums.SHA256, downloadMsg.Oid))
+						shaOfETag := cloud.GetSHA256(matchingRecord.Checksums.ETag)
+						if shaOfETag != matchingRecord.Checksums.SHA256 {
+							errMsg := fmt.Sprintf("shaOfETag %s does not match matchingRecord.Checksums.SHA256 %s",
+								shaOfETag, matchingRecord.Checksums.SHA256)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+						logger.InfoContext(ctx, fmt.Sprintf("shaOfETag == computedSHA %s %s", shaOfETag, matchingRecord.Name))
+
+						// the file should already exist as a pointer
+						if _, err := os.Stat(matchingRecord.Name); err != nil {
+							errMsg := fmt.Sprintf("stat %s: %v", matchingRecord.Name, err)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+						// write the 'real file' to the expected location in the .git/lfs/objects directory
+						if err := os.Rename(dstPath, matchingRecord.Name); err != nil {
+							errMsg := fmt.Sprintf("rename %s %s: %v", dstPath, matchingRecord.Name, err)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+
+						// write the sentinel data to expected place ( the sha of the sentinel data )
+						sentinelData := []byte(matchingRecord.Checksums.ETag)
+						_, lfsRoot, _ := lfs.GetGitRootDirectories(ctx)
+
+						oid := shaOfETag // sha of sentinel drsObj.Checksums.SHA256
+						dstDir := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4])
+						dstPath := filepath.Join(dstDir, oid)
+
+						if err := os.MkdirAll(dstDir, 0755); err != nil {
+							errMsg := fmt.Sprintf("mkdir %s %v", dstDir, err)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+
+						if err := os.WriteFile(dstPath, sentinelData, 0644); err != nil {
+							errMsg := fmt.Sprintf("write sentinel to %s: %v", dstPath, err)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+						logger.InfoContext(ctx, fmt.Sprintf("wrote sentinelData %s to %s", sentinelData, dstPath))
+
+						// now create a drsObject for the new "real" data
+						// ensure that it has the url and aliases (flags) from the original
+						projectId := drsClient.GetProjectId()
+						uuid := drsmap.DrsUUID(projectId, computedSHA)
+						realDRSObject := drs.DRSObject{
+							Id:            uuid,
+							Name:          matchingRecord.Name,
+							AccessMethods: matchingRecord.AccessMethods,
+							Checksums:     hash.HashInfo{SHA256: computedSHA, ETag: matchingRecord.Checksums.ETag},
+							Size:          matchingRecord.Size,
+							Aliases:       matchingRecord.Aliases,
+						}
+						err = lfs.WriteObject(common.DRS_OBJS_PATH, &realDRSObject, computedSHA)
+						if err != nil {
+							errMsg := fmt.Sprintf("error writing DRS object for oid %s: %v", computedSHA, err)
+							logger.ErrorContext(ctx, errMsg)
+							lfs.WriteErrorMessage(streamEncoder, downloadMsg.Oid, 502, errMsg)
+							continue
+						}
+
+					}
+				}
 
 				// send success message back
 				logger.InfoContext(ctx, fmt.Sprintf("Download for OID %s complete", downloadMsg.Oid))
@@ -214,7 +321,6 @@ var Cmd = &cobra.Command{
 
 			} else if evt, ok := msg["event"]; ok && evt == "upload" {
 				// Handle upload event
-				logger.Debug("Upload requested")
 
 				// create UploadMessage from the received message
 				var uploadMsg lfs.UploadMessage

@@ -57,45 +57,47 @@ func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string
 }
 
 // printResolvedInfo writes a human-readable summary of resolved Git/LFS and
-// S3 object information to the command's stdout for user confirmation.
-func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, s3Info *cloud.S3Object, pathArg string, isTracked bool, sha256 string) error {
+// remote object information to the command's stdout for user confirmation.
+func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, obj *cloud.ObjectMeta, pathArg string, isTracked bool, sha256 string) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
-Resolved Git LFS s3Info
+Resolved Git LFS object info
 ---------------------
 Git common dir : %s
 LFS storage    : %s
 
-S3 object
----------
+Remote object
+-------------
+Platform       : %s
 Bucket         : %s
 Key            : %s
-Worktree name  : %s
+URL            : %s
 Size (bytes)   : %d
 SHA256 (meta)  : %s
 ETag           : >%s<
 Last modified  : %s
 
 Worktree
--------------
+--------
 path           : %s
 tracked by LFS : %v
-sha256 param  : %s
+sha256 param   : %s
 
 `,
 		gitCommonDir,
 		lfsRoot,
-		s3Info.Bucket,
-		s3Info.Key,
-		s3Info.Path,
-		s3Info.SizeBytes,
-		s3Info.MetaSHA256,
-		s3Info.ETag,
-		s3Info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
+		obj.Platform,
+		obj.Bucket,
+		obj.Key,
+		obj.URL,
+		obj.SizeBytes,
+		obj.Metadata["sha256"],
+		obj.ETag,
+		obj.LastModified.Format("2006-01-02T15:04:05Z07:00"),
 		pathArg,
 		isTracked,
 		sha256,
 	); err != nil {
-		return fmt.Errorf("print resolved s3Info: %w", err)
+		return fmt.Errorf("print resolved object info: %w", err)
 	}
 	return nil
 }

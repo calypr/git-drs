@@ -253,6 +253,11 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 		logger.Debug("pre-commit cache incomplete or stale; falling back to LFS discovery")
 	}
 	lfsFiles, err := lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+
+	logger.Info(fmt.Sprintf("Discovered %d LFS files via dry-run: %v", len(lfsFiles), lfsFiles))
+
+	fmt.Fprintln(os.Stderr, fmt.Sprintf("Discovered %d LFS files via dry-run.  %v", len(lfsFiles), lfsFiles))
+
 	if err != nil {
 		return nil, false, err
 	}
@@ -286,11 +291,15 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 			logger.Debug(fmt.Sprintf("cache path stat failed for %s: %v", path, err))
 			return nil, false, nil
 		}
+		oid := strings.TrimSpace(entry.LFSOID)
+		if strings.HasPrefix(strings.ToLower(oid), "sha256:") {
+			oid = oid[len("sha256:"):]
+		}
 		lfsFiles[path] = lfs.LfsFileInfo{
 			Name:    path,
 			Size:    stat.Size(),
 			OidType: "sha256",
-			Oid:     entry.LFSOID,
+			Oid:     oid,
 			Version: "https://git-lfs.github.com/spec/v1",
 		}
 	}

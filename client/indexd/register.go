@@ -9,6 +9,7 @@ import (
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/upload"
+	localCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
 )
 
@@ -47,6 +48,24 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 		}
 	}
 	cl.Logger.InfoContext(ctx, fmt.Sprintf("indexd record registration complete for oid %s", oid))
+
+	// Check if this is a remote URL (no upload needed, delete the sentinel file)
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("Check if this is a remote URL %v %v", drsObject.Aliases, drsObject))
+	for _, alias := range drsObject.Aliases {
+		if alias == "git-drs-remote-url:true" {
+
+			lfsObjPath, pathErr := drsmap.GetObjectPath(localCommon.LFS_OBJS_PATH, oid)
+			if pathErr != nil {
+				return nil, fmt.Errorf("compute LFS object path for oid %s: %w", oid, pathErr)
+			}
+
+			if rmErr := os.Remove(lfsObjPath); rmErr != nil && !os.IsNotExist(rmErr) {
+				return nil, fmt.Errorf("delete LFS object %s: %w", lfsObjPath, rmErr)
+			}
+			cl.Logger.InfoContext(ctx, fmt.Sprintf("Object was remote-url, updated index, removed local LFS object: %s", lfsObjPath))
+			return drsObject, nil
+		}
+	}
 
 	// Now attempt to upload the file if not already available
 	cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", oid))

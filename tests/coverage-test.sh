@@ -272,13 +272,15 @@ ENDPOINT=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.URL')
 ACCESS_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.accessKey')
 SECRET_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.secretKey')
 
+# Export as standard environment variables so git-drs picks them up automatically.
+export AWS_ACCESS_KEY_ID="$ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+export AWS_ENDPOINT_URL="$ENDPOINT"
+export AWS_REGION="us-east-1"
+
 # use the add-url command to add the file to project
 # we are not providing the sha256, so git-drs must compute it and verify it matches
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --region us-east-1
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt
 
 # set the .gitattributes to track the file
 git lfs track data/simple_test_file.txt
@@ -294,7 +296,7 @@ git lfs ls-files | grep " - data/simple_test_file.txt"
 # push to remote to ensure the indexd record is created with the sha256 and to test the push of LFS pointer file
 git push origin main
 
-echo "Pulling the file via git lfs pull"
+echo "Pulling the data/simple_test_file.txt file via git lfs pull"
 git lfs pull origin main
 
 echo "verify the file is now tracked as a local data file"
@@ -302,25 +304,38 @@ git lfs ls-files | grep " * data/simple_test_file.txt"
 echo "verify the file contents after pull"
 cat data/simple_test_file.txt | grep "$test_string"
 
-echo "checking the original oid"
+echo "checking the original oid of the sentinel"
 original_add_url_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file.txt" '$0 ~ (" " path "$") {print $1; exit}')
 if [ -z "$original_add_url_oid" ]; then
   err "unable to find LFS OID for data/simple_test_file.txt"
   exit 1
 fi
 
+echo "Since we pulled the 'real' file, the file should be in 'modified' state because the pointer file content is different from the pulled file content"
+
+if ! git status | grep modified | grep data/simple_test_file.txt; then
+  echo "error: Expected data/simple_test_file.txt to be modified" >&2
+  exit 1
+fi
+
+git commit -m "pulled real file" data/simple_test_file.txt
+git push origin main
+
+if ! curl https://raw.githubusercontent.com/calypr/monorepo/refs/heads/main/data/simple_test_file.txt | grep https://git-lfs.github.com/spec/v1; then
+  echo "error: expected the file in the remote repository to be a pointer file after pushing the real file" >&2
+  exit 1
+fi
+
+
 updated_test_string='simple test updated'
 echo "$updated_test_string" > /tmp/simple_test_file_updated.txt
 updated_sha256=$(sha256sum /tmp/simple_test_file_updated.txt | cut -d' ' -f1)
 mc cp /tmp/simple_test_file_updated.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file.txt"
 
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --region us-east-1
+echo "test update"
+exit 1
 
-git add data/simple_test_file.txt
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt
 git commit -m "add-url update simple_test_file.txt"
 
 updated_add_url_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file.txt" '$0 ~ (" " path "$") {print $1; exit}')
@@ -338,12 +353,8 @@ cat data/simple_test_file.txt | grep "$updated_test_string"
 
 # use the add-url command to add the file to project
 # we are providing the sha256, so git-drs must trust it
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --sha256 $sha2562 \
-  --region us-east-1
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file2.txt data/simple_test_file2.txt \
+  --sha256 $sha2562
 
 git lfs track data/simple_test_file2.txt
 git add .gitattributes data/simple_test_file2.txt

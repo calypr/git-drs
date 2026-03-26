@@ -28,6 +28,7 @@ var execCommandContext = exec.CommandContext
 
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
+	myLogger.Info("PushLocalDrsObjects: START")
 	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
 	if err != nil {
 		return err
@@ -175,10 +176,15 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 
 	for _, file := range lfsFiles {
 		drsID := DrsUUID(builder.ProjectID, file.Oid)
-		authoritativeObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
-		if err != nil {
-			opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
-			continue
+
+		authoritativeObj, _ := DrsInfoFromOid(file.Oid)
+		if authoritativeObj == nil {
+			drsObj, err := builder.Build(file.Name, file.Oid, file.Size, drsID)
+			if err != nil {
+				opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
+				continue
+			}
+			authoritativeObj = drsObj
 		}
 
 		authoritativeURL := ""
@@ -220,7 +226,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) {
+func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string, aliases []string, checksums *hash.HashInfo) (*drs.DRSObject, error) {
 
 	// determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
@@ -245,6 +251,29 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	}
 	if objectPath != nil && *objectPath != "" {
 		drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
+	}
+
+	if aliases != nil {
+		if len(drsObj.Aliases) == 0 {
+			drsObj.Aliases = make([]string, 0, len(aliases))
+		}
+		drsObj.Aliases = append(drsObj.Aliases, aliases...)
+	}
+
+	if checksums != nil {
+		// Merge checksums instead of replacing
+		if checksums.SHA256 != "" {
+			drsObj.Checksums.SHA256 = checksums.SHA256
+		}
+		if checksums.MD5 != "" {
+			drsObj.Checksums.MD5 = checksums.MD5
+		}
+		if checksums.ETag != "" {
+			drsObj.Checksums.ETag = checksums.ETag
+		}
+		if checksums.SHA512 != "" {
+			drsObj.Checksums.SHA512 = checksums.SHA512
+		}
 	}
 
 	// write drs objects to DRS_OBJS_PATH

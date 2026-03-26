@@ -68,6 +68,7 @@ func TestGetDrsLfsObjects(t *testing.T) {
 		Id:        "object-1",
 		Name:      "object-one",
 		Checksums: hash.HashInfo{SHA256: "sha-256-value"},
+		Aliases:   []string{"foo:bar", "anything"},
 	}
 	data, err := sonic.ConfigFastest.Marshal(payload)
 	if err != nil {
@@ -91,7 +92,12 @@ func TestGetDrsLfsObjects(t *testing.T) {
 	if len(objects) != 1 {
 		t.Fatalf("expected 1 drs object, got %d", len(objects))
 	}
-	if _, ok := objects["sha-256-value"]; !ok {
+	drsObj, ok := objects["sha-256-value"]
+	if !ok {
 		t.Fatalf("expected sha-256-value key")
 	}
+	if got := len(drsObj.Aliases); got != 2 {
+		t.Fatalf("expected aliases length 2, got %d", got)
+	}
+
 }

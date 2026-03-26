@@ -2,22 +2,17 @@ package cloud
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/calypr/data-client/drs"
+	"gocloud.dev/blob"
+	"gocloud.dev/blob/memblob"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +130,7 @@ func TestParseAzureURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.rawURL, func(t *testing.T) {
-			account, container, blob, err := parseAzureURL(tt.rawURL)
+			account, container, blobKey, err := parseAzureURL(tt.rawURL)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("parseAzureURL(%q) err=%v, wantErr=%v", tt.rawURL, err, tt.wantErr)
 			}
@@ -148,58 +143,8 @@ func TestParseAzureURL(t *testing.T) {
 			if container != tt.container {
 				t.Errorf("container = %q, want %q", container, tt.container)
 			}
-			if blob != tt.blob {
-				t.Errorf("blob = %q, want %q", blob, tt.blob)
-			}
-		})
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// parseAzureConnString
-// ─────────────────────────────────────────────────────────────────────────────
-
-func TestParseAzureConnString(t *testing.T) {
-	tests := []struct {
-		name       string
-		connString string
-		wantAcct   string
-		wantKey    string
-	}{
-		{
-			name:       "standard connection string",
-			connString: "DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=bXlrZXk=;EndpointSuffix=core.windows.net",
-			wantAcct:   "myaccount",
-			wantKey:    "bXlrZXk=",
-		},
-		{
-			name:       "key with padding equals signs",
-			connString: "AccountName=acct;AccountKey=abc123==",
-			wantAcct:   "acct",
-			wantKey:    "abc123==",
-		},
-		{
-			name:       "key only",
-			connString: "AccountKey=key123",
-			wantAcct:   "",
-			wantKey:    "key123",
-		},
-		{
-			name:       "empty string",
-			connString: "",
-			wantAcct:   "",
-			wantKey:    "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			account, key := parseAzureConnString(tt.connString)
-			if account != tt.wantAcct {
-				t.Errorf("account = %q, want %q", account, tt.wantAcct)
-			}
-			if key != tt.wantKey {
-				t.Errorf("key = %q, want %q", key, tt.wantKey)
+			if blobKey != tt.blob {
+				t.Errorf("blob = %q, want %q", blobKey, tt.blob)
 			}
 		})
 	}
@@ -276,9 +221,9 @@ func TestHeadS3(t *testing.T) {
 	t.Setenv(AWS_REGION_ENV_VAR, "us-east-1")
 	t.Setenv(AWS_ENDPOINT_URL_ENV_VAR, srv.URL)
 
-	meta, err := headS3(context.Background(), "s3://test-bucket/path/to/file.bin")
+	meta, err := HeadObject(context.Background(), "s3://test-bucket/path/to/file.bin")
 	if err != nil {
-		t.Fatalf("headS3 error: %v", err)
+		t.Fatalf("HeadObject error: %v", err)
 	}
 
 	if meta.Platform != PlatformS3 {
@@ -325,7 +270,7 @@ func TestHeadS3_MissingCredentials(t *testing.T) {
 			t.Setenv(AWS_SECRET_ENV_VAR, tt.secret)
 			t.Setenv(AWS_REGION_ENV_VAR, tt.region)
 
-			_, err := headS3(context.Background(), "s3://bucket/key.txt")
+			_, err := HeadObject(context.Background(), "s3://bucket/key.txt")
 			if err == nil {
 				t.Fatal("expected error when credentials are missing")
 			}
@@ -364,64 +309,15 @@ func buildGCSServiceAccountJSON(t *testing.T, tokenURL, privKeyPEM string) []byt
 }
 
 func TestHeadGCS(t *testing.T) {
-	// Generate a 2048-bit RSA key for the fake service account JWT signing.
-	// The google auth library requires a valid RSA key; key size is not validated.
-	privKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	const content = "gcs object content"
+	injectBucket(t, "path/to/data.bin", []byte(content), "application/octet-stream", map[string]string{
+		"project": "calypr",
+		"sha256": "cafebabe",
+	})
+
+	meta, err := HeadObject(context.Background(), "gs://gcs-bucket/path/to/data.bin")
 	if err != nil {
-		t.Fatalf("generate RSA key: %v", err)
-	}
-	privPEM := string(pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privKey),
-	}))
-
-	// Single mock server serves both the OAuth2 token endpoint (/token) and
-	// the GCS JSON API (/storage/v1/b/{bucket}/o/{key}).
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/token" {
-			// Fake OAuth2 JWT bearer token response.
-			json.NewEncoder(w).Encode(map[string]any{
-				"access_token": "fake-gcs-access-token",
-				"token_type":   "Bearer",
-				"expires_in":   3600,
-			})
-			return
-		}
-		// GCS JSON API: return fake object metadata.
-		json.NewEncoder(w).Encode(gcsObjectResponse{
-			Bucket:      "gcs-bucket",
-			Name:        "path/to/data.bin",
-			Size:        "1024",
-			ETag:        "gcs-etag-xyz",
-			ContentType: "application/octet-stream",
-			Updated:     time.Date(2026, 3, 24, 12, 0, 0, 0, time.UTC),
-			Metadata:    map[string]string{"project": "calypr", "sha256": "cafebabe"},
-		})
-	}))
-	defer srv.Close()
-
-	// Write service account JSON to a temp file; point credentials at it.
-	credFile, err := os.CreateTemp("", "gcs-test-creds-*.json")
-	if err != nil {
-		t.Fatalf("create temp cred file: %v", err)
-	}
-	t.Cleanup(func() { os.Remove(credFile.Name()) })
-	if _, err := credFile.Write(buildGCSServiceAccountJSON(t, srv.URL+"/token", privPEM)); err != nil {
-		t.Fatalf("write cred file: %v", err)
-	}
-	credFile.Close()
-
-	t.Setenv(GCSCredentialsEnvVar, credFile.Name())
-
-	// Redirect GCS API calls to the mock server.
-	oldBase := gcsAPIBase
-	gcsAPIBase = srv.URL
-	t.Cleanup(func() { gcsAPIBase = oldBase })
-
-	meta, err := headGCS(context.Background(), "gs://gcs-bucket/path/to/data.bin")
-	if err != nil {
-		t.Fatalf("headGCS error: %v", err)
+		t.Fatalf("HeadObject error: %v", err)
 	}
 
 	if meta.Platform != PlatformGCS {
@@ -433,11 +329,8 @@ func TestHeadGCS(t *testing.T) {
 	if meta.Key != "path/to/data.bin" {
 		t.Errorf("Key = %q, want path/to/data.bin", meta.Key)
 	}
-	if meta.SizeBytes != 1024 {
-		t.Errorf("SizeBytes = %d, want 1024", meta.SizeBytes)
-	}
-	if meta.ETag != "gcs-etag-xyz" {
-		t.Errorf("ETag = %q, want gcs-etag-xyz", meta.ETag)
+	if meta.SizeBytes != int64(len(content)) {
+		t.Errorf("SizeBytes = %d, want %d", meta.SizeBytes, len(content))
 	}
 	if meta.ContentType != "application/octet-stream" {
 		t.Errorf("ContentType = %q, want application/octet-stream", meta.ContentType)
@@ -453,56 +346,16 @@ func TestHeadGCS(t *testing.T) {
 	}
 }
 
-func TestHeadGCS_InvalidCredentials(t *testing.T) {
-	// A file that is not valid credential JSON must produce a parse error.
-	credFile, err := os.CreateTemp("", "gcs-bad-creds-*.json")
-	if err != nil {
-		t.Fatalf("create temp cred file: %v", err)
-	}
-	t.Cleanup(func() { os.Remove(credFile.Name()) })
-	credFile.WriteString("not valid json at all")
-	credFile.Close()
-
-	t.Setenv(GCSCredentialsEnvVar, credFile.Name())
-
-	_, err = headGCS(context.Background(), "gs://bucket/key.txt")
-	if err == nil {
-		t.Fatal("expected error for invalid credentials file")
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Azure
-// ─────────────────────────────────────────────────────────────────────────────
-
 func TestHeadAzure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodHead {
-			t.Errorf("expected HEAD, got %s", r.Method)
-		}
-		w.Header().Set("Content-Length", "2048")
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("ETag", `"azure-etag-abc"`)
-		w.Header().Set("Last-Modified", "Mon, 24 Mar 2026 12:00:00 GMT")
-		w.Header().Set("x-ms-meta-project", "calypr")
-		w.Header().Set("x-ms-meta-sha256", "beefdead")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+	const content = "azure blob content"
+	injectBucket(t, "path/to/blob.bin", []byte(content), "application/octet-stream", map[string]string{
+		"project": "calypr",
+		"sha256": "beefdead",
+	})
 
-	// Use SAS token auth to avoid HMAC signing.
-	t.Setenv(AzureAccountEnvVar, "testaccount")
-	t.Setenv(AzureSASTokenEnvVar, "sv=2020-08-04&se=2099-01-01T00:00:00Z")
-	t.Setenv(AzureKeyEnvVar, "")
-
-	// Redirect Azure blob endpoint to the mock server.
-	oldBase := azureBlobBase
-	azureBlobBase = srv.URL
-	t.Cleanup(func() { azureBlobBase = oldBase })
-
-	meta, err := headAzure(context.Background(), "az://mycontainer/path/to/blob.bin")
+	meta, err := HeadObject(context.Background(), "az://mycontainer/path/to/blob.bin")
 	if err != nil {
-		t.Fatalf("headAzure error: %v", err)
+		t.Fatalf("HeadObject error: %v", err)
 	}
 
 	if meta.Platform != PlatformAzure {
@@ -514,11 +367,8 @@ func TestHeadAzure(t *testing.T) {
 	if meta.Key != "path/to/blob.bin" {
 		t.Errorf("Key = %q, want path/to/blob.bin", meta.Key)
 	}
-	if meta.SizeBytes != 2048 {
-		t.Errorf("SizeBytes = %d, want 2048", meta.SizeBytes)
-	}
-	if meta.ETag != "azure-etag-abc" {
-		t.Errorf("ETag = %q, want azure-etag-abc", meta.ETag)
+	if meta.SizeBytes != int64(len(content)) {
+		t.Errorf("SizeBytes = %d, want %d", meta.SizeBytes, len(content))
 	}
 	if meta.ContentType != "application/octet-stream" {
 		t.Errorf("ContentType = %q, want application/octet-stream", meta.ContentType)
@@ -531,36 +381,6 @@ func TestHeadAzure(t *testing.T) {
 	}
 	if len(meta.EnvVarsUsed) == 0 {
 		t.Error("EnvVarsUsed should not be empty")
-	}
-}
-
-func TestHeadAzure_MissingAccount(t *testing.T) {
-	t.Setenv(AzureAccountEnvVar, "")
-	t.Setenv(AzureKeyEnvVar, "")
-	t.Setenv(AzureSASTokenEnvVar, "")
-	t.Setenv(AzureConnStringEnvVar, "")
-
-	_, err := headAzure(context.Background(), "az://container/blob.txt")
-	if err == nil {
-		t.Fatal("expected error when account is missing")
-	}
-	if !strings.Contains(err.Error(), AzureAccountEnvVar) {
-		t.Errorf("error should mention %s, got: %v", AzureAccountEnvVar, err)
-	}
-}
-
-func TestHeadAzure_MissingAuth(t *testing.T) {
-	t.Setenv(AzureAccountEnvVar, "myaccount")
-	t.Setenv(AzureKeyEnvVar, "")
-	t.Setenv(AzureSASTokenEnvVar, "")
-	t.Setenv(AzureConnStringEnvVar, "")
-
-	_, err := headAzure(context.Background(), "az://container/blob.txt")
-	if err == nil {
-		t.Fatal("expected error when no auth method is set")
-	}
-	if !strings.Contains(err.Error(), AzureKeyEnvVar) {
-		t.Errorf("error should mention %s, got: %v", AzureKeyEnvVar, err)
 	}
 }
 
@@ -587,7 +407,23 @@ func TestHeadObject_UnknownScheme(t *testing.T) {
 	}
 }
 
-func TestDownloadToTempFromDRSObject_Errors(t *testing.T) {
+func TestHeadObject_BucketOpenError(t *testing.T) {
+	old := openBucket
+	t.Cleanup(func() { openBucket = old })
+	openBucket = func(_ context.Context, _ string) (*blob.Bucket, error) {
+		return nil, fmt.Errorf("injected bucket open error")
+	}
+
+	_, err := HeadObject(context.Background(), "gs://bucket/key.txt")
+	if err == nil {
+		t.Fatal("expected error when bucket opener fails")
+	}
+	if !strings.Contains(err.Error(), "injected bucket open error") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDownloadToTempFromDRSObject_Errors(t *testing.t) {
 	_, _, err := Download(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil drs object")
@@ -601,48 +437,24 @@ func TestDownloadToTempFromDRSObject_Errors(t *testing.T) {
 
 func TestDownloadToTempFromDRSObject_Azure(t *testing.T) {
 	const payload = "hello from azure object"
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodHead:
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(payload)))
-			w.Header().Set("ETag", `"etag-123"`)
-			w.WriteHeader(http.StatusOK)
-		case http.MethodGet:
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(payload))
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	}))
-	defer srv.Close()
-
-	t.Setenv(AzureAccountEnvVar, "testaccount")
-	t.Setenv(AzureSASTokenEnvVar, "sv=2020-08-04&se=2099-01-01T00:00:00Z")
-	t.Setenv(AzureKeyEnvVar, "")
-
-	oldBase := azureBlobBase
-	azureBlobBase = srv.URL
-	t.Cleanup(func() { azureBlobBase = oldBase })
+	injectBucket(t, "path/to/blob.bin", []byte(payload), "application/octet-stream", nil)
 
 	drsObj := &drs.DRSObject{
-		AccessMethods: []drs.AccessMethod{
-			{AccessURL: drs.AccessURL{URL: "az://container/path/to/blob.bin"}},
-		},
+		AccessMethods: []drs.AccessMethod{{AccessURL: drs.AccessURL{URL: "az://container/path/to/blob.bin"}}},
 	}
 
-	sha, tmpPath, err := Download(context.Background(), drsObj)
+	sha, dstPath, err := Download(context.Background(), drsObj)
 	if err != nil {
 		t.Fatalf("Download error: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Remove(tmpPath) })
+	t.Cleanup(func() { _ = os.Remove(dstPath) })
 
-	data, err := os.ReadFile(tmpPath)
+	data, err := os.ReadFile(dstPath)
 	if err != nil {
-		t.Fatalf("read temp file: %v", err)
+		t.Fatalf("read dest file: %v", err)
 	}
 	if string(data) != payload {
-		t.Fatalf("unexpected temp file content: %q", string(data))
+		t.Fatalf("unexpected file content: %q", string(data))
 	}
 
 	expected := fmt.Sprintf("%x", sha256.Sum256([]byte(payload)))

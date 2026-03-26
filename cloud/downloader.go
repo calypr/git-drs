@@ -6,16 +6,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/lfs"
-	"golang.org/x/oauth2/google"
+	"gocloud.dev/blob"
 )
 
 // Download extracts the first non-empty access URL from a
@@ -121,114 +118,39 @@ func firstAccessURL(drsObj *drs.DRSObject) (string, error) {
 }
 
 func openObjectReader(ctx context.Context, rawURL string) (io.ReadCloser, error) {
-	switch DetectPlatform(rawURL) {
-	case PlatformS3:
-		params := S3ObjectParameters{
-			S3URL:        rawURL,
-			AWSAccessKey: os.Getenv(AWS_KEY_ENV_VAR),
-			AWSSecretKey: os.Getenv(AWS_SECRET_ENV_VAR),
-			AWSRegion:    os.Getenv(AWS_REGION_ENV_VAR),
-			AWSEndpoint:  os.Getenv(AWS_ENDPOINT_URL_ENV_VAR),
-		}
-		return AgentFetchReader(ctx, params)
-	case PlatformGCS:
-		return openGCSReader(ctx, rawURL)
-	case PlatformAzure:
-		return openAzureReader(ctx, rawURL)
-	default:
+	platform := DetectPlatform(rawURL)
+	if platform == PlatformUnknown {
 		return nil, fmt.Errorf("unsupported URL: cannot detect cloud platform for %q", rawURL)
 	}
+
+	bucketURL, _, key, err := toCDKBucketURL(rawURL, platform)
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := openBucket(ctx, bucketURL)
+	if err != nil {
+		return nil, fmt.Errorf("%s: open bucket: %w", platform, err)
+	}
+
+	r, err := b.NewReader(ctx, key, nil)
+	if err != nil {
+		_ = b.Close()
+		return nil, fmt.Errorf("%s: new reader %s: %w", platform, key, err)
+	}
+
+	return &bucketReader{Reader: r, bucket: b}, nil
 }
 
-func openGCSReader(ctx context.Context, rawURL string) (io.ReadCloser, error) {
-	bucket, key, err := parseGCSURL(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("GCS: %w", err)
-	}
-
-	httpClient, err := google.DefaultClient(ctx, "https://www.googleapis.com/auth/devstorage.read_only")
-	if err != nil {
-		return nil, fmt.Errorf("GCS: build credentials (is %s set?): %w", GCSCredentialsEnvVar, err)
-	}
-
-	apiURL := fmt.Sprintf("%s/storage/v1/b/%s/o/%s?alt=media", gcsAPIBase,
-		url.PathEscape(bucket),
-		url.PathEscape(key),
-	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("GCS: build request: %w", err)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("GCS: request failed: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("GCS: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return resp.Body, nil
+type bucketReader struct {
+	*blob.Reader
+	bucket *blob.Bucket
 }
 
-func openAzureReader(ctx context.Context, rawURL string) (io.ReadCloser, error) {
-	account, container, blob, err := parseAzureURL(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("Azure: %w", err)
-	}
-
-	if v := os.Getenv(AzureAccountEnvVar); v != "" {
-		account = v
-	}
-	storageKey := os.Getenv(AzureKeyEnvVar)
-	sasToken := os.Getenv(AzureSASTokenEnvVar)
-	if connStr := os.Getenv(AzureConnStringEnvVar); connStr != "" && (account == "" || storageKey == "") {
-		account, storageKey = parseAzureConnString(connStr)
-	}
-
-	if account == "" {
-		return nil, fmt.Errorf("Azure: %s must be set", AzureAccountEnvVar)
-	}
-	if storageKey == "" && sasToken == "" {
-		return nil, fmt.Errorf("Azure: one of %s, %s, or %s must be set",
-			AzureKeyEnvVar, AzureSASTokenEnvVar, AzureConnStringEnvVar)
-	}
-
-	base := azureBlobBase
-	if base == "" {
-		base = fmt.Sprintf("https://%s.blob.core.windows.net", account)
-	}
-	blobEndpoint := fmt.Sprintf("%s/%s/%s", base, container, blob)
-
-	reqURL := blobEndpoint
-	if sasToken != "" {
-		reqURL = blobEndpoint + "?" + strings.TrimPrefix(sasToken, "?")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("Azure: build request: %w", err)
-	}
-	req.Header.Set("x-ms-date", time.Now().UTC().Format(http.TimeFormat))
-	req.Header.Set("x-ms-version", azureBlobAPIVersion)
-
-	if storageKey != "" && sasToken == "" {
-		if err := signAzureSharedKey(req, account, container, blob, storageKey); err != nil {
-			return nil, fmt.Errorf("Azure: sign request: %w", err)
-		}
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Azure: GET failed: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("Azure: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return resp.Body, nil
+func (br *bucketReader) Close() error {
+	err := br.Reader.Close()
+	_ = br.bucket.Close()
+	return err
 }
 
 // DownloadOLD deprecated: downloads the S3 object to a temporary file while computing its SHA256 hash.

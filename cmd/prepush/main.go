@@ -83,9 +83,19 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-	builder := drs.NewObjectBuilder(remoteConfig.GetBucketName(), remoteConfig.GetProjectId())
+	scope, err := gitrepo.ResolveBucketScope(
+		remoteConfig.GetOrganization(),
+		remoteConfig.GetProjectId(),
+		remoteConfig.GetBucketName(),
+		remoteConfig.GetStoragePrefix(),
+	)
+	if err != nil {
+		return err
+	}
+
+	builder := drs.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
-	builder.StoragePrefix = remoteConfig.GetStoragePrefix()
+	builder.StoragePrefix = scope.Prefix
 	// git-drs native backend uses CAS-style paths
 	builder.PathStyle = "CAS"
 	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
@@ -198,12 +208,22 @@ func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
 	if len(c.AccessMethods) > 0 {
 		out.AccessMethods = make([]metadataAccessMethod, 0, len(c.AccessMethods))
 		for _, am := range c.AccessMethods {
+			var accID, region, accURL string
+			if am.AccessId != nil {
+				accID = *am.AccessId
+			}
+			if am.Region != nil {
+				region = *am.Region
+			}
+			if am.AccessUrl != nil {
+				accURL = am.AccessUrl.Url
+			}
 			m := metadataAccessMethod{
 				Type:     am.Type,
-				AccessID: am.AccessID,
-				Region:   am.Region,
+				AccessID: accID,
+				Region:   region,
 				AccessURL: metadataAccessURL{
-					URL: am.AccessURL.URL,
+					URL: accURL,
 				},
 			}
 			if am.Authorizations != nil {

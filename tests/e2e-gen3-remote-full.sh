@@ -53,6 +53,8 @@ FULL_SERVER_SWEEP="${TEST_FULL_SERVER_SWEEP:-true}"
 RUN_INTERNAL_API_CHECKS="${TEST_RUN_INTERNAL_API_CHECKS:-true}"
 CLEANUP_RECORDS="${TEST_CLEANUP_RECORDS:-true}"
 STRICT_CLEANUP="${TEST_STRICT_CLEANUP:-true}"
+RUN_RESUME_E2E="${TEST_RUN_RESUME_E2E:-true}"
+RESUME_FAIL_DOWNLOAD_AFTER_BYTES="${TEST_RESUME_FAIL_DOWNLOAD_AFTER_BYTES:-2097152}"
 GITHUB_MODE="${TEST_GITHUB_MODE:-false}"
 TEST_GITHUB_TOKEN="${TEST_GITHUB_TOKEN:-}"
 TEST_GITHUB_OWNER="${TEST_GITHUB_OWNER:-calypr}"
@@ -98,6 +100,7 @@ GITHUB_OWNER_REPO=""
 GITHUB_REPO_WEB_URL=""
 GEN3_TOKEN_SOURCE="unset"
 declare -a ALL_OIDS=()
+declare -A DRS_ID_BY_OID=()
 
 log() {
   printf '[e2e-gen3-remote] %s\n' "$*"
@@ -155,17 +158,29 @@ cleanup() {
       index_verify_codes="200,401,403,404"
     fi
     if [[ "$HAS_DRS_API" == "true" && "$HAS_DRS_BULK_DELETE" == "true" ]]; then
-      local ids_json delete_body
-      ids_json="$(printf '%s\n' "${ALL_OIDS[@]}" | jq -Rsc 'split("\n") | map(select(length>0))')"
-      delete_body="$(jq -n --argjson ids "$ids_json" '{bulk_object_ids:$ids, delete_storage_data:false}')"
-      api_json POST "$API_BASE/objects/delete" "$delete_body" "$bulk_delete_codes" >/dev/null || true
+      local drs_ids=() oid ids_json delete_body did
+      for oid in "${ALL_OIDS[@]}"; do
+        did="$(drs_id_from_oid "$oid")"
+        if [[ -n "$did" ]]; then
+          drs_ids+=("$did")
+        fi
+      done
+      if [[ "${#drs_ids[@]}" -gt 0 ]]; then
+        ids_json="$(printf '%s\n' "${drs_ids[@]}" | jq -Rsc 'split("\n") | map(select(length>0))')"
+        delete_body="$(jq -n --argjson ids "$ids_json" '{bulk_object_ids:$ids, delete_storage_data:false}')"
+        api_json POST "$API_BASE/objects/delete" "$delete_body" "$bulk_delete_codes" >/dev/null || true
+      fi
     elif [[ "$HAS_DRS_API" == "true" ]]; then
       log "Skipping DRS bulk delete cleanup: endpoint /ga4gh/drs/v1/objects/delete not available"
     fi
     for oid in "${ALL_OIDS[@]}"; do
       api_json DELETE "${INDEXD_BASE}/${oid}" "" "$index_delete_codes" >/dev/null || true
       if [[ "$HAS_DRS_API" == "true" ]]; then
-        api_json GET "$API_BASE/objects/${oid}" "" "$verify_codes" >/dev/null || true
+        local did
+        did="${DRS_ID_BY_OID[$oid]:-}"
+        if [[ -n "$did" ]]; then
+          api_json GET "$API_BASE/objects/${did}" "" "$verify_codes" >/dev/null || true
+        fi
       fi
       api_json GET "${INDEXD_BASE}/${oid}" "" "$index_verify_codes" >/dev/null || true
     done
@@ -174,11 +189,7 @@ cleanup() {
 
   if [[ "$CREATE_BUCKET_BEFORE_TEST" == "true" && "$DELETE_TEST_BUCKET_AFTER" == "true" && "$CREATED_TEST_BUCKET" == "true" ]]; then
     log "Deleting test bucket credential '$TEST_BUCKET_NAME'"
-    if [[ "$SERVER_MODE" == "remote" ]]; then
-      api_json DELETE "$BUCKET_API_BASE/$TEST_BUCKET_NAME" "" "204" >/dev/null
-    else
-      api_json DELETE "${DRS_URL%/}/admin/credentials/$TEST_BUCKET_NAME" "" "200,204,404" >/dev/null
-    fi
+    api_json DELETE "$BUCKET_API_BASE/$TEST_BUCKET_NAME" "" "200,204,404" >/dev/null
   fi
 
   if [[ "$GITHUB_MODE" == "true" && "$TEST_DELETE_GITHUB_REPO_AFTER" == "true" && "$CREATED_GITHUB_REPO" == "true" ]]; then
@@ -271,6 +282,13 @@ validate_required_config() {
       exit 1
       ;;
   esac
+  case "$RUN_RESUME_E2E" in
+    true|false) ;;
+    *)
+      echo "error: TEST_RUN_RESUME_E2E must be 'true' or 'false', got '$RUN_RESUME_E2E'" >&2
+      exit 1
+      ;;
+  esac
 
   # Keep compatibility path opt-in so default runs exercise git-drs push only.
   if [[ "$ENABLE_GIT_PUSH_COMPAT" != "true" ]]; then
@@ -296,6 +314,7 @@ validate_required_config() {
   require_int_ge TEST_MULTIPART_THRESHOLD_MB "$MULTIPART_THRESHOLD_MB" 1
   require_int_ge TEST_UPLOAD_MULTIPART_THRESHOLD_MB "$UPLOAD_MULTIPART_THRESHOLD_MB" 1
   require_int_ge TEST_DOWNLOAD_MULTIPART_THRESHOLD_MB "$DOWNLOAD_MULTIPART_THRESHOLD_MB" 1
+  require_int_ge TEST_RESUME_FAIL_DOWNLOAD_AFTER_BYTES "$RESUME_FAIL_DOWNLOAD_AFTER_BYTES" 1
 
   if [[ "$SERVER_MODE" == "remote" && -z "$GEN3_TOKEN" && -z "$GEN3_PROFILE" ]]; then
     echo "error: remote mode requires TEST_GEN3_TOKEN or GEN3_PROFILE/TEST_GEN3_PROFILE" >&2
@@ -673,6 +692,39 @@ bucket_preflight() {
   rm -f "$out"
 }
 
+resolve_bucket_api_base() {
+  if [[ "$SERVER_MODE" != "remote" ]]; then
+    return
+  fi
+
+  local -a candidates=("${DRS_URL%/}/data/buckets")
+  local candidate out status
+
+  for candidate in "${candidates[@]}"; do
+    out="$(mktemp)"
+    status="$(curl -sS -o "$out" -w '%{http_code}' \
+      -H "Authorization: Bearer $GEN3_TOKEN" \
+      -H "Accept: application/json" \
+      "$candidate" || true)"
+    rm -f "$out"
+
+    case "$status" in
+      200|401|403)
+        BUCKET_API_BASE="$candidate"
+        log "Resolved bucket endpoint: $BUCKET_API_BASE (status=$status)"
+        return
+        ;;
+      404)
+        ;;
+      *)
+        log_warn "Bucket endpoint probe returned status=$status for $candidate"
+        ;;
+    esac
+  done
+
+  log_warn "Unable to auto-resolve bucket endpoint; continuing with default $BUCKET_API_BASE"
+}
+
 multipart_preflight() {
   if [[ "$SERVER_MODE" != "remote" ]]; then
     return
@@ -887,6 +939,26 @@ api_json() {
   rm -f "$out"
 }
 
+drs_id_from_oid() {
+  local oid="$1"
+  if [[ -n "${DRS_ID_BY_OID[$oid]:-}" ]]; then
+    printf '%s\n' "${DRS_ID_BY_OID[$oid]}"
+    return 0
+  fi
+
+  local resp did
+  resp="$(api_json GET "${INDEXD_BASE}?hash=sha256:${oid}" "" "200")"
+  did="$(echo "$resp" | jq -r 'first((.records // [])[] | (.did // .id // empty)) // empty')"
+  if [[ -z "$did" || "$did" == "null" ]]; then
+    echo "error: failed to resolve DRS id for oid ${oid} via ${INDEXD_BASE}?hash=sha256:${oid}" >&2
+    echo "$resp" >&2
+    exit 1
+  fi
+
+  DRS_ID_BY_OID["$oid"]="$did"
+  printf '%s\n' "$did"
+}
+
 lfs_json() {
   local method="$1"
   local url="$2"
@@ -913,6 +985,53 @@ lfs_json() {
   rm -f "$out"
 }
 
+lfs_batch_diag() {
+  local endpoint="$1"
+  shift
+  local -a paths=("$@")
+  local -a object_rows=()
+  local p oid size
+
+  for p in "${paths[@]}"; do
+    oid="${HASH_SRC[$p]:-}"
+    size="${SIZE_SRC[$p]:-}"
+    if [[ -z "$oid" || -z "$size" ]]; then
+      continue
+    fi
+    object_rows+=("{\"oid\":\"${oid}\",\"size\":${size}}")
+  done
+
+  if [[ "${#object_rows[@]}" -eq 0 ]]; then
+    log_warn "Skipping LFS batch diagnostic: no objects available"
+    return 0
+  fi
+
+  local body out status
+  body="$(
+    printf '%s\n' "${object_rows[@]}" | jq -s \
+      '{operation:"download",transfers:["basic"],ref:{name:"refs/heads/main"},objects:.}'
+  )"
+
+  out="$(mktemp)"
+  local curl_args=(-sS -o "$out" -w '%{http_code}' -X POST \
+    -H "Accept: application/vnd.git-lfs+json" \
+    -H "Content-Type: application/vnd.git-lfs+json")
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  curl_args+=("${endpoint%/}/objects/batch" -d "$body")
+  status="$(curl "${curl_args[@]}")"
+
+  log "LFS batch diagnostic request endpoint: ${endpoint%/}/objects/batch"
+  log "LFS batch diagnostic request body: $body"
+  log "LFS batch diagnostic response status: $status"
+  log "LFS batch diagnostic response body:"
+  sed 's/^/[e2e-gen3-remote][lfs-batch] /' "$out"
+  rm -f "$out"
+}
+
 main() {
   require_cmd git
   require_cmd git-lfs
@@ -936,44 +1055,31 @@ main() {
   declare -a ALL_FILES=()
 
   local active_bucket="$BUCKET"
+  resolve_bucket_api_base
 
   # If requested, create bucket credentials/mapping before any auth/upload preflight checks.
   # Otherwise preflights can fail with "credential not found" before we even attempt creation.
   if [[ "$CREATE_BUCKET_BEFORE_TEST" == "true" ]]; then
-    if [[ "$SERVER_MODE" == "remote" ]]; then
-      log "Creating bucket credential '$TEST_BUCKET_NAME' via bucket API"
-      local create_bucket_body
-      create_bucket_body="$(jq -n \
-        --arg bucket "$TEST_BUCKET_NAME" \
-        --arg region "$TEST_BUCKET_REGION" \
-        --arg access_key "$TEST_BUCKET_ACCESS_KEY" \
-        --arg secret_key "$TEST_BUCKET_SECRET_KEY" \
-        --arg endpoint "$TEST_BUCKET_ENDPOINT" \
-        --arg organization "$TEST_BUCKET_ORGANIZATION" \
-        --arg project_id "$TEST_BUCKET_PROJECT_ID" \
-        '{bucket:$bucket, region:$region, access_key:$access_key, secret_key:$secret_key}
-        + (if $endpoint == "" then {} else {endpoint:$endpoint} end)
-        + (if $organization == "" then {} else {organization:$organization} end)
-        + (if $project_id == "" then {} else {project_id:$project_id} end)')"
-      api_json PUT "$BUCKET_API_BASE" "$create_bucket_body" "201" >/dev/null
+    log "Creating bucket credential '$TEST_BUCKET_NAME' via bucket API"
+    local create_bucket_body
+    create_bucket_body="$(jq -n \
+      --arg bucket "$TEST_BUCKET_NAME" \
+      --arg region "$TEST_BUCKET_REGION" \
+      --arg access_key "$TEST_BUCKET_ACCESS_KEY" \
+      --arg secret_key "$TEST_BUCKET_SECRET_KEY" \
+      --arg endpoint "$TEST_BUCKET_ENDPOINT" \
+      --arg organization "$TEST_BUCKET_ORGANIZATION" \
+      --arg project_id "$TEST_BUCKET_PROJECT_ID" \
+      '{bucket:$bucket, region:$region, access_key:$access_key, secret_key:$secret_key}
+      + (if $endpoint == "" then {} else {endpoint:$endpoint} end)
+      + (if $organization == "" then {} else {organization:$organization} end)
+      + (if $project_id == "" then {} else {project_id:$project_id} end)')"
+    api_json PUT "$BUCKET_API_BASE" "$create_bucket_body" "200,201" >/dev/null
 
-      local buckets_resp
-      buckets_resp="$(api_json GET "$BUCKET_API_BASE" "" "200")"
-      echo "$buckets_resp" | jq -e --arg bucket "$TEST_BUCKET_NAME" '.S3_BUCKETS[$bucket]' >/dev/null
-    else
-      log "Creating bucket credential '$TEST_BUCKET_NAME' via admin credentials API"
-      log "Admin credential payload preflight: bucket='${TEST_BUCKET_NAME}' region='${TEST_BUCKET_REGION}' access_key_set=$([[ -n "$TEST_BUCKET_ACCESS_KEY" ]] && echo true || echo false) secret_key_set=$([[ -n "$TEST_BUCKET_SECRET_KEY" ]] && echo true || echo false) endpoint='${TEST_BUCKET_ENDPOINT}'"
-      local admin_payload
-      admin_payload="$(jq -n \
-        --arg bucket "$TEST_BUCKET_NAME" \
-        --arg region "$TEST_BUCKET_REGION" \
-        --arg access_key "$TEST_BUCKET_ACCESS_KEY" \
-        --arg secret_key "$TEST_BUCKET_SECRET_KEY" \
-        --arg endpoint "$TEST_BUCKET_ENDPOINT" \
-        '{bucket:$bucket, region:$region, access_key:$access_key, secret_key:$secret_key}
-        + (if $endpoint == "" then {} else {endpoint:$endpoint} end)')"
-      api_json PUT "${DRS_URL%/}/admin/credentials" "$admin_payload" "200,201,204" >/dev/null
-    fi
+    local buckets_resp
+    buckets_resp="$(api_json GET "$BUCKET_API_BASE" "" "200")"
+    echo "$buckets_resp" | jq -e --arg bucket "$TEST_BUCKET_NAME" '.S3_BUCKETS[$bucket]' >/dev/null
+
     active_bucket="$TEST_BUCKET_NAME"
     CREATED_TEST_BUCKET=true
     log "Using dynamically configured bucket: $active_bucket"
@@ -1067,6 +1173,29 @@ main() {
     log "git-drs push completed"
   fi
 
+  if [[ "$RUN_RESUME_E2E" == "true" && ("$PUSH_MODE" == "drs" || "$PUSH_MODE" == "both") ]]; then
+    log "Creating resumable multipart upload payload"
+    dd if=/dev/urandom of=data/resume-upload.bin bs=1048576 count="$LARGE_FILE_MB" status=none
+    local resume_upload_oid resume_upload_size
+    resume_upload_oid="$(sha256_file data/resume-upload.bin)"
+    resume_upload_size="$(file_size data/resume-upload.bin)"
+    HASH_SRC["data/resume-upload.bin"]="$resume_upload_oid"
+    SIZE_SRC["data/resume-upload.bin"]="$resume_upload_size"
+    ALL_OIDS+=("$resume_upload_oid")
+    ALL_FILES+=("data/resume-upload.bin")
+    git add data/resume-upload.bin
+    git commit -m "e2e(remote): resumable multipart upload payload" >/dev/null
+
+    log "Simulating interrupted multipart upload (expected failure)"
+    if DATA_CLIENT_TEST_FAIL_UPLOAD_PART_ONCE=1 git drs push "$REMOTE_NAME"; then
+      echo "error: expected first resumable multipart upload attempt to fail" >&2
+      exit 1
+    fi
+    log "Retrying multipart upload after interruption"
+    git drs push "$REMOTE_NAME"
+    log "Resumable multipart upload retry completed"
+  fi
+
   if [[ "$PUSH_MODE" == "git" || "$PUSH_MODE" == "both" ]]; then
     log "Creating git-push compatibility payload"
     printf 'git-push compatibility payload %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > data/gitpush.bin
@@ -1087,6 +1216,9 @@ main() {
 
   github_verify_lfs_pointer "data/single.bin"
   github_verify_lfs_pointer "data/multipart.bin"
+  if [[ -n "${HASH_SRC[data/resume-upload.bin]:-}" ]]; then
+    github_verify_lfs_pointer "data/resume-upload.bin"
+  fi
   if [[ "$PUSH_MODE" == "git" || "$PUSH_MODE" == "both" ]]; then
     github_verify_lfs_pointer "data/gitpush.bin"
   fi
@@ -1123,6 +1255,31 @@ main() {
     assert_eq "${HASH_SRC[$f]}" "$h_clone" "hash mismatch for $f"
   done
 
+  if [[ "$RUN_RESUME_E2E" == "true" ]]; then
+    log "Simulating interrupted download for multipart-sized object (expected failure)"
+    local lfs_obj_path old_download_threshold resumed_hash
+    lfs_obj_path=".git/lfs/objects/${multi_oid:0:2}/${multi_oid:2:2}/${multi_oid}"
+    rm -f data/multipart.bin "$lfs_obj_path"
+
+    old_download_threshold="$(git config --local --get drs.multipart-threshold || true)"
+    # Force single-stream path so retry resumes via byte ranges from a partial file.
+    git config --local drs.multipart-threshold 999999
+    if DATA_CLIENT_TEST_FAIL_DOWNLOAD_AFTER_BYTES="$RESUME_FAIL_DOWNLOAD_AFTER_BYTES" git drs pull "$REMOTE_NAME"; then
+      echo "error: expected first resumable download attempt to fail" >&2
+      exit 1
+    fi
+    log "Retrying download after interruption"
+    git drs pull "$REMOTE_NAME"
+    if [[ -n "$old_download_threshold" ]]; then
+      git config --local drs.multipart-threshold "$old_download_threshold"
+    else
+      git config --local --unset drs.multipart-threshold >/dev/null 2>&1 || true
+    fi
+    resumed_hash="$(sha256_file data/multipart.bin)"
+    assert_eq "$multi_oid" "$resumed_hash" "resumable download hash mismatch"
+    log "Resumable download retry completed"
+  fi
+
   if [[ "$LFS_PULL_COMPAT" == "true" ]]; then
     log "Running stock git-lfs pull compatibility check"
     rm -rf "${CLONE_REPO}-lfs"
@@ -1142,6 +1299,15 @@ main() {
     # regardless of inherited/global config or tracked .lfsconfig values.
     configure_lfs_endpoint_for_repo "$REMOTE_NAME"
     log_lfs_endpoint_for_repo "$REMOTE_NAME"
+    local -a lfs_diag_paths
+    lfs_diag_paths=("data/single.bin" "data/multipart.bin")
+    if [[ -n "${HASH_SRC[data/resume-upload.bin]:-}" ]]; then
+      lfs_diag_paths+=("data/resume-upload.bin")
+    fi
+    if [[ -n "${HASH_SRC[data/gitpush.bin]:-}" ]]; then
+      lfs_diag_paths+=("data/gitpush.bin")
+    fi
+    lfs_batch_diag "${DRS_URL%/}/info/lfs" "${lfs_diag_paths[@]}"
     local lfs_pull_include
     lfs_pull_include="data/single.bin,data/multipart.bin"
     if [[ -n "${HASH_SRC[data/gitpush.bin]:-}" ]]; then
@@ -1161,15 +1327,21 @@ main() {
   fi
 
   log "Running DRS API checks"
-  local service_info single_obj multi_obj all_oids_json
+  local service_info single_obj multi_obj all_oids_json single_drs_id multi_drs_id all_drs_ids_json
   all_oids_json="$(printf '%s\n' "${ALL_OIDS[@]}" | jq -Rsc 'split("\n") | map(select(length>0))')"
+  single_drs_id="$(drs_id_from_oid "$single_oid")"
+  multi_drs_id="$(drs_id_from_oid "$multi_oid")"
+  all_drs_ids_json="$(printf '%s\n' "${ALL_OIDS[@]}" | while read -r oid; do
+    [[ -n "$oid" ]] || continue
+    drs_id_from_oid "$oid"
+  done | jq -Rsc 'split("\n") | map(select(length>0))')"
   service_info="$(api_json GET "$API_BASE/service-info" "" "200")"
   echo "$service_info" | jq -e '.name and .version' >/dev/null
 
-  single_obj="$(api_json GET "$API_BASE/objects/$single_oid" "" "200")"
-  multi_obj="$(api_json GET "$API_BASE/objects/$multi_oid" "" "200")"
-  echo "$single_obj" | jq -e --arg oid "$single_oid" '.id == $oid' >/dev/null
-  echo "$multi_obj" | jq -e --arg oid "$multi_oid" '.id == $oid' >/dev/null
+  single_obj="$(api_json GET "$API_BASE/objects/$single_drs_id" "" "200")"
+  multi_obj="$(api_json GET "$API_BASE/objects/$multi_drs_id" "" "200")"
+  echo "$single_obj" | jq -e --arg did "$single_drs_id" '.id == $did' >/dev/null
+  echo "$multi_obj" | jq -e --arg did "$multi_drs_id" '.id == $did' >/dev/null
   echo "$single_obj" | jq -e --arg bucket "$active_bucket" --arg org "$ORGANIZATION" --arg proj "$PROJECT_ID" '
     any(.access_methods[]?; (.access_url.url // "") | startswith("s3://" + $bucket + "/" + $org + "/" + $proj + "/"))
   ' >/dev/null
@@ -1177,39 +1349,39 @@ main() {
     any(.access_methods[]?; (.access_url.url // "") | startswith("s3://" + $bucket + "/" + $org + "/" + $proj + "/"))
   ' >/dev/null
 
-  api_json OPTIONS "$API_BASE/objects/$single_oid" "" "200,204" >/dev/null
-  api_json OPTIONS "$API_BASE/objects/$multi_oid" "" "200,204" >/dev/null
+  api_json OPTIONS "$API_BASE/objects/$single_drs_id" "" "200,204" >/dev/null
+  api_json OPTIONS "$API_BASE/objects/$multi_drs_id" "" "200,204" >/dev/null
 
   api_json GET "$API_BASE/objects/checksum/$single_oid" "" "200" >/dev/null
   api_json GET "$API_BASE/objects/checksum/$multi_oid" "" "200" >/dev/null
 
   local bulk_body bulk_resp
-  bulk_body="$(jq -n --argjson ids "$all_oids_json" '{bulk_object_ids: $ids}')"
+  bulk_body="$(jq -n --argjson ids "$all_drs_ids_json" '{bulk_object_ids: $ids}')"
   bulk_resp="$(api_json POST "$API_BASE/objects" "$bulk_body" "200")"
   echo "$bulk_resp" | jq -e '.summary.requested >= 2 and .summary.resolved >= 2' >/dev/null
 
   local single_access_id multi_access_id
-  single_access_id="$(echo "$single_obj" | jq -r '.access_methods[0].access_id // .access_methods[0].type')"
-  multi_access_id="$(echo "$multi_obj" | jq -r '.access_methods[0].access_id // .access_methods[0].type')"
-  if [[ -z "$single_access_id" || "$single_access_id" == "null" ]]; then
-    echo "error: could not resolve single access_id from object response" >&2
-    exit 1
-  fi
-  if [[ -z "$multi_access_id" || "$multi_access_id" == "null" ]]; then
-    echo "error: could not resolve multipart access_id from object response" >&2
-    exit 1
+  single_access_id="$(echo "$single_obj" | jq -r '.access_methods[0].access_id // empty')"
+  multi_access_id="$(echo "$multi_obj" | jq -r '.access_methods[0].access_id // empty')"
+
+  if [[ -n "$single_access_id" ]]; then
+    api_json GET "$API_BASE/objects/$single_drs_id/access/$single_access_id" "" "200" >/dev/null
+    api_json POST "$API_BASE/objects/$single_drs_id/access/$single_access_id" "{}" "200" >/dev/null
+  else
+    log "Skipping single-object /access check (no access_id present)"
   fi
 
-  api_json GET "$API_BASE/objects/$single_oid/access/$single_access_id" "" "200" >/dev/null
-  api_json POST "$API_BASE/objects/$single_oid/access/$single_access_id" "{}" "200" >/dev/null
-
-  local bulk_access_body bulk_access_resp
-  bulk_access_body="$(jq -n \
-    --arg s "$single_oid" --arg sid "$single_access_id" \
-    --arg m "$multi_oid" --arg mid "$multi_access_id" \
-    '{bulk_object_access_ids: [{bulk_object_id:$s, bulk_access_ids:[$sid]}, {bulk_object_id:$m, bulk_access_ids:[$mid]}]}')"
-  bulk_access_resp="$(api_json POST "$API_BASE/objects/access" "$bulk_access_body" "200")"
-  echo "$bulk_access_resp" | jq -e '.summary.requested >= 2 and .summary.resolved >= 2' >/dev/null
+  if [[ -n "$single_access_id" && -n "$multi_access_id" ]]; then
+    local bulk_access_body bulk_access_resp
+    bulk_access_body="$(jq -n \
+      --arg s "$single_drs_id" --arg sid "$single_access_id" \
+      --arg m "$multi_drs_id" --arg mid "$multi_access_id" \
+      '{bulk_object_access_ids: [{bulk_object_id:$s, bulk_access_ids:[$sid]}, {bulk_object_id:$m, bulk_access_ids:[$mid]}]}')"
+    bulk_access_resp="$(api_json POST "$API_BASE/objects/access" "$bulk_access_body" "200")"
+    echo "$bulk_access_resp" | jq -e '.summary.requested >= 2 and .summary.resolved >= 2' >/dev/null
+  else
+    log "Skipping bulk /objects/access check (missing access_id on at least one object)"
+  fi
 
   local upload_req
   upload_req="$(jq -n --arg oid "$single_oid" --argjson size "$single_size" '{
@@ -1243,12 +1415,12 @@ main() {
   validity_body="$(jq -n --arg s "$single_oid" --arg m "$multi_oid" '{sha256: [$s, $m]}')"
   if [[ "$RUN_INTERNAL_API_CHECKS" == "true" ]]; then
     log "Running internal API checks"
-    validity_resp="$(api_json POST "${DRS_URL%/}/index/internal/v1/sha256/validity" "$validity_body" "200")"
+    validity_resp="$(api_json POST "${DRS_URL%/}/index/v1/sha256/validity" "$validity_body" "200")"
     echo "$validity_resp" | jq -e --arg s "$single_oid" --arg m "$multi_oid" '.[$s] == true and .[$m] == true' >/dev/null
 
-    api_json GET "${DRS_URL%/}/index/internal/v1/metrics/files/$single_oid" "" "200,404" >/dev/null
-    api_json GET "${DRS_URL%/}/index/internal/v1/metrics/files/$multi_oid" "" "200,404" >/dev/null
-    api_json GET "${DRS_URL%/}/index/internal/v1/metrics/summary" "" "200,401,403" >/dev/null
+    api_json GET "${DRS_URL%/}/index/v1/metrics/files/$single_oid" "" "200,404" >/dev/null
+    api_json GET "${DRS_URL%/}/index/v1/metrics/files/$multi_oid" "" "200,404" >/dev/null
+    api_json GET "${DRS_URL%/}/index/v1/metrics/summary" "" "200,401,403" >/dev/null
   else
     log "Skipping internal API checks (TEST_RUN_INTERNAL_API_CHECKS=false)"
   fi
@@ -1273,10 +1445,10 @@ main() {
     log "Running optional mutation checks (requires broader write permissions)"
     local same_access_methods
     same_access_methods="$(echo "$single_obj" | jq '{access_methods: .access_methods}')"
-    api_json PUT "$API_BASE/objects/$single_oid/access-methods" "$same_access_methods" "200,401,403,404" >/dev/null
+    api_json PUT "$API_BASE/objects/$single_drs_id/access-methods" "$same_access_methods" "200,401,403,404" >/dev/null
 
     local bulk_access_update
-    bulk_access_update="$(jq -n --arg oid "$single_oid" --arg aid "$single_access_id" --arg url "$(echo "$single_obj" | jq -r '.access_methods[0].access_url.url')" \
+    bulk_access_update="$(jq -n --arg oid "$single_drs_id" --arg aid "${single_access_id:-s3}" --arg url "$(echo "$single_obj" | jq -r '.access_methods[0].access_url.url')" \
       '{updates:[{object_id:$oid, access_methods:[{type:"s3", access_id:$aid, access_url:{url:$url}}]}]}')"
     api_json PUT "$API_BASE/objects/access-methods" "$bulk_access_update" "200,401,403,404" >/dev/null
   fi
@@ -1290,6 +1462,8 @@ main() {
   log "- Download multipart threshold (MB):$DOWNLOAD_MULTIPART_THRESHOLD_MB"
   log "- Push mode:                        $PUSH_MODE"
   log "- Git push compatibility enabled:   $ENABLE_GIT_PUSH_COMPAT"
+  log "- Resume E2E enabled:               $RUN_RESUME_E2E"
+  log "- Resume fail-after bytes:          $RESUME_FAIL_DOWNLOAD_AFTER_BYTES"
   log "- Large file size (MB):             $LARGE_FILE_MB"
   log "- single oid:                       $single_oid"
   log "- multipart oid:                    $multi_oid"

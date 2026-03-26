@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -212,7 +213,7 @@ func upsertServerBucket(ctx context.Context, endpoint, token string, payload put
 	if err != nil {
 		return fmt.Errorf("failed to encode bucket request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/upload/buckets", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/data/buckets", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build request: %w", err)
 	}
@@ -227,6 +228,10 @@ func upsertServerBucket(ctx context.Context, endpoint, token string, payload put
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		bodyText, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if msg := strings.TrimSpace(string(bodyText)); msg != "" {
+			return fmt.Errorf("bucket credential upsert failed with status %d: %s", resp.StatusCode, msg)
+		}
 		return fmt.Errorf("bucket credential upsert failed with status %d", resp.StatusCode)
 	}
 	return nil

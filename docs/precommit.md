@@ -43,7 +43,7 @@ Its sole purpose is to bridge the gap between:
 * Reads **staged content only**
 * Updates `.git/drs/pre-commit` cache
 * Never performs network I/O
-* Never queries Indexd or DRS
+* Never queries DRS or DRS
 * Ignores all non-LFS files
 
 ### `precommit_cache` (helper library)
@@ -112,7 +112,7 @@ The cache models **three non-authoritative relationships**:
 3. **OID → External URL (hint)**
 
 All are **hints only**.
-The authoritative source of truth lives on the server (Indexd / DRS).
+The authoritative source of truth lives on the server (DRS / DRS).
 
 ---
 
@@ -291,7 +291,7 @@ url, ok, err := cache.LookupExternalURLByOID(oid)
 
 * Hint only
 * May be stale or missing
-* Must be validated against Indexd / DRS
+* Must be validated against DRS / DRS
 
 ---
 
@@ -326,7 +326,7 @@ Used by pre-push to compare local hints with server truth.
 3. For each OID:
 
     * Optionally read local hints from `precommit_cache`
-    * Resolve authoritative data from Indexd / DRS
+    * Resolve authoritative data from DRS / DRS
 4. Enforce policy:
 
     * unresolved OID → fail push
@@ -378,7 +378,7 @@ sequenceDiagram
   participant Cache as .git/drs/pre-commit (local cache)
   participant PP as pre-push hook
   participant LFS as git-lfs
-  participant IDX as Indexd (authoritative)
+  participant IDX as DRS (authoritative)
   participant DRS as DRS (authoritative)
 
   Dev->>Git: git add <files>
@@ -426,5 +426,5 @@ sequenceDiagram
 If you want, I can also:
 
 * add **inline Go doc comments** suitable for `pkg.go.dev`
-* generate a **sequence diagram** (commit → cache → push → Indexd/DRS)
+* generate a **sequence diagram** (commit → cache → push → DRS/DRS)
 * or write a **pre-push reference implementation** that uses these helpers end-to-end

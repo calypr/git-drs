@@ -1,4 +1,4 @@
-package indexd
+package drs
 
 import (
 	"context"
@@ -51,5 +51,5 @@ func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger, opts ...g3
 		return nil, err
 	}
 
-	return NewGitDrsIdxdClient(*cred, s, logger, opts...)
+	return NewGitDrsClient(*cred, s, logger, opts...)
 }

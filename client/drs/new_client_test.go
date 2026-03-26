@@ -1,8 +1,7 @@
-package indexd
+package drs
 
 import (
 	"log/slog"
-	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -10,39 +9,32 @@ import (
 	"github.com/calypr/data-client/logs"
 )
 
-func TestNewGitDrsIdxdClient(t *testing.T) {
-	// Setup mock server
-	mock := &mockIndexdServer{}
-	server := httptest.NewServer(mock.handler(t))
-	defer server.Close()
+func TestNewGitDrsClient(t *testing.T) {
 	logger := logs.NewSlogNoOpLogger()
 
-	// Setup inputs
 	cred := conf.Credential{
-		APIEndpoint: server.URL,
+		APIEndpoint: "http://example.test",
 		Profile:     "test-profile",
 	}
 
 	remote := Gen3Remote{
-		Endpoint:  server.URL,
+		Endpoint:  "http://example.test",
 		ProjectID: "test-project",
 		Bucket:    "test-bucket",
 	}
 
-	// Call function
-	client, err := NewGitDrsIdxdClient(cred, remote, logger)
+	client, err := NewGitDrsClient(cred, remote, logger)
 	if err != nil {
-		t.Fatalf("NewGitDrsIdxdClient failed: %v", err)
+		t.Fatalf("NewGitDrsClient failed: %v", err)
 	}
 
 	if client == nil {
 		t.Fatal("Expected non-nil client")
 	}
 
-	// Verify internals if possible (type assertion)
-	impl, ok := client.(*GitDrsIdxdClient)
+	impl, ok := client.(*GitDrsClient)
 	if !ok {
-		t.Fatal("Expected *GitDrsIdxdClient implementation")
+		t.Fatal("Expected *GitDrsClient implementation")
 	}
 
 	if impl.Config.ProjectId != "test-project" {
@@ -52,30 +44,29 @@ func TestNewGitDrsIdxdClient(t *testing.T) {
 		t.Errorf("Expected BucketName 'test-bucket', got %s", impl.Config.BucketName)
 	}
 
-	// Verify Base URL matches mock server
-	if impl.Base.String() != server.URL {
-		t.Errorf("Expected Base URL %s, got %s", server.URL, impl.Base.String())
+	if impl.Base.String() != "http://example.test" {
+		t.Errorf("Expected Base URL %s, got %s", "http://example.test", impl.Base.String())
 	}
 }
 
-func TestNewGitDrsIdxdClient_MissingProject(t *testing.T) {
+func TestNewGitDrsClient_MissingProject(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	cred := conf.Credential{APIEndpoint: "http://idx.example"}
 	remote := Gen3Remote{Endpoint: "http://idx.example"} // Missing ProjectID
 
-	_, err := NewGitDrsIdxdClient(cred, remote, logger)
+	_, err := NewGitDrsClient(cred, remote, logger)
 	if err == nil {
 		t.Error("Expected error for missing project ID")
 	}
 }
 
-func TestGitDrsIdxdClient_Accessors(t *testing.T) {
+func TestGitDrsClient_Accessors(t *testing.T) {
 	config := &Config{
 		ProjectId:  "test-proj",
 		BucketName: "test-bucket",
 		Upsert:     true,
 	}
-	client := &GitDrsIdxdClient{
+	client := &GitDrsClient{
 		Config: config,
 	}
 

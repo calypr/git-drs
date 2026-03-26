@@ -15,15 +15,15 @@ Git DRS integrates with Git through several mechanisms:
 - Only processes files that don't already exist on the DRS server
 - Prepares metadata for later upload during push
 
-**Pre-push Hook**: `git drs prepush`
+**Pre-push Hook**: `git drs pre-push-prepare` (internal)
 - Triggered automatically before each push
-- Updates DRS records for new or changed LFS files
+- Stages pending metadata for new/changed LFS files
+- Hook then runs standard `git lfs pre-push`
 
-**Custom Transfer Protocol**
-- Git LFS uses custom transfers to communicate with Git DRS
-- Handles both upload (push) and download (pull) operations
-- Transfers run automatically during `git push` and `git lfs pull`
-- Information passed through JSON protocol between Git LFS and Git DRS
+**Managed Push/Pull + LFS Batch Compatibility**
+- `git drs push` performs register/upload workflow directly via git-drs clients
+- `git drs pull` performs download workflow directly via git-drs clients
+- Standard Git LFS compatibility is provided through `/info/lfs` batch endpoints
 
 ### File Processing Flow
 
@@ -34,50 +34,22 @@ Git DRS integrates with Git through several mechanisms:
    - Creates DRS object metadata
    - Stores in .git/drs/ directory
 4. Developer: git push
-5. Git Hook: git drs prepush
-   - Updates DRS object metadata
-6. Git LFS: Initiates custom transfer
-7. Git DRS: 
-   - Registers file with DRS server (indexd record)
-   - Uploads file to configured bucket
-   - Updates transfer logs
+5. Git Hook: git drs pre-push-prepare
+   - Stages pending metadata for LFS verify
+6. Git Hook: git lfs pre-push
+   - Executes standard LFS push flow
+7. Git DRS:
+   - `git drs push` can run register/upload directly
+   - `git drs pull` can run download directly
 ```
 
-## Custom Transfer Protocol
+## Current Data Path
 
-Git DRS implements the [Git LFS Custom Transfer Protocol](https://github.com/git-lfs/git-lfs/blob/main/docs/custom-transfers.md).
+Git DRS no longer uses a Git LFS custom transfer agent.
 
-### Transfer Types
-
-**Upload Transfer (gen3)**:
-- Creates indexd record on DRS server
-- Uploads file to Gen3-registered S3 bucket
-- Updates DRS object with access URLs
-
-**Download Transfer (gen3)**:
-- Retrieves file metadata from DRS server
-- Downloads file from configured storage
-- Validates checksums
-
-**Reference Transfer**:
-- Handles S3 URL references without data movement
-- Links existing S3 objects to DRS records
-
-### Protocol Communication
-
-Git LFS and Git DRS communicate via JSON messages:
-
-```json
-{
-  "event": "init",
-  "operation": "upload",
-  "remote": "origin",
-  "concurrent": 3,
-  "concurrenttransfers": 3
-}
-```
-
-Response handling and logging occurs in transfer clients to avoid interfering with Git LFS stdout expectations.
+- Upload path (primary): `git drs push` discovers local LFS pointers, bulk-registers missing objects, checks validity, and uploads missing bits.
+- Download path (primary): `git drs pull` resolves object records and downloads into local LFS object storage.
+- Compatibility path: stock `git-lfs` can use server `/info/lfs` endpoints (`objects/batch`, verify, metadata staging) for interoperability.
 
 ## Repository Structure
 
@@ -86,14 +58,16 @@ Response handling and logging occurs in transfer clients to avoid interfering wi
 ```
 cmd/                    # CLI command implementations
 ├── initialize/         # Repository initialization
-├── transfer/          # Custom transfer handlers
+├── push/               # Register/upload workflow
+├── pull/               # Download workflow
+├── prepush/            # Pre-push metadata staging hook
 ├── precommit/         # Pre-commit hook
-├── addurl/            # S3 URL reference handling
+├── addurl/            # Cloud object URL reference handling
 └── ...
 
 client/                # DRS client implementations
 ├── interface.go       # Client interface definitions
-├── indexd.go         # Gen3/indexd client
+├── DRS.go         # Gen3/DRS client
 └── drs-map.go        # File mapping utilities
 
 config/                # Configuration management
@@ -104,7 +78,7 @@ drs/                   # DRS object utilities
 └── util.go           # Utility functions
 
 lfs/                   # Git LFS integration
-└── messages.go       # LFS protocol messages
+└── lfs.go            # LFS pointer/discovery helpers
 
 utils/                 # Shared utilities
 ├── common.go         # Common functions
@@ -127,7 +101,7 @@ servers:
 
 ### DRS Object Management
 
-Objects are stored in `.git/drs/lfs/objects/` during pre-commit and referenced during transfers.
+Objects are stored in `.git/drs/lfs/objects/` during pre-commit and referenced during push/pull workflows.
 
 ## Development Setup
 
@@ -173,7 +147,7 @@ export PATH=$PATH:$(pwd)
 ### Log Locations
 
 - **Commit logs**: `.git/drs/git-drs.log`
-- **Transfer logs**: `.git/drs/git-drs.log`
+- **Push/Pull logs**: `.git/drs/git-drs.log`
 
 
 ## Testing

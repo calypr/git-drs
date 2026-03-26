@@ -8,7 +8,7 @@ import (
 
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/client/local"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
@@ -58,7 +58,7 @@ type DRSRemote interface {
 }
 
 type RemoteSelect struct {
-	Gen3  *indexd.Gen3Remote
+	Gen3  *drs.Gen3Remote
 	Local *local.LocalRemote
 }
 
@@ -219,7 +219,7 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 	rs := RemoteSelect{}
 
 	if remoteType == "gen3" || remoteType == "" {
-		rs.Gen3 = &indexd.Gen3Remote{
+		rs.Gen3 = &drs.Gen3Remote{
 			Endpoint:      endpoint,
 			ProjectID:     project,
 			Bucket:        bucket,

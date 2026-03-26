@@ -4,7 +4,7 @@ set -euo pipefail
 
 show_help() {
     cat << 'EOF'
-cleanup_resource.sh — Delete all Indexd records associated with a given resource path.
+cleanup_resource.sh — Delete all DRS records associated with a given resource path.
 
 USAGE:
     cleanup_resource.sh <pod-name> <postgres-password> [resource-name]
@@ -19,7 +19,7 @@ PARAMETERS:
         Example: <see default/local-postgresql>
 
     resource-name (optional)
-        The Indexd resource path to delete.
+        The DRS resource path to delete.
         Example: /programs/cbds/projects/monorepos
 
 OPTIONS:
@@ -33,7 +33,7 @@ EXAMPLE:
 DESCRIPTION:
     This script:
       • connects to a Postgres pod via kubectl exec
-      • runs SQL that deletes all Indexd records associated with the resource
+      • runs SQL that deletes all DRS records associated with the resource
       • cleans up metadata, hash, url, authz, and main index_record rows
       • uses dynamic SQL so the resource path is customizable
 
@@ -52,7 +52,7 @@ done
 POD_NAME="${1:-}"
 POSTGRES_PASSWORD="${2:-}"
 RESOURCE_NAME="${3:-}"
-DATABASE_NAME="indexd_local"
+DATABASE_NAME="drs_local"
 
 if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" || -z "$RESOURCE_NAME" ]]; then
     echo "Error: missing required parameters."
@@ -60,7 +60,7 @@ if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" || -z "$RESOURCE_NAME" ]]; then
     exit 1
 fi
 
-echo "🔧 Cleaning Indexd records for resource: $RESOURCE_NAME"
+echo "🔧 Cleaning DRS records for resource: $RESOURCE_NAME"
 
 # SQL script with dynamic resource name (variables will be expanded)
 SQL=$(cat <<EOF
@@ -93,7 +93,7 @@ echo "🚀 Executing cleanup SQL in pod: $POD_NAME"
 
 
 # Execute SQL inside the pod
-# Bash - replace the psql invocation in `tests/monorepos/clean-indexd.sh`
+# Bash - replace the psql invocation in `tests/monorepos/clean-drs-records.sh`
 # Pipe the SQL into the pod and run psql reading from stdin
 printf '%s\n' "$SQL" | kubectl exec -i "$POD_NAME" -- \
     env PGPASSWORD="$POSTGRES_PASSWORD" \

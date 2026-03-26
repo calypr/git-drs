@@ -7,42 +7,106 @@ import (
 	"testing"
 )
 
-func TestParseS3URL_S3Scheme(t *testing.T) {
-	b, k, err := parseS3URL("s3://my-bucket/path/to/file.bam")
+func TestParseObjectLocation_S3Scheme(t *testing.T) {
+	loc, err := parseObjectLocation("s3://my-bucket/path/to/file.bam", "", ObjectParameters{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if b != "my-bucket" {
-		t.Fatalf("bucket mismatch: %q", b)
+	if loc.bucket != "my-bucket" {
+		t.Fatalf("bucket mismatch: %q", loc.bucket)
 	}
-	if k != "path/to/file.bam" {
-		t.Fatalf("key mismatch: %q", k)
+	if loc.key != "path/to/file.bam" {
+		t.Fatalf("key mismatch: %q", loc.key)
+	}
+	if loc.bucketURL != "s3://my-bucket" {
+		t.Fatalf("bucketURL mismatch: %q", loc.bucketURL)
 	}
 }
 
-func TestParseS3URL_HTTPSPathStyle(t *testing.T) {
-	b, k, err := parseS3URL("https://s3.example.org/my-bucket/path/to/file.bam")
+func TestParseObjectLocation_S3HTTPSPathStyle(t *testing.T) {
+	loc, err := parseObjectLocation("https://s3.example.org/my-bucket/path/to/file.bam", "", ObjectParameters{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if b != "my-bucket" {
-		t.Fatalf("bucket mismatch: %q", b)
+	if loc.bucket != "my-bucket" {
+		t.Fatalf("bucket mismatch: %q", loc.bucket)
 	}
-	if k != "path/to/file.bam" {
-		t.Fatalf("key mismatch: %q", k)
+	if loc.key != "path/to/file.bam" {
+		t.Fatalf("key mismatch: %q", loc.key)
 	}
 }
 
-func TestParseS3URL_HTTPSVirtualHosted(t *testing.T) {
-	b, k, err := parseS3URL("https://my-bucket.s3.amazonaws.com/path/to/file.bam")
+func TestParseObjectLocation_S3HTTPSVirtualHosted(t *testing.T) {
+	loc, err := parseObjectLocation("https://my-bucket.s3.amazonaws.com/path/to/file.bam", "", ObjectParameters{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if b != "my-bucket" {
-		t.Fatalf("bucket mismatch: %q", b)
+	if loc.bucket != "my-bucket" {
+		t.Fatalf("bucket mismatch: %q", loc.bucket)
 	}
-	if k != "path/to/file.bam" {
-		t.Fatalf("key mismatch: %q", k)
+	if loc.key != "path/to/file.bam" {
+		t.Fatalf("key mismatch: %q", loc.key)
+	}
+}
+
+func TestParseObjectLocation_GSScheme(t *testing.T) {
+	loc, err := parseObjectLocation("gs://my-gcs-bucket/path/to/file.bam", "", ObjectParameters{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if loc.bucket != "my-gcs-bucket" {
+		t.Fatalf("bucket mismatch: %q", loc.bucket)
+	}
+	if loc.key != "path/to/file.bam" {
+		t.Fatalf("key mismatch: %q", loc.key)
+	}
+	if loc.bucketURL != "gs://my-gcs-bucket" {
+		t.Fatalf("bucketURL mismatch: %q", loc.bucketURL)
+	}
+}
+
+func TestParseAzureBlobHTTPS(t *testing.T) {
+	loc, err := parseObjectLocation("https://myacct.blob.core.windows.net/mycontainer/path/to/blob.bam", "", ObjectParameters{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if loc.bucket != "mycontainer" {
+		t.Fatalf("container mismatch: %q", loc.bucket)
+	}
+	if loc.key != "path/to/blob.bam" {
+		t.Fatalf("key mismatch: %q", loc.key)
+	}
+	if loc.bucketURL != "azblob://mycontainer?account_name=myacct" {
+		t.Fatalf("bucketURL mismatch: %q", loc.bucketURL)
+	}
+}
+
+func TestParseFileURL(t *testing.T) {
+	loc, err := parseObjectLocation("file:///tmp/addurl/object.bin", "", ObjectParameters{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if loc.bucketURL != "file:///" {
+		t.Fatalf("bucketURL mismatch: %q", loc.bucketURL)
+	}
+	if loc.key != "tmp/addurl/object.bin" {
+		t.Fatalf("key mismatch: %q", loc.key)
+	}
+}
+
+func TestParseObjectLocation_S3UsesPassedRegionAndEndpoint(t *testing.T) {
+	loc, err := parseObjectLocation("s3://cbds/path/to/file.bin", "", ObjectParameters{
+		S3Region:   "us-east-1",
+		S3Endpoint: "https://aced-storage.ohsu.edu/",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !strings.Contains(loc.bucketURL, "region=us-east-1") {
+		t.Fatalf("expected region query in bucketURL, got %q", loc.bucketURL)
+	}
+	if !strings.Contains(loc.bucketURL, "endpoint=https%3A%2F%2Faced-storage.ohsu.edu") {
+		t.Fatalf("expected endpoint query in bucketURL, got %q", loc.bucketURL)
 	}
 }
 

@@ -4,24 +4,24 @@
 Accepted
 
 ## Context
-The Indexd `RegisterFile` flow needs toggles for:
-- whether to upsert indexd records (create when no matching project record exists, or replace by deleting and re-registering when a ma
+The DRS `RegisterFile` flow needs toggles for:
+- whether to upsert DRS records (create when no matching project record exists, or replace by deleting and re-registering when a ma
 - whether to check bucket existence before uploading (Unimplemented, currently always checks and skips upload if already present)
 
 These toggles must be controlled per-repository using git LFS configuration (`git config` entries under `drs.*`). This keeps behavior in repo-local configuration and avoids coupling to remote YAML configuration.
 
 ## Decision
-Read `drs.upsert` from git config during Indexd client initialization. Missing values default to `false`. Invalid values fail initialization with a clear error.
+Read `drs.upsert` from git config during DRS client initialization. Missing values default to `false`. Invalid values fail initialization with a clear error.
 
 ## Before
 
 ```mermaid
 flowchart TD
-    A[RegisterFile] --> B[Query indexd by hash]
+    A[RegisterFile] --> B[Query DRS by hash]
     B --> C{Matching project record}
     C -- Yes --> D[Reuse existing record]
-    C -- No --> E[Build DRS and indexd record]
-    E --> F[POST indexd register]
+    C -- No --> E[Build DRS and DRS record]
+    E --> F[POST DRS register]
     F --> G[Defer cleanup on failure]
     D --> H[Prepare records for download]
     G --> H
@@ -39,23 +39,23 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[RegisterFile] --> B[POST indexd register]
+    A[RegisterFile] --> B[POST DRS register]
     B --> H[Prepare records for download]
     H --> J[Upload to bucket]
 ```
 
-### force (retry on indexd register error)
+### force (retry on DRS register error)
 
 ```mermaid
 flowchart TD
-    A[RegisterFile] --> B[POST indexd register]
+    A[RegisterFile] --> B[POST DRS register]
     B --> C{Register success}
     C -- Yes --> D[Prepare records for download]
     C -- No --> E[Enable force push]
-    E --> F[Query indexd by hash]
+    E --> F[Query DRS by hash]
     F --> G{Matching project record}
     G -- Yes --> H[Reuse existing record]
-    G -- No --> I[POST indexd register]
+    G -- No --> I[POST DRS register]
     H --> D
     I --> D
     D --> J{force push}

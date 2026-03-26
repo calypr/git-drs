@@ -1,17 +1,9 @@
-// Package lfss3 provides a small helper for Git-LFS + S3 object introspection.
-//
-// It:
-//  1. determines the effective Git LFS storage root (.git/lfs vs git config lfs.storage)
-//  2. derives a working-tree filename from the S3 object key (basename of key)
-//  3. performs an S3 HEAD Object to retrieve size and user metadata (sha256 if present)
 package cloud
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"path"
 	"regexp"
@@ -19,24 +11,30 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/azureblob"
+	_ "gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/gcsblob"
+	"gocloud.dev/blob/s3blob"
 )
 
-// S3ObjectParameters container for S3 object identification and access.
-type S3ObjectParameters struct {
-	S3URL           string
-	AWSAccessKey    string
-	AWSSecretKey    string
-	AWSRegion       string
-	AWSEndpoint     string // optional: custom endpoint (Ceph/MinIO/etc.)
+// ObjectParameters contains provider-agnostic object lookup settings for
+// go-cloud metadata inspection.
+type ObjectParameters struct {
+	ObjectURL       string
+	S3Region        string
+	S3Endpoint      string
+	S3AccessKey     string
+	S3SecretKey     string
 	SHA256          string // optional expected hex (64 chars). Can be "sha256:<hex>" or "<hex>"
 	DestinationPath string // optional override URL path (worktree filename)
 }
 
-// S3Object is what we return.
-type S3Object struct {
+// ObjectInfo is the resolved object metadata returned by inspection.
+type ObjectInfo struct {
 
 	// Object identity
 	Bucket string
@@ -50,74 +48,61 @@ type S3Object struct {
 	LastModTime time.Time
 }
 
-// InspectS3ForLFS does all 3 requested tasks.
-func InspectS3ForLFS(ctx context.Context, in S3ObjectParameters) (*S3Object, error) {
-	if strings.TrimSpace(in.S3URL) == "" {
-		return nil, errors.New("S3URL is required")
-	}
-	if strings.TrimSpace(in.AWSRegion) == "" {
-		return nil, errors.New("AWSRegion is required")
-	}
-	if in.AWSAccessKey == "" || in.AWSSecretKey == "" {
-		return nil, errors.New("AWSAccessKey and AWSSecretKey are required")
+type objectLocation struct {
+	bucketURL string
+	bucket    string
+	key       string
+	path      string
+}
+
+var (
+	virtualHostedS3RE  = regexp.MustCompile(`^(.+?)\.s3(?:[.-]|$)`)
+	virtualHostedGCSRE = regexp.MustCompile(`^(.+?)\.storage\.googleapis\.com$`)
+	azureBlobHostRE    = regexp.MustCompile(`^([^.]+)\.blob\.core\.windows\.net$`)
+)
+
+// InspectObjectForLFS inspects object metadata for add-url and supports
+// multiple cloud URL styles (s3, gs, azblob, file).
+func InspectObjectForLFS(ctx context.Context, in ObjectParameters) (*ObjectInfo, error) {
+	if strings.TrimSpace(in.ObjectURL) == "" {
+		return nil, errors.New("ObjectURL is required")
 	}
 
-	// 2) Parse S3 URL + derive working tree filename.
-	bucket, key, err := parseS3URL(in.S3URL)
+	loc, err := parseObjectLocation(in.ObjectURL, in.DestinationPath, in)
 	if err != nil {
 		return nil, err
 	}
-	worktreeName := strings.TrimSpace(in.DestinationPath)
-	if worktreeName == "" {
-		worktreeName = path.Base(key)
-		if worktreeName == "." || worktreeName == "/" || worktreeName == "" {
-			return nil, fmt.Errorf("could not derive worktree name from key %q", key)
-		}
-	} else if worktreeName == "." || worktreeName == "/" {
-		return nil, fmt.Errorf("invalid worktree name override %q", worktreeName)
-	}
 
-	// 3) HEAD on S3 to determine size and meta.SHA256.
-	s3Client, err := newS3Client(ctx, in)
+	cloudBucket, err := openBucketForLocation(ctx, loc, in)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to open bucket via go-cloud string %s: %w", loc.bucketURL, err)
 	}
-	head, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	defer cloudBucket.Close()
+
+	attrs, err := cloudBucket.Attributes(ctx, loc.key)
 	if err != nil {
-		return nil, fmt.Errorf("s3 HeadObject failed (bucket=%q key=%q): %w", bucket, key, err)
+		return nil, fmt.Errorf("blob attributes failed (bucket=%q key=%q): %w", loc.bucketURL, loc.key, err)
 	}
 
-	metaSHA := extractSHA256FromMetadata(head.Metadata)
-
-	// Optional: validate provided SHA256 against metadata if both exist.
+	metaSHA := extractSHA256FromMetadata(attrs.Metadata)
 	expected := normalizeSHA256(in.SHA256)
 	if expected != "" && metaSHA != "" && !strings.EqualFold(expected, metaSHA) {
 		return nil, fmt.Errorf("sha256 mismatch: expected=%s head.meta=%s", expected, metaSHA)
 	}
 
 	var lm time.Time
-	if head.LastModified != nil {
-		lm = *head.LastModified
+	if !attrs.ModTime.IsZero() {
+		lm = attrs.ModTime
 	}
 
-	if head.ContentLength == nil {
-		return nil, fmt.Errorf("s3 HeadObject missing ContentLength (bucket=%q key=%q)", bucket, key)
-	}
-	sizeBytes := *head.ContentLength
+	etag := strings.TrimSpace(attrs.ETag)
+	etag = strings.Trim(etag, `"`)
 
-	var etag string
-	if head.ETag != nil {
-		etag = strings.Trim(*head.ETag, `"`)
-	}
-
-	out := &S3Object{
-		Bucket:      bucket,
-		Key:         key,
-		Path:        worktreeName,
-		SizeBytes:   sizeBytes,
+	out := &ObjectInfo{
+		Bucket:      loc.bucket,
+		Key:         loc.key,
+		Path:        loc.path,
+		SizeBytes:   attrs.Size,
 		MetaSHA256:  metaSHA,
 		ETag:        etag,
 		LastModTime: lm,
@@ -125,84 +110,202 @@ func InspectS3ForLFS(ctx context.Context, in S3ObjectParameters) (*S3Object, err
 	return out, nil
 }
 
-//
-// --- S3 parsing + client ---
-//
+func openBucketForLocation(ctx context.Context, loc *objectLocation, in ObjectParameters) (*blob.Bucket, error) {
+	if !strings.HasPrefix(loc.bucketURL, "s3://") {
+		return blob.OpenBucket(ctx, loc.bucketURL)
+	}
 
-var virtualHostedRE = regexp.MustCompile(`^(.+?)\.s3(?:[.-]|$)`)
+	u, err := url.Parse(loc.bucketURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse s3 bucket URL %q: %w", loc.bucketURL, err)
+	}
+	bucket := strings.TrimSpace(u.Host)
+	if bucket == "" {
+		return nil, fmt.Errorf("missing bucket in s3 URL %q", loc.bucketURL)
+	}
 
-// parseS3URL parses s3://bucket/key, virtual-hosted HTTPS (bucket.s3.../key)
-// and path-style HTTPS (s3.../bucket/key). Returns bucket and key.
-func parseS3URL(raw string) (string, string, error) {
+	q := u.Query()
+	region := strings.TrimSpace(firstNonEmpty(in.S3Region, q.Get("region")))
+	endpoint := strings.TrimRight(strings.TrimSpace(firstNonEmpty(in.S3Endpoint, q.Get("endpoint"))), "/")
+	accessKey := strings.TrimSpace(in.S3AccessKey)
+	secretKey := strings.TrimSpace(in.S3SecretKey)
+
+	loadOpts := make([]func(*awsconfig.LoadOptions) error, 0, 2)
+	if region != "" {
+		loadOpts = append(loadOpts, awsconfig.WithRegion(region))
+	}
+	if accessKey != "" || secretKey != "" {
+		if accessKey == "" || secretKey == "" {
+			return nil, errors.New("both S3AccessKey and S3SecretKey are required when either is provided")
+		}
+		loadOpts = append(loadOpts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")))
+	}
+
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, loadOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+
+	clientOpts := make([]func(*s3.Options), 0, 1)
+	if endpoint != "" {
+		clientOpts = append(clientOpts, func(o *s3.Options) {
+			o.UsePathStyle = true
+			o.BaseEndpoint = aws.String(endpoint)
+		})
+	}
+	client := s3.NewFromConfig(awsCfg, clientOpts...)
+	return s3blob.OpenBucketV2(ctx, client, bucket, nil)
+}
+
+func parseObjectLocation(raw, destinationPath string, cfg ObjectParameters) (*objectLocation, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", "", err
+		return nil, err
+	}
+
+	withPath := func(bucketURL, bucket, key string) (*objectLocation, error) {
+		worktreeName := strings.TrimSpace(destinationPath)
+		if worktreeName == "" {
+			worktreeName = path.Base(key)
+			if worktreeName == "." || worktreeName == "/" || worktreeName == "" {
+				return nil, fmt.Errorf("could not derive worktree name from key %q", key)
+			}
+		} else if worktreeName == "." || worktreeName == "/" {
+			return nil, fmt.Errorf("invalid worktree name override %q", worktreeName)
+		}
+		return &objectLocation{
+			bucketURL: bucketURL,
+			bucket:    bucket,
+			key:       key,
+			path:      worktreeName,
+		}, nil
 	}
 
 	switch u.Scheme {
-	case "s3":
+	case "s3", "gs", "azblob":
 		bucket := u.Host
 		key := strings.TrimPrefix(u.Path, "/")
-		return bucket, key, nil
+		if bucket == "" {
+			return nil, fmt.Errorf("no bucket/container in URL: %s", raw)
+		}
+		if key == "" {
+			return nil, fmt.Errorf("no object key/path in URL: %s", raw)
+		}
+		bucketURL := fmt.Sprintf("%s://%s", u.Scheme, bucket)
+		if u.Scheme == "s3" {
+			bucketURL = buildS3BucketURL(bucket, cfg, "")
+		}
+		if u.RawQuery != "" {
+			parsed, perr := url.Parse(bucketURL)
+			if perr == nil {
+				q := parsed.Query()
+				over := u.Query()
+				for k, vs := range over {
+					q.Del(k)
+					for _, v := range vs {
+						q.Add(k, v)
+					}
+				}
+				parsed.RawQuery = q.Encode()
+				bucketURL = parsed.String()
+			}
+		}
+		return withPath(bucketURL, bucket, key)
+	case "file":
+		key := strings.TrimPrefix(u.Path, "/")
+		if u.Host != "" {
+			key = u.Host + "/" + key
+		}
+		if key == "" {
+			return nil, fmt.Errorf("no object path in file URL: %s", raw)
+		}
+		return withPath("file:///", "file", key)
 	case "http", "https":
 		host := u.Hostname()
+		key := strings.TrimPrefix(u.Path, "/")
+		if key == "" {
+			return nil, fmt.Errorf("no object path in URL: %s", raw)
+		}
 
-		// virtual-hosted: bucket.s3.amazonaws.com or bucket.s3-region.amazonaws.com
-		if m := virtualHostedRE.FindStringSubmatch(host); m != nil {
+		if m := virtualHostedS3RE.FindStringSubmatch(host); m != nil {
 			bucket := m[1]
-			key := strings.TrimPrefix(u.Path, "/")
-			return bucket, key, nil
+			return withPath(fmt.Sprintf("s3://%s", bucket), bucket, key)
 		}
 
-		// path-style: s3.../bucket/key
-		path := strings.TrimPrefix(u.Path, "/")
-		if path == "" {
-			return "", "", fmt.Errorf("no bucket in URL: %s", raw)
+		if m := virtualHostedGCSRE.FindStringSubmatch(host); m != nil {
+			bucket := m[1]
+			return withPath(fmt.Sprintf("gs://%s", bucket), bucket, key)
 		}
-		parts := strings.SplitN(path, "/", 2)
-		bucket := parts[0]
-		key := ""
-		if len(parts) == 2 {
-			key = parts[1]
+
+		if host == "storage.googleapis.com" {
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+				return nil, fmt.Errorf("invalid GCS path-style URL: %s", raw)
+			}
+			bucket := parts[0]
+			return withPath(fmt.Sprintf("gs://%s", bucket), bucket, parts[1])
 		}
-		return bucket, key, nil
+
+		if m := azureBlobHostRE.FindStringSubmatch(host); m != nil {
+			account := m[1]
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+				return nil, fmt.Errorf("invalid Azure blob URL: %s", raw)
+			}
+			container := parts[0]
+			blobPath := parts[1]
+			bucketURL := fmt.Sprintf("azblob://%s?account_name=%s", container, account)
+			return withPath(bucketURL, container, blobPath)
+		}
+
+		// Legacy S3 path-style compatibility for endpoints like s3.example.org.
+		if strings.Contains(host, "s3") {
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+				return nil, fmt.Errorf("invalid S3 path-style URL: %s", raw)
+			}
+			bucket := parts[0]
+			endpointHint := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+			return withPath(buildS3BucketURL(bucket, cfg, endpointHint), bucket, parts[1])
+		}
+
+		return nil, fmt.Errorf("unsupported http(s) cloud URL: %s", raw)
 	default:
-		return "", "", fmt.Errorf("unsupported scheme: %s", u.Scheme)
+		return nil, fmt.Errorf("unsupported scheme: %s", u.Scheme)
 	}
 }
 
-func newS3Client(ctx context.Context, in S3ObjectParameters) (*s3.Client, error) {
-	creds := credentials.NewStaticCredentialsProvider(in.AWSAccessKey, in.AWSSecretKey, "")
+func buildS3BucketURL(bucket string, cfg ObjectParameters, endpointHint string) string {
+	u := url.URL{
+		Scheme: "s3",
+		Host:   bucket,
+	}
+	q := url.Values{}
 
-	// Custom HTTP client is useful for S3-compatible endpoints.
-	httpClient := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		},
+	region := strings.TrimSpace(cfg.S3Region)
+	if region != "" {
+		q.Set("region", region)
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(in.AWSRegion),
-		config.WithCredentialsProvider(creds),
-		config.WithHTTPClient(httpClient),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("aws config init failed: %w", err)
+	endpoint := strings.TrimRight(firstNonEmpty(endpointHint, cfg.S3Endpoint), "/")
+	if endpoint != "" {
+		q.Set("endpoint", endpoint)
 	}
 
-	opts := []func(*s3.Options){}
-	if strings.TrimSpace(in.AWSEndpoint) != "" {
-		ep := strings.TrimRight(in.AWSEndpoint, "/")
-		opts = append(opts, func(o *s3.Options) {
-			o.UsePathStyle = true // usually required for Ceph/MinIO/custom endpoints
-			o.BaseEndpoint = aws.String(ep)
-		})
+	if len(q) > 0 {
+		u.RawQuery = q.Encode()
 	}
+	return u.String()
+}
 
-	return s3.NewFromConfig(cfg, opts...), nil
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 //

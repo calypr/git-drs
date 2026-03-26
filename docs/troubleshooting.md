@@ -67,7 +67,7 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 - `git drs init` - Initialize Git LFS hooks
 - `git drs remote add` - Configure DRS server connections
 - `git drs remote list` - View configured remotes
-- `git drs add-url` - Add S3 file references
+- `git drs add-url` - Add cloud object references
 
 **When**:
 

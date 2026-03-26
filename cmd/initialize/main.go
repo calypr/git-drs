@@ -71,7 +71,7 @@ var Cmd = &cobra.Command{
 
 		err = initGitConfig()
 		if err != nil {
-			return fmt.Errorf("error initializing custom transfer for DRS: %v", err)
+			return fmt.Errorf("error initializing git-drs repository config: %v", err)
 		}
 
 		// install pre-push hook
@@ -105,24 +105,12 @@ func initGitConfig() error {
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
 		return fmt.Errorf("unable to write git config: %w", err)
 	}
-	// Explicitly disable custom transfer agent wiring.
-	if err := gitrepo.UnsetGitConfigOptions([]string{
-		"lfs.standalonetransferagent",
-		"lfs.customtransfer.drs.path",
-		"lfs.customtransfer.drs.args",
-		"lfs.customtransfer.drs.concurrent",
-		"lfs.customtransfer.drs.upsert",
-		"lfs.customtransfer.drs.multipart-threshold",
-		"lfs.customtransfer.drs.enable-data-client-logs",
-	}); err != nil {
-		return fmt.Errorf("unable to unset legacy custom transfer settings: %w", err)
-	}
 	return nil
 }
 
 func init() {
 	Cmd.Flags().IntVarP(&transfers, "transfers", "t", 1, "Number of concurrent transfers")
-	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for indexd records")
+	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for DRS objects")
 	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 5120, "Multipart threshold in MB")
 	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 }

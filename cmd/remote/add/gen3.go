@@ -9,7 +9,7 @@ import (
 	"github.com/calypr/data-client/conf"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/logs"
-	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -122,7 +122,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 	}
 
 	remoteGen3 := config.RemoteSelect{
-		Gen3: &indexd.Gen3Remote{
+		Gen3: &drs.Gen3Remote{
 			Endpoint:      apiEndpoint,
 			ProjectID:     project,
 			Organization:  organization,

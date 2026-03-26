@@ -5,8 +5,14 @@
 /build
 git-drs
 venv*
+.gocache/
+tests/venv/
+tests/monorepos/TEST/
+coverage/*.out
+coverage/*.html
+coverage/integration/
+coverage/unit/
 # admin tool
 admin/
 # Ignore any file named .env anywhere in the repository
 .env
-

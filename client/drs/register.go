@@ -1,4 +1,4 @@
-package indexd
+package drs
 
 import (
 	"bytes"
@@ -18,15 +18,16 @@ import (
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/hash"
 	"github.com/calypr/data-client/upload"
+	localcommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	"golang.org/x/sync/errgroup"
 )
 
 // RegisterFile implements DRSClient.RegisterFile
-// It registers (or reuses) an indexd record for the oid, uploads the object if it
+// It registers (or reuses) an DRS object for the oid, uploads the object if it
 // is not already available in the bucket, and returns the resulting DRS object.
-func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+func (cl *GitDrsClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
 	oid = drs.NormalizeOid(oid)
 	cl.Logger.DebugContext(ctx, fmt.Sprintf("register file started for oid: %s", oid))
 
@@ -41,43 +42,75 @@ func (cl *GitDrsIdxdClient) RegisterFile(ctx context.Context, oid string, path s
 }
 
 // isFileDownloadable checks if a file is already available for download
-func (cl *GitDrsIdxdClient) isFileDownloadable(ctx context.Context, drsObject *drs.DRSObject) (bool, error) {
+func (cl *GitDrsClient) isFileDownloadable(ctx context.Context, drsObject *drs.DRSObject) (bool, error) {
 	// Try to get a download URL - if successful, file is downloadable
 	if len(drsObject.AccessMethods) == 0 {
 		return false, nil
 	}
 	accessType := drsObject.AccessMethods[0].Type
-	res, err := cl.G3.Indexd().GetDownloadURL(ctx, drsObject.Id, accessType)
+	res, err := cl.G3.DRSClient().GetDownloadURL(ctx, drsObject.Id, accessType)
 	if err != nil {
 		// If we can't get a download URL, assume file is not downloadable
 		return false, nil
 	}
 	// Check if the URL is accessible
-	err = common.CanDownloadFile(res.URL)
+	err = common.CanDownloadFile(res.Url)
 	return err == nil, nil
 }
 
 func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
-	if obj != nil && len(obj.AccessMethods) > 0 {
-		raw := strings.TrimSpace(obj.AccessMethods[0].AccessURL.URL)
+	if obj != nil && len(obj.AccessMethods) > 0 && obj.AccessMethods[0].AccessUrl != nil {
+		raw := strings.TrimSpace(obj.AccessMethods[0].AccessUrl.Url)
 		if raw != "" {
 			if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "s3") {
-				if strings.TrimSpace(u.Host) == strings.TrimSpace(bucket) {
-					key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
-					if key != "" {
-						return key
-					}
+				// Preserve the full object key path from DRS metadata.
+				// Taking only filepath.Base(...) loses CAS/storage prefixes and causes 404 downloads.
+				key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
+				if key != "" && (bucket == "" || strings.EqualFold(strings.TrimSpace(u.Host), strings.TrimSpace(bucket))) {
+					return key
 				}
 			}
 		}
 	}
 	if obj != nil {
-		return obj.Checksums.SHA256
+		return hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256
 	}
 	return ""
 }
 
-func (cl *GitDrsIdxdClient) ensureRecordRegistered(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
+func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (string, bool, error) {
+	oid = drs.NormalizeOid(oid)
+	if oid == "" {
+		return "", false, fmt.Errorf("empty oid")
+	}
+
+	lfsObjPath, err := lfs.ObjectPath(localcommon.LFS_OBJS_PATH, oid)
+	if err == nil {
+		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
+			if isPointer {
+				if sentinel, sentinelErr := lfs.IsAddURLSentinelObject(lfsObjPath); sentinelErr == nil && sentinel {
+					return "", false, nil
+				}
+			}
+			return lfsObjPath, true, nil
+		}
+	}
+
+	if isPointer {
+		return "", false, nil
+	}
+
+	st, statErr := os.Stat(worktreePath)
+	if statErr != nil {
+		return "", false, fmt.Errorf("stat worktree path %s: %w", worktreePath, statErr)
+	}
+	if st.IsDir() {
+		return "", false, fmt.Errorf("worktree path %s is a directory", worktreePath)
+	}
+	return worktreePath, true, nil
+}
+
+func (cl *GitDrsClient) ensureRecordRegistered(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
 	drsObject, err := drsmap.DrsInfoFromOid(oid)
 	if err != nil {
 		stat, statErr := os.Stat(path)
@@ -90,55 +123,56 @@ func (cl *GitDrsIdxdClient) ensureRecordRegistered(ctx context.Context, oid stri
 			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
 		}
 	}
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in indexd (did: %s)", oid, drsObject.Id))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS object (did: %s)", oid, drsObject.Id))
 	registeredObj, err := cl.RegisterRecord(ctx, drsObject)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			if !cl.Config.Upsert {
-				cl.Logger.DebugContext(ctx, fmt.Sprintf("indexd record already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
+				cl.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
 				if recs, lookupErr := cl.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid}); lookupErr == nil && len(recs) > 0 {
 					if match, matchErr := drsmap.FindMatchingRecord(recs, cl.GetOrganization(), cl.Config.ProjectId); matchErr == nil && match != nil {
 						drsObject = match
 					}
 				}
 			} else {
-				cl.Logger.DebugContext(ctx, fmt.Sprintf("indexd record already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
+				cl.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
 				err = cl.DeleteRecord(ctx, oid)
 				if err != nil {
-					return nil, fmt.Errorf("error deleting existing indexd record oid %s: did: %s err: %v", oid, drsObject.Id, err)
+					return nil, fmt.Errorf("error deleting existing DRS object oid %s: did: %s err: %v", oid, drsObject.Id, err)
 				}
 				registeredObj, err = cl.RegisterRecord(ctx, drsObject)
 				if err != nil {
-					return nil, fmt.Errorf("error re-saving indexd record after deletion: oid %s: did: %s err: %v", oid, drsObject.Id, err)
+					return nil, fmt.Errorf("error re-saving DRS object after deletion: oid %s: did: %s err: %v", oid, drsObject.Id, err)
 				}
 				if registeredObj != nil {
 					drsObject = registeredObj
 				}
 			}
 		} else {
-			return nil, fmt.Errorf("error saving oid %s indexd record: %v", oid, err)
+			return nil, fmt.Errorf("error saving oid %s DRS object: %v", oid, err)
 		}
 	} else if registeredObj != nil {
 		drsObject = registeredObj
 	}
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("indexd record registration complete for oid %s", oid))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("DRS object registration complete for oid %s", oid))
 	return drsObject, nil
 }
 
-func (cl *GitDrsIdxdClient) uploadFileForObject(ctx context.Context, drsObject *drs.DRSObject, filePath string, skipIfDownloadable bool) error {
+func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.DRSObject, filePath string, skipIfDownloadable bool) error {
+	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	if skipIfDownloadable {
-		cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", drsObject.Checksums.SHA256))
+		cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
 		downloadable, err := cl.isFileDownloadable(ctx, drsObject)
 		if err != nil {
-			return fmt.Errorf("error checking if file is downloadable: oid %s %v", drsObject.Checksums.SHA256, err)
+			return fmt.Errorf("error checking if file is downloadable: oid %s %v", hInfo.SHA256, err)
 		}
 		if downloadable {
-			cl.Logger.DebugContext(ctx, fmt.Sprintf("file %s is already available for download, skipping upload", drsObject.Checksums.SHA256))
+			cl.Logger.DebugContext(ctx, fmt.Sprintf("file %s is already available for download, skipping upload", hInfo.SHA256))
 			return nil
 		}
 	}
 
-	cl.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", drsObject.Checksums.SHA256))
+	cl.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
 	g3 := cl.G3
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -165,7 +199,7 @@ func (cl *GitDrsIdxdClient) uploadFileForObject(ctx context.Context, drsObject *
 			GUID:       drsObject.Id,
 			Bucket:     cl.Config.BucketName,
 		}
-		if err := upload.UploadSingle(ctx, g3, req, false); err != nil {
+		if err := upload.UploadSingle(ctx, g3.DRSClient(), g3.Logger(), req, false); err != nil {
 			return fmt.Errorf("UploadSingle error: %s", err)
 		}
 		return nil
@@ -174,7 +208,7 @@ func (cl *GitDrsIdxdClient) uploadFileForObject(ctx context.Context, drsObject *
 	cl.Logger.DebugContext(ctx, fmt.Sprintf("MultipartUpload size: %d path: %s", drsObject.Size, filePath))
 	if err := upload.MultipartUpload(
 		ctx,
-		g3,
+		g3.DRSClient(),
 		common.FileUploadRequestObject{
 			SourcePath:   filePath,
 			ObjectKey:    objectKey,
@@ -193,7 +227,7 @@ func (cl *GitDrsIdxdClient) uploadFileForObject(ctx context.Context, drsObject *
 //  1. Bulk lookup by sha256
 //  2. Bulk register missing metadata
 //  3. Upload only objects that are missing/invalid in storage
-func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error {
+func (cl *GitDrsClient) BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -269,7 +303,7 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 			if obj == nil {
 				continue
 			}
-			oid := drs.NormalizeOid(obj.Checksums.SHA256)
+			oid := drs.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 			if oid != "" {
 				drsObjByOID[oid] = obj
 			}
@@ -281,6 +315,7 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 		obj  *drs.DRSObject
 		file lfs.LfsFileInfo
 		size int64
+		src  string
 	}
 	uploadCandidates := make([]uploadCandidate, 0, len(oids))
 
@@ -293,6 +328,21 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 				needsUpload = !exists
 			} else {
 				needsUpload = !validityByHash[oid]
+				// Guard against false positives from validity endpoint (e.g. after interrupted multipart).
+				// If index reports "valid" but we cannot actually resolve/download, force re-upload.
+				if !needsUpload {
+					obj := drsObjByOID[oid]
+					if obj != nil {
+						downloadable, dlErr := cl.isFileDownloadable(ctx, obj)
+						if dlErr != nil {
+							cl.Logger.WarnContext(ctx, "downloadability check failed; forcing upload", "oid", oid, "error", dlErr)
+							needsUpload = true
+						} else if !downloadable {
+							cl.Logger.InfoContext(ctx, "validity endpoint reported present but object not downloadable; forcing upload", "oid", oid)
+							needsUpload = true
+						}
+					}
+				}
 			}
 		}
 		if !needsUpload {
@@ -303,19 +353,29 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 			return fmt.Errorf("missing drs object context for oid %s", oid)
 		}
 		file := filesByOID[oid]
-		size := file.Size
-		if size <= 0 {
-			if stat, statErr := os.Stat(file.Name); statErr == nil {
-				size = stat.Size()
-			} else {
-				return fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, statErr)
-			}
+		srcPath, canUpload, srcErr := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+		if srcErr != nil {
+			return fmt.Errorf("failed to resolve upload source for oid %s: %w", oid, srcErr)
 		}
+		if !canUpload {
+			cl.Logger.WarnContext(ctx, "no local payload available; skipping upload and keeping metadata-only registration",
+				"oid", oid,
+				"path", file.Name,
+			)
+			continue
+		}
+
+		stat, statErr := os.Stat(srcPath)
+		if statErr != nil {
+			return fmt.Errorf("failed to stat upload source %s for oid %s: %w", srcPath, oid, statErr)
+		}
+		size := stat.Size()
 		uploadCandidates = append(uploadCandidates, uploadCandidate{
 			oid:  oid,
 			obj:  obj,
 			file: file,
 			size: size,
+			src:  srcPath,
 		})
 	}
 
@@ -356,8 +416,8 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 		for _, candidate := range smallCandidates {
 			candidate := candidate
 			eg.Go(func() error {
-				if err := cl.uploadFileForObject(egCtx, candidate.obj, candidate.file.Name, false); err != nil {
-					return fmt.Errorf("upload failed for %s (%s): %w", candidate.file.Name, candidate.oid, err)
+				if err := cl.uploadFileForObject(egCtx, candidate.obj, candidate.src, false); err != nil {
+					return fmt.Errorf("upload failed for %s (%s): %w", candidate.src, candidate.oid, err)
 				}
 				return nil
 			})
@@ -368,16 +428,16 @@ func (cl *GitDrsIdxdClient) BatchSyncForPush(ctx context.Context, files map[stri
 	}
 
 	for _, candidate := range largeCandidates {
-		if err := cl.uploadFileForObject(ctx, candidate.obj, candidate.file.Name, false); err != nil {
-			return fmt.Errorf("upload failed for %s (%s): %w", candidate.file.Name, candidate.oid, err)
+		if err := cl.uploadFileForObject(ctx, candidate.obj, candidate.src, false); err != nil {
+			return fmt.Errorf("upload failed for %s (%s): %w", candidate.src, candidate.oid, err)
 		}
 	}
 
 	return nil
 }
 
-func (cl *GitDrsIdxdClient) getSHA256ValidityMap(ctx context.Context, oids []string) (map[string]bool, error) {
-	cred := cl.G3.GetCredential()
+func (cl *GitDrsClient) getSHA256ValidityMap(ctx context.Context, oids []string) (map[string]bool, error) {
+	cred := cl.G3.Credentials().Current()
 	if cred == nil || strings.TrimSpace(cred.APIEndpoint) == "" {
 		return nil, fmt.Errorf("missing API endpoint for validity check")
 	}

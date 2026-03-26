@@ -12,8 +12,6 @@ import (
 	"github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
-	s3utils "github.com/calypr/data-client/s3utils"
-	"github.com/calypr/git-drs/cloud"
 	localCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
 )
@@ -46,10 +44,11 @@ func TestWriteAndReadDrsObject(t *testing.T) {
 		t.Fatalf("GetObjectPath error: %v", err)
 	}
 
+	name := "file.txt"
 	obj := &drs.DRSObject{
 		Id:        "did-1",
-		Name:      "file.txt",
-		Checksums: hash.HashInfo{SHA256: oid},
+		Name:      &name,
+		Checksums: []drs.Checksum{{Type: "sha256", Checksum: oid}},
 	}
 
 	if err := WriteDrsObj(obj, oid, path); err != nil {
@@ -112,7 +111,7 @@ func TestWriteDrsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DrsInfoFromOid error: %v", err)
 	}
-	if read.Checksums.SHA256 != file.Oid {
+	if read.Checksums[0].Checksum != file.Oid {
 		t.Fatalf("unexpected checksum: %+v", read.Checksums)
 	}
 }
@@ -166,7 +165,7 @@ func (m *MockDRSClient) DeleteRecord(ctx context.Context, oid string) error {
 	return nil
 }
 
-func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
+func (m *MockDRSClient) RegisterRecord(ctx context.Context, drsObject *drs.DRSObject) (*drs.DRSObject, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -185,16 +184,12 @@ func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObj
 func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
 	return &drs.DRSObject{
 		Id:   drsId,
-		Name: fileName,
+		Name: &fileName,
 		Size: size,
-		Checksums: hash.HashInfo{
-			SHA256: checksum,
+		Checksums: []drs.Checksum{
+			{Type: "sha256", Checksum: checksum},
 		},
 	}, nil
-}
-
-func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
-	return s3utils.S3Meta{}, fmt.Errorf("not implemented")
 }
 
 func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
@@ -213,20 +208,29 @@ func (m *MockDRSClient) DownloadFile(ctx context.Context, oid string, destPath s
 	return fmt.Errorf("not implemented")
 }
 
+func (m *MockDRSClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *MockDRSClient) BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error {
+	return fmt.Errorf("not implemented")
+}
+
 func TestPullRemoteDrsObjects(t *testing.T) {
 	setupTestRepo(t)
 	// mockClient and setup
 	sha := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	nameObj1 := "test-file"
 	mockClient := &MockDRSClient{
 		Project: "test-project",
 		Objects: []drs.DRSObjectResult{
 			{
 				Object: &drs.DRSObject{
 					Id: "obj1",
-					Checksums: hash.HashInfo{
-						SHA256: sha,
+					Checksums: []drs.Checksum{
+						{Type: "sha256", Checksum: sha},
 					},
-					Name: "test-file",
+					Name: &nameObj1,
 				},
 			},
 		},

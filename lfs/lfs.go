@@ -168,14 +168,14 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 			continue
 		}
 
+		isPointer := false
 		// If the file is small, read it and detect LFS pointer signature.
 		// Pointer files are textual and include the LFS spec version + an oid line.
 		if size > 0 && size < 2048 {
 			if data, readErr := os.ReadFile(absPath); readErr == nil {
 				s := strings.TrimSpace(string(data))
 				if strings.Contains(s, "version https://git-lfs.github.com/spec/v1") && strings.Contains(s, "oid sha256:") {
-					logger.Warn(fmt.Sprintf("WARNING: Detected upload of lfs pointer file %s skipping", path))
-					continue
+					isPointer = true
 				}
 			}
 		}
@@ -183,6 +183,7 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 		lfsFileMap[path] = LfsFileInfo{
 			Name:    path,
 			Size:    size,
+			IsPointer: isPointer,
 			OidType: "sha256",
 			Oid:     oid,
 			Version: "https://git-lfs.github.com/spec/v1",
@@ -194,19 +195,8 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 
 // CreateLfsPointer creates a Git LFS pointer file for the given DRS object.
 func CreateLfsPointer(drsObj *drs.DRSObject, dst string) error {
-	sumMap := hash.ConvertHashInfoToMap(drsObj.Checksums)
-	if len(sumMap) == 0 {
-		return fmt.Errorf("no checksums found for DRS object")
-	}
-
-	// find sha256 checksum
-	var shaSum string
-	for csType, cs := range sumMap {
-		if csType == hash.ChecksumTypeSHA256.String() {
-			shaSum = cs
-			break
-		}
-	}
+	hashInfo := hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums)
+	shaSum := hashInfo.SHA256
 	if shaSum == "" {
 		return fmt.Errorf("no sha256 checksum found for DRS object")
 	}

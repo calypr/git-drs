@@ -3,10 +3,10 @@ set -euo pipefail
 
 show_help() {
     cat << 'HELP'
-list-indexd-sha256.sh — list sha256 hashes for Indexd records associated with a given resource path.
+list-drs-sha256.sh — list sha256 hashes for DRS records associated with a given resource path.
 
 USAGE:
-    list-indexd-sha256.sh <pod-name> <postgres-password> [resource-name]
+    list-drs-sha256.sh <pod-name> <postgres-password> [resource-name]
 
 PARAMETERS:
     pod-name
@@ -18,7 +18,7 @@ PARAMETERS:
         Example: <see default/local-postgresql>
 
     resource-name (optional)
-        The Indexd resource path to list.
+        The DRS resource path to list.
         Example: /programs/cbds/projects/monorepos
 
 OPTIONS:
@@ -26,13 +26,13 @@ OPTIONS:
         Show this documentation and exit.
 
 EXAMPLE:
-    list-indexd-sha256.sh local-postgresql-0 <see default/local-postgresql>
-    list-indexd-sha256.sh local-postgresql-0 <see default/local-postgresql> "/programs/myproj/resource"
+    list-drs-sha256.sh local-postgresql-0 <see default/local-postgresql>
+    list-drs-sha256.sh local-postgresql-0 <see default/local-postgresql> "/programs/myproj/resource"
 
 DESCRIPTION:
     This script:
       • connects to a Postgres pod via kubectl exec
-      • runs SQL that lists all sha256 hashes for Indexd records associated with the resource
+      • runs SQL that lists all sha256 hashes for DRS records associated with the resource
 
 HELP
 }
@@ -49,7 +49,7 @@ done
 POD_NAME="${1:-}"
 POSTGRES_PASSWORD="${2:-}"
 RESOURCE_NAME="${3:-}"
-DATABASE_NAME="indexd_local"
+DATABASE_NAME="drs_local"
 
 if [[ -z "$POD_NAME" || -z "$POSTGRES_PASSWORD" || -z "$RESOURCE_NAME" ]]; then
     echo "Error: missing required parameters."

@@ -48,7 +48,7 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
+			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
 
@@ -79,8 +79,8 @@ var Cmd = &cobra.Command{
 			common.DisplayField(os.Stderr, "OID", oid)
 			common.DisplayField(os.Stderr, "Hash Type", hashType)
 			common.DisplayField(os.Stderr, "DID", matchingRecord.Id)
-			if matchingRecord.Name != "" {
-				common.DisplayField(os.Stderr, "Filename", matchingRecord.Name)
+			if matchingRecord.Name != nil && *matchingRecord.Name != "" {
+				common.DisplayField(os.Stderr, "Filename", *matchingRecord.Name)
 			}
 			common.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
 			common.DisplayFooter(os.Stderr)

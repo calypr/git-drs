@@ -56,6 +56,7 @@ type LfsFileInfo struct {
 	Size       int64  `json:"size"`
 	Checkout   bool   `json:"checkout"`
 	Downloaded bool   `json:"downloaded"`
+	IsPointer  bool   `json:"is_pointer,omitempty"`
 	OidType    string `json:"oid_type"`
 	Oid        string `json:"oid"`
 	Version    string `json:"version"`

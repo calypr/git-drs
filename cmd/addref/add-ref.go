@@ -6,10 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -47,15 +46,6 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		objSha := ""
-		for sumType, sum := range hash.ConvertHashInfoToMap(obj.Checksums) {
-			if sumType == hash.ChecksumTypeSHA256.String() {
-				objSha = sum
-			}
-		}
-		if objSha == "" {
-			return fmt.Errorf("object %s sha256 not available", drsUri)
-		}
 		dirPath := filepath.Dir(dstPath)
 		_, err = os.Stat(dirPath)
 		if os.IsNotExist(err) {
@@ -63,41 +53,9 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		err = CreateLfsPointer(obj, dstPath)
+		err = lfs.CreateLfsPointer(obj, dstPath)
 		return err
 	},
-}
-
-func CreateLfsPointer(drsObj *drs.DRSObject, dst string) error {
-	sumMap := hash.ConvertHashInfoToMap(drsObj.Checksums)
-	if len(sumMap) == 0 {
-		return fmt.Errorf("no checksums found for DRS object")
-	}
-
-	// find sha256 checksum
-	var shaSum string
-	for csType, cs := range sumMap {
-		if csType == hash.ChecksumTypeSHA256.String() {
-			shaSum = cs
-			break
-		}
-	}
-	if shaSum == "" {
-		return fmt.Errorf("no sha256 checksum found for DRS object")
-	}
-
-	// create pointer file content
-	pointerContent := "version https://git-lfs.github.com/spec/v1\n"
-	pointerContent += fmt.Sprintf("oid sha256:%s\n", shaSum)
-	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
-
-	// write to file
-	err := os.WriteFile(dst, []byte(pointerContent), 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write LFS pointer file: %w", err)
-	}
-
-	return nil
 }
 
 func init() {

@@ -8,7 +8,7 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ### `git drs init`
 
-Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and creates a `.git/drs/` directory that Git ignores automatically.
+Initialize Git DRS in a repository. Sets up Git DRS hooks and creates a `.git/drs/` directory that Git ignores automatically.
 
 **Usage:**
 
@@ -29,7 +29,7 @@ git drs init
 **What it does:**
 
 - Creates `.git/drs/` directory structure
-- Configures Git LFS custom transfer agent
+- Configures Git/LFS settings for git-drs managed push/pull
 - Installs Git hooks for DRS workflows
 
 **When to run:**
@@ -228,35 +228,37 @@ git drs query did:example:12345 --remote staging
 
 ### `git drs add-url`
 
-Add a file reference via S3 URL without copying the data.
+Prepare a file reference via cloud object URL for DRS registration.
 
 **Usage:**
 
 ```bash
-# Use default remote
-git drs add-url s3://bucket/path/file --sha256 <hash>
-
-# Use specific remote
-git drs add-url s3://bucket/path/file --sha256 <hash> --remote staging
+# Stage local pointer + DRS metadata
+git drs add-url <cloud-url> [path] [--sha256 <hash>]
+# Register/push prepared records
+git drs push
 ```
 
-**With AWS Credentials:**
+**Examples:**
 
 ```bash
-git drs add-url s3://bucket/path/file \
-  --sha256 <hash> \
-  --aws-access-key <key> \
-  --aws-secret-key <secret>
+# Known SHA path
+git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
+
+# Unknown SHA path (experimental sentinel mode)
+git drs add-url s3://bucket/path/file.bin data/file.bin
 ```
 
 **Options:**
 
-- `--sha256 <hash>`: Required SHA256 hash of the file
-- `--remote <name>`: Target remote (default: default_remote)
-- `--aws-access-key <key>`: AWS access key
-- `--aws-secret-key <secret>`: AWS secret key
-- `--endpoint <url>`: Custom S3 endpoint
-- `--region <region>`: AWS region
+- `--sha256 <hash>`: Optional SHA256 hash of the source object.  
+  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
+
+**Notes:**
+
+- `add-url` no longer accepts per-command AWS credential flags.
+- S3 connection hints are resolved from environment/runtime config when needed (for example `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- Registration happens on `git drs push`, not at `add-url` time.
 
 ### `git drs version`
 
@@ -271,7 +273,7 @@ git drs version
 These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
-- `git drs prepush`: Update DRS objects before push
+- `git drs pre-push-prepare`: Stage DRS metadata before push
 - `git lfs pre-push`: Standard Git LFS push flow (invoked by pre-push hook)
 
 ## Git LFS Commands

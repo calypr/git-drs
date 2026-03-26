@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/client/local"
 )
 
@@ -44,7 +44,7 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	setupTestRepo(t)
 
 	remote := RemoteSelect{
-		Gen3: &indexd.Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"},
+		Gen3: &drs.Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"},
 	}
 	cfg, err := UpdateRemote(Remote("origin"), remote)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestConfig_AddRemote(t *testing.T) {
 	remoteName := Remote("test-remote")
 	// Using Gen3 as example
 	cfg.Remotes[remoteName] = RemoteSelect{
-		Gen3: &indexd.Gen3Remote{},
+		Gen3: &drs.Gen3Remote{},
 	}
 
 	if len(cfg.Remotes) != 1 {
@@ -136,7 +136,7 @@ func TestConfig_FindRemote(t *testing.T) {
 
 	cfg := &Config{
 		Remotes: map[Remote]RemoteSelect{
-			remote1: {Gen3: &indexd.Gen3Remote{}},
+			remote1: {Gen3: &drs.Gen3Remote{}},
 			remote2: {Local: &local.LocalRemote{}},
 		},
 	}
@@ -192,7 +192,7 @@ func TestConfig_MultipleRemotes(t *testing.T) {
 	remotes := []Remote{"origin", "backup", "local"}
 
 	for _, r := range remotes {
-		cfg.Remotes[r] = RemoteSelect{Gen3: &indexd.Gen3Remote{}}
+		cfg.Remotes[r] = RemoteSelect{Gen3: &drs.Gen3Remote{}}
 	}
 
 	if len(cfg.Remotes) != 3 {
@@ -308,7 +308,7 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 	localRemote, ok := r.(*local.LocalRemote)
 	if !ok {
 		// If it's not LocalRemote, it likely defaulted to Gen3Remote due to missing type
-		if _, isGen3 := r.(*indexd.Gen3Remote); isGen3 {
+		if _, isGen3 := r.(*drs.Gen3Remote); isGen3 {
 			t.Fatalf("Remote %s loaded as Gen3Remote (default fallback), expected LocalRemote. Type missing?", remoteName)
 		}
 		t.Fatalf("Remote %s loaded as unexpected type: %T", remoteName, r)

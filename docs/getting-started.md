@@ -236,27 +236,28 @@ git lfs ls-files -I "*.bam"
 git lfs ls-files
 ```
 
-## Working with S3 Files
+## Working with Cloud Object URLs
 
-You can add references to existing S3 files without copying them:
+You can add references to existing bucket objects without copying them:
 
 ```bash
 # Track the file pattern first
 git lfs track "myfile.txt"
 git add .gitattributes
 
-# Add S3 reference
+# Add object reference (known sha256 path)
 git drs add-url s3://bucket/path/to/file \
-  --sha256 <file-hash> \
-  --aws-access-key <key> \
-  --aws-secret-key <secret>
+  --sha256 <file-hash>
+
+# Or use unknown-sha (experimental sentinel mode)
+git drs add-url s3://bucket/path/to/file
 
 # Commit and push
 git commit -m "Add S3 file reference"
 git push
 ```
 
-See [S3 Integration Guide](adding-s3-files.md) for detailed examples.
+See [Cloud URL Integration Guide](adding-s3-files.md) for detailed examples.
 
 ## Configuration Management
 

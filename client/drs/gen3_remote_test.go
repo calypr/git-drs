@@ -1,4 +1,4 @@
-package indexd
+package drs
 
 import (
 	"log/slog"

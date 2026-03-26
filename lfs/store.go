@@ -9,6 +9,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/common"
 )
 
@@ -58,9 +59,9 @@ func (s *ObjectStore) ObjectPath(oid string) (string, error) {
 }
 
 func (s *ObjectStore) WriteObject(drsObj *drs.DRSObject, oid string) error {
-	indexdObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
+	drsObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
 	if err != nil {
-		return fmt.Errorf("error marshalling indexd object for oid %s: %v", oid, err)
+		return fmt.Errorf("error marshalling DRS object for oid %s: %v", oid, err)
 	}
 
 	drsObjPath, err := s.ObjectPath(oid)
@@ -71,7 +72,7 @@ func (s *ObjectStore) WriteObject(drsObj *drs.DRSObject, oid string) error {
 		return fmt.Errorf("error creating directory for %s: %v", drsObjPath, err)
 	}
 
-	if err := os.WriteFile(drsObjPath, indexdObjBytes, 0644); err != nil {
+	if err := os.WriteFile(drsObjPath, drsObjBytes, 0644); err != nil {
 		return fmt.Errorf("error writing %s: %v", drsObjPath, err)
 	}
 	return nil
@@ -170,8 +171,9 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
 		}
 
 		// This could be problematic
-		if drsObject.Checksums.SHA256 != "" {
-			objects[drsObject.Checksums.SHA256] = &drsObject
+		hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
+		if hInfo.SHA256 != "" {
+			objects[hInfo.SHA256] = &drsObject
 		}
 
 		logger.Debug(fmt.Sprintf("Successfully unmarshaled drs.DRSObject from %s:\n%+v", path, drsObject))

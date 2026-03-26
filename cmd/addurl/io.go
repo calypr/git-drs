@@ -57,16 +57,16 @@ func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string
 }
 
 // printResolvedInfo writes a human-readable summary of resolved Git/LFS and
-// S3 object information to the command's stdout for user confirmation.
-func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, s3Info *cloud.S3Object, pathArg string, isTracked bool, sha256 string) error {
+// cloud object information to the command's stdout for user confirmation.
+func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, objectInfo *cloud.ObjectInfo, pathArg string, isTracked bool, sha256 string) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
-Resolved Git LFS s3Info
----------------------
+Resolved Git LFS Object Info
+----------------------------
 Git common dir : %s
 LFS storage    : %s
 
-S3 object
----------
+Cloud object
+------------
 Bucket         : %s
 Key            : %s
 Worktree name  : %s
@@ -84,18 +84,18 @@ sha256 param  : %s
 `,
 		gitCommonDir,
 		lfsRoot,
-		s3Info.Bucket,
-		s3Info.Key,
-		s3Info.Path,
-		s3Info.SizeBytes,
-		s3Info.MetaSHA256,
-		s3Info.ETag,
-		s3Info.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
+		objectInfo.Bucket,
+		objectInfo.Key,
+		objectInfo.Path,
+		objectInfo.SizeBytes,
+		objectInfo.MetaSHA256,
+		objectInfo.ETag,
+		objectInfo.LastModTime.Format("2006-01-02T15:04:05Z07:00"),
 		pathArg,
 		isTracked,
 		sha256,
 	); err != nil {
-		return fmt.Errorf("print resolved s3Info: %w", err)
+		return fmt.Errorf("print resolved object info: %w", err)
 	}
 	return nil
 }

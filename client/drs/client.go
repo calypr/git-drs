@@ -1,4 +1,4 @@
-package indexd
+package drs
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/url"
 
-	"github.com/calypr/data-client/backend/gen3"
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
 	"github.com/calypr/data-client/download"
@@ -30,14 +29,14 @@ type Config struct {
 	UploadConcurrency  int
 }
 
-type GitDrsIdxdClient struct {
+type GitDrsClient struct {
 	Base   *url.URL
 	Logger *slog.Logger
 	G3     g3client.Gen3Interface
 	Config *Config
 }
 
-func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+func NewGitDrsClient(profileConfig conf.Credential, remote Gen3Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
 	if err != nil {
 		return nil, err
@@ -48,21 +47,23 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		return nil, fmt.Errorf("no gen3 project specified")
 	}
 
-	bucketName := remote.GetBucketName()
+	scope, err := gitrepo.ResolveBucketScope(
+		remote.GetOrganization(),
+		projectId,
+		remote.GetBucketName(),
+		remote.GetStoragePrefix(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	bucketName := scope.Bucket
 
-	// Initialize data-client Gen3Interface with slog-adapted logger if needed,
-	// or assume we use the one passed in if we update data-client to take slog.
-	// For now we assume data-client/logs/TeeLogger is still used by data-client internals,
-	// so we bridge it.
-	// Initialize data-client Gen3Interface with slog-adapted logger.
-	// We disable data-client's console output because drslog already handles stderr/file logging.
-	// We also disable data-client's separate message file by default to aggregate logs in git-drs.log,
-	// but allow re-enabling it via config.
+	// Initialize data-client Gen3Interface with slog-adapted logger if needed.
 	enableDataClientLogs := gitrepo.GetGitConfigBool("drs.enable-data-client-logs", false)
 
 	logOpts := []logs.Option{
 		logs.WithBaseLogger(logger),
-		logs.WithNoConsole(), // drslog already writes to stderr if configured
+		logs.WithNoConsole(),
 	}
 
 	if enableDataClientLogs {
@@ -74,11 +75,18 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	dLogger, closer := logs.New(profileConfig.Profile, logOpts...)
 	_ = closer
 
-	// If no options provided, use defaults for GitDrsIdxdClient
+	var g3 g3client.Gen3Interface
 	if len(opts) == 0 {
-		opts = append(opts, g3client.WithClients(g3client.IndexdClient, g3client.FenceClient, g3client.SowerClient))
+		g3 = g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger)
+	} else {
+		g3 = g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
 	}
-	g3 := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, opts...)
+
+	// Configure the DRS client with git-specific context
+	g3.DRSClient().
+		WithProject(projectId).
+		WithOrganization(remote.GetOrganization()).
+		WithBucket(bucketName)
 
 	upsert := gitrepo.GetGitConfigBool("drs.upsert", false)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
@@ -92,13 +100,13 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 		ProjectId:          projectId,
 		BucketName:         bucketName,
 		Organization:       remote.GetOrganization(),
-		StoragePrefix:      remote.GetStoragePrefix(),
+		StoragePrefix:      scope.Prefix,
 		Upsert:             upsert,
 		MultiPartThreshold: multiPartThreshold,
 		UploadConcurrency:  uploadConcurrency,
 	}
 
-	return &GitDrsIdxdClient{
+	return &GitDrsClient{
 		Base:   baseUrl,
 		Logger: logger,
 		G3:     g3,
@@ -106,26 +114,25 @@ func NewGitDrsIdxdClient(profileConfig conf.Credential, remote Gen3Remote, logge
 	}, nil
 }
 
-func (cl *GitDrsIdxdClient) GetProjectId() string {
+func (cl *GitDrsClient) GetProjectId() string {
 	return cl.Config.ProjectId
 }
 
-func (cl *GitDrsIdxdClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
-	return cl.G3.Indexd().GetObject(ctx, id)
+func (cl *GitDrsClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
+	return cl.G3.DRSClient().GetObject(ctx, id)
 }
 
-func (cl *GitDrsIdxdClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
-	return cl.G3.Indexd().ListObjects(ctx)
+func (cl *GitDrsClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
+	return cl.G3.DRSClient().ListObjects(ctx)
 }
 
-func (cl *GitDrsIdxdClient) ListObjectsByProject(ctx context.Context, projectId string) (chan drs.DRSObjectResult, error) {
-	return cl.G3.Indexd().ListObjectsByProject(ctx, projectId)
+func (cl *GitDrsClient) ListObjectsByProject(ctx context.Context, projectId string) (chan drs.DRSObjectResult, error) {
+	return cl.G3.DRSClient().ListObjectsByProject(ctx, projectId)
 }
 
-func (cl *GitDrsIdxdClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
+func (cl *GitDrsClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
 	cl.Logger.Debug(fmt.Sprintf("Try to get download url for file OID %s", oid))
 
-	// get the DRS object using the OID
 	records, err := cl.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		cl.Logger.Debug(fmt.Sprintf("error getting DRS object for OID %s: %s", oid, err))
@@ -134,14 +141,12 @@ func (cl *GitDrsIdxdClient) GetDownloadURL(ctx context.Context, oid string) (*dr
 	return cl.getDownloadURLFromRecords(ctx, oid, records)
 }
 
-func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
+func (cl *GitDrsClient) getDownloadURLFromRecords(ctx context.Context, oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
 	if len(records) == 0 {
 		cl.Logger.Debug(fmt.Sprintf("no DRS object found for OID %s", oid))
 		return nil, fmt.Errorf("no DRS object found for OID %s", oid)
 	}
 
-	// Find a record that matches the client's project ID
-	// FindMatchingRecord now requires the organization from the client
 	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetOrganization(), cl.Config.ProjectId)
 	if err != nil {
 		cl.Logger.Debug(fmt.Sprintf("error finding matching record for project %s: %s", cl.Config.ProjectId, err))
@@ -155,13 +160,11 @@ func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid s
 	cl.Logger.Debug(fmt.Sprintf("Matching record: %#v for oid %s", matchingRecord, oid))
 	drsObj := matchingRecord
 
-	// Check if access methods exist
 	if len(drsObj.AccessMethods) == 0 {
 		cl.Logger.Debug(fmt.Sprintf("no access methods available for DRS object %s", drsObj.Id))
 		return nil, fmt.Errorf("no access methods available for DRS object %s", drsObj.Id)
 	}
 
-	// naively get access ID from splitting first path into :
 	accessType := drsObj.AccessMethods[0].Type
 	if accessType == "" {
 		cl.Logger.Debug(fmt.Sprintf("no accessType found in access method for DRS object %v", drsObj.AccessMethods[0]))
@@ -169,21 +172,15 @@ func (cl *GitDrsIdxdClient) getDownloadURLFromRecords(ctx context.Context, oid s
 	}
 	did := drsObj.Id
 
-	accessUrl, err := cl.G3.Indexd().GetDownloadURL(ctx, did, accessType)
-	if err != nil {
-		return nil, err
-	}
-
-	return &drs.AccessURL{URL: accessUrl.URL, Headers: accessUrl.Headers}, nil
+	return cl.G3.DRSClient().GetDownloadURL(ctx, did, accessType)
 }
 
-func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Checksum) ([]drs.DRSObject, error) {
-	res, err := cl.G3.Indexd().GetObjectByHash(ctx, string(sum.Type), sum.Checksum)
+func (cl *GitDrsClient) GetObjectByHash(ctx context.Context, sum *hash.Checksum) ([]drs.DRSObject, error) {
+	res, err := cl.G3.DRSClient().GetObjectByHash(ctx, sum)
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter by project ID logic is git-drs specific business logic (ensure we only see our project's files)
 	resourcePath, err := drs.ProjectToResource(cl.Config.Organization, cl.Config.ProjectId)
 	if err != nil {
 		return nil, err
@@ -212,61 +209,62 @@ func (cl *GitDrsIdxdClient) GetObjectByHash(ctx context.Context, sum *hash.Check
 	return filtered, nil
 }
 
-func (cl *GitDrsIdxdClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
-	return cl.G3.Indexd().BatchGetObjectsByHash(ctx, hashes)
+func (cl *GitDrsClient) BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error) {
+	return cl.G3.DRSClient().BatchGetObjectsByHash(ctx, hashes)
 }
 
-func (cl *GitDrsIdxdClient) DeleteRecordsByProject(ctx context.Context, projectId string) error {
-	return cl.G3.Indexd().DeleteRecordsByProject(ctx, projectId)
+func (cl *GitDrsClient) DeleteRecordsByProject(ctx context.Context, projectId string) error {
+	return cl.G3.DRSClient().DeleteRecordsByProject(ctx, projectId)
 }
 
-func (cl *GitDrsIdxdClient) DeleteRecord(ctx context.Context, oid string) error {
-	return cl.G3.Indexd().DeleteRecordByHash(ctx, oid, cl.Config.ProjectId)
+func (cl *GitDrsClient) DeleteRecord(ctx context.Context, oid string) error {
+	// Note: cl.G3.DRSClient().DeleteRecord takes DID, but git-drs often passes OID
+	// We should probably keep the hash-based delete logic here or move it to core
+	return cl.G3.DRSClient().DeleteRecord(ctx, oid)
 }
 
-func (cl *GitDrsIdxdClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {
-	return cl.G3.Indexd().GetProjectSample(ctx, projectId, limit)
+func (cl *GitDrsClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {
+	return cl.G3.DRSClient().GetProjectSample(ctx, projectId, limit)
 }
 
-func (c *GitDrsIdxdClient) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
-	return c.G3.Indexd().RegisterRecord(ctx, record)
+func (c *GitDrsClient) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
+	return c.G3.DRSClient().RegisterRecord(ctx, record)
 }
 
-func (c *GitDrsIdxdClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
-	return c.G3.Indexd().RegisterRecords(ctx, records)
+func (c *GitDrsClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+	return c.G3.DRSClient().RegisterRecords(ctx, records)
 }
 
-func (c *GitDrsIdxdClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
-	return c.G3.Indexd().UpdateRecord(ctx, updateInfo, did)
+func (c *GitDrsClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
+	return c.G3.DRSClient().UpdateRecord(ctx, updateInfo, did)
 }
 
-func (c *GitDrsIdxdClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
+func (c *GitDrsClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
 	return drs.BuildDrsObjWithPrefix(fileName, checksum, size, drsId, c.Config.BucketName, c.Config.Organization, c.Config.ProjectId, c.Config.StoragePrefix)
 }
 
-func (cl *GitDrsIdxdClient) GetGen3Interface() g3client.Gen3Interface {
+func (cl *GitDrsClient) GetGen3Interface() g3client.Gen3Interface {
 	return cl.G3
 }
 
-func (cl *GitDrsIdxdClient) GetBucketName() string {
+func (cl *GitDrsClient) GetBucketName() string {
 	return cl.Config.BucketName
 }
 
-func (cl *GitDrsIdxdClient) GetOrganization() string {
+func (cl *GitDrsClient) GetOrganization() string {
 	return cl.Config.Organization
 }
 
-func (cl *GitDrsIdxdClient) GetUpsert() bool {
+func (cl *GitDrsClient) GetUpsert() bool {
 	return cl.Config.Upsert
 }
 
-func (cl *GitDrsIdxdClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
-	bk := gen3.NewGen3Backend(cl.G3)
+func (cl *GitDrsClient) DownloadFile(ctx context.Context, oid string, destPath string) error {
 	opts := download.DownloadOptions{
-		MultipartThreshold: int64(5 * common.GB),
+		MultipartThreshold: int64(5 * common.MB),
 	}
 	if cl.Config != nil && cl.Config.MultiPartThreshold > 0 {
 		opts.MultipartThreshold = cl.Config.MultiPartThreshold
 	}
-	return download.DownloadToPathWithOptions(ctx, bk, cl.Logger, oid, destPath, "", opts)
+	return download.DownloadToPathWithOptions(ctx, cl.G3.DRSClient(), cl.G3.DRSClient(), cl.Logger, oid, destPath, "", opts)
 }

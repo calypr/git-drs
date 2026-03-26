@@ -14,6 +14,10 @@ import (
 )
 
 func TestManualUpload_Integration(t *testing.T) {
+	if os.Getenv("GIT_DRS_RUN_LOCAL_INTEGRATION") != "true" {
+		t.Skip("set GIT_DRS_RUN_LOCAL_INTEGRATION=true to run local server integration test")
+	}
+
 	// 1. Configuration
 	baseURL := "http://localhost:8080"
 	bucket := "cbds"

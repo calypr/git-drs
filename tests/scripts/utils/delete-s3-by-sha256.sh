@@ -26,7 +26,7 @@ OPTIONS:
         Show this documentation and exit.
 
 EXAMPLE:
-    list-indexd-sha256.sh local-postgresql-0 <see default/local-postgresql> |
+    list-drs-sha256.sh local-postgresql-0 <see default/local-postgresql> |
       delete-s3-by-sha256.sh minio drs-objects uploads/
 
 DESCRIPTION:

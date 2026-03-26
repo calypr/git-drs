@@ -23,7 +23,6 @@ import (
 )
 
 // execCommand is a variable to allow mocking in tests
-var execCommand = exec.Command
 var execCommandContext = exec.CommandContext
 
 func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
@@ -103,19 +102,14 @@ func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error
 			logger.Debug(fmt.Sprintf("OBJ is nil: %#v, continuing...", drsObj))
 			continue
 		}
-		sumMap := hash.ConvertHashInfoToMap(drsObj.Object.Checksums)
-		if len(sumMap) == 0 {
-			return fmt.Errorf("error: drs Object '%s' does not contain a checksum", drsObj.Object.Id)
+		hashInfo := hash.ConvertDrsChecksumsToHashInfo(drsObj.Object.Checksums)
+		if hashInfo.SHA256 == "" {
+			return fmt.Errorf("error: drs Object '%s' does not contain a sha256 checksum", drsObj.Object.Id)
 		}
-		var drsObjPath, oid string = "", ""
-		for sumType, sum := range sumMap {
-			if sumType == hash.ChecksumTypeSHA256.String() {
-				oid = sum
-				drsObjPath, err = GetObjectPath(common.DRS_OBJS_PATH, oid)
-				if err != nil {
-					return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
-				}
-			}
+		oid := hashInfo.SHA256
+		drsObjPath, err := GetObjectPath(common.DRS_OBJS_PATH, oid)
+		if err != nil {
+			return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
 		}
 		// Only write a record if there exists a proper checksum to use. Checksums besides sha256 are not used
 		if drsObjPath != "" && oid != "" {
@@ -174,7 +168,8 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		if err == nil && existing != nil {
 			authoritativeObj = existing
 			// Update basic info if necessary
-			authoritativeObj.Name = file.Name
+			name := file.Name
+			authoritativeObj.Name = &name
 			authoritativeObj.Size = file.Size
 
 			// Ensure Authorizations are populated (backwards compatibility for old local records)
@@ -194,9 +189,9 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 						prefix = drs.StoragePrefix(builder.Organization, builder.ProjectID)
 					}
 					if prefix != "" {
-						authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)
+						authoritativeObj.AccessMethods[i].AccessUrl = &drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)}
 					} else {
-						authoritativeObj.AccessMethods[i].AccessURL.URL = fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
+						authoritativeObj.AccessMethods[i].AccessUrl = &drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)}
 					}
 				}
 			}
@@ -210,8 +205,8 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		}
 
 		authoritativeURL := ""
-		if len(authoritativeObj.AccessMethods) > 0 {
-			authoritativeURL = authoritativeObj.AccessMethods[0].AccessURL.URL
+		if len(authoritativeObj.AccessMethods) > 0 && authoritativeObj.AccessMethods[0].AccessUrl != nil {
+			authoritativeURL = authoritativeObj.AccessMethods[0].AccessUrl.Url
 		}
 
 		var hint string
@@ -237,12 +232,12 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 				BearerAuthIssuers: []string{authzStr},
 			}
 			if len(authoritativeObj.AccessMethods) > 0 {
-				authoritativeObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: hint}
+				authoritativeObj.AccessMethods[0].AccessUrl = &drs.AccessURL{Url: hint}
 				authoritativeObj.AccessMethods[0].Authorizations = authz
 			} else {
 				authoritativeObj.AccessMethods = append(authoritativeObj.AccessMethods, drs.AccessMethod{
 					Type:           "s3",
-					AccessURL:      drs.AccessURL{URL: hint},
+					AccessUrl:      &drs.AccessURL{Url: hint},
 					Authorizations: authz,
 				})
 			}
@@ -263,7 +258,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 
 	// determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
-	// if file is in cache, hasn't been committed to git or pushed to indexd
+	// if file is in cache, hasn't been committed to git or pushed to DRS server
 	// create a local DRS object for it
 	// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 	// If objectPath is provided, we use it. Otherwise compute default.
@@ -271,7 +266,8 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	var drsObj *drs.DRSObject
 	if err == nil && existing != nil {
 		drsObj = existing
-		drsObj.Name = file.Name
+		name := file.Name
+		drsObj.Name = &name
 		drsObj.Size = file.Size
 	} else {
 		drsId := DrsUUID(builder.ProjectID, file.Oid)
@@ -283,11 +279,11 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 
 	if objectPath != nil && *objectPath != "" {
 		if len(drsObj.AccessMethods) > 0 {
-			drsObj.AccessMethods[0].AccessURL = drs.AccessURL{URL: *objectPath}
+			drsObj.AccessMethods[0].AccessUrl = &drs.AccessURL{Url: *objectPath}
 		} else {
 			drsObj.AccessMethods = append(drsObj.AccessMethods, drs.AccessMethod{
 				Type:      "s3",
-				AccessURL: drs.AccessURL{URL: *objectPath},
+				AccessUrl: &drs.AccessURL{Url: *objectPath},
 			})
 		}
 	}

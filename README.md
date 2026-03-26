@@ -3,7 +3,7 @@
 ---
 # NOTICE
 
-git-drs is not yet fully compliant with DRS. It currently works against Gen3's indexd system. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
+git-drs is not yet fully compliant with DRS. It currently works against Gen3 DRS server. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
 
 ---
 
@@ -86,7 +86,7 @@ For detailed setup and usage information:
 - **[Commands Reference](docs/commands.md)** - Complete command documentation
 - **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
+- **[Cloud URL Integration](docs/adding-s3-files.md)** - Adding files via cloud object URLs
 - **[Developer Guide](docs/developer-guide.md)** - Internals and development
 
 ## Supported Servers
@@ -106,7 +106,7 @@ For detailed setup and usage information:
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |
 | `git drs remote set`   | Set default remote                    |
-| `git drs add-url`      | Add files via S3 URLs                 |
+| `git drs add-url`      | Add files via cloud object URLs       |
 | `git lfs track`        | Track file patterns with LFS          |
 | `git lfs ls-files`     | List tracked files                    |
 | `git lfs pull`         | Download tracked files                |

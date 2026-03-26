@@ -105,7 +105,4 @@ func TestInitConfigValues(t *testing.T) {
 
 	check("lfs.concurrenttransfers", "8")
 	check("lfs.allowincompletepush", "false")
-	check("lfs.standalonetransferagent", "")
-	check("lfs.customtransfer.drs.path", "")
-	check("lfs.customtransfer.drs.args", "")
 }

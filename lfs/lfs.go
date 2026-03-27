@@ -181,12 +181,12 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 		}
 
 		lfsFileMap[path] = LfsFileInfo{
-			Name:    path,
-			Size:    size,
+			Name:      path,
+			Size:      size,
 			IsPointer: isPointer,
-			OidType: "sha256",
-			Oid:     oid,
-			Version: "https://git-lfs.github.com/spec/v1",
+			OidType:   "sha256",
+			Oid:       oid,
+			Version:   "https://git-lfs.github.com/spec/v1",
 		}
 	}
 

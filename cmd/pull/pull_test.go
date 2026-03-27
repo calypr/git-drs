@@ -32,4 +32,3 @@ func TestPullRun_DefaultRemoteError(t *testing.T) {
 	err := Cmd.RunE(Cmd, []string{})
 	assert.Error(t, err)
 }
-

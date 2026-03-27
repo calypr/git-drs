@@ -13,4 +13,3 @@ func TestPullCmd(t *testing.T) {
 func TestValidateArgs(t *testing.T) {
 	testutils.RunCmdArgsTest(t)
 }
-

@@ -6,10 +6,10 @@ import (
 	"os/exec"
 	"strings"
 
-	datadrs "github.com/calypr/data-client/drs"
 	"github.com/bytedance/sonic"
-	"github.com/calypr/git-drs/config"
+	datadrs "github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"

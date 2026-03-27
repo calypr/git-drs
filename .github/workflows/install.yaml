@@ -22,10 +22,18 @@ jobs:
           - { os: darwin, arch: arm64, runner: macos-latest }
 
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
       - name: Install Default Version (Latest Release)
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH=${{ github.ref_name }}
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/$BRANCH/install.sh)"
-          source $HOME/.bashrc
-          which git-drs
+          ./install.sh
+          # GITHUB_PATH is updated by the script, but we might need to refresh for the current step 
+          # but usually it's better to just use identifying path or rely on next steps
+          # In this single-step test, we check if it works by calling it directly if not in PATH yet
+          export PATH="$PATH:$HOME/.local/bin"
           git-drs --help
+

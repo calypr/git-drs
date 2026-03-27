@@ -137,10 +137,39 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 		if len(parts) < 2 {
 			continue
 		}
-		oid := parts[1]
-		path := parts[len(parts)-1]
+
+		oid := ""
+		oidIndex := -1
+		for i, p := range parts {
+			if sha256Re.MatchString(p) {
+				oid = p
+				oidIndex = i
+				break
+			}
+		}
+		if oid == "" {
+			logger.Debug(fmt.Sprintf("skipping LFS line with no oid: %q", line))
+			continue
+		}
+
+		// Preserve full path text (including spaces) by slicing from the first oid occurrence.
+		path := ""
+		if idx := strings.Index(line, oid); idx >= 0 {
+			path = strings.TrimSpace(line[idx+len(oid):])
+		}
+		if path == "" && oidIndex+1 < len(parts) {
+			path = strings.Join(parts[oidIndex+1:], " ")
+		}
+		path = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(path, "=>"), "->"))
+		path = strings.TrimSpace(strings.TrimPrefix(path, "=>"))
+		path = strings.TrimSpace(strings.TrimPrefix(path, "->"))
+		if path == "" {
+			logger.Debug(fmt.Sprintf("skipping LFS line with empty path: %q", line))
+			continue
+		}
 
 		// Validate OID looks like a SHA256 hex string.
+		// (kept as a guard in case extraction logic changes)
 		if !sha256Re.MatchString(oid) {
 			logger.Debug(fmt.Sprintf("skipping LFS line with invalid oid %q: %q", oid, line))
 			continue

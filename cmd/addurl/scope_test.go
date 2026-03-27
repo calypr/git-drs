@@ -5,10 +5,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"log/slog"
+
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
-	"log/slog"
 )
 
 type fakeRemote struct {

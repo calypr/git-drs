@@ -136,7 +136,7 @@ func (cl *GitDrsClient) ensureRecordRegistered(ctx context.Context, oid string, 
 				}
 			} else {
 				cl.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
-				err = cl.DeleteRecord(ctx, oid)
+				err = cl.DeleteRecordByOID(ctx, oid)
 				if err != nil {
 					return nil, fmt.Errorf("error deleting existing DRS object oid %s: did: %s err: %v", oid, drsObject.Id, err)
 				}

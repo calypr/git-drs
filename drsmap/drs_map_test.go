@@ -161,7 +161,11 @@ func (m *MockDRSClient) DeleteRecordsByProject(ctx context.Context, project stri
 	return nil
 }
 
-func (m *MockDRSClient) DeleteRecord(ctx context.Context, oid string) error {
+func (m *MockDRSClient) DeleteRecordByOID(ctx context.Context, oid string) error {
+	return nil
+}
+
+func (m *MockDRSClient) DeleteRecordByDID(ctx context.Context, did string) error {
 	return nil
 }
 

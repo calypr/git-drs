@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -62,6 +63,8 @@ type LocalClient struct {
 	Config      *LocalConfig
 	LocalFacade localclient.LocalInterface
 }
+
+var errNoLocalRecordsForOID = errors.New("no records found for OID")
 
 type metadataStore interface {
 	GetObject(ctx context.Context, id string) (*drs.DRSObject, error)
@@ -153,8 +156,33 @@ func (c *LocalClient) BatchGetObjectsByHash(ctx context.Context, hashes []string
 func (c *LocalClient) DeleteRecordsByProject(ctx context.Context, project string) error {
 	return c.meta.DeleteRecordsByProject(ctx, project)
 }
-func (c *LocalClient) DeleteRecord(ctx context.Context, oid string) error {
-	return c.meta.DeleteRecord(ctx, oid)
+func (c *LocalClient) DeleteRecordByOID(ctx context.Context, oid string) error {
+	records, err := c.meta.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+	if err != nil {
+		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("%w %s", errNoLocalRecordsForOID, oid)
+	}
+
+	var did string
+	if c.GetOrganization() != "" && c.GetProjectId() != "" {
+		match, matchErr := drsmap.FindMatchingRecord(records, c.GetOrganization(), c.GetProjectId())
+		if matchErr != nil {
+			return fmt.Errorf("error finding matching record for project %s: %w", c.GetProjectId(), matchErr)
+		}
+		if match == nil {
+			return fmt.Errorf("no matching record found for project %s", c.GetProjectId())
+		}
+		did = match.Id
+	} else {
+		did = records[0].Id
+	}
+
+	return c.DeleteRecordByDID(ctx, did)
+}
+func (c *LocalClient) DeleteRecordByDID(ctx context.Context, did string) error {
+	return c.meta.DeleteRecord(ctx, did)
 }
 func (c *LocalClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {
 	return c.meta.GetProjectSample(ctx, projectId, limit)

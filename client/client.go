@@ -19,7 +19,8 @@ type DRSClient interface {
 	GetObjectByHash(ctx context.Context, sum *hash.Checksum) ([]drs.DRSObject, error)
 	BatchGetObjectsByHash(ctx context.Context, hashes []string) (map[string][]drs.DRSObject, error)
 	DeleteRecordsByProject(ctx context.Context, projectId string) error
-	DeleteRecord(ctx context.Context, oid string) error
+	DeleteRecordByOID(ctx context.Context, oid string) error
+	DeleteRecordByDID(ctx context.Context, did string) error
 	GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error)
 	RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error)
 	BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error)

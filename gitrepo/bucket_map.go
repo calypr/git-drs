@@ -42,18 +42,27 @@ func SetBucketMapping(org, project, bucket, prefix string) error {
 	}
 
 	configs := map[string]string{}
+	prefixKey := ""
 	if project != "" {
 		configs[projectBucketKey(org, project, "bucket")] = bucket
+		prefixKey = projectBucketKey(org, project, "prefix")
 		if prefix != "" {
-			configs[projectBucketKey(org, project, "prefix")] = prefix
+			configs[prefixKey] = prefix
 		}
 	} else {
 		configs[orgBucketKey(org, "bucket")] = bucket
+		prefixKey = orgBucketKey(org, "prefix")
 		if prefix != "" {
-			configs[orgBucketKey(org, "prefix")] = prefix
+			configs[prefixKey] = prefix
 		}
 	}
-	return SetGitConfigOptions(configs)
+	if err := SetGitConfigOptions(configs); err != nil {
+		return err
+	}
+	if prefix == "" && prefixKey != "" {
+		return UnsetGitConfigOptions([]string{prefixKey})
+	}
+	return nil
 }
 
 func GetBucketMapping(org, project string) (BucketMapping, bool, error) {

@@ -127,3 +127,101 @@ func TestGetObjectByHashFiltersByProjectAuthz(t *testing.T) {
 		t.Fatalf("unexpected filtered records: %#v", res)
 	}
 }
+
+func TestDeleteRecordByOIDResolvesOIDToDID(t *testing.T) {
+	var deletedPath string
+	var deletedRev string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/index" && r.URL.Query().Get("hash") == "sha256:oid1":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+  "records": [
+    {
+      "did":"did-match",
+      "file_name":"a.bin",
+      "size":1,
+      "urls":["s3://bucket/a.bin"],
+      "authz":["/programs/org/projects/proj"],
+      "hashes":{"sha256":"oid1"}
+    }
+  ]
+}`))
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/index/did-match":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+  "did":"did-match",
+  "rev":"r1",
+  "file_name":"a.bin",
+  "size":1,
+  "urls":["s3://bucket/a.bin"],
+  "authz":["/programs/org/projects/proj"],
+  "hashes":{"sha256":"oid1"}
+}`))
+			return
+		case r.Method == http.MethodDelete && r.URL.Path == "/index/did-match":
+			deletedPath = r.URL.Path
+			deletedRev = r.URL.Query().Get("rev")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
+	cl.Config.Organization = "org"
+	cl.Config.ProjectId = "proj"
+
+	if err := cl.DeleteRecordByOID(context.Background(), "oid1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deletedPath != "/index/did-match" {
+		t.Fatalf("expected DID delete path, got %q", deletedPath)
+	}
+	if deletedRev != "r1" {
+		t.Fatalf("expected rev r1, got %q", deletedRev)
+	}
+}
+
+func TestDeleteRecordByDIDDeletesDirectly(t *testing.T) {
+	var deletedPath string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/index/did-direct":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+  "did":"did-direct",
+  "rev":"r2",
+  "file_name":"b.bin",
+  "size":1,
+  "urls":["s3://bucket/b.bin"],
+  "authz":["/programs/org/projects/proj"],
+  "hashes":{"sha256":"oid2"}
+}`))
+			return
+		case r.Method == http.MethodDelete && r.URL.Path == "/index/did-direct":
+			deletedPath = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
+	cl.Config.Organization = "org"
+	cl.Config.ProjectId = "proj"
+
+	if err := cl.DeleteRecordByDID(context.Background(), "did-direct"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deletedPath != "/index/did-direct" {
+		t.Fatalf("expected direct DID delete path, got %q", deletedPath)
+	}
+}

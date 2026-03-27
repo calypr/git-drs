@@ -2,6 +2,7 @@ package drs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -35,6 +36,8 @@ type GitDrsClient struct {
 	G3     g3client.Gen3Interface
 	Config *Config
 }
+
+var errNoRecordsForOID = errors.New("no records found for OID")
 
 func NewGitDrsClient(profileConfig conf.Credential, remote Gen3Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
 	baseUrl, err := url.Parse(profileConfig.APIEndpoint)
@@ -217,10 +220,28 @@ func (cl *GitDrsClient) DeleteRecordsByProject(ctx context.Context, projectId st
 	return cl.G3.DRSClient().DeleteRecordsByProject(ctx, projectId)
 }
 
-func (cl *GitDrsClient) DeleteRecord(ctx context.Context, oid string) error {
-	// Note: cl.G3.DRSClient().DeleteRecord takes DID, but git-drs often passes OID
-	// We should probably keep the hash-based delete logic here or move it to core
-	return cl.G3.DRSClient().DeleteRecord(ctx, oid)
+func (cl *GitDrsClient) DeleteRecordByOID(ctx context.Context, oid string) error {
+	records, err := cl.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+	if err != nil {
+		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("%w %s", errNoRecordsForOID, oid)
+	}
+
+	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetOrganization(), cl.Config.ProjectId)
+	if err != nil {
+		return fmt.Errorf("error finding matching record for project %s: %w", cl.Config.ProjectId, err)
+	}
+	if matchingRecord == nil {
+		return fmt.Errorf("no matching record found for project %s", cl.Config.ProjectId)
+	}
+
+	return cl.DeleteRecordByDID(ctx, matchingRecord.Id)
+}
+
+func (cl *GitDrsClient) DeleteRecordByDID(ctx context.Context, did string) error {
+	return cl.G3.DRSClient().DeleteRecord(ctx, did)
 }
 
 func (cl *GitDrsClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {

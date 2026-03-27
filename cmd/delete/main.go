@@ -96,7 +96,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(context.Background(), oid)
+		err = drsClient.DeleteRecordByOID(context.Background(), oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

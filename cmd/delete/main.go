@@ -9,7 +9,6 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
 	"github.com/spf13/cobra"
 )
 
@@ -61,28 +60,19 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("no records found for OID %s", oid)
 		}
 
-		// Find matching record for current project
-		projectId := drsClient.GetProjectId()
-		matchingRecord, err := drsmap.FindMatchingRecord(records, drsClient.GetOrganization(), projectId)
-		if err != nil {
-			return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
-		}
-		if matchingRecord == nil {
-			return fmt.Errorf("no matching record found for project %s and OID %s", projectId, oid)
-		}
-
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
+			projectId := drsClient.GetProjectId()
 			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
 			common.DisplayField(os.Stderr, "Remote", string(remoteName))
 			common.DisplayField(os.Stderr, "Project", projectId)
 			common.DisplayField(os.Stderr, "OID", oid)
 			common.DisplayField(os.Stderr, "Hash Type", hashType)
-			common.DisplayField(os.Stderr, "DID", matchingRecord.Id)
-			if matchingRecord.Name != nil && *matchingRecord.Name != "" {
-				common.DisplayField(os.Stderr, "Filename", *matchingRecord.Name)
+			common.DisplayField(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records)))
+			if len(records) > 0 {
+				common.DisplayField(os.Stderr, "Example DID", records[0].Id)
 			}
-			common.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
+			common.DisplayField(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend")
 			common.DisplayFooter(os.Stderr)
 
 			if err := common.PromptForConfirmation(

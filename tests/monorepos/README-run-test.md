@@ -8,7 +8,7 @@ This file documents the `run-test.sh` helper script located in `tests/monorepos`
 - Ensures the script is run from the `tests/monorepos` directory.
 - Generates fixtures via `make test-monorepos` only if `fixtures/` does not exist.
 - Verifies that `git-lfs` is installed (attempts `brew install git-lfs` on macOS).
-- Locates the locally built `git-drs` binary two levels up from the script and prepends its absolute path to `PATH` so the local build is used.
+- Uses `git-drs` from `PATH` (prints `which git-drs` at runtime).
 - Validates the target Gen3 project exists via `calypr_admin`.
 - Initializes a git repo in `fixtures/`, runs `git drs init`, creates or updates `.gitattributes`, configures LFS tracking, and pushes subfolders to the remote.
 
@@ -50,15 +50,18 @@ Project identifier. Default: cbds-monorepos.
 If the value contains a hyphen, the script splits the first hyphen-separated token into PROGRAM and the remainder into PROJECT. Both are exported for downstream use.
 
 
-* --git-remote / GIT_REMOTE (required)
-Remote repository URL for git remote add origin. No default; the script exits if not provided.
-Note: We've been using https://github.com/calypr/monorepo.git
+* --git-remote / GIT_REMOTE
+Remote repository URL for git remote add origin. Default: `https://github.com/calypr/monorepo.git`.
+
+* --max-dirs / MAX_DIRS
+Maximum number of top-level fixture directories processed in the push loop.
+Default: `0` (process all directories; recommended for realistic coverage).
 
 ## Behavior notes
 
 * The script will abort if not run from tests/monorepos.
 * Fixtures are generated only when fixtures/ is absent.
-* The script looks for git-drs in the directory two levels above the script path and prepends the absolute path to PATH so the locally built git-drs is used.
+* The script uses `git-drs` from `PATH`; ensure your intended binary is first in `PATH`.
 * A project existence check is performed with `calypr_admin projects ls --profile "$PROFILE"` and must match `/programs/$PROGRAM/projects/$PROJECT`.
 * When initializing the fixtures repo the script:
   * creates or uses branch main,
@@ -70,5 +73,5 @@ Note: We've been using https://github.com/calypr/monorepo.git
 ## Troubleshooting
 
 * If git-lfs is missing, install it (the script attempts a brew install git-lfs on macOS).
-* Ensure a locally built git-drs exists at the repository root two levels above tests/monorepos (e.g., $(git rev-parse --show-toplevel)/git-drs).
+* Ensure your intended `git-drs` binary is in `PATH` before running tests.
 * Ensure the Gen3 project exists before running the script.

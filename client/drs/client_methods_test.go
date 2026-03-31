@@ -187,6 +187,69 @@ func TestDeleteRecordByOIDResolvesOIDToDID(t *testing.T) {
 	}
 }
 
+func TestDeleteRecordByOIDDeletesAllResolvedDIDs(t *testing.T) {
+	deleted := make(map[string]int)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/index" && r.URL.Query().Get("hash") == "sha256:oid-all":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+  "records": [
+    {
+      "did":"did-a",
+      "file_name":"a.bin",
+      "size":1,
+      "urls":["s3://bucket/a.bin"],
+      "authz":["/programs/org/projects/proj"],
+      "hashes":{"sha256":"oid-all"}
+    },
+    {
+      "did":"did-b",
+      "file_name":"b.bin",
+      "size":1,
+      "urls":["s3://bucket/b.bin"],
+      "authz":["/programs/other/projects/alt"],
+      "hashes":{"sha256":"oid-all"}
+    }
+  ]
+}`))
+			return
+		case r.Method == http.MethodGet && (r.URL.Path == "/index/did-a" || r.URL.Path == "/index/did-b"):
+			w.Header().Set("Content-Type", "application/json")
+			did := strings.TrimPrefix(r.URL.Path, "/index/")
+			_, _ = w.Write([]byte(`{
+  "did":"` + did + `",
+  "rev":"r1",
+  "file_name":"x.bin",
+  "size":1,
+  "urls":["s3://bucket/x.bin"],
+  "authz":["/programs/org/projects/proj"],
+  "hashes":{"sha256":"oid-all"}
+}`))
+			return
+		case r.Method == http.MethodDelete && (r.URL.Path == "/index/did-a" || r.URL.Path == "/index/did-b"):
+			deleted[r.URL.Path]++
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
+	cl.Config.Organization = "org"
+	cl.Config.ProjectId = "proj"
+
+	if err := cl.DeleteRecordByOID(context.Background(), "oid-all"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deleted["/index/did-a"] != 1 || deleted["/index/did-b"] != 1 {
+		t.Fatalf("expected both DIDs to be deleted once, got %+v", deleted)
+	}
+}
+
 func TestDeleteRecordByDIDDeletesDirectly(t *testing.T) {
 	var deletedPath string
 

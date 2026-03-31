@@ -318,6 +318,48 @@ For each work session:
 
 2. **Work with files** (track, add, commit, push)
 
+## Local DRS Server Setup
+
+Use this flow when developing against a local `drs-server` instead of hosted Gen3.
+
+1. **Initialize repo**
+
+   ```bash
+   git drs init
+   ```
+
+2. **Add local remote**
+
+   ```bash
+   git drs remote add local origin http://localhost:8080 \
+       --organization calypr \
+       --project end_to_end_test \
+       --bucket cbds \
+       --username drs-user \
+       --password drs-pass
+   ```
+
+   If your local server has no basic auth, omit `--username/--password`.
+
+3. **Track and push**
+
+   ```bash
+   git lfs track "*.bin"
+   git add .gitattributes data/example.bin
+   git commit -m "Add local DRS test file"
+   git drs push
+   ```
+
+4. **Verify pull**
+
+   ```bash
+   git drs pull
+   # or Git LFS compatibility path
+   git lfs pull
+   ```
+
+For complete local/remote mode behavior and e2e runbooks, see [E2E Modes + Local Setup](e2e-modes-and-local-setup.md).
+
 3. **Download files as needed**
 
    ```bash

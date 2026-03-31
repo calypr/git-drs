@@ -3,8 +3,11 @@ package local
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,8 +22,10 @@ import (
 )
 
 type fakeMetadata struct {
-	registerErr error
-	object      *drs.DRSObject
+	registerErr          error
+	object               *drs.DRSObject
+	registerRecordCalls  int
+	registerRecordsCalls int
 }
 
 func (f *fakeMetadata) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
@@ -54,6 +59,7 @@ func (f *fakeMetadata) GetProjectSample(ctx context.Context, projectId string, l
 	return []drs.DRSObject{}, nil
 }
 func (f *fakeMetadata) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
+	f.registerRecordCalls++
 	if f.registerErr != nil {
 		return nil, f.registerErr
 	}
@@ -63,6 +69,10 @@ func (f *fakeMetadata) RegisterRecord(ctx context.Context, record *drs.DRSObject
 	return record, nil
 }
 func (f *fakeMetadata) RegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+	f.registerRecordsCalls++
+	if f.registerErr != nil {
+		return nil, f.registerErr
+	}
 	return records, nil
 }
 func (f *fakeMetadata) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
@@ -77,6 +87,20 @@ type fakeUploader struct {
 func (f *fakeUploader) Upload(ctx context.Context, req common.FileUploadRequestObject) error {
 	f.calls++
 	return f.err
+}
+
+func (f *fakeUploader) ResolveUploadURLs(ctx context.Context, requests []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error) {
+	results := make([]common.UploadURLResolveResponse, 0, len(requests))
+	for _, req := range requests {
+		results = append(results, common.UploadURLResolveResponse{
+			GUID:     req.GUID,
+			Filename: req.Filename,
+			Bucket:   req.Bucket,
+			Status:   http.StatusBadGateway,
+			Error:    "not resolved in fake uploader",
+		})
+	}
+	return results, nil
 }
 
 type fakeDownloader struct {
@@ -256,8 +280,40 @@ func TestLocalClient_BatchSyncForPushReturnsFileContextOnError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected batch sync error")
 	}
-	if !strings.Contains(err.Error(), "upload failed for") || !strings.Contains(err.Error(), "register fail from server") {
+	if !strings.Contains(err.Error(), "batch register failed") || !strings.Contains(err.Error(), "register fail from server") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLocalClient_BatchSyncForPushUsesBatchRegistration(t *testing.T) {
+	tmp := t.TempDir()
+	p1 := writeTempFile(t, tmp, "a.bin", []byte("payload-a"))
+	p2 := writeTempFile(t, tmp, "b.bin", []byte("payload-b"))
+
+	meta := &fakeMetadata{}
+	up := &fakeUploader{}
+	client := newTestLocalClient(
+		LocalRemote{ProjectID: "proj", Bucket: "bucket-a"},
+		meta,
+		up,
+		&fakeDownloader{},
+	)
+
+	files := map[string]lfs.LfsFileInfo{
+		"oid1": {Name: p1, Oid: strings.Repeat("a", 64)},
+		"oid2": {Name: p2, Oid: strings.Repeat("b", 64)},
+	}
+	if err := client.BatchSyncForPush(context.Background(), files); err != nil {
+		t.Fatalf("unexpected batch sync error: %v", err)
+	}
+	if meta.registerRecordsCalls != 1 {
+		t.Fatalf("expected one RegisterRecords call, got %d", meta.registerRecordsCalls)
+	}
+	if meta.registerRecordCalls != 0 {
+		t.Fatalf("expected zero RegisterRecord calls, got %d", meta.registerRecordCalls)
+	}
+	if up.calls != 2 {
+		t.Fatalf("expected two uploads, got %d", up.calls)
 	}
 }
 
@@ -266,5 +322,169 @@ func TestNewLocalClientStillBuildsDeps(t *testing.T) {
 	c := NewLocalClient(LocalRemote{BaseURL: "http://example.invalid", ProjectID: "p", Bucket: "b"}, logger)
 	if c == nil || c.meta == nil || c.uploads == nil || c.downloads == nil {
 		t.Fatalf("expected LocalClient dependencies to be initialized")
+	}
+}
+
+func TestNewLocalClient_RegisterRecordSendsBasicAuth(t *testing.T) {
+	const username = "alice"
+	const password = "secret"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/index" {
+			http.NotFound(w, r)
+			return
+		}
+		u, p, ok := r.BasicAuth()
+		if !ok || u != username || p != password {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("missing/invalid basic auth"))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := NewLocalClient(LocalRemote{
+		BaseURL:       srv.URL,
+		ProjectID:     "p",
+		Bucket:        "b",
+		BasicUsername: username,
+		BasicPassword: password,
+	}, logger)
+
+	name := "obj.bin"
+	_, err := client.RegisterRecord(context.Background(), &drs.DRSObject{
+		Id:   "did-1",
+		Name: &name,
+		Size: 1,
+		Checksums: []drs.Checksum{
+			{Type: "sha256", Checksum: strings.Repeat("a", 64)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected register to succeed with basic auth, got: %v", err)
+	}
+}
+
+func TestNewLocalClient_RegisterRecordUnauthorizedDoesNotAttemptFenceRefresh(t *testing.T) {
+	const username = "alice"
+	const password = "wrong"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/index" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := NewLocalClient(LocalRemote{
+		BaseURL:       srv.URL,
+		ProjectID:     "p",
+		Bucket:        "b",
+		BasicUsername: username,
+		BasicPassword: password,
+	}, logger)
+
+	name := "obj.bin"
+	_, err := client.RegisterRecord(context.Background(), &drs.DRSObject{
+		Id:   "did-1",
+		Name: &name,
+		Size: 1,
+		Checksums: []drs.Checksum{
+			{Type: "sha256", Checksum: strings.Repeat("a", 64)},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected unauthorized error")
+	}
+	if strings.Contains(err.Error(), "APIKey is required to refresh access token") {
+		t.Fatalf("unexpected fence refresh path for local auth: %v", err)
+	}
+}
+
+func TestLocalClient_GetDownloadURLFallsBackFromS3AccessURL(t *testing.T) {
+	oid := strings.Repeat("a", 64)
+	did := "did-local-1"
+	accessPath := "/ga4gh/drs/v1/objects/" + did + "/access/s3"
+	var accessCalls int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/index":
+			if got := r.URL.Query().Get("hash"); got != "sha256:"+oid {
+				http.Error(w, "bad hash query", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"records":[{"did":"%s","file_name":"x.bin","size":1,"hashes":{"sha256":"%s"},"urls":["s3://cbds/local-key"]}]}`, did, oid)
+			return
+		case r.Method == http.MethodGet && r.URL.Path == accessPath:
+			accessCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"url":"https://example.invalid/signed-download"}`))
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := NewLocalClient(LocalRemote{
+		BaseURL:   srv.URL,
+		ProjectID: "p",
+		Bucket:    "b",
+	}, logger)
+
+	u, err := client.GetDownloadURL(context.Background(), oid)
+	if err != nil {
+		t.Fatalf("expected fallback URL resolution to succeed, got: %v", err)
+	}
+	if u == nil || u.Url != "https://example.invalid/signed-download" {
+		t.Fatalf("unexpected download URL: %#v", u)
+	}
+	if accessCalls != 1 {
+		t.Fatalf("expected one access fallback call, got %d", accessCalls)
+	}
+}
+
+func TestLocalClient_GetDownloadURLUsesDirectHTTPURLWhenPresent(t *testing.T) {
+	oid := strings.Repeat("b", 64)
+	did := "did-local-2"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/index":
+			if got := r.URL.Query().Get("hash"); got != "sha256:"+oid {
+				http.Error(w, "bad hash query", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"records":[{"did":"%s","file_name":"x.bin","size":1,"hashes":{"sha256":"%s"},"urls":["https://example.invalid/direct-download"]}]}`, did, oid)
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	client := NewLocalClient(LocalRemote{
+		BaseURL:   srv.URL,
+		ProjectID: "p",
+		Bucket:    "b",
+	}, logger)
+
+	u, err := client.GetDownloadURL(context.Background(), oid)
+	if err != nil {
+		t.Fatalf("expected direct HTTP URL to be usable, got: %v", err)
+	}
+	if u == nil || u.Url != "https://example.invalid/direct-download" {
+		t.Fatalf("unexpected download URL: %#v", u)
 	}
 }

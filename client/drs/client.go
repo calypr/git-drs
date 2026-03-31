@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strings"
 
 	"github.com/calypr/data-client/common"
 	"github.com/calypr/data-client/conf"
@@ -221,23 +222,31 @@ func (cl *GitDrsClient) DeleteRecordsByProject(ctx context.Context, projectId st
 }
 
 func (cl *GitDrsClient) DeleteRecordByOID(ctx context.Context, oid string) error {
-	records, err := cl.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+	records, err := cl.G3.DRSClient().GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
 	if err != nil {
 		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
 	}
 	if len(records) == 0 {
 		return fmt.Errorf("%w %s", errNoRecordsForOID, oid)
 	}
-
-	matchingRecord, err := drsmap.FindMatchingRecord(records, cl.GetOrganization(), cl.Config.ProjectId)
-	if err != nil {
-		return fmt.Errorf("error finding matching record for project %s: %w", cl.Config.ProjectId, err)
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		did := strings.TrimSpace(record.Id)
+		if did == "" {
+			continue
+		}
+		if _, exists := seen[did]; exists {
+			continue
+		}
+		seen[did] = struct{}{}
+		if err := cl.DeleteRecordByDID(ctx, did); err != nil {
+			return fmt.Errorf("error deleting DID %s for OID %s: %w", did, oid, err)
+		}
 	}
-	if matchingRecord == nil {
-		return fmt.Errorf("no matching record found for project %s", cl.Config.ProjectId)
+	if len(seen) == 0 {
+		return fmt.Errorf("no deleteable DIDs found for OID %s", oid)
 	}
-
-	return cl.DeleteRecordByDID(ctx, matchingRecord.Id)
+	return nil
 }
 
 func (cl *GitDrsClient) DeleteRecordByDID(ctx context.Context, did string) error {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/client/local"
+	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
 )
 
 func setupTestRepo(t *testing.T) string {
@@ -316,5 +318,43 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 
 	if localRemote.BaseURL != "http://localhost:8080" {
 		t.Errorf("Expected BaseURL http://localhost:8080, got %s", localRemote.BaseURL)
+	}
+}
+
+func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
+	setupTestRepo(t)
+
+	remoteName := Remote("origin")
+	_, err := UpdateRemote(remoteName, RemoteSelect{
+		Local: &local.LocalRemote{
+			BaseURL: "http://localhost:8080",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRemote failed: %v", err)
+	}
+
+	if err := gitrepo.SetRemoteBasicAuth("origin", "alice", "secret"); err != nil {
+		t.Fatalf("SetRemoteBasicAuth failed: %v", err)
+	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	logger := drslog.GetLogger()
+	clientIface, err := cfg.GetRemoteClient(remoteName, logger)
+	if err != nil {
+		t.Fatalf("GetRemoteClient failed: %v", err)
+	}
+	localClient, ok := clientIface.(*local.LocalClient)
+	if !ok {
+		t.Fatalf("expected *local.LocalClient, got %T", clientIface)
+	}
+	if localClient.Remote.BasicUsername != "alice" {
+		t.Fatalf("expected basic username alice, got %q", localClient.Remote.BasicUsername)
+	}
+	if localClient.Remote.BasicPassword != "secret" {
+		t.Fatalf("expected basic password secret, got %q", localClient.Remote.BasicPassword)
 	}
 }

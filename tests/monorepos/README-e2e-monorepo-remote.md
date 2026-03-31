@@ -5,13 +5,26 @@ This runner extends the `git-drs/tests/monorepos` workflow for realistic-scale e
 - `git drs push` is exercised repeatedly (per tree or all-at-once),
 - fresh clone + `git drs pull` validates hydration behavior at scale.
 
+Shared mode/auth/env conventions are documented in:
+- `tests/README.md`
+- `docs/e2e-modes-and-local-setup.md`
+
 ## Files
 
 - `e2e-monorepo-remote.sh`: main runner
+- `e2e-monorepo-local.sh`: local-mode wrapper around main runner
 - `generate-fixtures.go`: fixture generator
 - `Makefile`: optional helper targets to build generator / produce sample fixtures
 
-## Required env vars
+## Env-first usage
+
+This suite is env-first, same as other e2e scripts:
+
+- defaults load from `git-drs/.env`
+- override file with `ENV_FILE=/path/to/.env`
+- inline vars win over `.env` (for example `MONO_FILES_PER_SUBDIR=50 bash ...`)
+
+## Required env vars (remote mode)
 
 - `TEST_ORGANIZATION`
 - `TEST_PROJECT_ID`
@@ -23,12 +36,10 @@ This runner extends the `git-drs/tests/monorepos` workflow for realistic-scale e
 Auth:
 - Use `TEST_GEN3_TOKEN`, or
 - set `GEN3_PROFILE` / `TEST_GEN3_PROFILE` and a valid `~/.gen3/gen3_client_config.ini`.
-- Optional: `ENV_FILE=/path/to/.env` to force env-file loading.
-  - Default behavior when `ENV_FILE` is unset: load `git-drs/.env` only (if present).
 
 ## Common optional env vars
 
-- `TEST_DRS_URL` (default `https://caliper-training.ohsu.edu`)
+- `TEST_DRS_URL` (default depends on mode wrapper)
 - `TEST_SERVER_MODE` (`remote` default)
 - `MONO_TOP_LEVELS` (comma-separated, default `TARGET-ALL-P2,TCGA-GBM,TCGA-LUAD`)
 - `MONO_SUBDIRS` (default `2`)
@@ -40,6 +51,8 @@ Auth:
 - `MONO_MULTIPART_THRESHOLD_MB` (default `64`; keeps generated ~20MB files single-part)
 - `MONO_RUN_MULTIPART_SMOKE` (default `true`; runs one forced multipart upload)
 - `MONO_MULTIPART_SMOKE_MB` (default `96`; size of multipart smoke file)
+- `MONO_TRANSFERS` (transfer concurrency)
+- `TEST_PARALLEL_WORKERS` (alias for `MONO_TRANSFERS`)
 - `TEST_CREATE_BUCKET_BEFORE_TEST` (`false` default)
 - `TEST_DELETE_BUCKET_AFTER` (`true` default when bucket was created by test)
 - `TEST_BUCKET_NAME`, `TEST_BUCKET_REGION`, `TEST_BUCKET_ACCESS_KEY`, `TEST_BUCKET_SECRET_KEY`, `TEST_BUCKET_ENDPOINT` (required when create-before-test is enabled)
@@ -49,20 +62,36 @@ Auth:
 ```bash
 cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-TEST_DRS_URL="https://caliper-training.ohsu.edu" \
+TEST_DRS_URL="https://<drs-host>" \
 TEST_SERVER_MODE="remote" \
-GEN3_PROFILE="local" \
-TEST_ORGANIZATION="calypr" \
-TEST_PROJECT_ID="end_to_end_test" \
-TEST_BUCKET="cbds" \
-MONO_REMOTE_URL="https://github.com/calypr/git-drs-e2e-remote.git" \
-MONO_TOP_LEVELS="TARGET-ALL-P2,TCGA-GBM,TCGA-LUAD,TCGA-KIRC" \
+GEN3_PROFILE="<profile_name>" \
+TEST_ORGANIZATION="<organization>" \
+TEST_PROJECT_ID="<project_id>" \
+TEST_BUCKET="<bucket>" \
+MONO_REMOTE_URL="https://github.com/<owner>/<repo>.git" \
+MONO_TOP_LEVELS="TARGET-ALL-P2,TCGA-GBM,TCGA-LUAD" \
 MONO_SUBDIRS=2 \
-MONO_FILES_PER_SUBDIR=30 \
+MONO_FILES_PER_SUBDIR=20 \
 MONO_MULTIPART_THRESHOLD_MB=64 \
 MONO_RUN_MULTIPART_SMOKE=true \
 MONO_MULTIPART_SMOKE_MB=96 \
 bash tests/monorepos/e2e-monorepo-remote.sh
+```
+
+## Local mode example
+
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
+
+TEST_DRS_URL="http://localhost:8080" \
+TEST_SERVER_MODE="local" \
+TEST_ORGANIZATION="<organization>" \
+TEST_PROJECT_ID="<project_id>" \
+TEST_BUCKET="<bucket>" \
+DRS_BASIC_AUTH_USER="<username>" \
+DRS_BASIC_AUTH_PASSWORD="<password>" \
+TEST_PARALLEL_WORKERS=24 \
+bash tests/monorepos/e2e-monorepo-local.sh
 ```
 
 If you see `credential not found` for `/data/multipart/init`, run with bucket provisioning enabled:
@@ -70,11 +99,11 @@ If you see `credential not found` for `/data/multipart/init`, run with bucket pr
 ```bash
 TEST_CREATE_BUCKET_BEFORE_TEST=true \
 TEST_DELETE_BUCKET_AFTER=true \
-TEST_BUCKET_NAME="cbds" \
-TEST_BUCKET_REGION="us-east-1" \
-TEST_BUCKET_ACCESS_KEY="cbds-user" \
+TEST_BUCKET_NAME="<bucket_name>" \
+TEST_BUCKET_REGION="<region>" \
+TEST_BUCKET_ACCESS_KEY="<user>" \
 TEST_BUCKET_SECRET_KEY="<secret>" \
-TEST_BUCKET_ENDPOINT="https://aced-storage.ohsu.edu/" \
+TEST_BUCKET_ENDPOINT="<endpoint>" \
 bash tests/monorepos/e2e-monorepo-remote.sh
 ```
 

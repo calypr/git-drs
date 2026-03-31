@@ -14,12 +14,16 @@ fi
 
 DRS_URL="${TEST_DRS_URL:-${DRS_URL:-https://caliper-training.ohsu.edu}}"
 SERVER_MODE="${TEST_SERVER_MODE:-${SERVER_MODE:-remote}}"
+LOG_PREFIX="${TEST_LOG_PREFIX:-}"
 GEN3_TOKEN="${TEST_GEN3_TOKEN:-${GEN3_TOKEN:-}}"
 GEN3_PROFILE="${TEST_GEN3_PROFILE:-${GEN3_PROFILE:-}}"
 GEN3_CONFIG_PATH="${TEST_GEN3_CONFIG_PATH:-${GEN3_CONFIG_PATH:-$HOME/.gen3/gen3_client_config.ini}}"
 GEN3_TOKEN_SOURCE="unset"
 TEST_DEBUG_AUTH="${TEST_DEBUG_AUTH:-true}"
 TEST_PRINT_TOKEN="${TEST_PRINT_TOKEN:-false}"
+ADMIN_AUTH_HEADER="${TEST_ADMIN_AUTH_HEADER:-${ADMIN_AUTH_HEADER:-}}"
+LOCAL_USERNAME="${TEST_LOCAL_USERNAME:-${LOCAL_USERNAME:-${DRS_BASIC_AUTH_USER:-}}}"
+LOCAL_PASSWORD="${TEST_LOCAL_PASSWORD:-${LOCAL_PASSWORD:-${DRS_BASIC_AUTH_PASSWORD:-}}}"
 
 ORGANIZATION="${TEST_ORGANIZATION:-${ORGANIZATION:-}}"
 PROJECT_ID="${TEST_PROJECT_ID:-${PROJECT:-}}"
@@ -55,7 +59,14 @@ CREATED_TEST_BUCKET=false
 declare -a ALL_OIDS=()
 
 log() {
-  printf '[e2e-addurl-remote] %s\n' "$*"
+  if [[ -z "$LOG_PREFIX" ]]; then
+    if [[ "$SERVER_MODE" == "local" ]]; then
+      LOG_PREFIX="e2e-addurl-local"
+    else
+      LOG_PREFIX="e2e-addurl-remote"
+    fi
+  fi
+  printf '[%s] %s\n' "$LOG_PREFIX" "$*"
 }
 
 require_cmd() {
@@ -104,6 +115,8 @@ api_json() {
   )
   if [[ "$SERVER_MODE" == "remote" ]]; then
     curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
   fi
   if [[ -n "$body" ]]; then
     curl_args+=(-H "Content-Type: application/json" "$url" -d "$body")
@@ -123,6 +136,99 @@ api_json() {
   fi
   cat "$out"
   rm -f "$out"
+}
+
+API_HTTP_STATUS=""
+api_json_noexit() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  local out status
+  out="$(mktemp)"
+  local curl_args=(
+    -sS
+    --connect-timeout 10
+    --max-time "$TEST_HTTP_MAX_TIME"
+    -o "$out"
+    -w '%{http_code}'
+    -X "$method"
+    -H "Accept: application/json"
+  )
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  if [[ -n "$body" ]]; then
+    curl_args+=(-H "Content-Type: application/json" "$url" -d "$body")
+  else
+    curl_args+=("$url")
+  fi
+  status="$(curl "${curl_args[@]}" || true)"
+  API_HTTP_STATUS="$status"
+  cat "$out"
+  rm -f "$out"
+}
+
+debug_http_dump() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  local out status
+  out="$(mktemp)"
+  local curl_args=(
+    -sS
+    --connect-timeout 10
+    --max-time "$TEST_HTTP_MAX_TIME"
+    -o "$out"
+    -w '%{http_code}'
+    -X "$method"
+    -H "Accept: application/json"
+  )
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  if [[ -n "$body" ]]; then
+    curl_args+=(-H "Content-Type: application/json" "$url" -d "$body")
+  else
+    curl_args+=("$url")
+  fi
+  status="$(curl "${curl_args[@]}" || true)"
+  log "debug-http $method $url -> status=${status:-curl_error}"
+  if [[ -s "$out" ]]; then
+    sed 's/^/[debug-body] /' "$out" >&2
+  else
+    echo "[debug-body] <empty>" >&2
+  fi
+  rm -f "$out"
+}
+
+debug_pull_failure_context() {
+  local oid="$1"
+  log "pull-debug: collecting resolver context for oid=$oid"
+  debug_http_dump GET "${INDEXD_BASE}?hash=sha256:${oid}"
+  debug_http_dump GET "${API_BASE}/objects/checksum/${oid}"
+}
+
+basic_auth_header() {
+  local username="$1"
+  local password="$2"
+  if command -v base64 >/dev/null 2>&1; then
+    printf 'Authorization: Basic %s' "$(printf '%s:%s' "$username" "$password" | base64 | tr -d '\n')"
+  else
+    printf 'Authorization: Basic %s' "$(printf '%s:%s' "$username" "$password" | openssl base64 -A)"
+  fi
+}
+
+decode_base64() {
+  local value="$1"
+  if printf '%s' "$value" | base64 --decode >/dev/null 2>&1; then
+    printf '%s' "$value" | base64 --decode
+  else
+    printf '%s' "$value" | base64 -D
+  fi
 }
 
 run_cmd_with_timeout() {
@@ -312,6 +418,9 @@ configure_lfs_endpoint_for_repo() {
   if [[ -n "${GEN3_TOKEN:-}" ]]; then
     git config --local --unset-all "http.${endpoint}.extraheader" >/dev/null 2>&1 || true
     git config --local --add "http.${endpoint}.extraheader" "Authorization: Bearer ${GEN3_TOKEN}"
+  elif [[ "$SERVER_MODE" == "local" && -n "$ADMIN_AUTH_HEADER" ]]; then
+    git config --local --unset-all "http.${endpoint}.extraheader" >/dev/null 2>&1 || true
+    git config --local --add "http.${endpoint}.extraheader" "$ADMIN_AUTH_HEADER"
   fi
 }
 
@@ -330,6 +439,36 @@ upload_fixture_to_bucket() {
   curl -sS -X PUT -T "$src" "$signed_url" >/dev/null
 }
 
+dids_from_oid() {
+  local oid="$1"
+  local out status resp
+  out="$(mktemp)"
+  local curl_args=(
+    -sS
+    --connect-timeout 10
+    --max-time "$TEST_HTTP_MAX_TIME"
+    -o "$out"
+    -w '%{http_code}'
+    -X GET
+    -H "Accept: application/json"
+  )
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  curl_args+=("${INDEXD_BASE}?hash=sha256:${oid}")
+  status="$(curl "${curl_args[@]}" || true)"
+  resp="$(cat "$out")"
+  rm -f "$out"
+  printf '[%s] cleanup-resolve: oid=%s status=%s\n' "${LOG_PREFIX:-e2e-addurl}" "$oid" "${status:-unknown}" >&2
+  if [[ "$status" != "200" ]]; then
+    echo "[cleanup-resolve-body] $resp" >&2
+    return 1
+  fi
+  jq -r '((.records // []) | map(.did // .id // empty) | map(select(length>0) | tostring) | unique | .[]) // empty' <<<"$resp"
+}
+
 cleanup() {
   if [[ "$CLEANUP_RECORDS" == "true" && "${#ALL_OIDS[@]}" -gt 0 ]]; then
     log "Cleaning up ${#ALL_OIDS[@]} test records from drs-server"
@@ -342,8 +481,23 @@ cleanup() {
       verify_codes="200,401,403,404"
     fi
     for oid in "${ALL_OIDS[@]}"; do
-      api_json DELETE "${INDEXD_BASE}/${oid}" "" "$delete_codes" >/dev/null || true
-      api_json GET "${INDEXD_BASE}/${oid}" "" "$verify_codes" >/dev/null || true
+      local -a dids
+      dids=()
+      while IFS= read -r did; do
+        [[ -n "$did" ]] && dids+=("$did")
+      done < <(dids_from_oid "$oid" || true)
+      if [[ "${#dids[@]}" -eq 0 ]]; then
+        log "cleanup: oid=${oid} resolved to 0 dids (already cleaned or no records)"
+        continue
+      fi
+      log "cleanup: oid=${oid} resolved did_count=${#dids[@]} dids=${dids[*]}"
+      local did
+      for did in "${dids[@]}"; do
+        api_json_noexit DELETE "${INDEXD_BASE}/${did}" ""
+        log "cleanup-delete: oid=${oid} did=${did} status=${API_HTTP_STATUS}"
+        api_json_noexit GET "${INDEXD_BASE}/${did}" ""
+        log "cleanup-verify: oid=${oid} did=${did} status=${API_HTTP_STATUS}"
+      done
     done
   fi
 
@@ -371,8 +525,37 @@ main() {
   require_env TEST_ORGANIZATION "$ORGANIZATION"
   require_env TEST_PROJECT_ID "$PROJECT_ID"
   require_env TEST_BUCKET "$BUCKET"
+  log "Using git-drs binary: $(command -v git-drs)"
+  log "git-drs version: $(git-drs version 2>/dev/null | head -n 1 || echo unknown)"
 
   resolve_auth_from_profile_if_needed
+  if [[ "$SERVER_MODE" == "local" ]]; then
+    if [[ -n "$LOCAL_USERNAME" && -z "$LOCAL_PASSWORD" ]]; then
+      echo "error: TEST_LOCAL_PASSWORD is required when TEST_LOCAL_USERNAME is set" >&2
+      exit 1
+    fi
+    if [[ -z "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      echo "error: TEST_LOCAL_USERNAME is required when TEST_LOCAL_PASSWORD is set" >&2
+      exit 1
+    fi
+    if [[ -z "$ADMIN_AUTH_HEADER" && -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      ADMIN_AUTH_HEADER="$(basic_auth_header "$LOCAL_USERNAME" "$LOCAL_PASSWORD")"
+    fi
+    if [[ -z "$LOCAL_USERNAME" && -z "$LOCAL_PASSWORD" && "$ADMIN_AUTH_HEADER" =~ ^[Aa]uthorization:[[:space:]]*[Bb]asic[[:space:]]+(.+)$ ]]; then
+      local basic_b64 basic_decoded
+      basic_b64="${BASH_REMATCH[1]}"
+      basic_decoded="$(decode_base64 "$basic_b64" 2>/dev/null || true)"
+      if [[ "$basic_decoded" == *:* ]]; then
+        LOCAL_USERNAME="${basic_decoded%%:*}"
+        LOCAL_PASSWORD="${basic_decoded#*:}"
+      fi
+    fi
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      log "Local auth configured for git-drs remote add (username provided)"
+    else
+      log "Local auth not provided to git-drs remote add (TEST_LOCAL_USERNAME/TEST_LOCAL_PASSWORD unset)"
+    fi
+  fi
   log_auth_context
   if [[ "$SERVER_MODE" == "remote" && -z "$GEN3_TOKEN" ]]; then
     echo "error: remote mode requires TEST_GEN3_TOKEN or GEN3_PROFILE" >&2
@@ -425,13 +608,37 @@ main() {
     CREATED_TEST_BUCKET=true
   fi
 
-  log "Configuring gen3 remote"
-  run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (source repo)" \
-    git drs remote add gen3 "$REMOTE_NAME" \
-      --token "$GEN3_TOKEN" \
-      --bucket "$TEST_BUCKET_NAME" \
-      --organization "$ORGANIZATION" \
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    log "Configuring gen3 remote"
+    run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (source repo)" \
+      git drs remote add gen3 "$REMOTE_NAME" \
+        --token "$GEN3_TOKEN" \
+        --bucket "$TEST_BUCKET_NAME" \
+        --organization "$ORGANIZATION" \
+        --project "$PROJECT_ID"
+  else
+    log "Configuring local remote"
+    local -a local_add_args
+    local_add_args=(
+      git drs remote add local "$REMOTE_NAME" "$DRS_URL"
+      --bucket "$TEST_BUCKET_NAME"
+      --organization "$ORGANIZATION"
       --project "$PROJECT_ID"
+    )
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local_add_args+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
+    fi
+    run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add local (source repo)" "${local_add_args[@]}"
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local cfg_user cfg_pass
+      cfg_user="$(git config --local --get "drs.remote.${REMOTE_NAME}.username" || true)"
+      cfg_pass="$(git config --local --get "drs.remote.${REMOTE_NAME}.password" || true)"
+      if [[ -z "$cfg_user" || -z "$cfg_pass" ]]; then
+        echo "error: git drs remote add local did not persist local basic auth credentials" >&2
+        exit 1
+      fi
+    fi
+  fi
 
   mkdir -p data
   printf 'add-url remote object payload %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > data/seed-upload.bin
@@ -480,6 +687,18 @@ main() {
   # Mirror the primary remote e2e behavior so first push doesn't require
   # an upstream tracking branch.
   git config --local push.default current
+  if [[ "$SERVER_MODE" == "local" ]]; then
+    local cfg_user_before_push cfg_pass_before_push
+    cfg_user_before_push="$(git config --local --get "drs.remote.${REMOTE_NAME}.username" || true)"
+    cfg_pass_before_push="$(git config --local --get "drs.remote.${REMOTE_NAME}.password" || true)"
+    if [[ -n "$cfg_user_before_push" && -n "$cfg_pass_before_push" ]]; then
+      log "Verified local auth present in repo config for remote '$REMOTE_NAME' before push"
+    else
+      echo "error: local auth missing in repo config before push for remote '$REMOTE_NAME'" >&2
+      echo "hint: set TEST_LOCAL_USERNAME/TEST_LOCAL_PASSWORD so git drs remote add local persists credentials" >&2
+      exit 1
+    fi
+  fi
   log "Pushing add-url commit + metadata registration via git-drs push"
   git drs push "$REMOTE_NAME"
 
@@ -492,15 +711,42 @@ main() {
   git drs init
   configure_local_credential_helper
   configure_lfs_endpoint_for_repo "$REMOTE_NAME"
-  run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (clone repo)" \
-    git drs remote add gen3 "$REMOTE_NAME" \
-      --token "$GEN3_TOKEN" \
-      --bucket "$TEST_BUCKET_NAME" \
-      --organization "$ORGANIZATION" \
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (clone repo)" \
+      git drs remote add gen3 "$REMOTE_NAME" \
+        --token "$GEN3_TOKEN" \
+        --bucket "$TEST_BUCKET_NAME" \
+        --organization "$ORGANIZATION" \
+        --project "$PROJECT_ID"
+  else
+    local -a local_add_args_clone
+    local_add_args_clone=(
+      git drs remote add local "$REMOTE_NAME" "$DRS_URL"
+      --bucket "$TEST_BUCKET_NAME"
+      --organization "$ORGANIZATION"
       --project "$PROJECT_ID"
+    )
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local_add_args_clone+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
+    fi
+    run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add local (clone repo)" "${local_add_args_clone[@]}"
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local cfg_user_clone cfg_pass_clone
+      cfg_user_clone="$(git config --local --get "drs.remote.${REMOTE_NAME}.username" || true)"
+      cfg_pass_clone="$(git config --local --get "drs.remote.${REMOTE_NAME}.password" || true)"
+      if [[ -z "$cfg_user_clone" || -z "$cfg_pass_clone" ]]; then
+        echo "error: git drs remote add local (clone) did not persist local basic auth credentials" >&2
+        exit 1
+      fi
+    fi
+  fi
 
   log "Pulling object via git-drs pull"
-  git drs pull "$REMOTE_NAME"
+  if ! git drs pull "$REMOTE_NAME"; then
+    debug_pull_failure_context "$unknown_pointer_oid"
+    debug_pull_failure_context "$local_oid"
+    exit 1
+  fi
 
   pulled_oid="$(sha256_file data/from-bucket.bin)"
   pulled_size="$(file_size data/from-bucket.bin)"
@@ -539,7 +785,7 @@ main() {
     fi
   fi
 
-  log "SUCCESS: add-url remote e2e flow passed (known+unknown sha256)"
+  log "SUCCESS: add-url e2e flow passed (known+unknown sha256)"
   log "- DRS URL:      ${DRS_URL%/}"
   log "- Organization: $ORGANIZATION"
   log "- Project ID:   $PROJECT_ID"

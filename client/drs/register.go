@@ -35,7 +35,7 @@ func (cl *GitDrsClient) RegisterFile(ctx context.Context, oid string, path strin
 	if err != nil {
 		return nil, err
 	}
-	if err := cl.uploadFileForObject(ctx, drsObject, path, true); err != nil {
+	if err := cl.uploadFileForObject(ctx, drsObject, path, true, ""); err != nil {
 		return nil, err
 	}
 	return drsObject, nil
@@ -158,7 +158,7 @@ func (cl *GitDrsClient) ensureRecordRegistered(ctx context.Context, oid string, 
 	return drsObject, nil
 }
 
-func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.DRSObject, filePath string, skipIfDownloadable bool) error {
+func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.DRSObject, filePath string, skipIfDownloadable bool, presignedURL string) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	if skipIfDownloadable {
 		cl.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
@@ -189,15 +189,32 @@ func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.
 	if cl.Config.MultiPartThreshold > 0 {
 		multiPartThreshold = cl.Config.MultiPartThreshold
 	}
+	fileStat, statErr := file.Stat()
+	if statErr != nil {
+		return fmt.Errorf("error stat file %s: %v", filePath, statErr)
+	}
+	fileSize := fileStat.Size()
+	drsSize := drsObject.Size
+	if drsSize != fileSize {
+		cl.Logger.WarnContext(ctx, "drs metadata size differs from local source size; using local file size for upload mode decision",
+			"did", drsObject.Id,
+			"path", filePath,
+			"drs_size", drsSize,
+			"file_size", fileSize,
+		)
+	}
 	objectKey := uploadKeyFromObject(drsObject, cl.Config.BucketName)
 
-	if drsObject.Size < multiPartThreshold {
-		cl.Logger.DebugContext(ctx, fmt.Sprintf("UploadSingle size: %d path: %s", drsObject.Size, filePath))
+	if fileSize < multiPartThreshold {
+		cl.Logger.DebugContext(ctx, fmt.Sprintf("UploadSingle size: %d path: %s", fileSize, filePath))
 		req := common.FileUploadRequestObject{
 			SourcePath: filePath,
 			ObjectKey:  objectKey,
 			GUID:       drsObject.Id,
 			Bucket:     cl.Config.BucketName,
+		}
+		if strings.TrimSpace(presignedURL) != "" {
+			req.PresignedURL = presignedURL
 		}
 		if err := upload.UploadSingle(ctx, g3.DRSClient(), g3.Logger(), req, false); err != nil {
 			return fmt.Errorf("UploadSingle error: %s", err)
@@ -205,7 +222,7 @@ func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.
 		return nil
 	}
 
-	cl.Logger.DebugContext(ctx, fmt.Sprintf("MultipartUpload size: %d path: %s", drsObject.Size, filePath))
+	cl.Logger.DebugContext(ctx, fmt.Sprintf("MultipartUpload size: %d path: %s", fileSize, filePath))
 	if err := upload.MultipartUpload(
 		ctx,
 		g3.DRSClient(),
@@ -213,6 +230,7 @@ func (cl *GitDrsClient) uploadFileForObject(ctx context.Context, drsObject *drs.
 			SourcePath:   filePath,
 			ObjectKey:    objectKey,
 			GUID:         drsObject.Id,
+			PresignedURL: presignedURL,
 			FileMetadata: common.FileMetadata{},
 			Bucket:       cl.Config.BucketName,
 		},
@@ -411,12 +429,44 @@ func (cl *GitDrsClient) BatchSyncForPush(ctx context.Context, files map[string]l
 	)
 
 	if len(smallCandidates) > 0 {
+		presignedByKey := make(map[string]string, len(smallCandidates))
+		batchReqs := make([]common.UploadURLResolveRequest, 0, len(smallCandidates))
+		for _, candidate := range smallCandidates {
+			batchReqs = append(batchReqs, common.UploadURLResolveRequest{
+				GUID:     candidate.obj.Id,
+				Filename: uploadKeyFromObject(candidate.obj, cl.Config.BucketName),
+				Metadata: common.FileMetadata{},
+				Bucket:   cl.Config.BucketName,
+			})
+		}
+		if len(batchReqs) > 0 {
+			resolved, resolveErr := cl.G3.DRSClient().ResolveUploadURLs(ctx, batchReqs)
+			if resolveErr != nil {
+				cl.Logger.WarnContext(ctx, "batch upload URL resolve failed; falling back to per-file resolve", "error", resolveErr)
+			} else {
+				for _, res := range resolved {
+					if res.Status >= 200 && res.Status < 300 && strings.TrimSpace(res.URL) != "" {
+						presignedByKey[res.GUID+"|"+res.Filename] = res.URL
+					} else if res.Error != "" {
+						cl.Logger.WarnContext(ctx, "batch upload URL resolve returned non-success; falling back to per-file resolve",
+							"guid", res.GUID,
+							"file", res.Filename,
+							"status", res.Status,
+							"error", res.Error,
+						)
+					}
+				}
+			}
+		}
+
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(concurrency)
 		for _, candidate := range smallCandidates {
 			candidate := candidate
 			eg.Go(func() error {
-				if err := cl.uploadFileForObject(egCtx, candidate.obj, candidate.src, false); err != nil {
+				key := uploadKeyFromObject(candidate.obj, cl.Config.BucketName)
+				presignedURL := presignedByKey[candidate.obj.Id+"|"+key]
+				if err := cl.uploadFileForObject(egCtx, candidate.obj, candidate.src, false, presignedURL); err != nil {
 					return fmt.Errorf("upload failed for %s (%s): %w", candidate.src, candidate.oid, err)
 				}
 				return nil
@@ -428,7 +478,7 @@ func (cl *GitDrsClient) BatchSyncForPush(ctx context.Context, files map[string]l
 	}
 
 	for _, candidate := range largeCandidates {
-		if err := cl.uploadFileForObject(ctx, candidate.obj, candidate.src, false); err != nil {
+		if err := cl.uploadFileForObject(ctx, candidate.obj, candidate.src, false, ""); err != nil {
 			return fmt.Errorf("upload failed for %s (%s): %w", candidate.src, candidate.oid, err)
 		}
 	}

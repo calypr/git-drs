@@ -1,95 +1,138 @@
 # Testing Git DRS
 
-This directory contains developer-run tests (local and remote). These are not designed for fast CI smoke checks.
+Developer test suites for `git-drs` (local and remote integration). These are intentionally heavier than CI smoke tests.
+
+See also: [E2E Modes + Local Setup](../docs/e2e-modes-and-local-setup.md)
 
 ## Prerequisites
 
 - `git`
 - `git-lfs`
-- `git-drs`
+- `git-drs` (the binary you want to test)
 - `jq`
 - `curl`
 - `shasum`
 
-Most scripts auto-load env vars from `git-drs/.env` (or `ENV_FILE=/path/to/.env`).
+## Env-first workflow (all six tests)
 
-## Main E2E Suites
+All six e2e scripts in this directory are designed to run from environment variables loaded from `git-drs/.env` by default.
 
-### 1) Comprehensive remote flow
+Variable precedence:
 
-Script: `tests/e2e-gen3-remote-full.sh`
+- inline shell vars win (for example `TEST_BUCKET=... bash tests/...`)
+- then `.env` values
+- then script defaults
 
-Covers:
+Use a different env file:
 
-- `git drs push` register/upload workflow
-- resumable multipart upload/download behavior
-- `git drs pull`
-- stock `git lfs pull` compatibility check
-- optional endpoint sweeps and optional GitHub-backed git remote
+```bash
+ENV_FILE=/path/to/.env bash tests/e2e-local-full.sh
+```
 
-Minimal run:
+Realistic `.env` template (local mode + optional remote/GitHub paths):
+
+```bash
+TEST_SERVER_MODE=local
+TEST_DRS_URL=http://localhost:8080
+
+TEST_ORGANIZATION=<organization>
+TEST_PROJECT_ID=<project_id>
+TEST_BUCKET=<bucket>
+TEST_BUCKET_NAME=<bucket>
+TEST_BUCKET_REGION=<region>
+TEST_BUCKET_ACCESS_KEY=
+TEST_BUCKET_SECRET_KEY=
+TEST_BUCKET_ENDPOINT=
+
+TEST_CREATE_BUCKET_BEFORE_TEST=true
+TEST_DELETE_BUCKET_AFTER=false
+
+DRS_BASIC_AUTH_USER=<username>
+DRS_BASIC_AUTH_PASSWORD=<password>
+
+GEN3_PROFILE=<profile_name>
+TEST_GITHUB_TOKEN=
+TEST_COLLAB_USER_EMAIL=
+
+TEST_PRINT_TOKEN=true
+TEST_CLEANUP_RECORDS=true
+TEST_STRICT_CLEANUP=true
+```
+
+## Test matrix
+
+- `tests/e2e-gen3-remote-full.sh`
+  - full push/pull workflow
+  - multipart/resume checks
+  - LFS compatibility path
+- `tests/e2e-gen3-remote-addurl.sh`
+  - add-url with known SHA and unknown SHA sentinel path
+- `tests/e2e-local-full.sh`
+  - wrapper for full suite in `local` server mode
+- `tests/e2e-local-addurl.sh`
+  - wrapper for add-url suite in `local` server mode
+- `tests/monorepos/e2e-monorepo-remote.sh`
+  - large fixture monorepo flow in remote mode
+- `tests/monorepos/e2e-monorepo-local.sh`
+  - monorepo local-mode wrapper
+
+## Quick runs
+
+### Remote full
 
 ```bash
 cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-TEST_ORGANIZATION='calypr' \
-TEST_PROJECT_ID='end_to_end_test' \
-TEST_BUCKET='cbds' \
-GEN3_PROFILE='my-profile' \
 bash tests/e2e-gen3-remote-full.sh
 ```
 
-### 2) Add-url remote flow (known + unknown SHA)
-
-Script: `tests/e2e-gen3-remote-addurl.sh`
-
-Covers both add-url paths in one run:
-
-- known SHA path: `git drs add-url ... --sha256 <real_sha>`
-- unknown SHA path: `git drs add-url ...` (synthetic/sentinel OID)
-- push registration
-- clone + `git drs pull` content verification
-- DRS checksum lookups for both registered OIDs
-
-Run:
+### Local full
 
 ```bash
 cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-TEST_ORGANIZATION='calypr' \
-TEST_PROJECT_ID='end_to_end_test' \
-TEST_BUCKET='cbds' \
-GEN3_PROFILE='my-profile' \
-bash tests/e2e-gen3-remote-addurl.sh
-```
-
-## Local Mode E2E
-
-Script: `tests/e2e-local-full.sh`
-
-This is a wrapper around the remote-full suite configured for local drs-server mode.
-
-```bash
-cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
-
-TEST_DRS_URL='http://127.0.0.1:8080' \
-TEST_ORGANIZATION='cbdsTest' \
-TEST_PROJECT_ID='git_drs_e2e_test' \
-TEST_BUCKET='cbds' \
 bash tests/e2e-local-full.sh
 ```
 
-## Common Environment Variables
+### Local add-url
 
-Used by the main remote suites:
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
 
-- `TEST_DRS_URL`
-- `TEST_ORGANIZATION`
-- `TEST_PROJECT_ID`
-- `TEST_BUCKET`
-- `TEST_GEN3_TOKEN` or `GEN3_PROFILE` / `TEST_GEN3_PROFILE`
+bash tests/e2e-local-addurl.sh
+```
 
-Optional bucket bootstrap (create+delete bucket credential/scope during test):
+### Monorepo remote
+
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
+
+bash tests/monorepos/e2e-monorepo-remote.sh
+```
+
+### Monorepo local
+
+```bash
+cd /Users/peterkor/Desktop/BMEG/drs-server-complex/git-drs
+
+TEST_PARALLEL_WORKERS=24 \
+bash tests/monorepos/e2e-monorepo-local.sh
+```
+
+`TEST_PARALLEL_WORKERS` is accepted by monorepo suite as an alias for transfer concurrency (`MONO_TRANSFERS`).
+
+## Auth and mode variables
+
+- Remote mode:
+  - `TEST_SERVER_MODE=remote` (default for remote scripts)
+  - `TEST_GEN3_TOKEN` or `GEN3_PROFILE` / `TEST_GEN3_PROFILE`
+- Local mode:
+  - `TEST_SERVER_MODE=local` (set by local wrappers)
+  - `TEST_LOCAL_USERNAME` + `TEST_LOCAL_PASSWORD`, or `TEST_ADMIN_AUTH_HEADER`
+
+## Bucket provisioning variables
+
+Use when bucket credentials are not already configured on server:
 
 - `TEST_CREATE_BUCKET_BEFORE_TEST=true`
 - `TEST_BUCKET_NAME`
@@ -97,20 +140,34 @@ Optional bucket bootstrap (create+delete bucket credential/scope during test):
 - `TEST_BUCKET_ACCESS_KEY`
 - `TEST_BUCKET_SECRET_KEY`
 - `TEST_BUCKET_ENDPOINT`
-- `TEST_BUCKET_ORGANIZATION` (optional)
-- `TEST_BUCKET_PROJECT_ID` (optional)
-- `TEST_DELETE_BUCKET_AFTER=true`
+- optional: `TEST_BUCKET_ORGANIZATION`, `TEST_BUCKET_PROJECT_ID`
+- `TEST_DELETE_BUCKET_AFTER=true|false`
 
-Debugging helpers:
+If bucket credentials are preconfigured, keep `TEST_CREATE_BUCKET_BEFORE_TEST=false`.
 
-- `TEST_KEEP_WORKDIR=true`
-- `TEST_CMD_TIMEOUT_SECONDS`
-- `TEST_HTTP_MAX_TIME`
+## Debugging variables
+
+- `TEST_KEEP_WORKDIR=true` keeps temp repo dirs for inspection
 - `TEST_CLEANUP_RECORDS=true|false`
 - `TEST_STRICT_CLEANUP=true|false`
+- `TEST_DEBUG_AUTH=true|false`
+- monorepo:
+  - `MONO_RUN_CLONE_VERIFY=true|false`
+  - `MONO_RUN_MULTIPART_SMOKE=true|false`
 
-## Coverage Script
+## Common failures and direct causes
+
+- `APIKey is required to refresh access token`
+  - local test is accidentally running remote auth path
+- `401 Unauthorized` on `/data/upload/...`
+  - missing/invalid local basic auth
+- `bucket credential not found` or `credential not found`
+  - server missing bucket credential mapping for `TEST_BUCKET`
+- `expected first resumable multipart upload attempt to fail`
+  - multipart path not triggered (threshold/binary mismatch)
+
+## Coverage test script
 
 Script: `tests/coverage-test.sh`
 
-This is an extended developer script for broader integration/coverage scenarios. It is environment-specific and heavier than the e2e suites above.
+This is a broader environment-sensitive developer script and is heavier than standard e2e suites.

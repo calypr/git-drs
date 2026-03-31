@@ -3,12 +3,14 @@ package add
 import "github.com/spf13/cobra"
 
 var (
-	apiEndpoint  string
-	bucket       string
-	credFile     string
-	fenceToken   string
-	project      string
-	organization string
+	apiEndpoint   string
+	bucket        string
+	credFile      string
+	fenceToken    string
+	localPassword string
+	localUsername string
+	project       string
+	organization  string
 )
 
 // Cmd line declaration
@@ -29,5 +31,7 @@ func init() {
 	LocalCmd.Flags().StringVarP(&project, "project", "p", "", "Project ID")
 	LocalCmd.Flags().StringVar(&bucket, "bucket", "", "Bucket Name")
 	LocalCmd.Flags().StringVar(&organization, "organization", "", "Organization Name")
+	LocalCmd.Flags().StringVar(&localUsername, "username", "", "Username for local DRS HTTP basic auth")
+	LocalCmd.Flags().StringVar(&localPassword, "password", "", "Password for local DRS HTTP basic auth")
 	Cmd.AddCommand(LocalCmd)
 }

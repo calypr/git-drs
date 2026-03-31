@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -274,11 +275,8 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
-
-	if token, err := gitrepo.GetRemoteToken(string(remote)); err == nil {
-		if token = strings.TrimSpace(token); token != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+token)
-		}
+	if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
+		httpReq.Header.Set("Authorization", authHeader)
 	}
 
 	client := &http.Client{Timeout: 20 * time.Second}
@@ -309,6 +307,20 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	return nil
 }
 
+func resolveRemoteAuthHeader(remoteName string) (string, bool) {
+	if token, err := gitrepo.GetRemoteToken(remoteName); err == nil {
+		if token = strings.TrimSpace(token); token != "" {
+			return "Bearer " + token, true
+		}
+	}
+	username, password, err := gitrepo.GetRemoteBasicAuth(remoteName)
+	if err != nil || username == "" || password == "" {
+		return "", false
+	}
+	creds := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(creds)), true
+}
+
 func parseRemoteArgs(args []string) (string, string) {
 	var gitRemoteName, gitRemoteLocation string
 	if len(args) >= 1 {
@@ -337,10 +349,14 @@ func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.
 	}
 
 	if _, err := io.Copy(tmp, stdin); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("error buffering stdin: %w", err)
 	}
 
 	if _, err := tmp.Seek(0, 0); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("error seeking temp stdin: %w", err)
 	}
 	return tmp, nil
@@ -436,6 +452,14 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 
 const cacheMaxAge = 24 * time.Hour
 
+func normalizeCachedOID(oid string) string {
+	normalized := strings.TrimSpace(oid)
+	if len(normalized) >= len("sha256:") && strings.EqualFold(normalized[:len("sha256:")], "sha256:") {
+		normalized = normalized[len("sha256:"):]
+	}
+	return strings.TrimSpace(normalized)
+}
+
 func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]lfs.LfsFileInfo, bool, error) {
 	if cache == nil {
 		return nil, false, nil
@@ -450,7 +474,11 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 		if err != nil {
 			return nil, false, err
 		}
-		if !ok || entry.LFSOID == "" {
+		if !ok {
+			return nil, false, nil
+		}
+		oid := normalizeCachedOID(entry.LFSOID)
+		if oid == "" {
 			return nil, false, nil
 		}
 		if entry.UpdatedAt == "" || precommit_cache.StaleAfter(entry.UpdatedAt, cacheMaxAge) {
@@ -465,7 +493,7 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 			Name:    path,
 			Size:    stat.Size(),
 			OidType: "sha256",
-			Oid:     entry.LFSOID,
+			Oid:     oid,
 			Version: "https://git-lfs.github.com/spec/v1",
 		}
 	}

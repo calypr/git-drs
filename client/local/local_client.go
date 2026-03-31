@@ -2,26 +2,33 @@ package local
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/calypr/data-client/common"
-	"github.com/calypr/data-client/conf"
 	"github.com/calypr/data-client/download"
 	drs "github.com/calypr/data-client/drs"
 	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/localclient"
 	"github.com/calypr/data-client/logs"
+	"github.com/calypr/data-client/request"
 	"github.com/calypr/data-client/transfer"
+	localsigner "github.com/calypr/data-client/transfer/signer/local"
 	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/hashicorp/go-retryablehttp"
 )
 
 type LocalRemote struct {
@@ -30,6 +37,8 @@ type LocalRemote struct {
 	Bucket        string
 	Organization  string
 	StoragePrefix string
+	BasicUsername string
+	BasicPassword string
 }
 
 func (l LocalRemote) GetProjectId() string {
@@ -45,6 +54,10 @@ func (l LocalRemote) GetStoragePrefix() string {
 	return l.StoragePrefix
 }
 func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+	if username, password, err := gitrepo.GetRemoteBasicAuth(remoteName); err == nil && username != "" && password != "" {
+		l.BasicUsername = username
+		l.BasicPassword = password
+	}
 	return NewLocalClient(l, logger), nil
 }
 
@@ -54,14 +67,13 @@ type LocalConfig struct {
 }
 
 type LocalClient struct {
-	Remote      LocalRemote
-	Logger      *slog.Logger
-	DataLogger  *logs.Gen3Logger
-	meta        metadataStore
-	uploads     uploadService
-	downloads   downloadService
-	Config      *LocalConfig
-	LocalFacade localclient.LocalInterface
+	Remote     LocalRemote
+	Logger     *slog.Logger
+	DataLogger *logs.Gen3Logger
+	meta       metadataStore
+	uploads    uploadService
+	downloads  downloadService
+	Config     *LocalConfig
 }
 
 var errNoLocalRecordsForOID = errors.New("no records found for OID")
@@ -82,6 +94,7 @@ type metadataStore interface {
 
 type uploadService interface {
 	Upload(ctx context.Context, req common.FileUploadRequestObject) error
+	ResolveUploadURLs(ctx context.Context, requests []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error)
 }
 
 type downloadService interface {
@@ -90,9 +103,14 @@ type downloadService interface {
 }
 
 func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
-	cred := &conf.Credential{APIEndpoint: remote.BaseURL}
 	dataLogger := logs.NewGen3Logger(logger, "", "")
-	facade := localclient.NewLocalInterfaceFromCredential(cred, dataLogger)
+	req := newLocalRequestInterface(dataLogger)
+	if remote.BasicUsername != "" && remote.BasicPassword != "" {
+		req = newBasicAuthRequestInterface(req, remote.BasicUsername, remote.BasicPassword)
+	}
+	dc := drs.NewLocalDrsClient(req, remote.BaseURL, logger)
+	tb := transfer.New(req, dataLogger, localsigner.New(remote.BaseURL, req, dc))
+	server := drs.ComposeServerClient(dc, tb)
 
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
 	multiPartThreshold := int64(multiPartThresholdInt) * common.MB
@@ -101,7 +119,6 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 		uploadConcurrency = 1
 	}
 
-	server := facade.DRSClient()
 	md := server.
 		WithProject(remote.GetProjectId()).
 		WithOrganization(remote.GetOrganization()).
@@ -115,15 +132,84 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 	}
 
 	return &LocalClient{
-		Remote:      remote,
-		Logger:      logger,
-		DataLogger:  dataLogger,
-		meta:        md,
-		uploads:     uploader,
-		downloads:   downloader,
-		Config:      &LocalConfig{MultiPartThreshold: multiPartThreshold, UploadConcurrency: uploadConcurrency},
-		LocalFacade: facade,
+		Remote:     remote,
+		Logger:     logger,
+		DataLogger: dataLogger,
+		meta:       md,
+		uploads:    uploader,
+		downloads:  downloader,
+		Config:     &LocalConfig{MultiPartThreshold: multiPartThreshold, UploadConcurrency: uploadConcurrency},
 	}
+}
+
+type localRequestInterface struct {
+	retryClient *retryablehttp.Client
+}
+
+func newLocalRequestInterface(logger *logs.Gen3Logger) request.RequestInterface {
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 2
+	retryClient.RetryWaitMin = 500 * time.Millisecond
+	retryClient.RetryWaitMax = 2 * time.Second
+	retryClient.Logger = logger
+	retryClient.HTTPClient = &http.Client{Timeout: 0}
+	return &localRequestInterface{retryClient: retryClient}
+}
+
+func (r *localRequestInterface) New(method, url string) *request.RequestBuilder {
+	return &request.RequestBuilder{Method: method, Url: url, Headers: make(map[string]string)}
+}
+
+func (r *localRequestInterface) Do(ctx context.Context, rb *request.RequestBuilder) (*http.Response, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, rb.Method, rb.Url, rb.Body)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range rb.Headers {
+		httpReq.Header.Add(key, value)
+	}
+	if rb.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+rb.Token)
+	}
+	if rb.PartSize != 0 {
+		httpReq.ContentLength = rb.PartSize
+	}
+	retryReq, err := retryablehttp.FromRequest(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := r.retryClient.Do(retryReq)
+	if err != nil {
+		return resp, fmt.Errorf("request failed after retries: %w", err)
+	}
+	return resp, nil
+}
+
+type basicAuthRequestInterface struct {
+	base       request.RequestInterface
+	authHeader string
+}
+
+func newBasicAuthRequestInterface(base request.RequestInterface, username, password string) request.RequestInterface {
+	encoded := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+	return &basicAuthRequestInterface{
+		base:       base,
+		authHeader: "Basic " + encoded,
+	}
+}
+
+func (b *basicAuthRequestInterface) New(method, url string) *request.RequestBuilder {
+	return b.base.New(method, url)
+}
+
+func (b *basicAuthRequestInterface) Do(ctx context.Context, rb *request.RequestBuilder) (*http.Response, error) {
+	if rb.Headers == nil {
+		rb.Headers = map[string]string{}
+	}
+	if _, exists := rb.Headers["Authorization"]; !exists {
+		rb.Headers["Authorization"] = b.authHeader
+	}
+	return b.base.Do(ctx, rb)
 }
 
 func (c *LocalClient) GetProjectId() string                     { return c.Remote.GetProjectId() }
@@ -164,22 +250,24 @@ func (c *LocalClient) DeleteRecordByOID(ctx context.Context, oid string) error {
 	if len(records) == 0 {
 		return fmt.Errorf("%w %s", errNoLocalRecordsForOID, oid)
 	}
-
-	var did string
-	if c.GetOrganization() != "" && c.GetProjectId() != "" {
-		match, matchErr := drsmap.FindMatchingRecord(records, c.GetOrganization(), c.GetProjectId())
-		if matchErr != nil {
-			return fmt.Errorf("error finding matching record for project %s: %w", c.GetProjectId(), matchErr)
+	seen := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		did := strings.TrimSpace(record.Id)
+		if did == "" {
+			continue
 		}
-		if match == nil {
-			return fmt.Errorf("no matching record found for project %s", c.GetProjectId())
+		if _, exists := seen[did]; exists {
+			continue
 		}
-		did = match.Id
-	} else {
-		did = records[0].Id
+		seen[did] = struct{}{}
+		if err := c.DeleteRecordByDID(ctx, did); err != nil {
+			return fmt.Errorf("error deleting DID %s for OID %s: %w", did, oid, err)
+		}
 	}
-
-	return c.DeleteRecordByDID(ctx, did)
+	if len(seen) == 0 {
+		return fmt.Errorf("no deleteable DIDs found for OID %s", oid)
+	}
+	return nil
 }
 func (c *LocalClient) DeleteRecordByDID(ctx context.Context, did string) error {
 	return c.meta.DeleteRecord(ctx, did)
@@ -252,11 +340,142 @@ func (c *LocalClient) DownloadFile(ctx context.Context, guid string, destPath st
 }
 
 func (c *LocalClient) BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error {
-	for _, f := range files {
-		if _, err := c.RegisterFile(ctx, f.Oid, f.Name); err != nil {
-			return fmt.Errorf("upload failed for %s (%s): %w", f.Name, f.Oid, err)
+	type pendingUpload struct {
+		oid  string
+		file lfs.LfsFileInfo
+		obj  *drs.DRSObject
+	}
+
+	if len(files) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(files))
+	for k := range files {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	pending := make([]pendingUpload, 0, len(keys))
+	toRegister := make([]*drs.DRSObject, 0, len(keys))
+	seenOID := make(map[string]struct{}, len(keys))
+
+	for _, k := range keys {
+		f := files[k]
+		oid := drs.NormalizeOid(f.Oid)
+		if oid == "" {
+			continue
+		}
+		if _, dup := seenOID[oid]; dup {
+			continue
+		}
+		seenOID[oid] = struct{}{}
+
+		obj, err := drsmap.DrsInfoFromOid(oid)
+		if err != nil || obj == nil {
+			stat, statErr := os.Stat(f.Name)
+			if statErr != nil {
+				return fmt.Errorf("upload failed for %s (%s): error reading local record: %v", f.Name, oid, statErr)
+			}
+			drsID := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
+			obj, err = c.BuildDrsObj(filepath.Base(f.Name), oid, stat.Size(), drsID)
+			if err != nil {
+				return fmt.Errorf("upload failed for %s (%s): %w", f.Name, oid, err)
+			}
+		}
+
+		pending = append(pending, pendingUpload{oid: oid, file: f, obj: obj})
+		toRegister = append(toRegister, obj)
+	}
+
+	if len(toRegister) == 0 {
+		return nil
+	}
+
+	registered, err := c.BatchRegisterRecords(ctx, toRegister)
+	if err != nil {
+		return fmt.Errorf("batch register failed: %w", err)
+	}
+
+	registeredByOID := make(map[string]*drs.DRSObject, len(registered))
+	for _, obj := range registered {
+		if obj == nil {
+			continue
+		}
+		oid := drs.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		if oid != "" {
+			registeredByOID[oid] = obj
 		}
 	}
+
+	if c.Remote.GetBucketName() == "" {
+		return nil
+	}
+
+	type uploadPlan struct {
+		oid string
+		req common.FileUploadRequestObject
+	}
+	uploadPlans := make([]uploadPlan, 0, len(pending))
+	for _, p := range pending {
+		obj := p.obj
+		if reg, ok := registeredByOID[p.oid]; ok && reg != nil {
+			obj = reg
+		}
+		if obj == nil || strings.TrimSpace(obj.Id) == "" {
+			return fmt.Errorf("upload failed for %s (%s): missing DRS ID after batch register", p.file.Name, p.oid)
+		}
+		uploadReq := common.FileUploadRequestObject{
+			SourcePath:   p.file.Name,
+			ObjectKey:    filepath.Base(p.file.Name),
+			GUID:         obj.Id,
+			FileMetadata: common.FileMetadata{},
+			Bucket:       c.Remote.GetBucketName(),
+		}
+		uploadPlans = append(uploadPlans, uploadPlan{oid: p.oid, req: uploadReq})
+	}
+
+	resolvedByKey := make(map[string]common.UploadURLResolveResponse, len(uploadPlans))
+	batchReqs := make([]common.UploadURLResolveRequest, 0, len(uploadPlans))
+	for _, plan := range uploadPlans {
+		req := plan.req
+		batchReqs = append(batchReqs, common.UploadURLResolveRequest{
+			GUID:     req.GUID,
+			Filename: req.ObjectKey,
+			Metadata: req.FileMetadata,
+			Bucket:   req.Bucket,
+		})
+	}
+	if len(batchReqs) > 0 {
+		resolved, resolveErr := c.uploads.ResolveUploadURLs(ctx, batchReqs)
+		if resolveErr != nil {
+			c.Logger.WarnContext(ctx, "batch upload URL resolve failed; falling back to per-file resolve", "error", resolveErr)
+		} else {
+			for _, res := range resolved {
+				resolvedByKey[res.GUID+"|"+res.Filename] = res
+			}
+		}
+	}
+
+	for _, plan := range uploadPlans {
+		uploadReq := plan.req
+		if res, ok := resolvedByKey[uploadReq.GUID+"|"+uploadReq.ObjectKey]; ok {
+			if res.Status >= 200 && res.Status < 300 && strings.TrimSpace(res.URL) != "" {
+				uploadReq.PresignedURL = res.URL
+			} else if res.Error != "" {
+				c.Logger.WarnContext(ctx, "batch upload URL resolve returned non-success; falling back to per-file resolve",
+					"guid", uploadReq.GUID,
+					"file", uploadReq.ObjectKey,
+					"status", res.Status,
+					"error", res.Error,
+				)
+			}
+		}
+		if err := c.uploads.Upload(ctx, uploadReq); err != nil {
+			return fmt.Errorf("upload failed for %s (%s): %w", uploadReq.SourcePath, plan.oid, err)
+		}
+	}
+
 	return nil
 }
 
@@ -268,16 +487,115 @@ func (s *serverUploadService) Upload(ctx context.Context, req common.FileUploadR
 	return upload.Upload(ctx, s.backend, req, false)
 }
 
+func (s *serverUploadService) ResolveUploadURLs(ctx context.Context, requests []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error) {
+	return s.backend.ResolveUploadURLs(ctx, requests)
+}
+
 type serverDownloadService struct {
 	client  drs.Client
 	backend transfer.Downloader
 	logger  *slog.Logger
 }
 
+type normalizedDownloadBackend struct {
+	base     transfer.Downloader
+	resolver *serverDownloadService
+}
+
+func (n *normalizedDownloadBackend) Name() string {
+	return n.base.Name()
+}
+
+func (n *normalizedDownloadBackend) Logger() *logs.Gen3Logger {
+	return n.base.Logger()
+}
+
+func (n *normalizedDownloadBackend) ResolveDownloadURL(ctx context.Context, guid string, accessID string) (string, error) {
+	return n.resolver.ResolveDownloadURL(ctx, guid, accessID)
+}
+
+func (n *normalizedDownloadBackend) Download(ctx context.Context, fdr *common.FileDownloadResponseObject) (*http.Response, error) {
+	return n.base.Download(ctx, fdr)
+}
+
 func (s *serverDownloadService) ResolveDownloadURL(ctx context.Context, guid string, accessID string) (string, error) {
-	return s.backend.ResolveDownloadURL(ctx, guid, accessID)
+	obj, err := drs.ResolveObject(ctx, s.client, guid)
+	if err != nil {
+		return "", err
+	}
+
+	resolvedID := strings.TrimSpace(obj.Id)
+	if resolvedID == "" {
+		resolvedID = guid
+	}
+
+	candidates := make([]string, 0, len(obj.AccessMethods)+3)
+	seen := make(map[string]struct{}, len(obj.AccessMethods)+3)
+	addCandidate := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		candidates = append(candidates, v)
+	}
+
+	addCandidate(accessID)
+	for _, am := range obj.AccessMethods {
+		if am.AccessId != nil {
+			addCandidate(*am.AccessId)
+		}
+		addCandidate(am.Type)
+	}
+	addCandidate("s3")
+
+	var lastErr error
+	for _, candidate := range candidates {
+		accessURL, getErr := s.client.GetDownloadURL(ctx, resolvedID, candidate)
+		if getErr != nil {
+			lastErr = getErr
+			continue
+		}
+		if accessURL == nil || strings.TrimSpace(accessURL.Url) == "" {
+			continue
+		}
+		if !isHTTPURL(accessURL.Url) {
+			continue
+		}
+		return accessURL.Url, nil
+	}
+
+	// Fallback to direct access URLs only when they are already HTTP(S).
+	for _, am := range obj.AccessMethods {
+		if am.AccessUrl == nil || strings.TrimSpace(am.AccessUrl.Url) == "" {
+			continue
+		}
+		if isHTTPURL(am.AccessUrl.Url) {
+			return am.AccessUrl.Url, nil
+		}
+	}
+
+	if lastErr != nil {
+		return "", fmt.Errorf("failed to resolve signed download URL for %s: %w", guid, lastErr)
+	}
+	return "", fmt.Errorf("no usable HTTP(S) download URL available for %s", guid)
+}
+
+func isHTTPURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https")
 }
 
 func (s *serverDownloadService) DownloadToPath(ctx context.Context, guid string, dstPath string, opts download.DownloadOptions) error {
-	return download.DownloadToPathWithOptions(ctx, s.client, s.backend, s.logger, guid, dstPath, "", opts)
+	backend := &normalizedDownloadBackend{
+		base:     s.backend,
+		resolver: s,
+	}
+	return download.DownloadToPathWithOptions(ctx, s.client, backend, s.logger, guid, dstPath, "", opts)
 }

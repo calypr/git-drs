@@ -3,11 +3,14 @@ package pull
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 
 	"github.com/bytedance/sonic"
 	datadrs "github.com/calypr/data-client/drs"
+	"github.com/calypr/data-client/hash"
+	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -125,7 +128,8 @@ var Cmd = &cobra.Command{
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
 			if err := drsClient.DownloadFile(ctx, f.Oid, dstPath); err != nil {
-				return fmt.Errorf("failed to download oid %s to %s: %w", f.Oid, dstPath, err)
+				debugCtx := buildPullDownloadDebugContext(ctx, drsClient, f.Oid)
+				return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 			}
 		}
 
@@ -143,4 +147,40 @@ var Cmd = &cobra.Command{
 
 var lfsjsonUnmarshal = func(data []byte, v any) error {
 	return sonic.ConfigFastest.Unmarshal(data, v)
+}
+
+func buildPullDownloadDebugContext(ctx context.Context, drsClient client.DRSClient, oid string) string {
+	recs, err := drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: "sha256", Checksum: oid})
+	if err != nil {
+		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
+	}
+	if len(recs) == 0 {
+		return fmt.Sprintf("oid=%s records=0", oid)
+	}
+
+	match, matchErr := drsmap.FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+	if matchErr != nil {
+		return fmt.Sprintf("oid=%s records=%d match_error=%v", oid, len(recs), matchErr)
+	}
+	if match == nil {
+		return fmt.Sprintf("oid=%s records=%d no_project_match org=%s project=%s", oid, len(recs), drsClient.GetOrganization(), drsClient.GetProjectId())
+	}
+
+	methods := make([]string, 0, len(match.AccessMethods))
+	for _, am := range match.AccessMethods {
+		scheme := ""
+		rawURL := ""
+		if am.AccessUrl != nil {
+			rawURL = strings.TrimSpace(am.AccessUrl.Url)
+			if parsed, parseErr := url.Parse(rawURL); parseErr == nil {
+				scheme = parsed.Scheme
+			}
+		}
+		accessID := ""
+		if am.AccessId != nil {
+			accessID = strings.TrimSpace(*am.AccessId)
+		}
+		methods = append(methods, fmt.Sprintf("{type=%s access_id=%s url_scheme=%s url=%s}", am.Type, accessID, scheme, rawURL))
+	}
+	return fmt.Sprintf("oid=%s did=%s size=%d access_methods=%s", oid, strings.TrimSpace(match.Id), match.Size, strings.Join(methods, ", "))
 }

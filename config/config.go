@@ -76,8 +76,9 @@ func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger, opts ...g3cl
 	if x.Gen3 != nil {
 		return x.Gen3.GetClient(string(remote), logger, opts...)
 	} else if x.Local != nil {
-		// Local client doesn't support options or named profiles in the same way, but follows pattern
-		return local.NewLocalClient(*x.Local, logger), nil
+		// Local client may still need repo-specific credentials (e.g. basic auth),
+		// so use the same GetClient pattern as Gen3 remotes.
+		return x.Local.GetClient(string(remote), logger, opts...)
 	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }

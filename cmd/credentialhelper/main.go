@@ -51,6 +51,13 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
+		// Local/basic-auth remotes: prefer explicit repo credentials.
+		if username, password, err := gitrepo.GetRemoteBasicAuth(remoteName); err == nil && username != "" && password != "" {
+			fmt.Fprintf(os.Stdout, "username=%s\npassword=%s\n\n", username, password)
+			_ = gitrepo.SetRemoteLFSURL(remoteName, endpoint)
+			return nil
+		}
+
 		token := ""
 		// Prefer repo-local token first to keep git-lfs local and deterministic.
 		if repoToken, err := gitrepo.GetRemoteToken(remoteName); err == nil && strings.TrimSpace(repoToken) != "" {

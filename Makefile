@@ -72,33 +72,37 @@ test-verbose:
 
 # Run tests with coverage
 test-coverage:
-	@go test -v -race -coverprofile=coverage.out -covermode=atomic $(TESTS)
-	@go tool cover -func=coverage.out | tail -1
+	@pkgs="$$(GOTOOLCHAIN=auto go list -f '{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}{{.ImportPath}}{{end}}' ./... | sed '/^$$/d')"; \
+	if [ -z "$$pkgs" ]; then echo "error: no test packages discovered for coverage" >&2; exit 1; fi; \
+	GOCOVERDIR= go test -v -race -coverprofile=coverage.out -covermode=atomic $$pkgs
+	@GOCOVERDIR= go tool cover -func=coverage.out | tail -1
 
 # Run full repo coverage and store artifacts in coverage/
 coverage:
 	@mkdir -p coverage
-	@GOTOOLCHAIN=auto go test ./... -coverprofile=coverage/combined.out -covermode=atomic
-	@GOTOOLCHAIN=auto go tool cover -func=coverage/combined.out | tee coverage/summary.txt | tail -1
+	@pkgs="$$(GOTOOLCHAIN=auto go list -f '{{if or (gt (len .TestGoFiles) 0) (gt (len .XTestGoFiles) 0)}}{{.ImportPath}}{{end}}' ./... | sed '/^$$/d')"; \
+	if [ -z "$$pkgs" ]; then echo "error: no test packages discovered for coverage" >&2; exit 1; fi; \
+	GOCOVERDIR= GOTOOLCHAIN=auto go test $$pkgs -coverprofile=coverage/combined.out -covermode=atomic
+	@GOCOVERDIR= GOTOOLCHAIN=auto go tool cover -func=coverage/combined.out | tee coverage/summary.txt | tail -1
 	@echo "Coverage profile: coverage/combined.out"
 	@echo "Coverage summary: coverage/summary.txt"
 
 # Focused coverage for highest-risk client paths
 coverage-clients:
 	@mkdir -p coverage
-	@GOTOOLCHAIN=auto go test ./client/drs ./client/local -coverprofile=coverage/clients.out -covermode=atomic
-	@GOTOOLCHAIN=auto go tool cover -func=coverage/clients.out | tee coverage/clients_summary.txt | tail -1
+	@GOCOVERDIR= GOTOOLCHAIN=auto go test ./client/drs ./client/local -coverprofile=coverage/clients.out -covermode=atomic
+	@GOCOVERDIR= GOTOOLCHAIN=auto go tool cover -func=coverage/clients.out | tee coverage/clients_summary.txt | tail -1
 	@echo "Coverage profile: coverage/clients.out"
 	@echo "Coverage summary: coverage/clients_summary.txt"
 
 # Generate HTML coverage report
 coverage-html: test-coverage
-	@go tool cover -html=coverage.out -o coverage.html
+	@GOCOVERDIR= go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 	@echo "Open it with: open coverage.html (macOS) or xdg-open coverage.html (Linux)"
 
 coverage-html-full: coverage
-	@GOTOOLCHAIN=auto go tool cover -html=coverage/combined.out -o coverage/combined.html
+	@GOCOVERDIR= GOTOOLCHAIN=auto go tool cover -html=coverage/combined.out -o coverage/combined.html
 	@echo "Coverage report generated: coverage/combined.html"
 	@echo "Open it with: open coverage/combined.html (macOS) or xdg-open coverage/combined.html (Linux)"
 

@@ -15,6 +15,7 @@ fi
 
 DRS_URL="${TEST_DRS_URL:-https://caliper-training.ohsu.edu}"
 SERVER_MODE="${TEST_SERVER_MODE:-remote}"
+LOG_PREFIX="${TEST_LOG_PREFIX:-}"
 REAL_WORLD_GITHUB="${TEST_REAL_WORLD_GITHUB:-false}"
 GEN3_TOKEN="${TEST_GEN3_TOKEN:-}"
 GEN3_PROFILE="${TEST_GEN3_PROFILE:-${GEN3_PROFILE:-}}"
@@ -47,6 +48,8 @@ TEST_BUCKET_ACCESS_KEY="${TEST_BUCKET_ACCESS_KEY:-}"
 TEST_BUCKET_SECRET_KEY="${TEST_BUCKET_SECRET_KEY:-}"
 TEST_BUCKET_ENDPOINT="${TEST_BUCKET_ENDPOINT:-}"
 ADMIN_AUTH_HEADER="${TEST_ADMIN_AUTH_HEADER:-${ADMIN_AUTH_HEADER:-}}"
+LOCAL_PASSWORD="${TEST_LOCAL_PASSWORD:-${LOCAL_PASSWORD:-${DRS_BASIC_AUTH_PASSWORD:-}}}"
+LOCAL_USERNAME="${TEST_LOCAL_USERNAME:-${LOCAL_USERNAME:-${DRS_BASIC_AUTH_USER:-}}}"
 TEST_BUCKET_ORGANIZATION="${TEST_BUCKET_ORGANIZATION:-$ORGANIZATION}"
 TEST_BUCKET_PROJECT_ID="${TEST_BUCKET_PROJECT_ID:-$PROJECT_ID}"
 FULL_SERVER_SWEEP="${TEST_FULL_SERVER_SWEEP:-true}"
@@ -100,14 +103,123 @@ GITHUB_OWNER_REPO=""
 GITHUB_REPO_WEB_URL=""
 GEN3_TOKEN_SOURCE="unset"
 declare -a ALL_OIDS=()
-declare -A DRS_ID_BY_OID=()
+DRS_ID_BY_OID_STORE=""
+HASH_SRC_STORE=""
+SIZE_SRC_STORE=""
+
+kv_store_get() {
+  local store="$1"
+  local key="$2"
+  local line k v
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    k="${line%%$'\t'*}"
+    if [[ "$k" == "$key" ]]; then
+      v="${line#*$'\t'}"
+      printf '%s\n' "$v"
+      return 0
+    fi
+  done <<<"$store"
+  return 1
+}
+
+kv_store_set() {
+  local store="$1"
+  local key="$2"
+  local value="$3"
+  local line k
+  local found=0
+  local out=""
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    k="${line%%$'\t'*}"
+    if [[ "$k" == "$key" ]]; then
+      out+="${key}"$'\t'"${value}"$'\n'
+      found=1
+    else
+      out+="${line}"$'\n'
+    fi
+  done <<<"$store"
+  if [[ "$found" -eq 0 ]]; then
+    out+="${key}"$'\t'"${value}"$'\n'
+  fi
+  printf '%s' "$out"
+}
+
+map_get() {
+  local map="$1"
+  local key="$2"
+  case "$map" in
+    DRS_ID_BY_OID) kv_store_get "$DRS_ID_BY_OID_STORE" "$key" ;;
+    HASH_SRC) kv_store_get "$HASH_SRC_STORE" "$key" ;;
+    SIZE_SRC) kv_store_get "$SIZE_SRC_STORE" "$key" ;;
+    *) return 1 ;;
+  esac
+}
+
+map_set() {
+  local map="$1"
+  local key="$2"
+  local value="$3"
+  case "$map" in
+    DRS_ID_BY_OID) DRS_ID_BY_OID_STORE="$(kv_store_set "$DRS_ID_BY_OID_STORE" "$key" "$value")" ;;
+    HASH_SRC) HASH_SRC_STORE="$(kv_store_set "$HASH_SRC_STORE" "$key" "$value")" ;;
+    SIZE_SRC) SIZE_SRC_STORE="$(kv_store_set "$SIZE_SRC_STORE" "$key" "$value")" ;;
+    *) return 1 ;;
+  esac
+}
+
+map_get_or_empty() {
+  local map="$1"
+  local key="$2"
+  map_get "$map" "$key" 2>/dev/null || true
+}
+
+map_has() {
+  local map="$1"
+  local key="$2"
+  map_get "$map" "$key" >/dev/null 2>&1
+}
 
 log() {
-  printf '[e2e-gen3-remote] %s\n' "$*"
+  if [[ -z "$LOG_PREFIX" ]]; then
+    if [[ "$SERVER_MODE" == "local" ]]; then
+      LOG_PREFIX="e2e-local-full"
+    else
+      LOG_PREFIX="e2e-gen3-remote"
+    fi
+  fi
+  printf '[%s] %s\n' "$LOG_PREFIX" "$*"
 }
 
 log_warn() {
-  printf '[e2e-gen3-remote][warn] %s\n' "$*" >&2
+  if [[ -z "$LOG_PREFIX" ]]; then
+    if [[ "$SERVER_MODE" == "local" ]]; then
+      LOG_PREFIX="e2e-local-full"
+    else
+      LOG_PREFIX="e2e-gen3-remote"
+    fi
+  fi
+  printf '[%s][warn] %s\n' "$LOG_PREFIX" "$*" >&2
+}
+
+basic_auth_header() {
+  local username="$1"
+  local password="$2"
+  if command -v base64 >/dev/null 2>&1; then
+    printf 'Authorization: Basic %s' "$(printf '%s:%s' "$username" "$password" | base64 | tr -d '\n')"
+  else
+    printf 'Authorization: Basic %s' "$(printf '%s:%s' "$username" "$password" | openssl base64 -A)"
+  fi
+}
+
+decode_base64() {
+  local value="$1"
+  if printf '%s' "$value" | base64 --decode >/dev/null 2>&1; then
+    printf '%s' "$value" | base64 --decode
+  else
+    printf '%s' "$value" | base64 -D
+  fi
 }
 
 configure_lfs_endpoint_for_repo() {
@@ -122,6 +234,9 @@ configure_lfs_endpoint_for_repo() {
   if [[ -n "${GEN3_TOKEN:-}" ]]; then
     git config --local --unset-all "http.${endpoint}.extraheader" >/dev/null 2>&1 || true
     git config --local --add "http.${endpoint}.extraheader" "Authorization: Bearer ${GEN3_TOKEN}"
+  elif [[ "$SERVER_MODE" == "local" && -n "$ADMIN_AUTH_HEADER" ]]; then
+    git config --local --unset-all "http.${endpoint}.extraheader" >/dev/null 2>&1 || true
+    git config --local --add "http.${endpoint}.extraheader" "$ADMIN_AUTH_HEADER"
   fi
 }
 
@@ -174,15 +289,35 @@ cleanup() {
       log "Skipping DRS bulk delete cleanup: endpoint /ga4gh/drs/v1/objects/delete not available"
     fi
     for oid in "${ALL_OIDS[@]}"; do
-      api_json DELETE "${INDEXD_BASE}/${oid}" "" "$index_delete_codes" >/dev/null || true
+      local dids_raw did did_count did_list
+      dids_raw="$(dids_from_oid "$oid" || true)"
+      did_count=0
+      did_list=""
+      while IFS= read -r did; do
+        [[ -n "$did" ]] || continue
+        did_count=$((did_count + 1))
+        if [[ -z "$did_list" ]]; then
+          did_list="$did"
+        else
+          did_list="${did_list} ${did}"
+        fi
+        api_json_noexit DELETE "${INDEXD_BASE}/${did}" ""
+        log "cleanup-delete: oid=${oid} did=${did} status=${API_HTTP_STATUS}"
+        api_json_noexit GET "${INDEXD_BASE}/${did}" ""
+        log "cleanup-verify: oid=${oid} did=${did} status=${API_HTTP_STATUS}"
+      done <<<"$dids_raw"
+      if [[ "$did_count" -eq 0 ]]; then
+        log "cleanup: oid=${oid} resolved to 0 dids (already cleaned or no records)"
+      else
+        log "cleanup: oid=${oid} resolved did_count=${did_count} dids=${did_list}"
+      fi
       if [[ "$HAS_DRS_API" == "true" ]]; then
-        local did
-        did="${DRS_ID_BY_OID[$oid]:-}"
+        did="$(map_get_or_empty DRS_ID_BY_OID "$oid")"
         if [[ -n "$did" ]]; then
           api_json GET "$API_BASE/objects/${did}" "" "$verify_codes" >/dev/null || true
         fi
       fi
-      api_json GET "${INDEXD_BASE}/${oid}" "" "$index_verify_codes" >/dev/null || true
+      api_json GET "${INDEXD_BASE}?hash=sha256:${oid}" "" "200" >/dev/null || true
     done
     log "Cleanup verification complete for ${#ALL_OIDS[@]} objects"
   fi
@@ -260,8 +395,8 @@ validate_required_config() {
     case "${DRS_URL%/}" in
       http://localhost*|https://localhost*|http://127.0.0.1*|https://127.0.0.1*|http://[::1]*|https://[::1]*)
         echo "error: TEST_SERVER_MODE=remote cannot use TEST_DRS_URL=${DRS_URL%/}" >&2
-        echo "       remote mode uses Gen3 auth/profile endpoints; localhost here forces git-lfs compatibility checks to the wrong host." >&2
-        echo "       Use TEST_SERVER_MODE=local for localhost, or set TEST_DRS_URL to your remote Gen3 host." >&2
+        echo "       remote mode expects Gen3 auth/profile flow for the DRS endpoint." >&2
+        echo "       Use TEST_SERVER_MODE=local for localhost DRS, or set TEST_DRS_URL to your remote Gen3 host." >&2
         exit 1
         ;;
     esac
@@ -320,9 +455,15 @@ validate_required_config() {
     echo "error: remote mode requires TEST_GEN3_TOKEN or GEN3_PROFILE/TEST_GEN3_PROFILE" >&2
     exit 1
   fi
-  if [[ "$SERVER_MODE" == "local" && "$GITHUB_MODE" == "true" ]]; then
-    echo "error: TEST_GITHUB_MODE=true requires TEST_SERVER_MODE=remote" >&2
-    exit 1
+  if [[ "$SERVER_MODE" == "local" ]]; then
+    if [[ -n "$LOCAL_USERNAME" && -z "$LOCAL_PASSWORD" ]]; then
+      echo "error: TEST_LOCAL_PASSWORD is required when TEST_LOCAL_USERNAME is set" >&2
+      exit 1
+    fi
+    if [[ -z "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      echo "error: TEST_LOCAL_USERNAME is required when TEST_LOCAL_PASSWORD is set" >&2
+      exit 1
+    fi
   fi
   if [[ "$GITHUB_MODE" == "true" ]]; then
     require_cmd gh
@@ -939,10 +1080,36 @@ api_json() {
   rm -f "$out"
 }
 
+API_HTTP_STATUS=""
+api_json_noexit() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  local out status
+  out="$(mktemp)"
+  local curl_args=(-sS -o "$out" -w '%{http_code}' -X "$method" -H "Accept: application/json")
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  if [[ -n "$body" ]]; then
+    curl_args+=(-H "Content-Type: application/json" "$url" -d "$body")
+  else
+    curl_args+=("$url")
+  fi
+  status="$(curl "${curl_args[@]}" || true)"
+  API_HTTP_STATUS="$status"
+  cat "$out"
+  rm -f "$out"
+}
+
 drs_id_from_oid() {
   local oid="$1"
-  if [[ -n "${DRS_ID_BY_OID[$oid]:-}" ]]; then
-    printf '%s\n' "${DRS_ID_BY_OID[$oid]}"
+  local cached
+  cached="$(map_get_or_empty DRS_ID_BY_OID "$oid")"
+  if [[ -n "$cached" ]]; then
+    printf '%s\n' "$cached"
     return 0
   fi
 
@@ -955,8 +1122,30 @@ drs_id_from_oid() {
     exit 1
   fi
 
-  DRS_ID_BY_OID["$oid"]="$did"
+  map_set DRS_ID_BY_OID "$oid" "$did"
   printf '%s\n' "$did"
+}
+
+dids_from_oid() {
+  local oid="$1"
+  local out status resp
+  out="$(mktemp)"
+  local curl_args=(-sS -o "$out" -w '%{http_code}' -X GET -H "Accept: application/json")
+  if [[ "$SERVER_MODE" == "remote" ]]; then
+    curl_args+=(-H "Authorization: Bearer $GEN3_TOKEN")
+  elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
+    curl_args+=(-H "$ADMIN_AUTH_HEADER")
+  fi
+  curl_args+=("${INDEXD_BASE}?hash=sha256:${oid}")
+  status="$(curl "${curl_args[@]}" || true)"
+  resp="$(cat "$out")"
+  rm -f "$out"
+  printf '[%s] cleanup-resolve: oid=%s status=%s\n' "${LOG_PREFIX:-e2e-full}" "$oid" "${status:-unknown}" >&2
+  if [[ "$status" != "200" ]]; then
+    echo "[cleanup-resolve-body] $resp" >&2
+    return 1
+  fi
+  jq -r '((.records // []) | map(.did // .id // empty) | map(select(length>0) | tostring) | unique | .[]) // empty' <<<"$resp"
 }
 
 lfs_json() {
@@ -993,8 +1182,8 @@ lfs_batch_diag() {
   local p oid size
 
   for p in "${paths[@]}"; do
-    oid="${HASH_SRC[$p]:-}"
-    size="${SIZE_SRC[$p]:-}"
+    oid="$(map_get_or_empty HASH_SRC "$p")"
+    size="$(map_get_or_empty SIZE_SRC "$p")"
     if [[ -z "$oid" || -z "$size" ]]; then
       continue
     fi
@@ -1028,7 +1217,14 @@ lfs_batch_diag() {
   log "LFS batch diagnostic request body: $body"
   log "LFS batch diagnostic response status: $status"
   log "LFS batch diagnostic response body:"
-  sed 's/^/[e2e-gen3-remote][lfs-batch] /' "$out"
+  if [[ -z "$LOG_PREFIX" ]]; then
+    if [[ "$SERVER_MODE" == "local" ]]; then
+      LOG_PREFIX="e2e-local-full"
+    else
+      LOG_PREFIX="e2e-gen3-remote"
+    fi
+  fi
+  sed "s/^/[${LOG_PREFIX}][lfs-batch] /" "$out"
   rm -f "$out"
 }
 
@@ -1040,6 +1236,18 @@ main() {
   require_cmd jq
   validate_required_config
   resolve_auth_from_profile_if_needed
+  if [[ "$SERVER_MODE" == "local" && -z "$ADMIN_AUTH_HEADER" && -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+    ADMIN_AUTH_HEADER="$(basic_auth_header "$LOCAL_USERNAME" "$LOCAL_PASSWORD")"
+  fi
+  if [[ "$SERVER_MODE" == "local" && -z "$LOCAL_USERNAME" && -z "$LOCAL_PASSWORD" && "$ADMIN_AUTH_HEADER" =~ ^[Aa]uthorization:[[:space:]]*[Bb]asic[[:space:]]+(.+)$ ]]; then
+    local basic_b64 basic_decoded
+    basic_b64="${BASH_REMATCH[1]}"
+    basic_decoded="$(decode_base64 "$basic_b64" 2>/dev/null || true)"
+    if [[ "$basic_decoded" == *:* ]]; then
+      LOCAL_USERNAME="${basic_decoded%%:*}"
+      LOCAL_PASSWORD="${basic_decoded#*:}"
+    fi
+  fi
   if [[ "$SERVER_MODE" == "remote" && -z "$GEN3_TOKEN" ]]; then
     echo "error: auth is required. set TEST_GEN3_TOKEN or GEN3_PROFILE" >&2
     exit 1
@@ -1050,8 +1258,6 @@ main() {
   if [[ "$SERVER_MODE" == "remote" && "$GITHUB_MODE" != "true" && "$REMOTE_URL" != git@* && "$REMOTE_URL" != http* ]]; then
     log_warn "Using a local bare git remote in remote mode. Set TEST_GITHUB_MODE=true (or TEST_REMOTE_URL) to exercise hosted Git flow."
   fi
-  declare -A HASH_SRC=()
-  declare -A SIZE_SRC=()
   declare -a ALL_FILES=()
 
   local active_bucket="$BUCKET"
@@ -1117,7 +1323,12 @@ main() {
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
   else
-    git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+    local -a local_add_args
+    local_add_args=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local_add_args+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
+    fi
+    "${local_add_args[@]}"
   fi
   git config --local drs.multipart-threshold "$UPLOAD_MULTIPART_THRESHOLD_MB"
   log "Configured git-drs remote '$REMOTE_NAME' with bucket='$active_bucket' organization='$ORGANIZATION' project='$PROJECT_ID'"
@@ -1142,10 +1353,10 @@ main() {
   multi_oid="$(sha256_file data/multipart.bin)"
   single_size="$(file_size data/single.bin)"
   multi_size="$(file_size data/multipart.bin)"
-  HASH_SRC["data/single.bin"]="$single_oid"
-  HASH_SRC["data/multipart.bin"]="$multi_oid"
-  SIZE_SRC["data/single.bin"]="$single_size"
-  SIZE_SRC["data/multipart.bin"]="$multi_size"
+  map_set HASH_SRC "data/single.bin" "$single_oid"
+  map_set HASH_SRC "data/multipart.bin" "$multi_oid"
+  map_set SIZE_SRC "data/single.bin" "$single_size"
+  map_set SIZE_SRC "data/multipart.bin" "$multi_size"
   ALL_OIDS+=("$single_oid" "$multi_oid")
   ALL_FILES+=("data/single.bin" "data/multipart.bin")
   for f in data/extra-small-*.bin data/extra-large-*.bin; do
@@ -1153,8 +1364,8 @@ main() {
     local h s
     h="$(sha256_file "$f")"
     s="$(file_size "$f")"
-    HASH_SRC["$f"]="$h"
-    SIZE_SRC["$f"]="$s"
+    map_set HASH_SRC "$f" "$h"
+    map_set SIZE_SRC "$f" "$s"
     ALL_OIDS+=("$h")
     ALL_FILES+=("$f")
   done
@@ -1179,8 +1390,8 @@ main() {
     local resume_upload_oid resume_upload_size
     resume_upload_oid="$(sha256_file data/resume-upload.bin)"
     resume_upload_size="$(file_size data/resume-upload.bin)"
-    HASH_SRC["data/resume-upload.bin"]="$resume_upload_oid"
-    SIZE_SRC["data/resume-upload.bin"]="$resume_upload_size"
+    map_set HASH_SRC "data/resume-upload.bin" "$resume_upload_oid"
+    map_set SIZE_SRC "data/resume-upload.bin" "$resume_upload_size"
     ALL_OIDS+=("$resume_upload_oid")
     ALL_FILES+=("data/resume-upload.bin")
     git add data/resume-upload.bin
@@ -1202,8 +1413,8 @@ main() {
     local gitpush_oid gitpush_size
     gitpush_oid="$(sha256_file data/gitpush.bin)"
     gitpush_size="$(file_size data/gitpush.bin)"
-    HASH_SRC["data/gitpush.bin"]="$gitpush_oid"
-    SIZE_SRC["data/gitpush.bin"]="$gitpush_size"
+    map_set HASH_SRC "data/gitpush.bin" "$gitpush_oid"
+    map_set SIZE_SRC "data/gitpush.bin" "$gitpush_size"
     ALL_OIDS+=("$gitpush_oid")
     ALL_FILES+=("data/gitpush.bin")
 
@@ -1216,7 +1427,7 @@ main() {
 
   github_verify_lfs_pointer "data/single.bin"
   github_verify_lfs_pointer "data/multipart.bin"
-  if [[ -n "${HASH_SRC[data/resume-upload.bin]:-}" ]]; then
+  if map_has HASH_SRC "data/resume-upload.bin"; then
     github_verify_lfs_pointer "data/resume-upload.bin"
   fi
   if [[ "$PUSH_MODE" == "git" || "$PUSH_MODE" == "both" ]]; then
@@ -1236,7 +1447,12 @@ main() {
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
   else
-    git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+    local -a local_add_args_clone
+    local_add_args_clone=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+    if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+      local_add_args_clone+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
+    fi
+    "${local_add_args_clone[@]}"
   fi
   git config --local drs.multipart-threshold "$DOWNLOAD_MULTIPART_THRESHOLD_MB"
 
@@ -1252,7 +1468,7 @@ main() {
   for f in "${ALL_FILES[@]}"; do
     local h_clone
     h_clone="$(sha256_file "$f")"
-    assert_eq "${HASH_SRC[$f]}" "$h_clone" "hash mismatch for $f"
+    assert_eq "$(map_get_or_empty HASH_SRC "$f")" "$h_clone" "hash mismatch for $f"
   done
 
   if [[ "$RUN_RESUME_E2E" == "true" ]]; then
@@ -1293,7 +1509,12 @@ main() {
     if [[ "$SERVER_MODE" == "remote" ]]; then
       git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
     else
-      git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+      local -a local_add_args_lfs
+      local_add_args_lfs=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+      if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
+        local_add_args_lfs+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
+      fi
+      "${local_add_args_lfs[@]}"
     fi
     # Force git-lfs compatibility check to use the test DRS server endpoint,
     # regardless of inherited/global config or tracked .lfsconfig values.
@@ -1301,16 +1522,16 @@ main() {
     log_lfs_endpoint_for_repo "$REMOTE_NAME"
     local -a lfs_diag_paths
     lfs_diag_paths=("data/single.bin" "data/multipart.bin")
-    if [[ -n "${HASH_SRC[data/resume-upload.bin]:-}" ]]; then
+    if map_has HASH_SRC "data/resume-upload.bin"; then
       lfs_diag_paths+=("data/resume-upload.bin")
     fi
-    if [[ -n "${HASH_SRC[data/gitpush.bin]:-}" ]]; then
+    if map_has HASH_SRC "data/gitpush.bin"; then
       lfs_diag_paths+=("data/gitpush.bin")
     fi
     lfs_batch_diag "${DRS_URL%/}/info/lfs" "${lfs_diag_paths[@]}"
     local lfs_pull_include
     lfs_pull_include="data/single.bin,data/multipart.bin"
-    if [[ -n "${HASH_SRC[data/gitpush.bin]:-}" ]]; then
+    if map_has HASH_SRC "data/gitpush.bin"; then
       lfs_pull_include="${lfs_pull_include},data/gitpush.bin"
     fi
     git -c "lfs.url=${DRS_URL%/}/info/lfs" \
@@ -1321,7 +1542,7 @@ main() {
     assert_eq "$single_oid" "$(sha256_file data/single.bin)" "git-lfs single-part hash mismatch"
     assert_eq "$multi_oid" "$(sha256_file data/multipart.bin)" "git-lfs multipart hash mismatch"
     if [[ -f data/gitpush.bin ]]; then
-      assert_eq "${HASH_SRC[data/gitpush.bin]}" "$(sha256_file data/gitpush.bin)" "git-lfs gitpush-path hash mismatch"
+      assert_eq "$(map_get_or_empty HASH_SRC "data/gitpush.bin")" "$(sha256_file data/gitpush.bin)" "git-lfs gitpush-path hash mismatch"
     fi
     cd "$CLONE_REPO"
   fi

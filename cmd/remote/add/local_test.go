@@ -9,4 +9,6 @@ import (
 func TestAddLocalRemote(t *testing.T) {
 	assert.NotNil(t, LocalCmd)
 	assert.Equal(t, "local <remote-name> <url>", LocalCmd.Use)
+	assert.NotNil(t, LocalCmd.Flag("username"))
+	assert.NotNil(t, LocalCmd.Flag("password"))
 }

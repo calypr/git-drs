@@ -86,6 +86,7 @@ For detailed setup and usage information:
 - **[Commands Reference](docs/commands.md)** - Complete command documentation
 - **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[E2E Modes + Local Setup](docs/e2e-modes-and-local-setup.md)** - Local vs remote mode, server config, and end-to-end runbooks
 - **[Cloud URL Integration](docs/adding-s3-files.md)** - Adding files via cloud object URLs
 - **[Developer Guide](docs/developer-guide.md)** - Internals and development
 

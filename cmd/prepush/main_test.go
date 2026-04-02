@@ -326,7 +326,7 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 	name := "obj-name"
 	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
 		Id:   "drs://local:obj-id",
-		Name: &name,
+		Name: name,
 		Size: 123,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: oid},
@@ -390,7 +390,7 @@ func TestSubmitPendingLFSMetaStatusHandling(t *testing.T) {
 	name := "obj-name"
 	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
 		Id:   "drs://local:obj-id",
-		Name: &name,
+		Name: name,
 		Size: 123,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: oid},
@@ -502,7 +502,7 @@ func TestSubmitPendingLFSMetaRequestWiringBasicAuth(t *testing.T) {
 	name := "obj-name"
 	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
 		Id:   "drs://local:obj-id",
-		Name: &name,
+		Name: name,
 		Size: 123,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: oid},

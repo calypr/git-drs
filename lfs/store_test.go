@@ -66,7 +66,7 @@ func TestGetDrsLfsObjects(t *testing.T) {
 	name := "object-one"
 	payload := drs.DRSObject{
 		Id:   "object-1",
-		Name: &name,
+		Name: name,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: "sha-256-value"},
 		},

@@ -194,12 +194,10 @@ func (cl *GitDrsClient) GetObjectByHash(ctx context.Context, sum *hash.Checksum)
 	for _, o := range res {
 		found := false
 		for _, am := range o.AccessMethods {
-			if am.Authorizations != nil {
-				for _, issuer := range am.Authorizations.BearerAuthIssuers {
-					if issuer == resourcePath {
-						found = true
-						break
-					}
+			for _, issuer := range am.Authorizations.BearerAuthIssuers {
+				if issuer == resourcePath {
+					found = true
+					break
 				}
 			}
 			if found {

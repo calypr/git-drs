@@ -33,7 +33,7 @@ func (f *fakeMetadata) GetObject(ctx context.Context, id string) (*drs.DRSObject
 		return f.object, nil
 	}
 	name := "obj.bin"
-	return &drs.DRSObject{Id: id, Name: &name, Size: 1}, nil
+	return &drs.DRSObject{Id: id, Name: name, Size: 1}, nil
 }
 func (f *fakeMetadata) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
 	ch := make(chan drs.DRSObjectResult)
@@ -355,7 +355,7 @@ func TestNewLocalClient_RegisterRecordSendsBasicAuth(t *testing.T) {
 	name := "obj.bin"
 	_, err := client.RegisterRecord(context.Background(), &drs.DRSObject{
 		Id:   "did-1",
-		Name: &name,
+		Name: name,
 		Size: 1,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: strings.Repeat("a", 64)},
@@ -391,7 +391,7 @@ func TestNewLocalClient_RegisterRecordUnauthorizedDoesNotAttemptFenceRefresh(t *
 	name := "obj.bin"
 	_, err := client.RegisterRecord(context.Background(), &drs.DRSObject{
 		Id:   "did-1",
-		Name: &name,
+		Name: name,
 		Size: 1,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: strings.Repeat("a", 64)},

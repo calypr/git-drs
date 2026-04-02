@@ -168,16 +168,12 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		if err == nil && existing != nil {
 			authoritativeObj = existing
 			// Update basic info if necessary
-			name := file.Name
-			authoritativeObj.Name = &name
+			authoritativeObj.Name = file.Name
 			authoritativeObj.Size = file.Size
 
 			// Ensure Authorizations are populated (backwards compatibility for old local records)
 			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
 			for i := range authoritativeObj.AccessMethods {
-				if authoritativeObj.AccessMethods[i].Authorizations == nil {
-					authoritativeObj.AccessMethods[i].Authorizations = &drs.Authorizations{}
-				}
 				if len(authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers) == 0 {
 					authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers = []string{authzStr}
 				}
@@ -189,9 +185,9 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 						prefix = drs.StoragePrefix(builder.Organization, builder.ProjectID)
 					}
 					if prefix != "" {
-						authoritativeObj.AccessMethods[i].AccessUrl = &drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)}
+						authoritativeObj.AccessMethods[i].AccessUrl = drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)}
 					} else {
-						authoritativeObj.AccessMethods[i].AccessUrl = &drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)}
+						authoritativeObj.AccessMethods[i].AccessUrl = drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)}
 					}
 				}
 			}
@@ -205,7 +201,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		}
 
 		authoritativeURL := ""
-		if len(authoritativeObj.AccessMethods) > 0 && authoritativeObj.AccessMethods[0].AccessUrl != nil {
+		if len(authoritativeObj.AccessMethods) > 0 {
 			authoritativeURL = authoritativeObj.AccessMethods[0].AccessUrl.Url
 		}
 
@@ -228,16 +224,16 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 
 		if opts.PreferCacheURL && hint != "" {
 			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
-			authz := &drs.Authorizations{
+			authz := drs.Authorizations{
 				BearerAuthIssuers: []string{authzStr},
 			}
 			if len(authoritativeObj.AccessMethods) > 0 {
-				authoritativeObj.AccessMethods[0].AccessUrl = &drs.AccessURL{Url: hint}
+				authoritativeObj.AccessMethods[0].AccessUrl = drs.AccessURL{Url: hint}
 				authoritativeObj.AccessMethods[0].Authorizations = authz
 			} else {
 				authoritativeObj.AccessMethods = append(authoritativeObj.AccessMethods, drs.AccessMethod{
 					Type:           "s3",
-					AccessUrl:      &drs.AccessURL{Url: hint},
+					AccessUrl:      drs.AccessURL{Url: hint},
 					Authorizations: authz,
 				})
 			}
@@ -266,8 +262,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	var drsObj *drs.DRSObject
 	if err == nil && existing != nil {
 		drsObj = existing
-		name := file.Name
-		drsObj.Name = &name
+		drsObj.Name = file.Name
 		drsObj.Size = file.Size
 	} else {
 		drsId := DrsUUID(builder.ProjectID, file.Oid)
@@ -279,11 +274,11 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 
 	if objectPath != nil && *objectPath != "" {
 		if len(drsObj.AccessMethods) > 0 {
-			drsObj.AccessMethods[0].AccessUrl = &drs.AccessURL{Url: *objectPath}
+			drsObj.AccessMethods[0].AccessUrl = drs.AccessURL{Url: *objectPath}
 		} else {
 			drsObj.AccessMethods = append(drsObj.AccessMethods, drs.AccessMethod{
 				Type:      "s3",
-				AccessUrl: &drs.AccessURL{Url: *objectPath},
+				AccessUrl: drs.AccessURL{Url: *objectPath},
 			})
 		}
 	}
@@ -360,7 +355,7 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 
 	for _, record := range records {
 		for _, access := range record.AccessMethods {
-			if access.Authorizations == nil {
+			if len(access.Authorizations.BearerAuthIssuers) == 0 {
 				continue
 			}
 

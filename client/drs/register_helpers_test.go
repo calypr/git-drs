@@ -52,7 +52,7 @@ func TestUploadKeyFromObject(t *testing.T) {
 			obj: &datadrs.DRSObject{
 				Checksums: checksums,
 				AccessMethods: []datadrs.AccessMethod{
-					{AccessUrl: &datadrs.AccessURL{Url: "s3://bucket/prefix/path/file.bin"}},
+					{AccessUrl: datadrs.AccessURL{Url: "s3://bucket/prefix/path/file.bin"}},
 				},
 			},
 			bucket: "bucket",
@@ -63,7 +63,7 @@ func TestUploadKeyFromObject(t *testing.T) {
 			obj: &datadrs.DRSObject{
 				Checksums: checksums,
 				AccessMethods: []datadrs.AccessMethod{
-					{AccessUrl: &datadrs.AccessURL{Url: "s3://other/path/file.bin"}},
+					{AccessUrl: datadrs.AccessURL{Url: "s3://other/path/file.bin"}},
 				},
 			},
 			bucket: "bucket",

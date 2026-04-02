@@ -587,6 +587,8 @@ init_local_bare_remote_if_needed() {
   log "Initializing local bare git remote at $remote_path"
   mkdir -p "$(dirname "$remote_path")"
   git init --bare "$remote_path" >/dev/null
+  # Keep local-bare default branch aligned with test branch so clones checkout cleanly.
+  git --git-dir "$remote_path" symbolic-ref HEAD "refs/heads/$MONO_GIT_BRANCH"
 }
 
 generate_fixtures() {
@@ -690,6 +692,11 @@ clone_and_verify() {
   rm -rf "$CLONE_REPO"
   git clone "$MONO_REMOTE_URL_AUTH" "$CLONE_REPO"
   pushd "$CLONE_REPO" >/dev/null
+  # For remotes without a checkoutable HEAD, explicitly create local branch from remote branch.
+  if ! git symbolic-ref -q HEAD >/dev/null 2>&1; then
+    git fetch "$MONO_REMOTE_NAME" "$MONO_GIT_BRANCH"
+    git checkout -B "$MONO_GIT_BRANCH" "$MONO_REMOTE_NAME/$MONO_GIT_BRANCH"
+  fi
   git drs init -t "$MONO_TRANSFERS"
   configure_local_credential_helper
   if [[ "$SERVER_MODE" == "remote" ]]; then

@@ -20,7 +20,7 @@ func TestObjectWalk(t *testing.T) {
 	name := "object-name"
 	obj := drs.DRSObject{
 		Id:   "object-1",
-		Name: &name,
+		Name: name,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: "sha-256"},
 		},

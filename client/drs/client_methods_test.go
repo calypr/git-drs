@@ -45,11 +45,11 @@ func TestGetDownloadURLFromRecords(t *testing.T) {
 		name := "f.bin"
 		rec := datadrs.DRSObject{
 			Id:   "did-1",
-			Name: &name,
+			Name: name,
 			AccessMethods: []datadrs.AccessMethod{
 				{
 					Type: "",
-					Authorizations: &datadrs.Authorizations{
+					Authorizations: datadrs.Authorizations{
 						BearerAuthIssuers: []string{"/programs/org/projects/proj"},
 					},
 				},
@@ -65,11 +65,11 @@ func TestGetDownloadURLFromRecords(t *testing.T) {
 		name := "f.bin"
 		rec := datadrs.DRSObject{
 			Id:   "did-1",
-			Name: &name,
+			Name: name,
 			AccessMethods: []datadrs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &datadrs.Authorizations{
+					Authorizations: datadrs.Authorizations{
 						BearerAuthIssuers: []string{"/programs/org/projects/proj"},
 					},
 				},

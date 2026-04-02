@@ -187,7 +187,6 @@ type metadataCandidate struct {
 
 func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
 	out := metadataCandidate{
-		Id:          c.Id,
 		Name:        c.Name,
 		Size:        c.Size,
 		Version:     c.Version,
@@ -209,16 +208,9 @@ func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
 	if len(c.AccessMethods) > 0 {
 		out.AccessMethods = make([]metadataAccessMethod, 0, len(c.AccessMethods))
 		for _, am := range c.AccessMethods {
-			var accID, region, accURL string
-			if am.AccessId != nil {
-				accID = *am.AccessId
-			}
-			if am.Region != nil {
-				region = *am.Region
-			}
-			if am.AccessUrl != nil {
-				accURL = am.AccessUrl.Url
-			}
+			accID := am.AccessId
+			region := am.Region
+			accURL := am.AccessUrl.Url
 			m := metadataAccessMethod{
 				Type:     am.Type,
 				AccessID: accID,
@@ -227,7 +219,7 @@ func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
 					URL: accURL,
 				},
 			}
-			if am.Authorizations != nil {
+			if len(am.Authorizations.BearerAuthIssuers) > 0 {
 				m.Authorizations = &metadataAuthorizations{
 					BearerAuthIssuers: append([]string(nil), am.Authorizations.BearerAuthIssuers...),
 				}

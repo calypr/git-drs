@@ -330,9 +330,9 @@ cleanup() {
   if [[ "$GITHUB_MODE" == "true" && "$TEST_DELETE_GITHUB_REPO_AFTER" == "true" && "$CREATED_GITHUB_REPO" == "true" ]]; then
     log "Deleting temporary GitHub repo ${GITHUB_OWNER_REPO}"
     if [[ -n "$TEST_GITHUB_TOKEN" ]]; then
-      GH_TOKEN="$TEST_GITHUB_TOKEN" gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null || true
+      GH_TOKEN="$TEST_GITHUB_TOKEN" gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null 2>&1 || true
     else
-      gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null || true
+      gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null 2>&1 || true
     fi
   fi
 
@@ -678,11 +678,20 @@ github_create_repo_if_needed() {
     REMOTE_URL="https://github.com/${GITHUB_OWNER_REPO}.git"
   fi
   log "GitHub remote created: https://github.com/${GITHUB_OWNER_REPO}.git"
-  local repo_id
-  if [[ -n "$TEST_GITHUB_TOKEN" ]]; then
-    repo_id="$(GH_TOKEN="$TEST_GITHUB_TOKEN" gh api "/repos/${GITHUB_OWNER_REPO}" -q .id)"
-  else
-    repo_id="$(gh api "/repos/${GITHUB_OWNER_REPO}" -q .id)"
+  local repo_id attempt
+  repo_id=""
+  for attempt in {1..10}; do
+    if [[ -n "$TEST_GITHUB_TOKEN" ]]; then
+      repo_id="$(GH_TOKEN="$TEST_GITHUB_TOKEN" gh api "/repos/${GITHUB_OWNER_REPO}" -q .id 2>/dev/null || true)"
+    else
+      repo_id="$(gh api "/repos/${GITHUB_OWNER_REPO}" -q .id 2>/dev/null || true)"
+    fi
+    [[ -n "$repo_id" ]] && break
+    sleep 1
+  done
+  if [[ -z "$repo_id" ]]; then
+    echo "error: failed to verify GitHub repo ${GITHUB_OWNER_REPO} after creation (still not visible via API)" >&2
+    exit 1
   fi
   log "GitHub repo id confirmed: ${repo_id}"
 }

@@ -109,7 +109,7 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 		req = newBasicAuthRequestInterface(req, remote.BasicUsername, remote.BasicPassword)
 	}
 	dc := drs.NewLocalDrsClient(req, remote.BaseURL, logger)
-	tb := transfer.New(req, dataLogger, localsigner.New(remote.BaseURL, req, dc))
+	tb := transfer.New(req, dataLogger, localsigner.New(remote.BaseURL, nil, dc))
 	server := drs.ComposeServerClient(dc, tb)
 
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
@@ -545,9 +545,7 @@ func (s *serverDownloadService) ResolveDownloadURL(ctx context.Context, guid str
 
 	addCandidate(accessID)
 	for _, am := range obj.AccessMethods {
-		if am.AccessId != nil {
-			addCandidate(*am.AccessId)
-		}
+		addCandidate(am.AccessId)
 		addCandidate(am.Type)
 	}
 	addCandidate("s3")
@@ -570,7 +568,7 @@ func (s *serverDownloadService) ResolveDownloadURL(ctx context.Context, guid str
 
 	// Fallback to direct access URLs only when they are already HTTP(S).
 	for _, am := range obj.AccessMethods {
-		if am.AccessUrl == nil || strings.TrimSpace(am.AccessUrl.Url) == "" {
+		if strings.TrimSpace(am.AccessUrl.Url) == "" {
 			continue
 		}
 		if isHTTPURL(am.AccessUrl.Url) {

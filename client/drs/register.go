@@ -59,7 +59,7 @@ func (cl *GitDrsClient) isFileDownloadable(ctx context.Context, drsObject *drs.D
 }
 
 func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
-	if obj != nil && len(obj.AccessMethods) > 0 && obj.AccessMethods[0].AccessUrl != nil {
+	if obj != nil && len(obj.AccessMethods) > 0 {
 		raw := strings.TrimSpace(obj.AccessMethods[0].AccessUrl.Url)
 		if raw != "" {
 			if u, err := url.Parse(raw); err == nil && strings.EqualFold(u.Scheme, "s3") {

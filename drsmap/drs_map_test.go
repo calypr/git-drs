@@ -47,7 +47,7 @@ func TestWriteAndReadDrsObject(t *testing.T) {
 	name := "file.txt"
 	obj := &drs.DRSObject{
 		Id:        "did-1",
-		Name:      &name,
+		Name:      name,
 		Checksums: []drs.Checksum{{Type: "sha256", Checksum: oid}},
 	}
 
@@ -188,7 +188,7 @@ func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObj
 func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
 	return &drs.DRSObject{
 		Id:   drsId,
-		Name: &fileName,
+		Name: fileName,
 		Size: size,
 		Checksums: []drs.Checksum{
 			{Type: "sha256", Checksum: checksum},
@@ -234,7 +234,7 @@ func TestPullRemoteDrsObjects(t *testing.T) {
 					Checksums: []drs.Checksum{
 						{Type: "sha256", Checksum: sha},
 					},
-					Name: &nameObj1,
+					Name: nameObj1,
 				},
 			},
 		},

@@ -169,17 +169,13 @@ func buildPullDownloadDebugContext(ctx context.Context, drsClient client.DRSClie
 	methods := make([]string, 0, len(match.AccessMethods))
 	for _, am := range match.AccessMethods {
 		scheme := ""
-		rawURL := ""
-		if am.AccessUrl != nil {
-			rawURL = strings.TrimSpace(am.AccessUrl.Url)
+		rawURL := strings.TrimSpace(am.AccessUrl.Url)
+		if rawURL != "" {
 			if parsed, parseErr := url.Parse(rawURL); parseErr == nil {
 				scheme = parsed.Scheme
 			}
 		}
-		accessID := ""
-		if am.AccessId != nil {
-			accessID = strings.TrimSpace(*am.AccessId)
-		}
+		accessID := strings.TrimSpace(am.AccessId)
 		methods = append(methods, fmt.Sprintf("{type=%s access_id=%s url_scheme=%s url=%s}", am.Type, accessID, scheme, rawURL))
 	}
 	return fmt.Sprintf("oid=%s did=%s size=%d access_methods=%s", oid, strings.TrimSpace(match.Id), match.Size, strings.Join(methods, ", "))

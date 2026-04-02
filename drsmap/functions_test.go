@@ -190,7 +190,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
+					Authorizations: drs.Authorizations{
 						BearerAuthIssuers: []string{"other-resource"},
 					},
 				},
@@ -201,7 +201,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
+					Authorizations: drs.Authorizations{
 						BearerAuthIssuers: []string{expectedAuthz},
 					},
 				},
@@ -231,7 +231,7 @@ func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
+					Authorizations: drs.Authorizations{
 						BearerAuthIssuers: []string{"other-resource"},
 					},
 				},

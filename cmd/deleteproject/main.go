@@ -62,8 +62,8 @@ var Cmd = &cobra.Command{
 				sample := sampleRecords[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
 				common.DisplayField(os.Stderr, "  DID", sample.Id)
-				if sample.Name != nil && *sample.Name != "" {
-					common.DisplayField(os.Stderr, "  Filename", *sample.Name)
+				if sample.Name != "" {
+					common.DisplayField(os.Stderr, "  Filename", sample.Name)
 				}
 				common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
 				if !sample.CreatedTime.IsZero() {

@@ -44,7 +44,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get a sample record to show the user what will be deleted
-		sampleRecords, err := drsClient.GetProjectSample(context.Background(), projectId, 1)
+		sampleRecords, err := drsClient.API.GetProjectSample(context.Background(), projectId, 1)
 		if err != nil {
 			return fmt.Errorf("error getting sample records for project %s: %v", projectId, err)
 		}
@@ -83,7 +83,7 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		err = drsClient.DeleteRecordsByProject(context.Background(), projectId)
+		err = drsClient.API.DeleteRecordsByProject(context.Background(), projectId)
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}

@@ -13,19 +13,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/hash"
 	"github.com/google/uuid"
 )
 
 // execCommand is a variable to allow mocking in tests
 var execCommandContext = exec.CommandContext
 
-func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) error {
+func PushLocalDrsObjects(drsClient *client.GitContext, myLogger *slog.Logger) error {
 	// Gather all objects in .git/drs/lfs/objects store
 	drsLfsObjs, err := lfs.GetDrsLfsObjects(myLogger)
 	if err != nil {
@@ -35,7 +35,7 @@ func PushLocalDrsObjects(drsClient client.DRSClient, myLogger *slog.Logger) erro
 	return SyncObjectsWithServer(drsClient, drsLfsObjs, myLogger)
 }
 
-func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*drs.DRSObject, myLogger *slog.Logger) error {
+func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*drs.DRSObject, myLogger *slog.Logger) error {
 	if len(drsObjects) == 0 {
 		return nil
 	}
@@ -45,7 +45,7 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	for h := range drsObjects {
 		hashes = append(hashes, h)
 	}
-	bulkByHash, bulkErr := drsClient.BatchGetObjectsByHash(context.Background(), hashes)
+	bulkByHash, bulkErr := drsClient.API.BatchGetObjectsByHash(context.Background(), hashes)
 	if bulkErr != nil {
 		return fmt.Errorf("bulk hash lookup failed: %w", bulkErr)
 	}
@@ -57,7 +57,7 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 		recs := bulkByHash[h]
 		if len(recs) > 0 {
 			// Check if any record matches our project.
-			matched, _ := FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+			matched, _ := FindMatchingRecord(recs, drsClient.Organization, drsClient.ProjectId)
 			foundOnServer = matched != nil
 		}
 
@@ -70,7 +70,7 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	// 3. Register missing records in one bulk request when possible.
 	if len(missingRecords) > 0 {
 		myLogger.Info(fmt.Sprintf("Registering %d missing records", len(missingRecords)))
-		if _, err := drsClient.BatchRegisterRecords(context.Background(), missingRecords); err != nil {
+		if _, err := drsClient.API.RegisterRecords(context.Background(), missingRecords); err != nil {
 			myLogger.Error(fmt.Sprintf("Failed to register records in bulk: %v", err))
 			return fmt.Errorf("error in bulk registration: %v", err)
 		}
@@ -80,7 +80,7 @@ func SyncObjectsWithServer(drsClient client.DRSClient, drsObjects map[string]*dr
 	return nil
 }
 
-func SyncFilesWithServer(drsClient client.DRSClient, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
+func SyncFilesWithServer(drsClient *client.GitContext, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
 	objectsToSync := make(map[string]*drs.DRSObject)
 	for _, file := range lfsFiles {
 		obj, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
@@ -91,8 +91,8 @@ func SyncFilesWithServer(drsClient client.DRSClient, lfsFiles map[string]lfs.Lfs
 	return SyncObjectsWithServer(drsClient, objectsToSync, logger)
 }
 
-func PullRemoteDrsObjects(drsClient client.DRSClient, logger *slog.Logger) error {
-	objChan, err := drsClient.ListObjectsByProject(context.Background(), drsClient.GetProjectId())
+func PullRemoteDrsObjects(drsClient *client.GitContext, logger *slog.Logger) error {
+	objChan, err := drsClient.API.ListObjectsByProject(context.Background(), drsClient.ProjectId)
 	if err != nil {
 		return err
 	}

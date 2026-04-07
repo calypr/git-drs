@@ -3,8 +3,8 @@ package drsmap
 import (
 	"testing"
 
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/drs"
 )
 
 // Test DrsUUID function - it's already tested but let's add more coverage

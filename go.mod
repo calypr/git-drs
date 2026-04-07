@@ -4,13 +4,14 @@ go 1.26.1
 
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/calypr/data-client v0.0.0-20260402230003-8f6810960fda
+	github.com/calypr/data-client v0.0.0-20260407224147-5ef59a202830
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	go.uber.org/mock v0.6.0
 	gocloud.dev v0.45.0
 	golang.org/x/sync v0.19.0
 )
@@ -57,11 +58,9 @@ require (
 	github.com/aws/smithy-go v1.24.2 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
-	github.com/calypr/syfon v0.1.0 // indirect
-	github.com/calypr/syfon/apigen v0.1.0 // indirect
+	github.com/calypr/syfon/apigen v0.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/clipperhouse/stringish v0.1.1 // indirect
-	github.com/clipperhouse/uax29/v2 v2.3.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cncf/xds/go v0.0.0-20251110193048-8bfbf64dc13e // indirect
@@ -89,6 +88,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
@@ -97,7 +97,7 @@ require (
 	github.com/skeema/knownhosts v1.3.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/vbauerster/mpb/v8 v8.11.2 // indirect
+	github.com/vbauerster/mpb/v8 v8.12.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.38.0 // indirect
@@ -131,10 +131,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
-	github.com/hashicorp/go-version v1.8.0 // indirect
+	github.com/calypr/syfon/client v0.1.2
+	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	gopkg.in/ini.v1 v1.67.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	gopkg.in/ini.v1 v1.67.1 // indirect
 )
+
+

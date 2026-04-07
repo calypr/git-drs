@@ -4,10 +4,9 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
+	gitauth "github.com/calypr/git-drs/auth"
 	"github.com/calypr/git-drs/client"
+	"github.com/calypr/syfon/client/conf"
 )
 
 // Gen3Server holds Gen3 server config
@@ -39,17 +38,16 @@ func (s Gen3Remote) GetStoragePrefix() string {
 	return s.StoragePrefix
 }
 
-func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (*client.GitContext, error) {
 	manager := conf.NewConfigure(logger)
 	cred, err := manager.Load(remoteName)
 	if err != nil {
 		return nil, err
 	}
 
-	gen3Logger := logs.NewGen3Logger(logger, "", remoteName)
-	if err := g3client.EnsureValidCredential(context.Background(), cred, manager, gen3Logger, nil); err != nil {
+	if err := gitauth.EnsureValidCredential(context.Background(), cred, logger); err != nil {
 		return nil, err
 	}
 
-	return NewGitDrsClient(*cred, s, logger, opts...)
+	return GetContext(*cred, s, logger)
 }

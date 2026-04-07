@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/calypr/data-client/common"
-	"github.com/calypr/data-client/download"
-	drs "github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/lfs"
+	drs "github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/common"
+	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/xfer/download"
 )
 
 type fakeMetadata struct {
@@ -339,7 +339,9 @@ func TestNewLocalClient_RegisterRecordSendsBasicAuth(t *testing.T) {
 			_, _ = w.Write([]byte("missing/invalid basic auth"))
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"did":"did-1","file_name":"obj.bin","size":1,"hashes":{"sha256":"` + strings.Repeat("a", 64) + `"},"urls":["s3://b/obj.bin"]}`))
 	}))
 	defer srv.Close()
 

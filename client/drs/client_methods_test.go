@@ -2,14 +2,57 @@ package drs
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	datadrs "github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
+	gitclient "github.com/calypr/git-drs/client"
+	"github.com/calypr/syfon/client/conf"
+	datadrs "github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/mocks"
+	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/pkg/request"
+	"go.uber.org/mock/gomock"
 )
+
+func newTestCtxWithEndpoint(t *testing.T, endpoint string) *gitclient.GitContext {
+	t.Helper()
+	ctx, err := newContextFromEndpoint(endpoint, "org", "proj", "bucket")
+	if err != nil {
+		t.Fatalf("newContextFromEndpoint(%s): %v", endpoint, err)
+	}
+	return ctx
+}
+
+// newContextFromEndpoint creates a lightweight GitContext for tests by wiring
+// the Gen3 DRS client directly from a raw endpoint URL.
+func newContextFromEndpoint(endpoint, org, project, bucket string) (*gitclient.GitContext, error) {
+	baseLogger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dLogger := logs.NewGen3Logger(baseLogger, "", "test")
+	cred := &conf.Credential{
+		Profile:     "test",
+		APIEndpoint: endpoint,
+		AccessToken: "test-token",
+	}
+	req := request.NewRequestInterface(dLogger, cred, conf.NewConfigure(baseLogger))
+	api := datadrs.NewDrsClient(req, cred, dLogger).
+		WithOrganization(org).
+		WithProject(project).
+		WithBucket(bucket)
+
+	return &gitclient.GitContext{
+		API:          api,
+		Organization: org,
+		ProjectId:    project,
+		BucketName:   bucket,
+		Logger:       baseLogger,
+		Credential:   cred,
+	}, nil
+}
 
 func TestGetDownloadURLFromRecords(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -22,104 +65,51 @@ func TestGetDownloadURLFromRecords(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-	cl.Config.Organization = "org"
-	cl.Config.ProjectId = "proj"
+	cl := newTestCtxWithEndpoint(t, srv.URL)
 
 	t.Run("no records", func(t *testing.T) {
-		_, err := cl.getDownloadURLFromRecords(context.Background(), "oid1", nil)
+		_, err := ResolveGitScopedURL(context.Background(), cl.API, "oid1", cl.Organization, cl.ProjectId, cl.Logger)
 		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("missing access methods", func(t *testing.T) {
-		rec := datadrs.DRSObject{Id: "did-1"}
-		_, err := cl.getDownloadURLFromRecords(context.Background(), "oid1", []datadrs.DRSObject{rec})
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("blank access type", func(t *testing.T) {
-		name := "f.bin"
-		rec := datadrs.DRSObject{
-			Id:   "did-1",
-			Name: name,
-			AccessMethods: []datadrs.AccessMethod{
-				{
-					Type: "",
-					Authorizations: datadrs.Authorizations{
-						BearerAuthIssuers: []string{"/programs/org/projects/proj"},
-					},
-				},
-			},
-		}
-		_, err := cl.getDownloadURLFromRecords(context.Background(), "oid1", []datadrs.DRSObject{rec})
-		if err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		name := "f.bin"
-		rec := datadrs.DRSObject{
-			Id:   "did-1",
-			Name: name,
-			AccessMethods: []datadrs.AccessMethod{
-				{
-					Type: "s3",
-					Authorizations: datadrs.Authorizations{
-						BearerAuthIssuers: []string{"/programs/org/projects/proj"},
-					},
-				},
-			},
-		}
-		u, err := cl.getDownloadURLFromRecords(context.Background(), "oid1", []datadrs.DRSObject{rec})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if u == nil || u.Url == "" {
-			t.Fatalf("expected URL, got %#v", u)
+			t.Fatal("expected error for no records")
 		}
 	})
 }
 
-func TestGetObjectByHashFiltersByProjectAuthz(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/index") && r.URL.Query().Get("hash") != "" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-  "records": [
-    {
-      "did":"did-match",
-      "file_name":"a.bin",
-      "size":1,
-      "urls":["s3://bucket/a.bin"],
-      "authz":["/programs/org/projects/proj"],
-      "hashes":{"sha256":"oid1"}
-    },
-    {
-      "did":"did-other",
-      "file_name":"b.bin",
-      "size":1,
-      "urls":["s3://bucket/b.bin"],
-      "authz":["/programs/other/projects/proj"],
-      "hashes":{"sha256":"oid1"}
-    }
-  ]
-}`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
+func TestGetObjectByHashForGit_FiltersByProjectAuthz(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-	cl.Config.Organization = "org"
-	cl.Config.ProjectId = "proj"
+	mockAPI := mocks.NewMockDrsClient(ctrl)
+	mockAPI.EXPECT().
+		GetObjectByHash(gomock.Any(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: "oid1"}).
+		Return([]datadrs.DRSObject{
+			{
+				Id: "did-match",
+				AccessMethods: []datadrs.AccessMethod{{
+					Type: "s3",
+					Authorizations: datadrs.Authorizations{
+						BearerAuthIssuers: []string{"/programs/org/projects/proj"},
+					},
+				}},
+			},
+			{
+				Id: "did-other",
+				AccessMethods: []datadrs.AccessMethod{{
+					Type: "s3",
+					Authorizations: datadrs.Authorizations{
+						BearerAuthIssuers: []string{"/programs/other/projects/proj"},
+					},
+				}},
+			},
+		}, nil)
 
-	res, err := cl.GetObjectByHash(context.Background(), &hash.Checksum{Type: "sha256", Checksum: "oid1"})
+	gitCtx := &gitclient.GitContext{
+		API:          mockAPI,
+		Organization: "org",
+		ProjectId:    "proj",
+	}
+
+	res, err := GetObjectByHashForGit(context.Background(), gitCtx.API, "oid1", gitCtx.Organization, gitCtx.ProjectId)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,163 +118,36 @@ func TestGetObjectByHashFiltersByProjectAuthz(t *testing.T) {
 	}
 }
 
-func TestDeleteRecordByOIDResolvesOIDToDID(t *testing.T) {
-	var deletedPath string
-	var deletedRev string
+func TestDeleteRecordsByOID_DeletesAllMatchingDIDs(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/index" && r.URL.Query().Get("hash") == "sha256:oid1":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-  "records": [
-    {
-      "did":"did-match",
-      "file_name":"a.bin",
-      "size":1,
-      "urls":["s3://bucket/a.bin"],
-      "authz":["/programs/org/projects/proj"],
-      "hashes":{"sha256":"oid1"}
-    }
-  ]
-}`))
-			return
-		case r.Method == http.MethodGet && r.URL.Path == "/index/did-match":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-  "did":"did-match",
-  "rev":"r1",
-  "file_name":"a.bin",
-  "size":1,
-  "urls":["s3://bucket/a.bin"],
-  "authz":["/programs/org/projects/proj"],
-  "hashes":{"sha256":"oid1"}
-}`))
-			return
-		case r.Method == http.MethodDelete && r.URL.Path == "/index/did-match":
-			deletedPath = r.URL.Path
-			deletedRev = r.URL.Query().Get("rev")
-			w.WriteHeader(http.StatusNoContent)
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
+	mockAPI := mocks.NewMockDrsClient(ctrl)
+	mockAPI.EXPECT().
+		GetObjectByHash(gomock.Any(), gomock.Any()).
+		Return([]datadrs.DRSObject{
+			{Id: "did-a"},
+			{Id: "did-b"},
+		}, nil)
+	mockAPI.EXPECT().DeleteRecord(gomock.Any(), "did-a").Return(nil)
+	mockAPI.EXPECT().DeleteRecord(gomock.Any(), "did-b").Return(nil)
 
-	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-	cl.Config.Organization = "org"
-	cl.Config.ProjectId = "proj"
-
-	if err := cl.DeleteRecordByOID(context.Background(), "oid1"); err != nil {
+	if err := DeleteRecordsByOID(context.Background(), mockAPI, "oid1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if deletedPath != "/index/did-match" {
-		t.Fatalf("expected DID delete path, got %q", deletedPath)
-	}
-	if deletedRev != "r1" {
-		t.Fatalf("expected rev r1, got %q", deletedRev)
 	}
 }
 
-func TestDeleteRecordByOIDDeletesAllResolvedDIDs(t *testing.T) {
-	deleted := make(map[string]int)
+func TestDeleteRecordsByOID_NoRecords(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/index" && r.URL.Query().Get("hash") == "sha256:oid-all":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-  "records": [
-    {
-      "did":"did-a",
-      "file_name":"a.bin",
-      "size":1,
-      "urls":["s3://bucket/a.bin"],
-      "authz":["/programs/org/projects/proj"],
-      "hashes":{"sha256":"oid-all"}
-    },
-    {
-      "did":"did-b",
-      "file_name":"b.bin",
-      "size":1,
-      "urls":["s3://bucket/b.bin"],
-      "authz":["/programs/other/projects/alt"],
-      "hashes":{"sha256":"oid-all"}
-    }
-  ]
-}`))
-			return
-		case r.Method == http.MethodGet && (r.URL.Path == "/index/did-a" || r.URL.Path == "/index/did-b"):
-			w.Header().Set("Content-Type", "application/json")
-			did := strings.TrimPrefix(r.URL.Path, "/index/")
-			_, _ = w.Write([]byte(`{
-  "did":"` + did + `",
-  "rev":"r1",
-  "file_name":"x.bin",
-  "size":1,
-  "urls":["s3://bucket/x.bin"],
-  "authz":["/programs/org/projects/proj"],
-  "hashes":{"sha256":"oid-all"}
-}`))
-			return
-		case r.Method == http.MethodDelete && (r.URL.Path == "/index/did-a" || r.URL.Path == "/index/did-b"):
-			deleted[r.URL.Path]++
-			w.WriteHeader(http.StatusNoContent)
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
+	mockAPI := mocks.NewMockDrsClient(ctrl)
+	mockAPI.EXPECT().
+		GetObjectByHash(gomock.Any(), gomock.Any()).
+		Return([]datadrs.DRSObject{}, nil)
 
-	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-	cl.Config.Organization = "org"
-	cl.Config.ProjectId = "proj"
-
-	if err := cl.DeleteRecordByOID(context.Background(), "oid-all"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if deleted["/index/did-a"] != 1 || deleted["/index/did-b"] != 1 {
-		t.Fatalf("expected both DIDs to be deleted once, got %+v", deleted)
-	}
-}
-
-func TestDeleteRecordByDIDDeletesDirectly(t *testing.T) {
-	var deletedPath string
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/index/did-direct":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{
-  "did":"did-direct",
-  "rev":"r2",
-  "file_name":"b.bin",
-  "size":1,
-  "urls":["s3://bucket/b.bin"],
-  "authz":["/programs/org/projects/proj"],
-  "hashes":{"sha256":"oid2"}
-}`))
-			return
-		case r.Method == http.MethodDelete && r.URL.Path == "/index/did-direct":
-			deletedPath = r.URL.Path
-			w.WriteHeader(http.StatusNoContent)
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-	cl.Config.Organization = "org"
-	cl.Config.ProjectId = "proj"
-
-	if err := cl.DeleteRecordByDID(context.Background(), "did-direct"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if deletedPath != "/index/did-direct" {
-		t.Fatalf("expected direct DID delete path, got %q", deletedPath)
+	err := DeleteRecordsByOID(context.Background(), mockAPI, "oid1")
+	if err == nil {
+		t.Fatal("expected error for no records")
 	}
 }

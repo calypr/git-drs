@@ -7,7 +7,6 @@ import (
 
 	"log/slog"
 
-	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
 )
@@ -30,7 +29,7 @@ func (f fakeRemote) GetBucketName() string {
 func (f fakeRemote) GetStoragePrefix() string {
 	return f.prefix
 }
-func (f fakeRemote) GetClient(string, *slog.Logger, ...g3client.Option) (client.DRSClient, error) {
+func (f fakeRemote) GetClient(string, *slog.Logger) (*client.GitContext, error) {
 	return nil, nil
 }
 

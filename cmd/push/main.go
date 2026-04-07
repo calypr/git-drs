@@ -6,15 +6,12 @@ import (
 	"os/exec"
 	"strings"
 
+	gitdrsdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
-
-type batchPushSyncer interface {
-	BatchSyncForPush(ctx context.Context, files map[string]lfs.LfsFileInfo) error
-}
 
 var pushWithHooks bool
 
@@ -64,15 +61,15 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		if syncer, ok := drsClient.(batchPushSyncer); ok {
-			if err := syncer.BatchSyncForPush(ctx, lfsFiles); err != nil {
-				return fmt.Errorf("failed batch register/upload workflow: %w", err)
-			}
-		} else {
-			for _, file := range lfsFiles {
-				if _, err := drsClient.RegisterFile(ctx, file.Oid, file.Name); err != nil {
-					return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+		if err := gitdrsdrs.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
+			if err.Error() == "not implemented" {
+				for _, file := range lfsFiles {
+					if _, err := gitdrsdrs.RegisterFile(drsClient, ctx, file.Oid, file.Name); err != nil {
+						return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+					}
 				}
+			} else {
+				return fmt.Errorf("failed batch register/upload workflow: %w", err)
 			}
 		}
 

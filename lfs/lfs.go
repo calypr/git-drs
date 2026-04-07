@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/hash"
 )
 
 type DryRunSpec struct {

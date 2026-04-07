@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.GetObject(context.Background(), drsUri)
+		obj, err := client.API.GetObject(context.Background(), drsUri)
 		if err != nil {
 			return err
 		}

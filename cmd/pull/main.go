@@ -8,14 +8,16 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	datadrs "github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
+	datadrs "github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/transfer"
+	"github.com/calypr/syfon/client/xfer/download"
 	"github.com/spf13/cobra"
 )
 
@@ -54,12 +56,12 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		drsClient, err := cfg.GetRemoteClient(remote, logg)
+		drsCtx, err := cfg.GetRemoteClient(remote, logg)
 		if err != nil {
 			logg.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
-		_ = drsClient // Remote validation only.
+		_ = drsCtx // Remote validation only.
 
 		if out, err := runCommand("git", "pull", string(remote)); err != nil {
 			msg := strings.TrimSpace(string(out))
@@ -99,14 +101,14 @@ var Cmd = &cobra.Command{
 		}
 
 		if len(missingOIDs) > 0 {
-			if byHash, err := drsClient.BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
+			if byHash, err := drsCtx.API.BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
 				prefetched := make(map[string]datadrs.DRSObject, len(missingOIDs))
 				for _, oid := range missingOIDs {
 					recs := byHash[oid]
 					if len(recs) == 0 {
 						continue
 					}
-					match, matchErr := drsmap.FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+					match, matchErr := drsmap.FindMatchingRecord(recs, drsCtx.Organization, drsCtx.ProjectId)
 					if matchErr != nil || match == nil {
 						continue
 					}
@@ -127,8 +129,13 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
-			if err := drsClient.DownloadFile(ctx, f.Oid, dstPath); err != nil {
-				debugCtx := buildPullDownloadDebugContext(ctx, drsClient, f.Oid)
+			// Use the high-level download orchestrator to perform robust signed-URL downloads.
+			downloader, ok := drsCtx.API.(transfer.Downloader)
+			if !ok {
+				return fmt.Errorf("drs client does not implement transfer.Downloader")
+			}
+			if err := download.DownloadFile(ctx, drsCtx.API, downloader, f.Oid, dstPath); err != nil {
+				debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 				return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 			}
 		}
@@ -149,8 +156,8 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 	return sonic.ConfigFastest.Unmarshal(data, v)
 }
 
-func buildPullDownloadDebugContext(ctx context.Context, drsClient client.DRSClient, oid string) string {
-	recs, err := drsClient.GetObjectByHash(ctx, &hash.Checksum{Type: "sha256", Checksum: oid})
+func buildPullDownloadDebugContext(ctx context.Context, drsCtx *client.GitContext, oid string) string {
+	recs, err := drsCtx.API.GetObjectByHash(ctx, &hash.Checksum{Type: "sha256", Checksum: oid})
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}
@@ -158,12 +165,12 @@ func buildPullDownloadDebugContext(ctx context.Context, drsClient client.DRSClie
 		return fmt.Sprintf("oid=%s records=0", oid)
 	}
 
-	match, matchErr := drsmap.FindMatchingRecord(recs, drsClient.GetOrganization(), drsClient.GetProjectId())
+	match, matchErr := drsmap.FindMatchingRecord(recs, drsCtx.Organization, drsCtx.ProjectId)
 	if matchErr != nil {
 		return fmt.Sprintf("oid=%s records=%d match_error=%v", oid, len(recs), matchErr)
 	}
 	if match == nil {
-		return fmt.Sprintf("oid=%s records=%d no_project_match org=%s project=%s", oid, len(recs), drsClient.GetOrganization(), drsClient.GetProjectId())
+		return fmt.Sprintf("oid=%s records=%d no_project_match org=%s project=%s", oid, len(recs), drsCtx.Organization, drsCtx.ProjectId)
 	}
 
 	methods := make([]string, 0, len(match.AccessMethods))

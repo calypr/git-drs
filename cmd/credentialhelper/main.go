@@ -8,11 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
+	gitauth "github.com/calypr/git-drs/auth"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
 
@@ -71,8 +70,7 @@ var Cmd = &cobra.Command{
 			if token != "" {
 				cred.AccessToken = token
 			}
-			gen3Logger := logs.NewGen3Logger(logg, "", remoteName)
-			if ensureErr := g3client.EnsureValidCredential(context.Background(), cred, manager, gen3Logger, nil); ensureErr == nil {
+			if ensureErr := gitauth.EnsureValidCredential(context.Background(), cred, logg); ensureErr == nil {
 				_ = manager.Save(cred)
 				token = strings.TrimSpace(cred.AccessToken)
 				if token != "" {

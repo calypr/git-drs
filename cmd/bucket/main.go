@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
-	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
+	gitauth "github.com/calypr/git-drs/auth"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +33,8 @@ var (
 	flagToken      string
 	flagForce      bool
 )
+
+const defaultBucketAPITimeout = 30 * time.Second
 
 type putBucketPayload struct {
 	Bucket       string `json:"bucket"`
@@ -174,8 +176,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		if prof, err := configure.Load(remoteName); err == nil {
 			token = strings.TrimSpace(prof.AccessToken)
 			if token == "" {
-				gen3Logger := logs.NewGen3Logger(drslog.GetLogger(), "", remoteName)
-				if ensureErr := g3client.EnsureValidCredential(context.Background(), prof, configure, gen3Logger, nil); ensureErr == nil {
+				if ensureErr := gitauth.EnsureValidCredential(context.Background(), prof, drslog.GetLogger()); ensureErr == nil {
 					_ = configure.Save(prof)
 					token = strings.TrimSpace(prof.AccessToken)
 				}
@@ -209,6 +210,12 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 }
 
 func upsertServerBucket(ctx context.Context, endpoint, token string, payload putBucketPayload) error {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultBucketAPITimeout)
+		defer cancel()
+	}
+
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to encode bucket request: %w", err)
@@ -221,7 +228,8 @@ func upsertServerBucket(ctx context.Context, endpoint, token string, payload put
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: defaultBucketAPITimeout}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("bucket credential upsert request failed: %w", err)
 	}

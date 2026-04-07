@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/common"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/hash"
 )
 
 // This file contains functions that pertain to .git/drs/lfs/objects directory walk

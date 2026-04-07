@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/data-client/hash"
+	gitdrsdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/syfon/client/pkg/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsClient.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+			records, err := drsClient.API.GetObjectByHash(context.Background(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -62,7 +63,7 @@ var Cmd = &cobra.Command{
 
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
-			projectId := drsClient.GetProjectId()
+			projectId := drsClient.ProjectId
 			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
 			common.DisplayField(os.Stderr, "Remote", string(remoteName))
 			common.DisplayField(os.Stderr, "Project", projectId)
@@ -86,7 +87,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecordByOID(context.Background(), oid)
+		err = gitdrsdrs.DeleteRecordsByOID(context.Background(), drsClient.API, oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

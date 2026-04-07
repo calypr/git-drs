@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 GIT_DRS_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
@@ -106,6 +106,10 @@ declare -a ALL_OIDS=()
 DRS_ID_BY_OID_STORE=""
 HASH_SRC_STORE=""
 SIZE_SRC_STORE=""
+CURRENT_PHASE="bootstrap"
+TEST_OUTCOME="FAIL"
+FAIL_LINE=""
+FAIL_CMD=""
 
 kv_store_get() {
   local store="$1"
@@ -203,6 +207,17 @@ log_warn() {
   printf '[%s][warn] %s\n' "$LOG_PREFIX" "$*" >&2
 }
 
+phase() {
+  CURRENT_PHASE="$1"
+  log "PHASE: $CURRENT_PHASE"
+}
+
+on_error() {
+  FAIL_LINE="${BASH_LINENO[0]:-unknown}"
+  FAIL_CMD="${BASH_COMMAND:-unknown}"
+}
+trap on_error ERR
+
 basic_auth_header() {
   local username="$1"
   local password="$2"
@@ -258,6 +273,7 @@ configure_local_credential_helper() {
 }
 
 cleanup() {
+  local exit_code=$?
   if [[ "$CLEANUP_RECORDS" == "true" && "${#ALL_OIDS[@]}" -gt 0 ]]; then
     log "Cleaning up ${#ALL_OIDS[@]} test records from drs-server"
     local bulk_delete_codes index_delete_codes verify_codes index_verify_codes
@@ -338,9 +354,26 @@ cleanup() {
 
   if [[ "$KEEP_WORKDIR" == "true" ]]; then
     log "Keeping working directory: $WORK_ROOT"
-    return
+    if [[ "$exit_code" -eq 0 && "$TEST_OUTCOME" == "PASS" ]]; then
+      log "RESULT: PASS"
+    else
+      log_warn "RESULT: FAIL (phase=${CURRENT_PHASE}, line=${FAIL_LINE:-unknown})"
+      if [[ -n "$FAIL_CMD" ]]; then
+        log_warn "Failed command: $FAIL_CMD"
+      fi
+    fi
+    return "$exit_code"
   fi
   rm -rf "$WORK_ROOT"
+  if [[ "$exit_code" -eq 0 && "$TEST_OUTCOME" == "PASS" ]]; then
+    log "RESULT: PASS"
+  else
+    log_warn "RESULT: FAIL (phase=${CURRENT_PHASE}, line=${FAIL_LINE:-unknown})"
+    if [[ -n "$FAIL_CMD" ]]; then
+      log_warn "Failed command: $FAIL_CMD"
+    fi
+  fi
+  return "$exit_code"
 }
 trap cleanup EXIT
 
@@ -591,6 +624,28 @@ mask_token() {
   printf '%s...%s' "${token:0:8}" "${token:len-4:4}"
 }
 
+sanitize_remote_url() {
+  local raw="$1"
+  local parsed rest creds host
+  if [[ "$raw" != http://* && "$raw" != https://* ]]; then
+    printf '%s' "$raw"
+    return
+  fi
+  parsed="${raw#*://}"
+  if [[ "$parsed" != *"@"* ]]; then
+    printf '%s' "$raw"
+    return
+  fi
+  rest="${parsed#*@}"
+  creds="${parsed%@*}"
+  host="${rest%%/*}"
+  if [[ "$creds" == *:* ]]; then
+    printf '%s://%s:[REDACTED]@%s%s' "${raw%%://*}" "${creds%%:*}" "$host" "${rest#"$host"}"
+    return
+  fi
+  printf '%s://[REDACTED]@%s%s' "${raw%%://*}" "$host" "${rest#"$host"}"
+}
+
 log_auth_context() {
   if [[ "$SERVER_MODE" != "remote" ]]; then
     return
@@ -686,10 +741,13 @@ github_create_repo_if_needed() {
     else
       repo_id="$(gh api "/repos/${GITHUB_OWNER_REPO}" -q .id 2>/dev/null || true)"
     fi
-    [[ -n "$repo_id" ]] && break
+    if [[ "$repo_id" =~ ^[0-9]+$ ]]; then
+      break
+    fi
+    repo_id=""
     sleep 1
   done
-  if [[ -z "$repo_id" ]]; then
+  if [[ -z "$repo_id" || ! "$repo_id" =~ ^[0-9]+$ ]]; then
     echo "error: failed to verify GitHub repo ${GITHUB_OWNER_REPO} after creation (still not visible via API)" >&2
     exit 1
   fi
@@ -1238,12 +1296,14 @@ lfs_batch_diag() {
 }
 
 main() {
+  phase "validation"
   require_cmd git
   require_cmd git-lfs
   require_cmd git-drs
   require_cmd curl
   require_cmd jq
   validate_required_config
+  phase "auth-setup"
   resolve_auth_from_profile_if_needed
   if [[ "$SERVER_MODE" == "local" && -z "$ADMIN_AUTH_HEADER" && -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
     ADMIN_AUTH_HEADER="$(basic_auth_header "$LOCAL_USERNAME" "$LOCAL_PASSWORD")"
@@ -1262,14 +1322,18 @@ main() {
     exit 1
   fi
   log_auth_context
+  phase "repo-provisioning"
   github_create_repo_if_needed
-  log "Run config: mode=$SERVER_MODE push_mode=$PUSH_MODE github_mode=$GITHUB_MODE drs_url=${DRS_URL%/} remote=$REMOTE_URL"
+  local safe_remote
+  safe_remote="$(sanitize_remote_url "$REMOTE_URL")"
+  log "Run config: mode=$SERVER_MODE push_mode=$PUSH_MODE github_mode=$GITHUB_MODE drs_url=${DRS_URL%/} remote=$safe_remote"
   if [[ "$SERVER_MODE" == "remote" && "$GITHUB_MODE" != "true" && "$REMOTE_URL" != git@* && "$REMOTE_URL" != http* ]]; then
     log_warn "Using a local bare git remote in remote mode. Set TEST_GITHUB_MODE=true (or TEST_REMOTE_URL) to exercise hosted Git flow."
   fi
   declare -a ALL_FILES=()
 
   local active_bucket="$BUCKET"
+  phase "preflight"
   resolve_bucket_api_base
 
   # If requested, create bucket credentials/mapping before any auth/upload preflight checks.
@@ -1308,6 +1372,7 @@ main() {
   grant_collaborator_access_if_needed
   multipart_preflight
 
+  phase "repository-setup"
   log "Working directory: $WORK_ROOT"
   mkdir -p "$SOURCE_REPO" "$CLONE_REPO"
 
@@ -1318,6 +1383,7 @@ main() {
     git --git-dir="$REMOTE_URL" symbolic-ref HEAD refs/heads/main >/dev/null
   fi
 
+  phase "upload-and-register"
   log "Initializing source repository"
   cd "$SOURCE_REPO"
   git init -b main >/dev/null
@@ -1394,6 +1460,7 @@ main() {
   fi
 
   if [[ "$RUN_RESUME_E2E" == "true" && ("$PUSH_MODE" == "drs" || "$PUSH_MODE" == "both") ]]; then
+    phase "resumable-upload"
     log "Creating resumable multipart upload payload"
     dd if=/dev/urandom of=data/resume-upload.bin bs=1048576 count="$LARGE_FILE_MB" status=none
     local resume_upload_oid resume_upload_size
@@ -1408,7 +1475,8 @@ main() {
 
     log "Simulating interrupted multipart upload (expected failure)"
     if DATA_CLIENT_TEST_FAIL_UPLOAD_PART_ONCE=1 git drs push "$REMOTE_NAME"; then
-      echo "error: expected first resumable multipart upload attempt to fail" >&2
+      echo "error: expected first resumable multipart upload attempt to fail, but it succeeded" >&2
+      echo "hint: test fault injection DATA_CLIENT_TEST_FAIL_UPLOAD_PART_ONCE may not be wired into current upload path" >&2
       exit 1
     fi
     log "Retrying multipart upload after interruption"
@@ -1417,6 +1485,7 @@ main() {
   fi
 
   if [[ "$PUSH_MODE" == "git" || "$PUSH_MODE" == "both" ]]; then
+    phase "git-push-compat"
     log "Creating git-push compatibility payload"
     printf 'git-push compatibility payload %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > data/gitpush.bin
     local gitpush_oid gitpush_size
@@ -1443,6 +1512,7 @@ main() {
     github_verify_lfs_pointer "data/gitpush.bin"
   fi
 
+  phase "download-and-verify"
   log "Cloning fresh repository for download path"
   rm -rf "$CLONE_REPO"
   GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$REMOTE_URL" "$CLONE_REPO" >/dev/null
@@ -1481,6 +1551,7 @@ main() {
   done
 
   if [[ "$RUN_RESUME_E2E" == "true" ]]; then
+    phase "resumable-download"
     log "Simulating interrupted download for multipart-sized object (expected failure)"
     local lfs_obj_path old_download_threshold resumed_hash
     lfs_obj_path=".git/lfs/objects/${multi_oid:0:2}/${multi_oid:2:2}/${multi_oid}"
@@ -1506,6 +1577,7 @@ main() {
   fi
 
   if [[ "$LFS_PULL_COMPAT" == "true" ]]; then
+    phase "lfs-compat"
     log "Running stock git-lfs pull compatibility check"
     rm -rf "${CLONE_REPO}-lfs"
     GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$REMOTE_URL" "${CLONE_REPO}-lfs" >/dev/null
@@ -1556,6 +1628,7 @@ main() {
     cd "$CLONE_REPO"
   fi
 
+  phase "api-validation"
   log "Running DRS API checks"
   local service_info single_obj multi_obj all_oids_json single_drs_id multi_drs_id all_drs_ids_json
   all_oids_json="$(printf '%s\n' "${ALL_OIDS[@]}" | jq -Rsc 'split("\n") | map(select(length>0))')"
@@ -1656,6 +1729,7 @@ main() {
   fi
 
   if [[ "$FULL_SERVER_SWEEP" == "true" ]]; then
+    phase "server-sweep"
     log "Running additional server sweep checks"
     api_json GET "${INDEXD_BASE}?hash=sha256:$single_oid" "" "200" >/dev/null
     api_json POST "${INDEXD_BASE}/bulk/hashes" "$(jq -n --argjson ids "$all_oids_json" '{hashes: ($ids | map("sha256:"+.))}')" "200" >/dev/null
@@ -1672,6 +1746,7 @@ main() {
   fi
 
   if [[ "$RUN_OPTIONAL_MUTATIONS" == "true" ]]; then
+    phase "optional-mutations"
     log "Running optional mutation checks (requires broader write permissions)"
     local same_access_methods
     same_access_methods="$(echo "$single_obj" | jq '{access_methods: .access_methods}')"
@@ -1701,6 +1776,7 @@ main() {
   if [[ "$GITHUB_MODE" == "true" ]]; then
     log "- github repo:                      ${GITHUB_OWNER_REPO}"
   fi
+  TEST_OUTCOME="PASS"
 }
 
 main "$@"

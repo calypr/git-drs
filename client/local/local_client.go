@@ -14,20 +14,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/common"
-	"github.com/calypr/data-client/download"
-	drs "github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/logs"
-	"github.com/calypr/data-client/request"
-	"github.com/calypr/data-client/transfer"
-	localsigner "github.com/calypr/data-client/transfer/signer/local"
-	"github.com/calypr/data-client/upload"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
+	drs "github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/common"
+	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/pkg/request"
+	"github.com/calypr/syfon/client/transfer"
+	"github.com/calypr/syfon/client/xfer/download"
+	"github.com/calypr/syfon/client/xfer/upload"
 	"github.com/hashicorp/go-retryablehttp"
 )
 
@@ -53,12 +51,36 @@ func (l LocalRemote) GetBucketName() string   { return l.Bucket }
 func (l LocalRemote) GetStoragePrefix() string {
 	return l.StoragePrefix
 }
-func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger) (*client.GitContext, error) {
 	if username, password, err := gitrepo.GetRemoteBasicAuth(remoteName); err == nil && username != "" && password != "" {
 		l.BasicUsername = username
 		l.BasicPassword = password
 	}
-	return NewLocalClient(l, logger), nil
+	dataLogger := logs.NewGen3Logger(logger, "", "")
+	req := newLocalRequestInterface(dataLogger)
+	if l.BasicUsername != "" && l.BasicPassword != "" {
+		req = newBasicAuthRequestInterface(req, l.BasicUsername, l.BasicPassword)
+	}
+	server := drs.NewLocalDrsClient(req, l.BaseURL, dataLogger).
+		WithProject(l.GetProjectId()).
+		WithOrganization(l.GetOrganization()).
+		WithBucket(l.GetBucketName())
+	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
+	multiPartThreshold := int64(multiPartThresholdInt) * common.MB
+	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
+	if uploadConcurrency < 1 {
+		uploadConcurrency = 1
+	}
+	return &client.GitContext{
+		API:                server,
+		Organization:       l.GetOrganization(),
+		ProjectId:          l.GetProjectId(),
+		BucketName:         l.GetBucketName(),
+		StoragePrefix:      l.GetStoragePrefix(),
+		Logger:             logger,
+		MultiPartThreshold: multiPartThreshold,
+		UploadConcurrency:  uploadConcurrency,
+	}, nil
 }
 
 type LocalConfig struct {
@@ -108,10 +130,7 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 	if remote.BasicUsername != "" && remote.BasicPassword != "" {
 		req = newBasicAuthRequestInterface(req, remote.BasicUsername, remote.BasicPassword)
 	}
-	dc := drs.NewLocalDrsClient(req, remote.BaseURL, logger)
-	tb := transfer.New(req, dataLogger, localsigner.New(remote.BaseURL, nil, dc))
-	server := drs.ComposeServerClient(dc, tb)
-
+	server := drs.NewLocalDrsClient(req, remote.BaseURL, dataLogger)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
 	multiPartThreshold := int64(multiPartThresholdInt) * common.MB
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
@@ -124,11 +143,10 @@ func NewLocalClient(remote LocalRemote, logger *slog.Logger) *LocalClient {
 		WithOrganization(remote.GetOrganization()).
 		WithBucket(remote.GetBucketName())
 
-	uploader := &serverUploadService{backend: server}
+	uploader := &serverUploadService{client: md, req: req, multipartThreshold: multiPartThreshold}
 	downloader := &serverDownloadService{
-		client:  md,
-		backend: server,
-		logger:  logger,
+		client: md,
+		logger: logger,
 	}
 
 	return &LocalClient{
@@ -212,10 +230,9 @@ func (b *basicAuthRequestInterface) Do(ctx context.Context, rb *request.RequestB
 	return b.base.Do(ctx, rb)
 }
 
-func (c *LocalClient) GetProjectId() string                     { return c.Remote.GetProjectId() }
-func (c *LocalClient) GetBucketName() string                    { return c.Remote.GetBucketName() }
-func (c *LocalClient) GetOrganization() string                  { return c.Remote.Organization }
-func (c *LocalClient) GetGen3Interface() g3client.Gen3Interface { return nil }
+func (c *LocalClient) GetProjectId() string    { return c.Remote.GetProjectId() }
+func (c *LocalClient) GetBucketName() string   { return c.Remote.GetBucketName() }
+func (c *LocalClient) GetOrganization() string { return c.Remote.Organization }
 
 func (c *LocalClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
 	return c.meta.GetObject(ctx, id)
@@ -243,7 +260,7 @@ func (c *LocalClient) DeleteRecordsByProject(ctx context.Context, project string
 	return c.meta.DeleteRecordsByProject(ctx, project)
 }
 func (c *LocalClient) DeleteRecordByOID(ctx context.Context, oid string) error {
-	records, err := c.meta.GetObjectByHash(ctx, &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+	records, err := c.meta.GetObjectByHash(ctx, &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
 	if err != nil {
 		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
 	}
@@ -260,7 +277,7 @@ func (c *LocalClient) DeleteRecordByOID(ctx context.Context, oid string) error {
 			continue
 		}
 		seen[did] = struct{}{}
-		if err := c.DeleteRecordByDID(ctx, did); err != nil {
+		if err := c.DeleteRecord(ctx, did); err != nil {
 			return fmt.Errorf("error deleting DID %s for OID %s: %w", did, oid, err)
 		}
 	}
@@ -269,7 +286,7 @@ func (c *LocalClient) DeleteRecordByOID(ctx context.Context, oid string) error {
 	}
 	return nil
 }
-func (c *LocalClient) DeleteRecordByDID(ctx context.Context, did string) error {
+func (c *LocalClient) DeleteRecord(ctx context.Context, did string) error {
 	return c.meta.DeleteRecord(ctx, did)
 }
 func (c *LocalClient) GetProjectSample(ctx context.Context, projectId string, limit int) ([]drs.DRSObject, error) {
@@ -278,7 +295,7 @@ func (c *LocalClient) GetProjectSample(ctx context.Context, projectId string, li
 func (c *LocalClient) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
 	return c.meta.RegisterRecord(ctx, record)
 }
-func (c *LocalClient) BatchRegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
+func (c *LocalClient) RegisterRecords(ctx context.Context, records []*drs.DRSObject) ([]*drs.DRSObject, error) {
 	return c.meta.RegisterRecords(ctx, records)
 }
 func (c *LocalClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
@@ -392,7 +409,7 @@ func (c *LocalClient) BatchSyncForPush(ctx context.Context, files map[string]lfs
 		return nil
 	}
 
-	registered, err := c.BatchRegisterRecords(ctx, toRegister)
+	registered, err := c.RegisterRecords(ctx, toRegister)
 	if err != nil {
 		return fmt.Errorf("batch register failed: %w", err)
 	}
@@ -480,42 +497,62 @@ func (c *LocalClient) BatchSyncForPush(ctx context.Context, files map[string]lfs
 }
 
 type serverUploadService struct {
-	backend transfer.Uploader
+	client             drs.Client
+	req                request.RequestInterface
+	multipartThreshold int64
 }
 
 func (s *serverUploadService) Upload(ctx context.Context, req common.FileUploadRequestObject) error {
-	return upload.Upload(ctx, s.backend, req, false)
+	file, err := os.Open(req.SourcePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if strings.TrimSpace(req.PresignedURL) != "" {
+		stat, statErr := file.Stat()
+		if statErr != nil {
+			return statErr
+		}
+		_, err := transfer.DoUpload(ctx, s.req, req.PresignedURL, file, stat.Size())
+		return err
+	}
+	threshold := s.multipartThreshold
+	if threshold <= 0 {
+		threshold = common.FileSizeLimit
+	}
+	chunkSize := uploadChunkSizeForThreshold(threshold)
+	uploader, ok := s.client.(transfer.Uploader)
+	if !ok {
+		return fmt.Errorf("drs API does not implement transfer.Uploader")
+	}
+	_ = chunkSize // upload.Upload currently owns chunk sizing; keep threshold only.
+	return upload.Upload(ctx, uploader, req, false)
+}
+
+func uploadChunkSizeForThreshold(threshold int64) int64 {
+	chunkSize := int64(64 * common.MB)
+	if threshold > 0 && threshold < chunkSize {
+		chunkSize = threshold
+	}
+	if chunkSize < common.MinMultipartChunkSize {
+		chunkSize = common.MinMultipartChunkSize
+	}
+	return chunkSize
 }
 
 func (s *serverUploadService) ResolveUploadURLs(ctx context.Context, requests []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error) {
-	return s.backend.ResolveUploadURLs(ctx, requests)
+	uploader, ok := s.client.(interface {
+		ResolveUploadURLs(context.Context, []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("drs API does not support batch upload URL resolution")
+	}
+	return uploader.ResolveUploadURLs(ctx, requests)
 }
 
 type serverDownloadService struct {
-	client  drs.Client
-	backend transfer.Downloader
-	logger  *slog.Logger
-}
-
-type normalizedDownloadBackend struct {
-	base     transfer.Downloader
-	resolver *serverDownloadService
-}
-
-func (n *normalizedDownloadBackend) Name() string {
-	return n.base.Name()
-}
-
-func (n *normalizedDownloadBackend) Logger() *logs.Gen3Logger {
-	return n.base.Logger()
-}
-
-func (n *normalizedDownloadBackend) ResolveDownloadURL(ctx context.Context, guid string, accessID string) (string, error) {
-	return n.resolver.ResolveDownloadURL(ctx, guid, accessID)
-}
-
-func (n *normalizedDownloadBackend) Download(ctx context.Context, fdr *common.FileDownloadResponseObject) (*http.Response, error) {
-	return n.base.Download(ctx, fdr)
+	client drs.Client
+	logger *slog.Logger
 }
 
 func (s *serverDownloadService) ResolveDownloadURL(ctx context.Context, guid string, accessID string) (string, error) {
@@ -591,9 +628,9 @@ func isHTTPURL(raw string) bool {
 }
 
 func (s *serverDownloadService) DownloadToPath(ctx context.Context, guid string, dstPath string, opts download.DownloadOptions) error {
-	backend := &normalizedDownloadBackend{
-		base:     s.backend,
-		resolver: s,
+	downloader, ok := s.client.(transfer.Downloader)
+	if !ok {
+		return fmt.Errorf("drs API does not implement transfer.Downloader")
 	}
-	return download.DownloadToPathWithOptions(ctx, s.client, backend, s.logger, guid, dstPath, "", opts)
+	return download.DownloadToPathWithOptions(ctx, s.client, downloader, s.logger, guid, dstPath, "", opts)
 }

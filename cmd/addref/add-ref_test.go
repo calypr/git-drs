@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func TestCreateLfsPointer(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func setupTempRepo(t *testing.T) string {

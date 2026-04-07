@@ -16,13 +16,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/syfon/client/drs"
 	"github.com/spf13/cobra"
 )
 

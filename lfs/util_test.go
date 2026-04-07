@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func TestObjectWalk(t *testing.T) {

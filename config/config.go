@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/calypr/data-client/g3client"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/client/local"
@@ -54,7 +53,7 @@ type DRSRemote interface {
 	GetEndpoint() string
 	GetBucketName() string
 	GetStoragePrefix() string
-	GetClient(remoteName string, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error)
+	GetClient(remoteName string, logger *slog.Logger) (*client.GitContext, error)
 }
 
 type RemoteSelect struct {
@@ -68,17 +67,17 @@ type Config struct {
 	Remotes       map[Remote]RemoteSelect
 }
 
-func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger, opts ...g3client.Option) (client.DRSClient, error) {
+func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (*client.GitContext, error) {
 	x, ok := c.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
 	if x.Gen3 != nil {
-		return x.Gen3.GetClient(string(remote), logger, opts...)
+		return x.Gen3.GetClient(string(remote), logger)
 	} else if x.Local != nil {
 		// Local client may still need repo-specific credentials (e.g. basic auth),
 		// so use the same GetClient pattern as Gen3 remotes.
-		return x.Local.GetClient(string(remote), logger, opts...)
+		return x.Local.GetClient(string(remote), logger)
 	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }

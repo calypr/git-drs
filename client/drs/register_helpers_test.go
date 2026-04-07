@@ -8,33 +8,40 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/conf"
-	datadrs "github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
+	gitclient "github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/conf"
+	datadrs "github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/pkg/request"
 )
 
-func newTestGitDrsClientWithEndpoint(t *testing.T, endpoint string) *GitDrsClient {
+func newTestContextWithEndpoint(t *testing.T, endpoint string) *gitclient.GitContext {
 	t.Helper()
-
-	slogLogger := logs.NewSlogNoOpLogger()
+	logger := logs.NewSlogNoOpLogger()
+	if endpoint == "" {
+		// Return context with no G3 — missing endpoint should cause errors in calls.
+		return &gitclient.GitContext{
+			Organization: "org",
+			ProjectId:    "proj",
+			BucketName:   "bucket",
+			Logger:       logger,
+		}
+	}
 	dataLogger, _ := logs.New("test")
 	cred := &conf.Credential{
 		Profile:     "test",
 		APIEndpoint: endpoint,
 		AccessToken: "token",
 	}
-	g3 := g3client.NewGen3InterfaceFromCredential(cred, dataLogger, g3client.WithClients(g3client.IndexdClient, g3client.FenceClient, g3client.SowerClient))
-
-	return &GitDrsClient{
-		Logger: slogLogger,
-		G3:     g3,
-		Config: &Config{
-			ProjectId:    "proj",
-			Organization: "org",
-			BucketName:   "bucket",
-		},
+	req := request.NewRequestInterface(dataLogger, cred, conf.NewConfigure(logger))
+	return &gitclient.GitContext{
+		API:          datadrs.NewDrsClient(req, cred, dataLogger).WithProject("proj").WithOrganization("org").WithBucket("bucket"),
+		Credential:   cred,
+		Organization: "org",
+		ProjectId:    "proj",
+		BucketName:   "bucket",
+		Logger:       logger,
 	}
 }
 
@@ -107,8 +114,8 @@ func TestGetSHA256ValidityMap(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-		got, err := cl.getSHA256ValidityMap(context.Background(), []string{"oid1", "oid2"})
+		cl := newTestContextWithEndpoint(t, srv.URL)
+		got, err := getSHA256ValidityMap(cl, context.Background(), []string{"oid1", "oid2"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -123,8 +130,8 @@ func TestGetSHA256ValidityMap(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-		_, err := cl.getSHA256ValidityMap(context.Background(), []string{"oid1"})
+		cl := newTestContextWithEndpoint(t, srv.URL)
+		_, err := getSHA256ValidityMap(cl, context.Background(), []string{"oid1"})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -136,16 +143,16 @@ func TestGetSHA256ValidityMap(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		cl := newTestGitDrsClientWithEndpoint(t, srv.URL)
-		_, err := cl.getSHA256ValidityMap(context.Background(), []string{"oid1"})
+		cl := newTestContextWithEndpoint(t, srv.URL)
+		_, err := getSHA256ValidityMap(cl, context.Background(), []string{"oid1"})
 		if err == nil {
 			t.Fatal("expected decode error")
 		}
 	})
 
 	t.Run("missing-endpoint", func(t *testing.T) {
-		cl := newTestGitDrsClientWithEndpoint(t, "")
-		_, err := cl.getSHA256ValidityMap(context.Background(), []string{"oid1"})
+		cl := newTestContextWithEndpoint(t, "")
+		_, err := getSHA256ValidityMap(cl, context.Background(), []string{"oid1"})
 		if err == nil {
 			t.Fatal("expected missing endpoint error")
 		}
@@ -153,8 +160,8 @@ func TestGetSHA256ValidityMap(t *testing.T) {
 }
 
 func TestBatchSyncForPushEmptyInput(t *testing.T) {
-	cl := &GitDrsClient{}
-	if err := cl.BatchSyncForPush(context.Background(), map[string]lfs.LfsFileInfo{}); err != nil {
+	cl := &gitclient.GitContext{}
+	if err := BatchSyncForPush(cl, context.Background(), map[string]lfs.LfsFileInfo{}); err != nil {
 		t.Fatalf("expected nil error for empty input, got %v", err)
 	}
 }

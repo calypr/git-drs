@@ -169,11 +169,11 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 }
 
 type gitScopedDownloader struct {
-	base   transfer.Downloader
-	api    datadrs.Client
-	org    string
+	base    transfer.Downloader
+	api     datadrs.Client
+	org     string
 	project string
-	logger *slog.Logger
+	logger  *slog.Logger
 }
 
 func (d *gitScopedDownloader) Name() string { return d.base.Name() }

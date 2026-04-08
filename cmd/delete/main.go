@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-			records, err := drsClient.API.GetObjectByHash(context.Background(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
+		records, err := drsClient.API.GetObjectByHash(context.Background(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}

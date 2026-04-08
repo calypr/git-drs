@@ -52,6 +52,7 @@ func TestUploadKeyFromObject(t *testing.T) {
 		name   string
 		obj    *datadrs.DRSObject
 		bucket string
+		prefix string
 		want   string
 	}{
 		{
@@ -85,16 +86,38 @@ func TestUploadKeyFromObject(t *testing.T) {
 			want:   "abc123",
 		},
 		{
+			name: "applies storage prefix when key is checksum fallback",
+			obj: &datadrs.DRSObject{
+				Checksums: checksums,
+			},
+			bucket: "bucket",
+			prefix: "calypr/end_to_end_test",
+			want:   "calypr/end_to_end_test/abc123",
+		},
+		{
+			name: "does not double-prefix key from metadata",
+			obj: &datadrs.DRSObject{
+				Checksums: checksums,
+				AccessMethods: []datadrs.AccessMethod{
+					{AccessUrl: datadrs.AccessURL{Url: "s3://bucket/calypr/end_to_end_test/file.bin"}},
+				},
+			},
+			bucket: "bucket",
+			prefix: "calypr/end_to_end_test",
+			want:   "calypr/end_to_end_test/file.bin",
+		},
+		{
 			name:   "nil object returns empty",
 			obj:    nil,
 			bucket: "bucket",
+			prefix: "calypr/end_to_end_test",
 			want:   "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := uploadKeyFromObject(tt.obj, tt.bucket)
+			got := uploadKeyFromObject(tt.obj, tt.bucket, tt.prefix)
 			if got != tt.want {
 				t.Fatalf("uploadKeyFromObject() = %q, want %q", got, tt.want)
 			}

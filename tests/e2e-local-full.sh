@@ -13,6 +13,17 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
+# Optional positional remote name override for compatibility:
+#   bash tests/e2e-local-full.sh origin
+if [[ $# -gt 1 ]]; then
+  echo "error: accepts at most 1 argument (remote name), received $#" >&2
+  echo "usage: bash tests/e2e-local-full.sh [remote-name]" >&2
+  exit 1
+fi
+if [[ $# -eq 1 ]]; then
+  export TEST_REMOTE_NAME="$1"
+fi
+
 # Compatibility wrapper:
 # forwards legacy local E2E env var names into the unified remote/local script.
 # Note: TEST_GITHUB_MODE=true is supported here (localhost DRS + GitHub git remote).

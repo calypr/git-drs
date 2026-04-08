@@ -115,7 +115,19 @@ func isFileDownloadable(rt *pushRuntime, ctx context.Context, drsObject *drs.DRS
 	return err == nil, nil
 }
 
-func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
+func uploadKeyFromObject(obj *drs.DRSObject, bucket string, storagePrefix string) string {
+	prefix := strings.Trim(strings.TrimSpace(storagePrefix), "/")
+	applyPrefix := func(key string) string {
+		key = strings.Trim(strings.TrimSpace(key), "/")
+		if key == "" {
+			return ""
+		}
+		if prefix == "" || key == prefix || strings.HasPrefix(key, prefix+"/") {
+			return key
+		}
+		return prefix + "/" + key
+	}
+
 	if obj != nil && len(obj.AccessMethods) > 0 {
 		raw := strings.TrimSpace(obj.AccessMethods[0].AccessUrl.Url)
 		if raw != "" {
@@ -124,13 +136,13 @@ func uploadKeyFromObject(obj *drs.DRSObject, bucket string) string {
 				// Taking only filepath.Base(...) loses CAS/storage prefixes and causes 404 downloads.
 				key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
 				if key != "" && (bucket == "" || strings.EqualFold(strings.TrimSpace(u.Host), strings.TrimSpace(bucket))) {
-					return key
+					return applyPrefix(key)
 				}
 			}
 		}
 	}
 	if obj != nil {
-		return hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256
+		return applyPrefix(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 	}
 	return ""
 }
@@ -283,22 +295,40 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drs.DR
 		return nil
 	}
 
-	objectKey := uploadKeyFromObject(drsObject, rt.Scope.Bucket)
+	objectKey := uploadKeyFromObject(drsObject, rt.Scope.Bucket, rt.Scope.StoragePref)
 	uploader, ok := rt.API.(transfer.Uploader)
 	if !ok {
 		return fmt.Errorf("drs API does not implement transfer.Uploader")
+	}
+	uploadReq := common.FileUploadRequestObject{
+		GUID:       drsObject.Id,
+		ObjectKey:  objectKey,
+		SourcePath: filePath,
+		Bucket:     rt.Scope.Bucket,
 	}
 	rt.Logger.DebugContext(ctx, "uploading via data-client orchestrator",
 		"size", fileSize,
 		"path", filePath,
 		"threshold", multiPartThreshold,
 	)
-	if err := upload.Upload(ctx, uploader, common.FileUploadRequestObject{
-		GUID:       drsObject.Id,
-		ObjectKey:  objectKey,
-		SourcePath: filePath,
-	}, false); err != nil {
-		return fmt.Errorf("upload error: %w", err)
+	if fileSize >= multiPartThreshold {
+		rt.Logger.DebugContext(ctx, "selected multipart upload mode",
+			"did", drsObject.Id,
+			"size", fileSize,
+			"threshold", multiPartThreshold,
+		)
+		if err := upload.MultipartUpload(ctx, uploader, uploadReq, file, false); err != nil {
+			return fmt.Errorf("multipart upload error: %w", err)
+		}
+		return nil
+	}
+	rt.Logger.DebugContext(ctx, "selected single-part upload mode",
+		"did", drsObject.Id,
+		"size", fileSize,
+		"threshold", multiPartThreshold,
+	)
+	if err := upload.UploadSingle(ctx, uploader, uploader.Logger(), uploadReq, false); err != nil {
+		return fmt.Errorf("single-part upload error: %w", err)
 	}
 	return nil
 }

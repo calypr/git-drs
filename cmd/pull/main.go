@@ -3,19 +3,24 @@ package pull
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"net/url"
 	"os/exec"
 	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/client"
+	clientdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	datadrs "github.com/calypr/syfon/client/drs"
+	sycommon "github.com/calypr/syfon/client/pkg/common"
 	"github.com/calypr/syfon/client/pkg/hash"
+	sylogs "github.com/calypr/syfon/client/pkg/logs"
 	"github.com/calypr/syfon/client/transfer"
 	"github.com/calypr/syfon/client/xfer/download"
 	"github.com/spf13/cobra"
@@ -134,7 +139,14 @@ var Cmd = &cobra.Command{
 			if !ok {
 				return fmt.Errorf("drs client does not implement transfer.Downloader")
 			}
-			if err := download.DownloadFile(ctx, drsCtx.API, downloader, f.Oid, dstPath); err != nil {
+			scopedDownloader := &gitScopedDownloader{
+				base:    downloader,
+				api:     drsCtx.API,
+				org:     drsCtx.Organization,
+				project: drsCtx.ProjectId,
+				logger:  logg,
+			}
+			if err := download.DownloadFile(ctx, drsCtx.API, scopedDownloader, f.Oid, dstPath); err != nil {
 				debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 				return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 			}
@@ -154,6 +166,36 @@ var Cmd = &cobra.Command{
 
 var lfsjsonUnmarshal = func(data []byte, v any) error {
 	return sonic.ConfigFastest.Unmarshal(data, v)
+}
+
+type gitScopedDownloader struct {
+	base   transfer.Downloader
+	api    datadrs.Client
+	org    string
+	project string
+	logger *slog.Logger
+}
+
+func (d *gitScopedDownloader) Name() string { return d.base.Name() }
+
+func (d *gitScopedDownloader) Logger() *sylogs.Gen3Logger { return d.base.Logger() }
+
+func (d *gitScopedDownloader) ResolveDownloadURL(ctx context.Context, guid string, accessID string) (string, error) {
+	if strings.TrimSpace(accessID) != "" {
+		return d.base.ResolveDownloadURL(ctx, guid, accessID)
+	}
+	accessURL, err := clientdrs.ResolveGitScopedURL(ctx, d.api, guid, d.org, d.project, d.logger)
+	if err != nil {
+		return "", err
+	}
+	if accessURL == nil || strings.TrimSpace(accessURL.Url) == "" {
+		return "", fmt.Errorf("empty download URL for oid %s", guid)
+	}
+	return accessURL.Url, nil
+}
+
+func (d *gitScopedDownloader) Download(ctx context.Context, fdr *sycommon.FileDownloadResponseObject) (*http.Response, error) {
+	return d.base.Download(ctx, fdr)
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *client.GitContext, oid string) string {

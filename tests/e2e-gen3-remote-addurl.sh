@@ -49,6 +49,10 @@ CLEANUP_RECORDS="${TEST_CLEANUP_RECORDS:-true}"
 STRICT_CLEANUP="${TEST_STRICT_CLEANUP:-true}"
 TEST_HTTP_MAX_TIME="${TEST_HTTP_MAX_TIME:-60}"
 TEST_CMD_TIMEOUT_SECONDS="${TEST_CMD_TIMEOUT_SECONDS:-120}"
+CURRENT_PHASE="bootstrap"
+TEST_OUTCOME="FAIL"
+FAIL_LINE=""
+FAIL_CMD=""
 
 SOURCE_REPO="$WORK_ROOT/$REPO_NAME"
 CLONE_REPO="$WORK_ROOT/${REPO_NAME}-clone"
@@ -68,6 +72,28 @@ log() {
   fi
   printf '[%s] %s\n' "$LOG_PREFIX" "$*"
 }
+
+log_warn() {
+  if [[ -z "$LOG_PREFIX" ]]; then
+    if [[ "$SERVER_MODE" == "local" ]]; then
+      LOG_PREFIX="e2e-addurl-local"
+    else
+      LOG_PREFIX="e2e-addurl-remote"
+    fi
+  fi
+  printf '[%s][warn] %s\n' "$LOG_PREFIX" "$*" >&2
+}
+
+phase() {
+  CURRENT_PHASE="$1"
+  log "PHASE: $CURRENT_PHASE"
+}
+
+on_error() {
+  FAIL_LINE="${BASH_LINENO[0]:-unknown}"
+  FAIL_CMD="${BASH_COMMAND:-unknown}"
+}
+trap on_error ERR
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -470,6 +496,7 @@ dids_from_oid() {
 }
 
 cleanup() {
+  local exit_code=$?
   if [[ "$CLEANUP_RECORDS" == "true" && "${#ALL_OIDS[@]}" -gt 0 ]]; then
     log "Cleaning up ${#ALL_OIDS[@]} test records from drs-server"
     local delete_codes verify_codes
@@ -508,13 +535,23 @@ cleanup() {
 
   if [[ "$KEEP_WORKDIR" == "true" ]]; then
     log "Keeping working directory: $WORK_ROOT"
-    return
+  else
+    rm -rf "$WORK_ROOT"
   fi
-  rm -rf "$WORK_ROOT"
+
+  if [[ "$exit_code" -eq 0 && "$TEST_OUTCOME" == "PASS" ]]; then
+    log "RESULT: PASS"
+  else
+    log_warn "RESULT: FAIL (phase=${CURRENT_PHASE}, line=${FAIL_LINE:-unknown})"
+    if [[ -n "$FAIL_CMD" ]]; then
+      log_warn "Failed command: $FAIL_CMD"
+    fi
+  fi
 }
 trap cleanup EXIT
 
 main() {
+  phase "validation"
   require_cmd git
   require_cmd git-lfs
   require_cmd git-drs
@@ -528,6 +565,7 @@ main() {
   log "Using git-drs binary: $(command -v git-drs)"
   log "git-drs version: $(git-drs version 2>/dev/null | head -n 1 || echo unknown)"
 
+  phase "auth-setup"
   resolve_auth_from_profile_if_needed
   if [[ "$SERVER_MODE" == "local" ]]; then
     if [[ -n "$LOCAL_USERNAME" && -z "$LOCAL_PASSWORD" ]]; then
@@ -569,6 +607,7 @@ main() {
     require_env TEST_BUCKET_SECRET_KEY "$TEST_BUCKET_SECRET_KEY"
   fi
 
+  phase "repository-setup"
   log "Working directory: $WORK_ROOT"
   mkdir -p "$SOURCE_REPO" "$CLONE_REPO"
 
@@ -647,6 +686,7 @@ main() {
   object_key="${ORGANIZATION}/${PROJECT_ID}/addurl/${local_oid}"
   ALL_OIDS+=("$local_oid")
 
+  phase "seed-upload"
   log "Uploading seed object directly to bucket via signed URL (outside git-drs push)"
   upload_fixture_to_bucket "$local_oid" "$TEST_BUCKET_NAME" "$object_key" "data/seed-upload.bin"
   rm -f data/seed-upload.bin
@@ -660,6 +700,7 @@ main() {
   upload_fixture_to_bucket "$unknown_real_oid" "$TEST_BUCKET_NAME" "$unknown_key" "data/seed-upload-unknown.bin"
   rm -f data/seed-upload-unknown.bin
 
+  phase "addurl-register"
   log "Creating pointer+DRS mapping via add-url for pre-existing bucket object (known sha256)"
   git drs add-url "s3://${TEST_BUCKET_NAME}/${object_key}" "data/from-bucket.bin" --sha256 "$local_oid"
   known_pointer_oid="$(awk '/^oid sha256:/{print $2}' data/from-bucket.bin | sed 's/^sha256://')"
@@ -702,6 +743,7 @@ main() {
   log "Pushing add-url commit + metadata registration via git-drs push"
   git drs push "$REMOTE_NAME"
 
+  phase "download-and-verify"
   log "Cloning fresh repository for pull verification"
   rm -rf "$CLONE_REPO"
   GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$REMOTE_URL" "$CLONE_REPO" >/dev/null
@@ -793,6 +835,7 @@ main() {
   log "- Known OID:    $local_oid"
   log "- Unknown real: $unknown_real_oid"
   log "- Unknown ptr:  $unknown_pointer_oid"
+  TEST_OUTCOME="PASS"
 }
 
 main "$@"

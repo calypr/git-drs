@@ -193,7 +193,16 @@ func (s *batchSyncSession) needsUpload(oid string, validity map[string]bool) boo
 		return true
 	}
 	if validity == nil {
-		return len(s.existingByHash[oid]) == 0
+		// Validity endpoint unavailable (common in local/basic-auth flows):
+		// do not assume "metadata exists" implies blob exists. Verify by attempting
+		// a downloadability check against the selected scoped record.
+		if len(s.existingByHash[oid]) == 0 {
+			return true
+		}
+		if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {
+			return true
+		}
+		return false
 	}
 	if !validity[oid] {
 		return true
@@ -225,7 +234,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
-				key := uploadKeyFromObject(c.obj, s.rt.Scope.Bucket)
+				key := uploadKeyFromObject(c.obj, s.rt.Scope.Bucket, s.rt.Scope.StoragePref)
 				return uploadFileForObject(s.rt, egCtx, c.obj, c.src, false, presignedURLs[c.obj.Id+"|"+key])
 			})
 		}
@@ -248,7 +257,7 @@ func (s *batchSyncSession) resolveBatchUploadURLs(candidates []uploadCandidate) 
 	for _, c := range candidates {
 		batchReqs = append(batchReqs, common.UploadURLResolveRequest{
 			GUID:     c.obj.Id,
-			Filename: uploadKeyFromObject(c.obj, s.rt.Scope.Bucket),
+			Filename: uploadKeyFromObject(c.obj, s.rt.Scope.Bucket, s.rt.Scope.StoragePref),
 			Bucket:   s.rt.Scope.Bucket,
 		})
 	}

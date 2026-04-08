@@ -72,10 +72,29 @@ MONO_REMOTE_URL_AUTH="$MONO_REMOTE_URL"
 GITHUB_OWNER_REPO=""
 DELETED_TEST_BUCKET=false
 DELETED_REMOTE_REPO_AT_START=false
+CURRENT_PHASE="bootstrap"
+TEST_OUTCOME="FAIL"
+FAIL_LINE=""
+FAIL_CMD=""
 
 log() {
   printf '[drs-monorepo] %s\n' "$*"
 }
+
+log_warn() {
+  printf '[drs-monorepo][warn] %s\n' "$*" >&2
+}
+
+phase() {
+  CURRENT_PHASE="$1"
+  log "PHASE: $CURRENT_PHASE"
+}
+
+on_error() {
+  FAIL_LINE="${BASH_LINENO[0]:-unknown}"
+  FAIL_CMD="${BASH_COMMAND:-unknown}"
+}
+trap on_error ERR
 
 basic_auth_header() {
   local username="$1"
@@ -416,6 +435,7 @@ ensure_repo_remote_token() {
 }
 
 cleanup() {
+  local exit_code=$?
   if [[ "$CREATE_BUCKET_BEFORE_TEST" == "true" && "$DELETE_TEST_BUCKET_AFTER" == "true" && "$CREATED_TEST_BUCKET" == "true" ]]; then
     log "Deleting test bucket credential '$TEST_BUCKET_NAME'"
     api_json DELETE "$BUCKET_API_BASE/$TEST_BUCKET_NAME" "" "204,404" >/dev/null || true
@@ -424,9 +444,17 @@ cleanup() {
   log "Cleanup summary: bucket_deleted=$DELETED_TEST_BUCKET remote_deleted_at_start=$DELETED_REMOTE_REPO_AT_START delete_bucket_after=$DELETE_TEST_BUCKET_AFTER delete_remote_at_start=$MONO_DELETE_REMOTE_AT_START"
   if [[ "$MONO_KEEP_WORKDIR" == "true" ]]; then
     log "Keeping working directory: $MONO_WORK_ROOT"
-    return
+  else
+    rm -rf "$MONO_WORK_ROOT"
   fi
-  rm -rf "$MONO_WORK_ROOT"
+  if [[ "$exit_code" -eq 0 && "$TEST_OUTCOME" == "PASS" ]]; then
+    log "RESULT: PASS"
+  else
+    log_warn "RESULT: FAIL (phase=${CURRENT_PHASE}, line=${FAIL_LINE:-unknown})"
+    if [[ -n "$FAIL_CMD" ]]; then
+      log_warn "Failed command: $FAIL_CMD"
+    fi
+  fi
 }
 trap cleanup EXIT
 
@@ -735,7 +763,9 @@ clone_and_verify() {
 }
 
 main() {
+  phase "validation"
   validate_config
+  phase "auth-setup"
   resolve_auth_from_profile_if_needed
   if [[ "$SERVER_MODE" == "local" && -z "$ADMIN_AUTH_HEADER" && -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
     ADMIN_AUTH_HEADER="$(basic_auth_header "$LOCAL_USERNAME" "$LOCAL_PASSWORD")"
@@ -746,7 +776,9 @@ main() {
     log "Remote auth token source: ${GEN3_TOKEN_SOURCE:-unknown}"
   fi
   log "Run config: mode=$SERVER_MODE create_bucket=$CREATE_BUCKET_BEFORE_TEST allow_bucket_create_auth_fail=$ALLOW_BUCKET_CREATE_AUTH_FAIL drs_url=$DRS_URL bucket=$ACTIVE_BUCKET org=$TEST_ORGANIZATION project=$TEST_PROJECT_ID transfers=$MONO_TRANSFERS"
+  phase "preflight"
   configure_remote_auth
+  phase "repo-setup"
   init_local_bare_remote_if_needed
   delete_github_repo_if_requested
   preflight_remote_access
@@ -754,8 +786,10 @@ main() {
     log "Creating test bucket credential '$TEST_BUCKET_NAME'"
   fi
   create_bucket_credential_if_requested
+  phase "auth-preflight"
   auth_preflight
   multipart_preflight
+  phase "upload-and-register"
   log "Working directory: $MONO_WORK_ROOT"
   log "Generating monorepo fixtures (top-levels: $MONO_TOP_LEVELS)"
   generate_fixtures
@@ -763,9 +797,11 @@ main() {
   setup_repo
   log "Pushing monorepo dataset"
   push_dataset
+  phase "download-and-verify"
   log "Cloning and verifying hydrated pull path"
   clone_and_verify
   log "Monorepo E2E completed"
+  TEST_OUTCOME="PASS"
 }
 
 main "$@"

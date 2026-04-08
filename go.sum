@@ -111,10 +111,10 @@ github.com/bytedance/sonic/loader v0.5.0 h1:gXH3KVnatgY7loH5/TkeVyXPfESoqSBSBEiD
 github.com/bytedance/sonic/loader v0.5.0/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
 github.com/calypr/data-client v0.0.0-20260407224147-5ef59a202830 h1:rnrVeDvzx/wknnX2GWbJk/LfnDFjA4DdfgLYjoN+Yc0=
 github.com/calypr/data-client v0.0.0-20260407224147-5ef59a202830/go.mod h1:J8oUucE8HgRYIf7ZBLy7P4COZ5OoN7PTCQvYow+uWBM=
-github.com/calypr/syfon/apigen v0.1.2 h1:/9IJcrS655DW4W/cPW0QoqBOhZrgTnRfUAlYOZ3q1e8=
-github.com/calypr/syfon/apigen v0.1.2/go.mod h1:2oqNkseovHqbU8kYu4nU+w5VrwhzAj6KfPL7YTBQEGk=
-github.com/calypr/syfon/client v0.1.2 h1:MdfV/bLBf0ZkLREuKOVfEKMRiDfpFgLuYSW8GiYOxdk=
-github.com/calypr/syfon/client v0.1.2/go.mod h1:xh7ndhABQz7UlM/tq80ZfYKDs2vBuwgfyrAhs3ghg7Y=
+github.com/calypr/syfon/apigen v0.1.3 h1:+vih5rHVjrkIoiWaMJa3OnFUrrTIKcMH940XyQKnWRc=
+github.com/calypr/syfon/apigen v0.1.3/go.mod h1:2oqNkseovHqbU8kYu4nU+w5VrwhzAj6KfPL7YTBQEGk=
+github.com/calypr/syfon/client v0.1.4 h1:TQbxJnrws/3UHfum2az1yeUS3SEkNn1c0TsXYAJ7Ru8=
+github.com/calypr/syfon/client v0.1.4/go.mod h1:WkZookhX2k5sTXCLDlURfswh2OiOmMFOUfS1ZMVC45U=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=

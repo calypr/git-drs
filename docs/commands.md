@@ -6,6 +6,38 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ## Git DRS Commands
 
+### `git drs install`
+
+Install global Git filter configuration for git-drs. This is equivalent in purpose to running `git-lfs install` for the git-drs filter.
+
+**Usage:**
+
+```bash
+git drs install
+```
+
+**What it does:**
+
+- Sets global Git config for `filter.drs.clean`
+- Sets global Git config for `filter.drs.smudge`
+- Sets global Git config for `filter.drs.process`
+- Sets global Git config for `filter.drs.required`
+
+**Resulting `~/.gitconfig` entries:**
+
+```ini
+[filter "drs"]
+    clean = git-drs clean -- %f
+    smudge = git-drs smudge -- %f
+    process = git-drs filter-process
+    required = true
+```
+
+**When to run:**
+
+- **Once per machine/user** after installing `git-drs`
+- Re-run any time you want to reset these global filter values
+
 ### `git drs init`
 
 Initialize Git DRS in a repository. Sets up Git DRS hooks and creates a `.git/drs/` directory that Git ignores automatically.

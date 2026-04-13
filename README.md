@@ -41,6 +41,9 @@ git lfs install --skip-smudge
 
 # Install Git DRS
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $GIT_DRS_VERSION
+
+# Install global Git filter configuration for git-drs
+git drs install
 ```
 
 ### Basic Usage
@@ -103,6 +106,7 @@ For detailed setup and usage information:
 
 | Command                | Description                           |
 | ---------------------- | ------------------------------------- |
+| `git drs install`      | Install global git-drs filter config  |
 | `git drs init`         | Initialize repository                 |
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |

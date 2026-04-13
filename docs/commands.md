@@ -268,6 +268,42 @@ Display Git DRS version information.
 git drs version
 ```
 
+### `git drs track [pattern ...]`
+
+Manage Git LFS tracking patterns from Git DRS.
+
+**View tracked patterns:**
+
+```bash
+git drs track
+```
+
+**Track one or more patterns:**
+
+```bash
+git drs track "*.bam"
+git drs track "*.bam" "data/**"
+```
+
+**Options:**
+
+- `--verbose`: Show detailed Git LFS output
+- `--dry-run`: Show what would change without writing `.gitattributes`
+
+### `git drs untrack <pattern> [pattern ...]`
+
+Remove one or more Git LFS tracking patterns.
+
+```bash
+git drs untrack "*.bam"
+git drs untrack "*.bam" "data/**"
+```
+
+**Options:**
+
+- `--verbose`: Show detailed Git LFS output
+- `--dry-run`: Show what would change without writing `.gitattributes`
+
 ### Internal Commands
 
 These commands are called automatically by Git hooks:

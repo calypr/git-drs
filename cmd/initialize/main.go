@@ -96,6 +96,10 @@ func initGitConfig() error {
 	configs := map[string]string{
 		"lfs.allowincompletepush": "false",
 		"lfs.concurrenttransfers": strconv.Itoa(transfers),
+		// Use git-drs as the long-running filter-process handler.
+		// This replaces the default git-lfs smudge/clean per-invocation commands
+		// with a single persistent process that calls the DRS transfer stack directly.
+		"filter.drs.process": "git-drs filter",
 		// Canonical git-drs config keys consumed by clients.
 		"drs.upsert":                  strconv.FormatBool(upsert),
 		"drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),

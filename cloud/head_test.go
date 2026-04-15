@@ -3,6 +3,8 @@ package cloud
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,29 @@ import (
 	"gocloud.dev/blob"
 	"gocloud.dev/blob/memblob"
 )
+
+func injectBucket(t *testing.T, key string, content []byte, contentType string, metadata map[string]string) {
+	t.Helper()
+
+	old := openBucket
+	t.Cleanup(func() { openBucket = old })
+
+	openBucket = func(ctx context.Context, _ string) (*blob.Bucket, error) {
+		b := memblob.OpenBucket(nil)
+		opts := &blob.WriterOptions{ContentType: contentType}
+		if metadata != nil {
+			opts.Metadata = make(map[string]string, len(metadata))
+			for k, v := range metadata {
+				opts.Metadata[k] = v
+			}
+		}
+		if err := b.WriteAll(ctx, key, content, opts); err != nil {
+			_ = b.Close()
+			return nil, fmt.Errorf("seed memblob object: %w", err)
+		}
+		return b, nil
+	}
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DetectPlatform
@@ -423,7 +448,7 @@ func TestHeadObject_BucketOpenError(t *testing.T) {
 	}
 }
 
-func TestDownloadToTempFromDRSObject_Errors(t *testing.t) {
+func TestDownloadToTempFromDRSObject_Errors(t *testing.T) {
 	_, _, err := Download(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil drs object")

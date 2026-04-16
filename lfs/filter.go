@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
+
+	"github.com/git-lfs/pktline"
 )
 
 // SmudgeFunc is called for each smudge (checkout) request.
@@ -42,8 +45,8 @@ type FilterRequest struct {
 //	    OnClean(cleanFn)
 //	err := f.Run(ctx)
 type GitFilter struct {
-	in     *PktScanner
-	out    *PktEncoder
+	pl     *pktline.Pktline
+	out    io.Writer
 	smudge SmudgeFunc
 	clean  CleanFunc
 	logger *slog.Logger
@@ -52,8 +55,8 @@ type GitFilter struct {
 // NewGitFilter creates a GitFilter that reads from in and writes to out.
 func NewGitFilter(in io.Reader, out io.Writer, logger *slog.Logger) *GitFilter {
 	return &GitFilter{
-		in:     NewPktScanner(in),
-		out:    NewPktEncoder(out),
+		pl:     pktline.NewPktline(in, out),
+		out:    out,
 		logger: logger,
 	}
 }
@@ -111,55 +114,35 @@ func (f *GitFilter) Run(ctx context.Context) error {
 //	flush-pkt
 //	PKT-LINE("capability=clean\n") + PKT-LINE("capability=smudge\n") + flush-pkt
 func (f *GitFilter) handshake() error {
-	// --- version negotation from git ---
-	pkt, err := f.in.ReadPacket()
+	// --- version negotiation from git ---
+	initMsg, err := f.pl.ReadPacketText()
 	if err != nil {
 		return fmt.Errorf("reading welcome: %w", err)
 	}
-	if pkt.Type != PktData || strings.TrimSpace(string(pkt.Data)) != "git-filter-client" {
-		return fmt.Errorf("expected 'git-filter-client', got %q", pkt.Data)
+	if initMsg != "git-filter-client" {
+		return fmt.Errorf("expected 'git-filter-client', got %q", initMsg)
 	}
 
-	pkt, err = f.in.ReadPacket()
+	versions, err := f.pl.ReadPacketList()
 	if err != nil {
-		return fmt.Errorf("reading version: %w", err)
+		return fmt.Errorf("reading versions: %w", err)
 	}
-	if pkt.Type != PktData || !strings.HasPrefix(string(pkt.Data), "version=") {
-		return fmt.Errorf("expected 'version=', got %q", pkt.Data)
-	}
-	if ver := strings.TrimSpace(strings.TrimPrefix(string(pkt.Data), "version=")); ver != "2" {
-		return fmt.Errorf("unsupported filter protocol version %q (only version 2 is supported)", ver)
-	}
-
-	// consume flush after version block
-	if err := f.expectFlush(); err != nil {
-		return fmt.Errorf("after version: %w", err)
+	if !slices.Contains(versions, "version=2") {
+		return fmt.Errorf("unsupported filter protocol versions %v (requires version=2)", versions)
 	}
 
 	// --- send our identity ---
-	if err := f.out.WriteString("git-filter-server\n"); err != nil {
-		return err
-	}
-	if err := f.out.WriteString("version=2\n"); err != nil {
-		return err
-	}
-	if err := f.out.WriteFlush(); err != nil {
+	if err := f.pl.WritePacketList([]string{"git-filter-server", "version=2"}); err != nil {
 		return err
 	}
 
 	// --- read capabilities from git ---
-	if err := f.drainUntilFlush(); err != nil {
+	if _, err := f.pl.ReadPacketList(); err != nil {
 		return fmt.Errorf("reading capabilities: %w", err)
 	}
 
 	// --- advertise our capabilities ---
-	if err := f.out.WriteString("capability=clean\n"); err != nil {
-		return err
-	}
-	if err := f.out.WriteString("capability=smudge\n"); err != nil {
-		return err
-	}
-	return f.out.WriteFlush()
+	return f.pl.WritePacketList([]string{"capability=clean", "capability=smudge"})
 }
 
 // --------------------------------------------------------------------------
@@ -167,8 +150,10 @@ func (f *GitFilter) handshake() error {
 // --------------------------------------------------------------------------
 
 func (f *GitFilter) processOne(ctx context.Context) error {
+	f.logger.Debug("Waiting for next filter request...")
 	req, err := f.readRequest()
 	if err != nil {
+		f.logger.Debug(fmt.Sprintf("Error reading filter request: %v", err))
 		return err
 	}
 	f.logger.Debug("Received filter request", "command", req.Command, "pathname", req.Pathname)
@@ -191,10 +176,7 @@ func (f *GitFilter) processOne(ctx context.Context) error {
 
 	if handlerErr != nil {
 		// Send error status; git will use the pointer/raw bytes itself.
-		if err := f.out.WriteString("status=error\n"); err != nil {
-			return err
-		}
-		if err := f.out.WriteFlush(); err != nil {
+		if err := f.pl.WritePacketList([]string{"status=error"}); err != nil {
 			return err
 		}
 		return nil
@@ -246,38 +228,22 @@ func (f *GitFilter) passthroughClean(content []byte) error {
 //	flush-pkt
 //	flush-pkt  (second flush signals end of command)
 func (f *GitFilter) writeSuccessResponse(data []byte) error {
-	if err := f.out.WriteString("status=success\n"); err != nil {
-		return err
-	}
-	if err := f.out.WriteFlush(); err != nil {
+	if err := f.pl.WritePacketList([]string{"status=success"}); err != nil {
 		return err
 	}
 
-	// Write content in chunks ≤ 65516 bytes each.
-	const maxChunk = 65516
-	if len(data) == 0 {
-		// Empty content: write a single flush to represent empty body.
-		if err := f.out.WriteFlush(); err != nil {
-			return err
-		}
-	} else {
-		for len(data) > 0 {
-			n := len(data)
-			if n > maxChunk {
-				n = maxChunk
-			}
-			if err := f.out.WritePacket(data[:n]); err != nil {
-				return err
-			}
-			data = data[n:]
-		}
-		if err := f.out.WriteFlush(); err != nil {
+	w := pktline.NewPktlineWriter(f.out, pktline.MaxPacketLength)
+	if len(data) > 0 {
+		if _, err := w.Write(data); err != nil {
 			return err
 		}
 	}
+	if err := w.Flush(); err != nil {
+		return err
+	}
 
-	// Second flush signals end-of-command.
-	return f.out.WriteFlush()
+	// Send trailing key=value list (empty) terminated with flush.
+	return f.pl.WritePacketList(nil)
 }
 
 // --------------------------------------------------------------------------
@@ -287,74 +253,27 @@ func (f *GitFilter) writeSuccessResponse(data []byte) error {
 // readRequest reads the command header section terminated by a delimiter packet.
 // Returns (FilterRequest, nil) on success, or (_, io.EOF) if the stream is done.
 func (f *GitFilter) readRequest() (FilterRequest, error) {
+	requestList, err := f.pl.ReadPacketList()
+	if err != nil {
+		return FilterRequest{}, err
+	}
+
 	var req FilterRequest
-	for {
-		pkt, err := f.in.ReadPacket()
-		if err != nil {
-			return FilterRequest{}, err
-		}
-		switch pkt.Type {
-		case PktFlush:
-			// A flush before any data means the stream is done.
-			return FilterRequest{}, io.EOF
-		case PktDelim:
-			// Delimiter marks end of header section.
-			return req, nil
-		case PktData:
-			line := strings.TrimSuffix(string(pkt.Data), "\n")
-			if kv := strings.SplitN(line, "=", 2); len(kv) == 2 {
-				switch kv[0] {
-				case "command":
-					req.Command = kv[1]
-				case "pathname":
-					req.Pathname = kv[1]
-				}
+	for _, line := range requestList {
+		if kv := strings.SplitN(line, "=", 2); len(kv) == 2 {
+			switch kv[0] {
+			case "command":
+				req.Command = kv[1]
+			case "pathname":
+				req.Pathname = kv[1]
 			}
 		}
 	}
+	return req, nil
 }
 
 // readContent reads pkt-line data packets until a flush packet, returning all
 // data concatenated. git sends content flush-terminated.
 func (f *GitFilter) readContent() ([]byte, error) {
-	var buf []byte
-	for {
-		pkt, err := f.in.ReadPacket()
-		if err != nil {
-			return nil, err
-		}
-		switch pkt.Type {
-		case PktFlush:
-			return buf, nil
-		case PktData:
-			buf = append(buf, pkt.Data...)
-		default:
-			return nil, fmt.Errorf("unexpected packet type %d while reading content", pkt.Type)
-		}
-	}
-}
-
-// expectFlush reads the next packet and returns an error if it is not a flush.
-func (f *GitFilter) expectFlush() error {
-	pkt, err := f.in.ReadPacket()
-	if err != nil {
-		return err
-	}
-	if pkt.Type != PktFlush {
-		return fmt.Errorf("expected flush packet, got type %d data %q", pkt.Type, pkt.Data)
-	}
-	return nil
-}
-
-// drainUntilFlush discards data packets until a flush is seen.
-func (f *GitFilter) drainUntilFlush() error {
-	for {
-		pkt, err := f.in.ReadPacket()
-		if err != nil {
-			return err
-		}
-		if pkt.Type == PktFlush {
-			return nil
-		}
-	}
+	return io.ReadAll(pktline.NewPktlineReaderFromPktline(f.pl, pktline.MaxPacketLength))
 }

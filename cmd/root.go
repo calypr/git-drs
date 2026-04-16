@@ -7,14 +7,14 @@ import (
 	deleteCmd "github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
 
-	//"github.com/calypr/git-drs/cmd/download"
+	"github.com/calypr/git-drs/cmd/download"
 	"github.com/calypr/git-drs/cmd/fetch"
 	"github.com/calypr/git-drs/cmd/filter"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/cmd/install"
 
-	//"github.com/calypr/git-drs/cmd/list"
-	//"github.com/calypr/git-drs/cmd/lsfiles"
+	"github.com/calypr/git-drs/cmd/list"
+	"github.com/calypr/git-drs/cmd/lsfiles"
 	"github.com/calypr/git-drs/cmd/precommit"
 	"github.com/calypr/git-drs/cmd/prepush"
 	"github.com/calypr/git-drs/cmd/pull"
@@ -24,7 +24,7 @@ import (
 	"github.com/calypr/git-drs/cmd/track"
 	"github.com/calypr/git-drs/cmd/untrack"
 
-	//"github.com/calypr/git-drs/cmd/upload"
+	"github.com/calypr/git-drs/cmd/upload"
 	"github.com/calypr/git-drs/cmd/version"
 	"github.com/spf13/cobra"
 )
@@ -59,10 +59,10 @@ func init() {
 	RootCmd.AddCommand(bucket.Cmd)
 	RootCmd.AddCommand(track.Cmd)
 	RootCmd.AddCommand(untrack.Cmd)
-	//RootCmd.AddCommand(list.Cmd)
-	//RootCmd.AddCommand(lsfiles.Cmd)
-	//RootCmd.AddCommand(upload.Cmd)
-	//RootCmd.AddCommand(download.Cmd)
+	RootCmd.AddCommand(list.Cmd)
+	RootCmd.AddCommand(lsfiles.Cmd)
+	RootCmd.AddCommand(upload.Cmd)
+	RootCmd.AddCommand(download.Cmd)
 	RootCmd.AddCommand(install.Cmd)
 
 	RootCmd.CompletionOptions.HiddenDefaultCmd = true

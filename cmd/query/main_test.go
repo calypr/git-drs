@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/syfon/client/drs"
 	"github.com/calypr/syfon/client/pkg/hash"
 )
@@ -44,12 +45,12 @@ func TestQueryByChecksumTypes(t *testing.T) {
 
 func TestPrintDRSObject(t *testing.T) {
 	obj := drs.DRSObject{Id: "test-id"}
-	err := printDRSObject(obj, false)
+	err := common.PrintDRSObject(obj, false)
 	if err != nil {
-		t.Errorf("printDRSObject failed: %v", err)
+		t.Errorf("common.PrintDRSObject failed: %v", err)
 	}
-	err = printDRSObject(obj, true)
+	err = common.PrintDRSObject(obj, true)
 	if err != nil {
-		t.Errorf("printDRSObject pretty failed: %v", err)
+		t.Errorf("common.PrintDRSObject pretty failed: %v", err)
 	}
 }

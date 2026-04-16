@@ -4,32 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bytedance/sonic"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/syfon/client/drs"
 	"github.com/calypr/syfon/client/pkg/hash"
 	"github.com/spf13/cobra"
 )
-
-// printDRSObject marshals and prints a DRS object based on the pretty flag
-func printDRSObject(obj drs.DRSObject, pretty bool) error {
-	var out []byte
-	var err error
-
-	if pretty {
-		out, err = sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
-	} else {
-		out, err = sonic.ConfigFastest.Marshal(obj)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("%s\n", string(out))
-	return nil
-}
 
 var remote string
 var checksum = false
@@ -102,7 +83,7 @@ var Cmd = &cobra.Command{
 				return err
 			}
 			for _, drsObj := range objs {
-				if err := printDRSObject(drsObj, pretty); err != nil {
+				if err := common.PrintDRSObject(drsObj, pretty); err != nil {
 					return err
 				}
 			}
@@ -111,7 +92,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if err := printDRSObject(*obj, pretty); err != nil {
+			if err := common.PrintDRSObject(*obj, pretty); err != nil {
 				return err
 			}
 		}

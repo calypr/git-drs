@@ -1,8 +1,15 @@
 package common
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
 	"strings"
+
+	"github.com/bytedance/sonic"
+	"github.com/calypr/syfon/client/drs"
 )
 
 // AddUnique appends items from 'toAdd' to 'existing' only if they're not already present.
@@ -42,4 +49,39 @@ func ProjectToResource(org, project string) (string, error) {
 	}
 	projectIdArr := strings.SplitN(project, "-", 2)
 	return "/programs/" + projectIdArr[0] + "/projects/" + projectIdArr[1], nil
+}
+
+// CalculateFileSHA256 returns the lowercase hex SHA256 checksum for a file.
+func CalculateFileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open file %s: %w", path, err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("hash file %s: %w", path, err)
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// PrintDRSObject marshals and prints a DRS object as JSON.
+func PrintDRSObject(obj drs.DRSObject, pretty bool) error {
+	var out []byte
+	var err error
+
+	if pretty {
+		out, err = sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
+	} else {
+		out, err = sonic.ConfigFastest.Marshal(obj)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s\n", string(out))
+	return nil
 }

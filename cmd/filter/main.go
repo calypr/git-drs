@@ -40,7 +40,7 @@ import (
 
 // Cmd is the hidden cobra command registered in cmd/root.go.
 var Cmd = &cobra.Command{
-	Use:    "filter",
+	Use:    "filter-process",
 	Short:  "Run git-drs as a git long-running filter process (invoked by git)",
 	Hidden: true,
 	Args:   cobra.NoArgs,

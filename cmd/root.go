@@ -4,6 +4,7 @@ import (
 	"github.com/calypr/git-drs/cmd/addref"
 	"github.com/calypr/git-drs/cmd/addurl"
 	"github.com/calypr/git-drs/cmd/bucket"
+	"github.com/calypr/git-drs/cmd/clean"
 	deleteCmd "github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
 	"github.com/calypr/git-drs/cmd/remote"
+	"github.com/calypr/git-drs/cmd/smudge"
 	"github.com/calypr/git-drs/cmd/track"
 	"github.com/calypr/git-drs/cmd/untrack"
 
@@ -45,6 +47,8 @@ func init() {
 	RootCmd.AddCommand(initialize.Cmd)
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(filter.Cmd)
+	RootCmd.AddCommand(clean.Cmd)
+	RootCmd.AddCommand(smudge.Cmd)
 	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(fetch.Cmd)
 	RootCmd.AddCommand(pull.Cmd)

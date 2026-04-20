@@ -63,8 +63,8 @@ func TestGetObjectPathValidation(t *testing.T) {
 }
 
 func TestDrsUUIDDeterministic(t *testing.T) {
-	id1 := DrsUUID("project", "hash")
-	id2 := DrsUUID("project", "hash")
+	id1 := DrsUUID("org", "project", "hash")
+	id2 := DrsUUID("org", "project", "hash")
 	if id1 != id2 {
 		t.Fatalf("expected deterministic UUIDs, got %s vs %s", id1, id2)
 	}

@@ -104,20 +104,44 @@ CLONE="${CLONE:-$CLONE_DEFAULT}"
 UPSERT="${UPSERT:-$UPSERT_DEFAULT}"
 BUCKET="${BUCKET:-$BUCKET_DEFAULT}"
 
-IFS='-' read -r PROGRAM PROJECT <<< "$PROJECT"
+PROJECT_INPUT="$PROJECT"
+if [[ "$PROJECT_INPUT" =~ ^/programs/([^/]+)/projects/([^/]+)$ ]]; then
+  PROGRAM="${BASH_REMATCH[1]}"
+  PROJECT="${BASH_REMATCH[2]}"
+elif [[ "$PROJECT_INPUT" == *-* ]]; then
+  PROGRAM="${PROJECT_INPUT%%-*}"
+  PROJECT="${PROJECT_INPUT#*-}"
+else
+  echo "error: --project/PROJECT must be 'program-project' or '/programs/<program>/projects/<project>'" >&2
+  echo "received: $PROJECT_INPUT" >&2
+  exit 1
+fi
+
+if [[ -z "$PROGRAM" || -z "$PROJECT" ]]; then
+  echo "error: failed to resolve non-empty PROGRAM/PROJECT from --project/PROJECT='$PROJECT_INPUT'" >&2
+  exit 1
+fi
+
+PROJECT_ID="${PROGRAM}-${PROJECT}"
+RESOURCE_PATH="/programs/$PROGRAM/projects/$PROJECT"
 
 export CREDENTIALS_PATH
 export PROFILE
 export PROGRAM
 export PROJECT
+export PROJECT_ID
+export RESOURCE_PATH
 export GIT_REMOTE
 export CLONE
 export UPSERT
 
 echo "Using CREDENTIALS_PATH=$CREDENTIALS_PATH" >&2
 echo "Using PROFILE=$PROFILE" >&2
+echo "Using PROJECT_INPUT=$PROJECT_INPUT" >&2
 echo "Using PROGRAM=$PROGRAM" >&2
 echo "Using PROJECT=$PROJECT" >&2
+echo "Using PROJECT_ID=$PROJECT_ID" >&2
+echo "Using RESOURCE_PATH=$RESOURCE_PATH" >&2
 echo "Using GIT_REMOTE=$GIT_REMOTE" >&2
 echo "Using CLEAN=$CLEAN" >&2
 echo "Using CLONE=$CLONE" >&2
@@ -177,8 +201,8 @@ echo "Using git-drs from: $(which git-drs)" >&2
 
 
 # ensure a gen3 project exists
-calypr_admin projects ls --profile "$PROFILE" | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
-  echo "error: /programs/$PROGRAM/projects/$PROJECT does not exist; please create it first" >&2
+calypr_admin projects ls --profile "$PROFILE" | grep "$RESOURCE_PATH" >/dev/null 2>&1 || {
+  echo "error: $RESOURCE_PATH does not exist; please create it first" >&2
   exit 1
 }
 
@@ -211,7 +235,7 @@ if [ "$CLONE" = "true" ]; then
   fi
   echo "Pulling LFS objects from remote" >&2
   git drs init
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROJECT_ID" --url https://calypr-dev.ohsu.edu
   git lfs pull origin main
   if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
@@ -235,7 +259,7 @@ else
 
   # Initialize drs configuration for this repo
   git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROJECT_ID" --url https://calypr-dev.ohsu.edu
   # Set multipart-threshold to 10 (MB) for testing purposes
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)

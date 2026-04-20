@@ -9,9 +9,9 @@ import (
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/logs"
-	"github.com/calypr/syfon/client/pkg/request"
+	"github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/logs"
+	"github.com/calypr/syfon/client/request"
 )
 
 // GetContext returns a pure functional context wrapper bridging git-drs to data-client capability.

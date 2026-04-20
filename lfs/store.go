@@ -10,7 +10,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/hash"
 )
 
 // This file contains functions that pertain to .git/drs/lfs/objects directory walk

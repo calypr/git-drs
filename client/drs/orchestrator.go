@@ -9,7 +9,7 @@ import (
 
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/calypr/syfon/client/transfer"
 	"github.com/calypr/syfon/client/xfer/download"
 )

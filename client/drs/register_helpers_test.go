@@ -12,8 +12,8 @@ import (
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/syfon/client/conf"
 	datadrs "github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/logs"
-	"github.com/calypr/syfon/client/pkg/request"
+	"github.com/calypr/syfon/client/logs"
+	"github.com/calypr/syfon/client/request"
 )
 
 func newTestContextWithEndpoint(t *testing.T, endpoint string) *gitclient.GitContext {

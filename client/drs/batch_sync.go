@@ -11,8 +11,8 @@ import (
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"golang.org/x/sync/errgroup"
 )
 

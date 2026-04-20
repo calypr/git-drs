@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/hash"
 )
 
 type fakeChecksumClient struct {

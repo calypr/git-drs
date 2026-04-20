@@ -20,9 +20,9 @@ import (
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/hash"
-	"github.com/calypr/syfon/client/pkg/request"
+	"github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
+	"github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/transfer"
 	"github.com/calypr/syfon/client/xfer/upload"
 )
@@ -186,7 +186,7 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		if statErr != nil {
 			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, path, statErr)
 		}
-		drsId := drsmap.DrsUUID(rt.Scope.ProjectID, oid)
+		drsId := drsmap.DrsUUID(rt.Scope.Organization, rt.Scope.ProjectID, oid)
 		drsObject, err = BuildDrsObj(filepath.Base(path), oid, stat.Size(), drsId, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.ProjectID, rt.Scope.StoragePref)
 		if err != nil {
 			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)

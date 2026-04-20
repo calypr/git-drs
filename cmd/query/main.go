@@ -8,7 +8,7 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 

@@ -13,8 +13,8 @@ func TestDrsUUID_Consistency(t *testing.T) {
 	projectID := "test-project"
 	hash := "abc123"
 
-	uuid1 := DrsUUID(projectID, hash)
-	uuid2 := DrsUUID(projectID, hash)
+	uuid1 := DrsUUID("", projectID, hash)
+	uuid2 := DrsUUID("", projectID, hash)
 
 	if uuid1 != uuid2 {
 		t.Errorf("DrsUUID should be deterministic, got %s and %s", uuid1, uuid2)
@@ -27,9 +27,9 @@ func TestDrsUUID_Consistency(t *testing.T) {
 
 func TestDrsUUID_DifferentInputs(t *testing.T) {
 	// Test that different inputs produce different UUIDs
-	uuid1 := DrsUUID("project1", "hash1")
-	uuid2 := DrsUUID("project2", "hash1")
-	uuid3 := DrsUUID("project1", "hash2")
+	uuid1 := DrsUUID("", "project1", "hash1")
+	uuid2 := DrsUUID("", "project2", "hash1")
+	uuid3 := DrsUUID("", "project1", "hash2")
 
 	if uuid1 == uuid2 {
 		t.Error("Different projects should produce different UUIDs")

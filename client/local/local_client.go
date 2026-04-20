@@ -19,10 +19,10 @@ import (
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	drs "github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/hash"
-	"github.com/calypr/syfon/client/pkg/logs"
-	"github.com/calypr/syfon/client/pkg/request"
+	"github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
+	"github.com/calypr/syfon/client/logs"
+	"github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/transfer"
 	"github.com/calypr/syfon/client/xfer/download"
 	"github.com/calypr/syfon/client/xfer/upload"
@@ -318,7 +318,7 @@ func (c *LocalClient) RegisterFile(ctx context.Context, oid string, filePath str
 		if statErr != nil {
 			return nil, fmt.Errorf("error reading local record: %v", statErr)
 		}
-		drsID := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
+		drsID := drsmap.DrsUUID(c.Remote.GetOrganization(), c.Remote.GetProjectId(), oid)
 		obj, err = c.BuildDrsObj(filepath.Base(filePath), oid, stat.Size(), drsID)
 		if err != nil {
 			return nil, err
@@ -394,7 +394,7 @@ func (c *LocalClient) BatchSyncForPush(ctx context.Context, files map[string]lfs
 			if statErr != nil {
 				return fmt.Errorf("upload failed for %s (%s): error reading local record: %v", f.Name, oid, statErr)
 			}
-			drsID := drsmap.DrsUUID(c.Remote.GetProjectId(), oid)
+			drsID := drsmap.DrsUUID(c.Remote.GetOrganization(), c.Remote.GetProjectId(), oid)
 			obj, err = c.BuildDrsObj(filepath.Base(f.Name), oid, stat.Size(), drsID)
 			if err != nil {
 				return fmt.Errorf("upload failed for %s (%s): %w", f.Name, oid, err)

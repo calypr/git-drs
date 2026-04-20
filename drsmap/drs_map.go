@@ -18,7 +18,7 @@ import (
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 )
 
@@ -192,7 +192,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 				}
 			}
 		} else {
-			drsID := DrsUUID(builder.ProjectID, file.Oid)
+			drsID := DrsUUID(builder.Organization, builder.ProjectID, file.Oid)
 			authoritativeObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
 			if err != nil {
 				opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
@@ -265,7 +265,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 		drsObj.Name = file.Name
 		drsObj.Size = file.Size
 	} else {
-		drsId := DrsUUID(builder.ProjectID, file.Oid)
+		drsId := DrsUUID(builder.Organization, builder.ProjectID, file.Oid)
 		drsObj, err = builder.Build(file.Name, file.Oid, file.Size, drsId)
 		if err != nil {
 			return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
@@ -296,13 +296,8 @@ func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
 	return lfs.WriteObject(basePath, drsObj, oid)
 }
 
-func DrsUUID(projectId string, hash string) string {
-	// normalize hash - strip sha256: prefix if present
-	hash = strings.TrimPrefix(hash, "sha256:")
-
-	// create UUID based on project ID and hash
-	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
-	return uuid.NewSHA1(drs.NAMESPACE, []byte(hashStr)).String()
+func DrsUUID(org, project, hash string) string {
+	return drs.DrsUUID(org, project, hash)
 }
 
 // creates drsObject record from file

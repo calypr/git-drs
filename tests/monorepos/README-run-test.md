@@ -48,6 +48,10 @@ Gen3 profile name. Default: calypr-dev.
 * --project / PROJECT
 Project identifier. Default: cbds-monorepos.
 If the value contains a hyphen, the script splits the first hyphen-separated token into PROGRAM and the remainder into PROJECT. Both are exported for downstream use.
+Accepted formats:
+- `program-project`
+- `/programs/<program>/projects/<project>`
+The script prints the resolved `PROJECT_INPUT`, `PROGRAM`, `PROJECT`, `PROJECT_ID`, and `RESOURCE_PATH` at startup.
 
 
 * --git-remote / GIT_REMOTE

@@ -15,9 +15,9 @@ import (
 
 	"github.com/calypr/git-drs/lfs"
 	drs "github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/hash"
-	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
+	"github.com/calypr/syfon/client/logs"
 	"github.com/calypr/syfon/client/xfer/download"
 )
 

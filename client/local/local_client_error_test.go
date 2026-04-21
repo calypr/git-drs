@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/lfs"
-	drs "github.com/calypr/syfon/client/drs"
 	"github.com/calypr/syfon/client/common"
+	drs "github.com/calypr/syfon/client/drs"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/calypr/syfon/client/logs"
 	"github.com/calypr/syfon/client/xfer/download"

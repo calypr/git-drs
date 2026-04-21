@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/client/local"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/gitrepo"
@@ -362,11 +361,11 @@ func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
 func TestRemoveRemote(t *testing.T) {
 	setupTestRepo(t)
 
-	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
+	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &drs.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
 	if err != nil {
 		t.Fatalf("UpdateRemote origin error: %v", err)
 	}
-	_, err = UpdateRemote(Remote("staging"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://staging.example", ProjectID: "staging-proj", Bucket: "staging-bucket"}})
+	_, err = UpdateRemote(Remote("staging"), RemoteSelect{Gen3: &drs.Gen3Remote{Endpoint: "https://staging.example", ProjectID: "staging-proj", Bucket: "staging-bucket"}})
 	if err != nil {
 		t.Fatalf("UpdateRemote staging error: %v", err)
 	}
@@ -391,7 +390,7 @@ func TestRemoveRemote(t *testing.T) {
 func TestRemoveRemote_LastRemoteClearsDefault(t *testing.T) {
 	setupTestRepo(t)
 
-	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &indexd.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
+	_, err := UpdateRemote(Remote("origin"), RemoteSelect{Gen3: &drs.Gen3Remote{Endpoint: "https://origin.example", ProjectID: "origin-proj", Bucket: "origin-bucket"}})
 	if err != nil {
 		t.Fatalf("UpdateRemote origin error: %v", err)
 	}

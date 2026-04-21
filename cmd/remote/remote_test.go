@@ -3,7 +3,7 @@ package remote
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/client/indexd"
+	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/stretchr/testify/assert"
@@ -69,10 +69,10 @@ func TestRemoteRemoveRun(t *testing.T) {
 		DefaultRemote: config.Remote("origin"),
 		Remotes: map[config.Remote]config.RemoteSelect{
 			"origin": {
-				Gen3: &indexd.Gen3Remote{Endpoint: "https://one.example", ProjectID: "proj-a", Bucket: "bucket-a"},
+				Gen3: &drs.Gen3Remote{Endpoint: "https://one.example", ProjectID: "proj-a", Bucket: "bucket-a"},
 			},
 			"staging": {
-				Gen3: &indexd.Gen3Remote{Endpoint: "https://two.example", ProjectID: "proj-b", Bucket: "bucket-b"},
+				Gen3: &drs.Gen3Remote{Endpoint: "https://two.example", ProjectID: "proj-b", Bucket: "bucket-b"},
 			},
 		},
 	})

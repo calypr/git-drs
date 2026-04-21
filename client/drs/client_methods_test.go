@@ -12,9 +12,9 @@ import (
 	gitclient "github.com/calypr/git-drs/client"
 	"github.com/calypr/syfon/client/conf"
 	datadrs "github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/mocks"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/calypr/syfon/client/logs"
+	"github.com/calypr/syfon/client/mocks"
 	"github.com/calypr/syfon/client/request"
 	"go.uber.org/mock/gomock"
 )

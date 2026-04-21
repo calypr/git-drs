@@ -7,9 +7,9 @@ import (
 
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/logs"
 	"github.com/calypr/syfon/client/request"
 )

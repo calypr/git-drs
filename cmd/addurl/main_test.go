@@ -15,20 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/cloud"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
-	"github.com/spf13/cobra"
 )
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
-	content := "hello world"
-	sum := sha256.Sum256([]byte(content))
-	shaHex := fmt.Sprintf("%x", sum[:])
-
 	tempDir := t.TempDir()
 	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
 
@@ -57,11 +51,11 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	//      bucket: cbds
 
 	cmds := [][]string{
-		{"config", "lfs.customtransfer.drs.default-remote", "calypr-dev"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.type", "gen3"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.project", "calypr-dev"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.bucket", "cbds"},
+		{"config", "drs.default-remote", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.type", "gen3"},
+		{"config", "drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
+		{"config", "drs.remote.calypr-dev.bucket", "cbds"},
 	}
 	for _, args := range cmds {
 		cmd := exec.Command("git", args...)
@@ -80,12 +74,12 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	service := NewAddURLService()
 	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, in cloud.S3ObjectParameters) (*cloud.S3Object, error) {
-			return &cloud.S3Object{
+		func(ctx context.Context, in cloud.ObjectParameters) (*cloud.ObjectInfo, error) {
+			return &cloud.ObjectInfo{
 				Bucket:      "bucket",
 				Key:         "path/to/file.bin",
 				Path:        "file.bin",
-				SizeBytes:   int64(len(content)),
+				SizeBytes:   int64(11),
 				MetaSHA256:  "",
 				ETag:        "abcd1234",
 				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
@@ -94,30 +88,23 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		func(path string) (bool, error) {
 			return true, nil
 		},
-		// download stub: write the LFS object into lfsRoot and return the sha
-		func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRootPath string) (string, string, error) {
-			objPath := filepath.Join(lfsRootPath, "objects", shaHex[0:2], shaHex[2:4], shaHex)
-			if err := os.MkdirAll(filepath.Dir(objPath), 0755); err != nil {
-				return "", "", err
-			}
-			if err := os.WriteFile(objPath, []byte(content), 0644); err != nil {
-				return "", "", err
-			}
-			return shaHex, objPath, nil
-		},
 	)
 	t.Cleanup(resetStubs)
 
 	cmd := NewCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	requireFlags(t, cmd)
 
 	oldwd := mustChdir(t, tempDir)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
 	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
 		t.Fatalf("service.Run error: %v", err)
+	}
+
+	oid, err := lfs.SyntheticOIDFromETag("abcd1234")
+	if err != nil {
+		t.Fatalf("SyntheticOIDFromETag: %v", err)
 	}
 
 	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
@@ -127,134 +114,73 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	}
 	expectedPointer := fmt.Sprintf(
 		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		shaHex,
-		len(content),
+		oid,
+		11,
 	)
 	if string(pointerBytes) != expectedPointer {
 		t.Fatalf("pointer mismatch: expected %q, got %q", expectedPointer, string(pointerBytes))
 	}
 
-	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
+	lfsObject := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4], oid)
 	if _, err := os.Stat(lfsObject); err != nil {
 		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
 	}
+	sentinel, err := os.ReadFile(lfsObject)
+	if err != nil {
+		t.Fatalf("read sentinel: %v", err)
+	}
+	if !lfs.IsAddURLSentinelBytes(sentinel) {
+		t.Fatalf("expected add-url sentinel payload, got: %q", string(sentinel))
+	}
 
-	drsObject, err := drsmap.DrsInfoFromOid(shaHex)
+	drsObject, err := drsmap.DrsInfoFromOid(oid)
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
 	if len(drsObject.AccessMethods) == 0 {
 		t.Fatalf("expected access methods in drs object")
 	}
-	if got := drsObject.AccessMethods[0].AccessURL.URL; got != "s3://bucket/path/to/file.bin" {
+	if got := drsObject.AccessMethods[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
 	}
 }
 
-func TestRunAddURL_WithProvidedSHA256(t *testing.T) {
-	content := "hello world"
-	sum := sha256.Sum256([]byte(content))
-	shaHex := fmt.Sprintf("%x", sum[:])
-	providedSHA := "sha256:" + strings.ToUpper(shaHex)
-
-	tempDir := t.TempDir()
-	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
-
-	// ensure a git repository exists
-	cmdInit := exec.Command("git", "init")
-	cmdInit.Dir = tempDir
-	if out, err := cmdInit.CombinedOutput(); err != nil {
-		t.Fatalf("git init failed: %v: %s", err, out)
+func TestParseAddURLInput_DoesNotRequireAWSFlags(t *testing.T) {
+	cmd := NewCommand()
+	in, err := parseAddURLInput(cmd, []string{"gs://bucket/path/to/file.bin"})
+	if err != nil {
+		t.Fatalf("parseAddURLInput error: %v", err)
 	}
-
-	oldwd := mustChdir(t, tempDir)
-	t.Cleanup(func() { _ = os.Chdir(oldwd) })
-
-	// Mock config
-	cmds := [][]string{
-		{"config", "lfs.customtransfer.drs.default-remote", "calypr-dev"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.type", "gen3"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.project", "calypr-dev"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
-		{"config", "lfs.customtransfer.drs.remote.calypr-dev.bucket", "cbds"},
+	if in.objectURL != "gs://bucket/path/to/file.bin" {
+		t.Fatalf("unexpected source url: %s", in.objectURL)
 	}
-	for _, args := range cmds {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = tempDir
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("git %v failed: %v", args, err)
-		}
+	if in.path != "path/to/file.bin" {
+		t.Fatalf("unexpected path: %s", in.path)
 	}
+}
 
-	service := NewAddURLService()
-	downloadCalled := false
-	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, in cloud.S3ObjectParameters) (*cloud.S3Object, error) {
-			return &cloud.S3Object{
-				Bucket:      "bucket",
-				Key:         "path/to/file.bin",
-				Path:        "file.bin",
-				SizeBytes:   int64(len(content)),
-				MetaSHA256:  shaHex,
-				ETag:        "abcd1234",
-				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
-			}, nil
-		},
-		func(path string) (bool, error) {
-			return true, nil
-		},
-		func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRootPath string) (string, string, error) {
-			downloadCalled = true
-			return "", "", fmt.Errorf("download should not be called")
-		},
-	)
-	t.Cleanup(resetStubs)
+func TestParseAddURLInput_PassesS3EnvHints(t *testing.T) {
+	t.Setenv("TEST_BUCKET_REGION", "us-east-1")
+	t.Setenv("TEST_BUCKET_ENDPOINT", "https://aced-storage.ohsu.edu")
+	t.Setenv("TEST_BUCKET_ACCESS_KEY", "cbds-user")
+	t.Setenv("TEST_BUCKET_SECRET_KEY", "cbds-secret")
 
 	cmd := NewCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	requireFlags(t, cmd)
-	if err := cmd.Flags().Set("sha256", providedSHA); err != nil {
-		t.Fatalf("set sha256 flag: %v", err)
-	}
-
-	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
-		t.Fatalf("service.Run error: %v", err)
-	}
-
-	if downloadCalled {
-		t.Fatalf("expected download NOT to be called")
-	}
-
-	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
-	pointerBytes, err := os.ReadFile(pointerPath)
+	in, err := parseAddURLInput(cmd, []string{"s3://cbds/path/to/file.bin"})
 	if err != nil {
-		t.Fatalf("read pointer file: %v", err)
+		t.Fatalf("parseAddURLInput error: %v", err)
 	}
-	expectedPointer := fmt.Sprintf(
-		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		shaHex,
-		len(content),
-	)
-	if string(pointerBytes) != expectedPointer {
-		t.Fatalf("pointer mismatch: expected %q, got %q", expectedPointer, string(pointerBytes))
+	if in.objectParams.S3Region != "us-east-1" {
+		t.Fatalf("unexpected S3Region: %s", in.objectParams.S3Region)
 	}
-
-	// The LFS object should NOT be in the local storage because we didn't download it
-	lfsObject := filepath.Join(lfsRoot, "objects", shaHex[0:2], shaHex[2:4], shaHex)
-	if _, err := os.Stat(lfsObject); err == nil {
-		t.Fatalf("expected LFS object NOT to exist at %s", lfsObject)
+	if in.objectParams.S3Endpoint != "https://aced-storage.ohsu.edu" {
+		t.Fatalf("unexpected S3Endpoint: %s", in.objectParams.S3Endpoint)
 	}
-
-	drsObject, err := drsmap.DrsInfoFromOid(shaHex)
-	if err != nil {
-		t.Fatalf("read drs object: %v", err)
+	if in.objectParams.S3AccessKey != "cbds-user" {
+		t.Fatalf("unexpected S3AccessKey: %s", in.objectParams.S3AccessKey)
 	}
-	if len(drsObject.AccessMethods) == 0 {
-		t.Fatalf("expected access methods in drs object")
-	}
-	if got := drsObject.AccessMethods[0].AccessURL.URL; got != "s3://bucket/path/to/file.bin" {
-		t.Fatalf("unexpected access URL: %s", got)
+	if in.objectParams.S3SecretKey != "cbds-secret" {
+		t.Fatalf("unexpected S3SecretKey: %s", in.objectParams.S3SecretKey)
 	}
 }
 
@@ -393,36 +319,19 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 func stubAddURLDeps(
 	t *testing.T,
 	service *AddURLService,
-	inspectFn func(context.Context, cloud.S3ObjectParameters) (*cloud.S3Object, error),
+	inspectFn func(context.Context, cloud.ObjectParameters) (*cloud.ObjectInfo, error),
 	isTrackedFn func(string) (bool, error),
-	downloadFn func(context.Context, *cloud.S3Object, cloud.S3ObjectParameters, string) (string, string, error),
 ) func() {
 	t.Helper()
-	origInspect := service.inspectS3
+	origInspect := service.inspectObject
 	origIsTracked := service.isLFSTracked
-	origDownload := service.download
 
-	service.inspectS3 = inspectFn
+	service.inspectObject = inspectFn
 	service.isLFSTracked = isTrackedFn
-	service.download = downloadFn
 
 	return func() {
-		service.inspectS3 = origInspect
+		service.inspectObject = origInspect
 		service.isLFSTracked = origIsTracked
-		service.download = origDownload
-	}
-}
-
-func requireFlags(t *testing.T, cmd *cobra.Command) {
-	t.Helper()
-	if err := cmd.Flags().Set(cloud.AWS_KEY_FLAG_NAME, "key"); err != nil {
-		t.Fatalf("set aws key: %v", err)
-	}
-	if err := cmd.Flags().Set(cloud.AWS_SECRET_FLAG_NAME, "secret"); err != nil {
-		t.Fatalf("set aws secret: %v", err)
-	}
-	if err := cmd.Flags().Set(cloud.AWS_REGION_FLAG_NAME, "region"); err != nil {
-		t.Fatalf("set aws region: %v", err)
 	}
 }
 
@@ -430,13 +339,10 @@ func mustChdir(t *testing.T, dir string) string {
 	t.Helper()
 	old, err := os.Getwd()
 	if err != nil {
-		// non-fatal since we just want to return something that won't cause Chdir to fail, but log it for visibility
-		// The issue is specific to GitHub Actions because cleanup order can vary between test runners. The temp directory cleanup happens before your t.Cleanup runs, making the current directory invalid.
-		t.Logf("An error occurred trying to Getwd, continuing with '' old dir: %v", err)
-		old = ""
+		t.Fatalf("Getwd: %v", err)
 	}
 	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("A fatal error occurred tying Chdir(%s): %v", dir, err)
+		t.Fatalf("Chdir(%s): %v", dir, err)
 	}
 	return old
 }
@@ -444,13 +350,13 @@ func mustChdir(t *testing.T, dir string) string {
 func setupGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	gitCmdRunner(t, dir, "init")
-	gitCmdRunner(t, dir, "config", "user.email", "test@example.com")
-	gitCmdRunner(t, dir, "config", "user.name", "Test User")
+	gitCmd(t, dir, "init")
+	gitCmd(t, dir, "config", "user.email", "test@example.com")
+	gitCmd(t, dir, "config", "user.name", "Test User")
 	return dir
 }
 
-func gitCmdRunner(t *testing.T, dir string, args ...string) {
+func gitCmd(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -459,17 +365,3 @@ func gitCmdRunner(t *testing.T, dir string, args ...string) {
 		t.Fatalf("git %s failed: %v (%s)", strings.Join(args, " "), err, string(out))
 	}
 }
-
-type MockDRSClient struct {
-	client.DRSClient
-}
-
-func (m *MockDRSClient) RegisterRecord(ctx context.Context, record *drs.DRSObject) (*drs.DRSObject, error) {
-	return record, nil
-}
-
-func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
-	return updateInfo, nil
-}
-
-func (m *MockDRSClient) GetProjectId() string { return "project" }

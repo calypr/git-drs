@@ -7,9 +7,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func setupTempRepo(t *testing.T) string {
@@ -64,10 +63,13 @@ func TestGetDrsLfsObjects(t *testing.T) {
 	if err := os.MkdirAll(objectsDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
+	name := "object-one"
 	payload := drs.DRSObject{
-		Id:        "object-1",
-		Name:      "object-one",
-		Checksums: hash.HashInfo{SHA256: "sha-256-value"},
+		Id:   "object-1",
+		Name: name,
+		Checksums: []drs.Checksum{
+			{Type: "sha256", Checksum: "sha-256-value"},
+		},
 	}
 	data, err := sonic.ConfigFastest.Marshal(payload)
 	if err != nil {

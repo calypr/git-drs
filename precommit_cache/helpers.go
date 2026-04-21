@@ -266,7 +266,7 @@ func gitRevParseGitDir(ctx context.Context) (string, error) {
 func git(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = os.Environ()
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf(
 			"git %s: %s",

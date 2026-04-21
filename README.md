@@ -3,7 +3,7 @@
 ---
 # NOTICE
 
-git-drs is not yet fully compliant with DRS. It currently works against Gen3's indexd system. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
+git-drs is not yet fully compliant with DRS. It currently works against Gen3 DRS server. Full GA4GH DRS support is expected once v1.6 of the specification has been published.
 
 ---
 
@@ -11,12 +11,12 @@ git-drs is not yet fully compliant with DRS. It currently works against Gen3's i
 
 **Git-LFS file management for DRS servers**
 
-Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with data platforms like Gen3 and AnVIL while maintaining your familiar Git workflow.
+Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with Gen3-backed workflows while maintaining your familiar Git workflow.
 
 ## Key Features
 
 - **Unified Workflow**: Manage both code and large data files using standard Git commands
-- **DRS Integration**: Built-in support for Gen3 DRS servers (AnVIL support under active development)
+- **DRS Integration**: Built-in support for Gen3 DRS servers
 - **Multi-Remote Support**: Work with development, staging, and production servers in one repository
 - **Automatic Processing**: Files are processed automatically during commits and pushes
 - **Flexible Tracking**: Track individual files, patterns, or entire directories
@@ -53,8 +53,17 @@ git drs init
 git drs remote add gen3 production \
     --cred /path/to/credentials.json \
     --url https://calypr-public.ohsu.edu \
+    --organization my-program \
     --project my-project \
     --bucket my-bucket
+
+# Required prerequisite (usually steward/admin setup):
+# map org/project to bucket + prefix before users run push/pull
+git drs bucket add production \
+    --organization my-program \
+    --project my-project \
+    --bucket my-bucket \
+    --path my-program/my-project
 
 # Track files
 git lfs track "*.bam"
@@ -75,16 +84,15 @@ For detailed setup and usage information:
 
 - **[Getting Started](docs/getting-started.md)** - Repository setup and basic workflows
 - **[Commands Reference](docs/commands.md)** - Complete command documentation
-- **[Remote Remove Use Cases](docs/remote-remove-use-cases.md)** - Practical scenarios for remote cleanup
 - **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
-- **[S3 Integration](docs/adding-s3-files.md)** - Adding files via S3 URLs
+- **[E2E Modes + Local Setup](docs/e2e-modes-and-local-setup.md)** - Local vs remote mode, server config, and end-to-end runbooks
+- **[Cloud URL Integration](docs/adding-s3-files.md)** - Adding files via cloud object URLs
 - **[Developer Guide](docs/developer-guide.md)** - Internals and development
 
 ## Supported Servers
 
 - **Gen3 Data Commons** (e.g., CALYPR)
-- **AnVIL/Terra** DRS servers (under active development)
 
 ## Supported Environments
 
@@ -99,8 +107,7 @@ For detailed setup and usage information:
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |
 | `git drs remote set`   | Set default remote                    |
-| `git drs remote remove`| Remove a configured remote            |
-| `git drs add-url`      | Add files via S3 URLs                 |
+| `git drs add-url`      | Add files via cloud object URLs       |
 | `git lfs track`        | Track file patterns with LFS          |
 | `git lfs ls-files`     | List tracked files                    |
 | `git lfs pull`         | Download tracked files                |

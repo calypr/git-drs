@@ -1,6 +1,6 @@
 #!/bin/bash
 # coverage-test.sh
-# Removes objects from the bucket and indexd records, then runs monorepo tests (clean, normal, clone) twice.
+# Removes objects from the bucket and DRS object records, then runs monorepo tests (clean, normal, clone) twice.
 set -euo pipefail
 
 # uncomment the following line to enable debug output for git commands (e.g. to troubleshoot large file uploads/downloads)
@@ -172,7 +172,7 @@ rm git-drs || true
 which git-drs
 rm -rf coverage/unit
 mkdir -p coverage/unit
-go test  -cover -covermode=atomic -coverprofile=coverage/unit/coverage.out -coverpkg=./... $( go list ./... | grep -v tests/integration ) || { echo "error: unit tests failed" >&2; exit 1; }
+go test  -cover -covermode=atomic -coverprofile=coverage/unit/coverage.out -coverpkg=./... ./... || { echo "error: unit tests failed" >&2; exit 1; }
 #
 echo "Unit tests completed successfully. Coverage profile saved to coverage/unit/coverage.out" >&2
 
@@ -184,18 +184,18 @@ mkdir -p coverage/integration/raw
 
 pushd "$UTIL_DIR" >/dev/null
 
-# 1) Remove objects from bucket using indexd->s3 list/delete pipeline
-echo "Removing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./delete-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
-if ! ./list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./delete-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
-  err "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./delete-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
+# 1) Remove objects from bucket using drs->s3 list/delete pipeline
+echo "Removing bucket objects by sha256 via \`./list-drs-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./delete-s3-by-sha256.sh $MINIO_ALIAS $BUCKET\`" >&2
+if ! ./list-drs-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | ./delete-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
+  err "command failed: ./list-drs-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./delete-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$BUCKET\""
   exit 1
 fi
 echo "Bucket object removal pipeline completed." >&2
 
-# 2) Remove indexd records
-echo "Removing indexd records via \`./clean-indexd.sh $POD <POSTGRES_PASSWORD>\`" >&2
-run_and_check ./clean-indexd.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE"
-echo "Indexd cleanup completed." >&2
+# 2) Remove DRS object records
+echo "Removing DRS object records via \`./clean-drs-records.sh $POD <POSTGRES_PASSWORD>\`" >&2
+run_and_check ./clean-drs-records.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE"
+echo "DRS cleanup completed." >&2
 
 popd >/dev/null
 
@@ -229,7 +229,7 @@ for pass in 1 2; do
     run_and_check "$RUN_TEST" --clean  --bucket=$BUCKET --project=$PROJECT_ID
   fi
 
-  # on the second pass, this will NOT replace existing indexd records
+  # on the second pass, this will NOT replace existing DRS object records
   echo "-> Running: \`$RUN_TEST\`" >&2
   run_and_check "$RUN_TEST"
 
@@ -269,13 +269,15 @@ ENDPOINT=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.URL')
 ACCESS_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.accessKey')
 SECRET_KEY=$(echo "$MC_ALIAS_INFO_JSON" | jq -r '.secretKey')
 
-# use the add-url command to add the file to project
-# we are not providing the sha256, so git-drs must compute it and verify it matches
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --region us-east-1
+# pass S3 connection hints via environment (add-url no longer accepts
+# per-command AWS credential flags)
+export AWS_ACCESS_KEY_ID="$ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+export AWS_ENDPOINT_URL_S3="$ENDPOINT"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
+
+# use add-url without --sha256 (experimental sentinel mode)
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt
 
 # set the .gitattributes to track the file
 git lfs track data/simple_test_file.txt
@@ -302,17 +304,17 @@ if [ -z "$original_add_url_oid" ]; then
   err "unable to find LFS OID for data/simple_test_file.txt"
   exit 1
 fi
+if [ "$original_add_url_oid" = "$sha256" ]; then
+  err "expected sentinel/synthetic oid for unknown-sha add-url, but found real sha256"
+  exit 1
+fi
 
 updated_test_string='simple test updated'
 echo "$updated_test_string" > /tmp/simple_test_file_updated.txt
 updated_sha256=$(sha256sum /tmp/simple_test_file_updated.txt | cut -d' ' -f1)
 mc cp /tmp/simple_test_file_updated.txt "$MINIO_ALIAS/$PREFIX$BUCKET/simple_test_file.txt"
 
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --region us-east-1
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt
 
 git add data/simple_test_file.txt
 git commit -m "add-url update simple_test_file.txt"
@@ -330,14 +332,8 @@ fi
 git lfs pull origin main
 cat data/simple_test_file.txt | grep "$updated_test_string"
 
-# use the add-url command to add the file to project
-# we are providing the sha256, so git-drs must trust it
-git drs add-url s3://$PREFIX$BUCKET/simple_test_file2.txt data/simple_test_file2.txt  \
-  --aws-access-key-id  $ACCESS_KEY \
-  --aws-secret-access-key  $SECRET_KEY  \
-  --endpoint-url $ENDPOINT \
-  --sha256 $sha2562 \
-  --region us-east-1
+# use add-url with explicit sha256 (known hash mode)
+git drs add-url s3://$PREFIX$BUCKET/simple_test_file2.txt data/simple_test_file2.txt --sha256 "$sha2562"
 
 git lfs track data/simple_test_file2.txt
 git add .gitattributes data/simple_test_file2.txt
@@ -347,6 +343,10 @@ echo "verify the sha256 matches for simple_test_file2.txt"
 simple_test_file2_oid=$(git lfs ls-files -l | awk -v path="data/simple_test_file2.txt" '$0 ~ (" " path "$") {print $1; exit}')
 if [ -z "$simple_test_file2_oid" ]; then
   echo "unable to find LFS OID for data/simple_test_file2.txt"
+  exit 1
+fi
+if [ "$simple_test_file2_oid" != "$sha2562" ]; then
+  echo "expected simple_test_file2 oid to match provided sha256"
   exit 1
 fi
 
@@ -374,9 +374,9 @@ echo "Passed checks for rename of simple_test_file2.txt"
 #
 popd >/dev/null
 
-echo "Listing bucket objects by sha256 via \`./list-indexd-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $PREFIX$BUCKET\`" >&2
-if ! $UTIL_DIR/list-indexd-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
-  echo "command failed: ./list-indexd-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$PREFIX$BUCKET\""
+echo "Listing bucket objects by sha256 via \`./list-drs-sha256.sh $POD <POSTGRES_PASSWORD> $RESOURCE | ./list-s3-by-sha256.sh $MINIO_ALIAS $PREFIX$BUCKET\`" >&2
+if ! $UTIL_DIR/list-drs-sha256.sh "$POD" "$POSTGRES_PASSWORD" "$RESOURCE" | $UTIL_DIR/list-s3-by-sha256.sh "$MINIO_ALIAS" "$PREFIX$BUCKET"; then
+  echo "command failed: ./list-drs-sha256.sh \"$POD\" \"$POSTGRES_PASSWORD\" \"$RESOURCE\" | ./list-s3-by-sha256.sh \"$MINIO_ALIAS\" \"$PREFIX$BUCKET\""
   exit 1
 fi
 
@@ -389,4 +389,3 @@ echo "Integration coverage profile saved to ${INTEGRATION_PROFILE}"
 
 echo "Combining coverage profiles..."
 tests/scripts/coverage/combine-coverage.sh
-

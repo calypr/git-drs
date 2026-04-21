@@ -2,23 +2,27 @@ package prepush
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/syfon/client/drs"
 	"github.com/spf13/cobra"
 )
 
@@ -73,19 +77,6 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-	// get the remote client
-	cli, err := cfg.GetRemoteClient(remote, myLogger)
-	if err != nil {
-		// Print warning to stderr and return success (exit 0)
-		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote client:", err)
-		myLogger.Debug(fmt.Sprintf("Warning. Skipping DRS preparation. Error getting remote client: %v", err))
-		// Check for GitDrsIdxdClient
-	}
-	dc, ok := cli.(*indexd.GitDrsIdxdClient)
-	if !ok {
-		return fmt.Errorf("cli is not IndexdClient: %T", cli)
-	}
-	myLogger.Debug(fmt.Sprintf("Current server: %s", dc.Config.ProjectId))
 	remoteConfig := cfg.GetRemote(remote)
 	if remoteConfig == nil {
 		fmt.Fprintln(os.Stderr, "Warning. Skipping DRS preparation. Error getting remote configuration.")
@@ -93,8 +84,22 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return nil
 	}
 
-	builder := drs.NewObjectBuilder(dc.GetBucketName(), remoteConfig.GetProjectId())
-	myLogger.Debug(fmt.Sprintf("Current server project: %s", builder.ProjectID))
+	scope, err := gitrepo.ResolveBucketScope(
+		remoteConfig.GetOrganization(),
+		remoteConfig.GetProjectId(),
+		remoteConfig.GetBucketName(),
+		remoteConfig.GetStoragePrefix(),
+	)
+	if err != nil {
+		return err
+	}
+
+	builder := drs.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
+	builder.Organization = remoteConfig.GetOrganization()
+	builder.StoragePrefix = scope.Prefix
+	// git-drs native backend uses CAS-style paths
+	builder.PathStyle = "CAS"
+	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
 
 	tmp, err := bufferStdin(stdin, s.createTempFile)
 	if err != nil {
@@ -130,8 +135,182 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
 		return err
 	}
+
+	// Stage metadata in one packet; server consumes it at LFS verify-time.
+	myLogger.Info(fmt.Sprintf("Staging %d DRS metadata records for LFS verify", len(lfsFiles)))
+	if err := submitPendingLFSMeta(ctx, remote, remoteConfig.GetEndpoint(), lfsFiles, myLogger); err != nil {
+		myLogger.Error(fmt.Sprintf("DRS metadata staging failed: %v", err))
+		return fmt.Errorf("DRS metadata staging failed: %w", err)
+	}
+
 	myLogger.Info("~~~~~~~~~~~~~ COMPLETED: pre-push ~~~~~~~~~~~~~")
 	return nil
+}
+
+type metadataSubmitRequest struct {
+	Candidates []metadataCandidate `json:"candidates"`
+	TTLSeconds int64               `json:"ttl_seconds,omitempty"`
+}
+
+type metadataChecksum struct {
+	Type     string `json:"type"`
+	Checksum string `json:"checksum"`
+}
+
+type metadataAuthorizations struct {
+	BearerAuthIssuers []string `json:"bearer_auth_issuers,omitempty"`
+}
+
+type metadataAccessURL struct {
+	URL string `json:"url,omitempty"`
+}
+
+type metadataAccessMethod struct {
+	Type           string                  `json:"type,omitempty"`
+	AccessURL      metadataAccessURL       `json:"access_url,omitempty"`
+	AccessID       string                  `json:"access_id,omitempty"`
+	Region         string                  `json:"region,omitempty"`
+	Authorizations *metadataAuthorizations `json:"authorizations,omitempty"`
+}
+
+type metadataCandidate struct {
+	Id            string                 `json:"id,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	Size          int64                  `json:"size"`
+	Version       string                 `json:"version,omitempty"`
+	MimeType      string                 `json:"mime_type,omitempty"`
+	Checksums     []metadataChecksum     `json:"checksums"`
+	AccessMethods []metadataAccessMethod `json:"access_methods,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	Aliases       []string               `json:"aliases,omitempty"`
+}
+
+func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
+	out := metadataCandidate{
+		Name:        c.Name,
+		Size:        c.Size,
+		Version:     c.Version,
+		MimeType:    c.MimeType,
+		Description: c.Description,
+		Aliases:     append([]string(nil), c.Aliases...),
+	}
+
+	if len(c.Checksums) > 0 {
+		out.Checksums = make([]metadataChecksum, 0, len(c.Checksums))
+		for _, cs := range c.Checksums {
+			out.Checksums = append(out.Checksums, metadataChecksum{
+				Type:     string(cs.Type),
+				Checksum: cs.Checksum,
+			})
+		}
+	}
+
+	if len(c.AccessMethods) > 0 {
+		out.AccessMethods = make([]metadataAccessMethod, 0, len(c.AccessMethods))
+		for _, am := range c.AccessMethods {
+			accID := am.AccessId
+			region := am.Region
+			accURL := am.AccessUrl.Url
+			m := metadataAccessMethod{
+				Type:     am.Type,
+				AccessID: accID,
+				Region:   region,
+				AccessURL: metadataAccessURL{
+					URL: accURL,
+				},
+			}
+			if len(am.Authorizations.BearerAuthIssuers) > 0 {
+				m.Authorizations = &metadataAuthorizations{
+					BearerAuthIssuers: append([]string(nil), am.Authorizations.BearerAuthIssuers...),
+				}
+			}
+			out.AccessMethods = append(out.AccessMethods, m)
+		}
+	}
+
+	return out
+}
+
+func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint string, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
+	base := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if base == "" {
+		return fmt.Errorf("remote endpoint is empty")
+	}
+	url := base + "/info/lfs/objects/metadata"
+
+	candidates := make([]metadataCandidate, 0, len(lfsFiles))
+	for _, file := range lfsFiles {
+		obj, err := drsmap.DrsInfoFromOid(file.Oid)
+		if err != nil || obj == nil {
+			logger.Debug(fmt.Sprintf("skipping oid %s: local DRS object not found", file.Oid))
+			continue
+		}
+		candidates = append(candidates, toMetadataCandidate(drs.ConvertToCandidate(obj)))
+	}
+	if len(candidates) == 0 {
+		logger.Debug("no metadata candidates to stage")
+		return nil
+	}
+
+	reqBody := metadataSubmitRequest{
+		Candidates: candidates,
+		TTLSeconds: int64((20 * time.Minute).Seconds()),
+	}
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to encode pending metadata request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create pending metadata request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
+	if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
+		httpReq.Header.Set("Authorization", authHeader)
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("pending metadata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		bodyText := strings.TrimSpace(string(body))
+		// Some deployments do not yet expose /info/lfs/objects/metadata.
+		// Treat this as optional capability and continue with push flow.
+		switch resp.StatusCode {
+		case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusNotImplemented:
+			logger.Warn(fmt.Sprintf("metadata staging endpoint unavailable (status=%d); continuing without staged metadata", resp.StatusCode))
+			return nil
+		}
+		// Some reverse proxies/frontends may return HTML 404/maintenance pages with 5xx.
+		// If this looks like non-API HTML and not a structured LFS error, degrade gracefully.
+		if strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+			logger.Warn(fmt.Sprintf("metadata staging returned HTML response (status=%d); continuing without staged metadata", resp.StatusCode))
+			return nil
+		}
+		return fmt.Errorf("pending metadata request failed: status=%d body=%s", resp.StatusCode, bodyText)
+	}
+	return nil
+}
+
+func resolveRemoteAuthHeader(remoteName string) (string, bool) {
+	if token, err := gitrepo.GetRemoteToken(remoteName); err == nil {
+		if token = strings.TrimSpace(token); token != "" {
+			return "Bearer " + token, true
+		}
+	}
+	username, password, err := gitrepo.GetRemoteBasicAuth(remoteName)
+	if err != nil || username == "" || password == "" {
+		return "", false
+	}
+	creds := username + ":" + password
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(creds)), true
 }
 
 func parseRemoteArgs(args []string) (string, string) {
@@ -162,10 +341,14 @@ func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.
 	}
 
 	if _, err := io.Copy(tmp, stdin); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("error buffering stdin: %w", err)
 	}
 
 	if _, err := tmp.Seek(0, 0); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return nil, fmt.Errorf("error seeking temp stdin: %w", err)
 	}
 	return tmp, nil
@@ -261,6 +444,14 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 
 const cacheMaxAge = 24 * time.Hour
 
+func normalizeCachedOID(oid string) string {
+	normalized := strings.TrimSpace(oid)
+	if len(normalized) >= len("sha256:") && strings.EqualFold(normalized[:len("sha256:")], "sha256:") {
+		normalized = normalized[len("sha256:"):]
+	}
+	return strings.TrimSpace(normalized)
+}
+
 func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs []pushedRef, logger *slog.Logger) (map[string]lfs.LfsFileInfo, bool, error) {
 	if cache == nil {
 		return nil, false, nil
@@ -275,7 +466,11 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 		if err != nil {
 			return nil, false, err
 		}
-		if !ok || entry.LFSOID == "" {
+		if !ok {
+			return nil, false, nil
+		}
+		oid := normalizeCachedOID(entry.LFSOID)
+		if oid == "" {
 			return nil, false, nil
 		}
 		if entry.UpdatedAt == "" || precommit_cache.StaleAfter(entry.UpdatedAt, cacheMaxAge) {
@@ -290,7 +485,7 @@ func lfsFilesFromCache(ctx context.Context, cache *precommit_cache.Cache, refs [
 			Name:    path,
 			Size:    stat.Size(),
 			OidType: "sha256",
-			Oid:     entry.LFSOID,
+			Oid:     oid,
 			Version: "https://git-lfs.github.com/spec/v1",
 		}
 	}
@@ -333,7 +528,7 @@ func listPushedPaths(ctx context.Context, refs []pushedRef) ([]string, error) {
 func gitOutput(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = os.Environ()
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}

@@ -40,9 +40,9 @@ var ListCmd = &cobra.Command{
 			if remoteSelect.Gen3 != nil {
 				remoteType = string(config.Gen3ServerType)
 				remote = remoteSelect.Gen3
-			} else if remoteSelect.Anvil != nil {
-				remoteType = string(config.AnvilServerType)
-				remote = remoteSelect.Anvil
+			} else if remoteSelect.Local != nil {
+				remoteType = string(config.LocalServerType)
+				remote = remoteSelect.Local
 			} else {
 				remoteType = "unknown"
 			}

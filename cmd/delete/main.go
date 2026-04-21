@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/data-client/hash"
+	gitdrsdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -48,12 +48,12 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
+			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsClient.GetObjectByHash(context.Background(), &hash.Checksum{Type: hash.ChecksumTypeSHA256, Checksum: oid})
+		records, err := drsClient.API.GetObjectByHash(context.Background(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -61,28 +61,19 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("no records found for OID %s", oid)
 		}
 
-		// Find matching record for current project
-		projectId := drsClient.GetProjectId()
-		matchingRecord, err := drsmap.FindMatchingRecord(records, projectId, "")
-		if err != nil {
-			return fmt.Errorf("error finding matching record for project %s: %v", projectId, err)
-		}
-		if matchingRecord == nil {
-			return fmt.Errorf("no matching record found for project %s and OID %s", projectId, oid)
-		}
-
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
+			projectId := drsClient.ProjectId
 			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
 			common.DisplayField(os.Stderr, "Remote", string(remoteName))
 			common.DisplayField(os.Stderr, "Project", projectId)
 			common.DisplayField(os.Stderr, "OID", oid)
 			common.DisplayField(os.Stderr, "Hash Type", hashType)
-			common.DisplayField(os.Stderr, "DID", matchingRecord.Id)
-			if matchingRecord.Name != "" {
-				common.DisplayField(os.Stderr, "Filename", matchingRecord.Name)
+			common.DisplayField(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records)))
+			if len(records) > 0 {
+				common.DisplayField(os.Stderr, "Example DID", records[0].Id)
 			}
-			common.DisplayField(os.Stderr, "Size", fmt.Sprintf("%d bytes", matchingRecord.Size))
+			common.DisplayField(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend")
 			common.DisplayFooter(os.Stderr)
 
 			if err := common.PromptForConfirmation(
@@ -96,7 +87,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = drsClient.DeleteRecord(context.Background(), oid)
+		err = gitdrsdrs.DeleteRecordsByOID(context.Background(), drsClient.API, oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

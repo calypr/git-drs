@@ -40,28 +40,14 @@ func IsLFSTracked(path string) (bool, error) {
 	// path: filter: lfs
 	// path: filter: unspecified
 	//
-	// Format is stable and documented, but some git wrappers print extra
-	// debugging lines. eg GIT_TRACE=1 GIT_TRANSFER_TRACE=1
-	// Only consider the line that starts with the queried
-	// path so we do not parse unrelated output.
-	output := out.String()
-	prefix := cleanPath + ":"
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, prefix) {
-			continue
-		}
-
-		fields := strings.SplitN(line, ":", 3)
-		if len(fields) < 3 {
-			continue
-		}
-
-		value := strings.TrimSpace(fields[2])
-		return value == "lfs", nil
+	// Format is stable and documented.
+	fields := strings.Split(out.String(), ":")
+	if len(fields) < 3 {
+		return false, nil
 	}
 
-	return false, nil
+	value := strings.TrimSpace(fields[2])
+	return value == "lfs", nil
 }
 
 // LfsFileInfo represents the information about an LFS file
@@ -70,6 +56,7 @@ type LfsFileInfo struct {
 	Size       int64  `json:"size"`
 	Checkout   bool   `json:"checkout"`
 	Downloaded bool   `json:"downloaded"`
+	IsPointer  bool   `json:"is_pointer,omitempty"`
 	OidType    string `json:"oid_type"`
 	Oid        string `json:"oid"`
 	Version    string `json:"version"`

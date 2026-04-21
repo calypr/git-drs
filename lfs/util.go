@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/drs"
 )
 
 type DrsWalkFunc func(path string, d *drs.DRSObject) error

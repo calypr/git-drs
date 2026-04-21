@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/hash"
 )
 
 type fakeChecksumClient struct {
@@ -35,7 +35,7 @@ func TestQueryByChecksumTypes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(string(tt.expected), func(t *testing.T) {
 			_, _ = queryByChecksum(client, tt.hash)
-			if client.received.Type != tt.expected {
+			if client.received.Type != string(tt.expected) {
 				t.Errorf("expected %s, got %s", tt.expected, client.received.Type)
 			}
 		})

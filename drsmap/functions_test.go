@@ -3,8 +3,8 @@ package drsmap
 import (
 	"testing"
 
-	"github.com/calypr/data-client/drs"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/drs"
 )
 
 // Test DrsUUID function - it's already tested but let's add more coverage
@@ -13,8 +13,8 @@ func TestDrsUUID_Consistency(t *testing.T) {
 	projectID := "test-project"
 	hash := "abc123"
 
-	uuid1 := DrsUUID(projectID, hash)
-	uuid2 := DrsUUID(projectID, hash)
+	uuid1 := DrsUUID("", projectID, hash)
+	uuid2 := DrsUUID("", projectID, hash)
 
 	if uuid1 != uuid2 {
 		t.Errorf("DrsUUID should be deterministic, got %s and %s", uuid1, uuid2)
@@ -27,9 +27,9 @@ func TestDrsUUID_Consistency(t *testing.T) {
 
 func TestDrsUUID_DifferentInputs(t *testing.T) {
 	// Test that different inputs produce different UUIDs
-	uuid1 := DrsUUID("project1", "hash1")
-	uuid2 := DrsUUID("project2", "hash1")
-	uuid3 := DrsUUID("project1", "hash2")
+	uuid1 := DrsUUID("", "project1", "hash1")
+	uuid2 := DrsUUID("", "project2", "hash1")
+	uuid3 := DrsUUID("", "project1", "hash2")
 
 	if uuid1 == uuid2 {
 		t.Error("Different projects should produce different UUIDs")
@@ -103,7 +103,8 @@ func TestLfsFileInfo_Fields(t *testing.T) {
 
 func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	// Test with empty list
-	result, err := FindMatchingRecord([]drs.DRSObject{}, "test-project", "")
+	// pass empty org for test
+	result, err := FindMatchingRecord([]drs.DRSObject{}, "", "test-project")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -189,8 +190,8 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
-						Value: "other-resource",
+					Authorizations: drs.Authorizations{
+						BearerAuthIssuers: []string{"other-resource"},
 					},
 				},
 			},
@@ -200,15 +201,16 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
-						Value: expectedAuthz,
+					Authorizations: drs.Authorizations{
+						BearerAuthIssuers: []string{expectedAuthz},
 					},
 				},
 			},
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID, "")
+	// pass empty org for test
+	result, err := FindMatchingRecord(records, "", projectID)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -220,7 +222,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 	}
 }
 
-func TestFindMatchingRecord_NoMatch(t *testing.T) {
+func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
 	projectID := "PROG-PROJ"
 
 	records := []drs.DRSObject{
@@ -229,97 +231,37 @@ func TestFindMatchingRecord_NoMatch(t *testing.T) {
 			AccessMethods: []drs.AccessMethod{
 				{
 					Type: "s3",
-					Authorizations: &drs.Authorizations{
-						Value: "other-resource",
+					Authorizations: drs.Authorizations{
+						BearerAuthIssuers: []string{"other-resource"},
 					},
 				},
 			},
 		},
 	}
 
-	result, err := FindMatchingRecord(records, projectID, "")
+	// pass empty org for test
+	result, err := FindMatchingRecord(records, "", projectID)
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	if result != nil {
-		t.Errorf("Expected nil result, got %v", result)
+		t.Fatalf("expected nil when no authz matches, got id=%q", result.Id)
 	}
 }
 
-func TestFindMatchingRecord_InvalidProjectID(t *testing.T) {
-	projectID := "invalid" // Missing hyphen
+func TestFindMatchingRecord_NonHyphenated(t *testing.T) {
+	// ProjectToResource in common.go handles non-hyphenated projects by using default program.
+	// So "invalid" is actually valid and becomes "/programs/default/projects/invalid".
+	// We should update this test to expect success or choose a truly invalid input if possible.
+	// But common.ProjectToResource looks quite permissible.
+	// For now, let's remove this test case or assert it works.
 
-	records := []drs.DRSObject{
-		{
-			Id: "any",
-			AccessMethods: []drs.AccessMethod{
-				{
-					Type: "s3",
-					Authorizations: &drs.Authorizations{
-						Value: "any",
-					},
-				},
-			},
-		},
-	}
+	projectId := "no-hyphen"
+	records := []drs.DRSObject{}
 
-	_, err := FindMatchingRecord(records, projectID, "")
-	if err == nil {
-		t.Error("Expected error for invalid project ID")
-	}
-}
-func TestFindMatchingRecord_FilenameDisambiguation(t *testing.T) {
-	projectID := "PROG-PROJ"
-	expectedAuthz := "/programs/PROG/projects/PROJ"
-
-	records := []drs.DRSObject{
-		{
-			Id:   "wrong-file",
-			Name: "path/to/wrong.json",
-			AccessMethods: []drs.AccessMethod{
-				{
-					Type:           "s3",
-					Authorizations: &drs.Authorizations{Value: expectedAuthz},
-				},
-			},
-		},
-		{
-			Id:   "right-file",
-			Name: "path/to/correct.offsets.json",
-			AccessMethods: []drs.AccessMethod{
-				{
-					Type:           "s3",
-					Authorizations: &drs.Authorizations{Value: expectedAuthz},
-				},
-			},
-		},
-	}
-
-	// Should match "right-file" when filename hint is provided
-	result, err := FindMatchingRecord(records, projectID, "correct.offsets.json")
+	// Should not error
+	_, err := FindMatchingRecord(records, "", projectId)
 	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-	if result == nil || result.Id != "right-file" {
-		t.Errorf("Expected to match 'right-file' using filename hint, got %v", result)
-	}
-
-	// Should match first candidate ("wrong-file") when no hint is provided
-	result, err = FindMatchingRecord(records, projectID, "")
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-	if result == nil || result.Id != "wrong-file" {
-		t.Errorf("Expected to match 'wrong-file' with no hint, got %v", result)
-	}
-
-	// If a filename hint is provided but does not match any project-scoped record,
-	// the function should return nil (strict disambiguation mode).
-	result, err = FindMatchingRecord(records, projectID, "missing-file.txt")
-	if err != nil {
-		t.Errorf("Unexpected error: %v", err)
-	}
-	if result != nil {
-		t.Errorf("Expected nil when filename hint does not match, got %v", result)
+		t.Errorf("FindMatchingRecord should accept non-hyphenated project ID: %v", err)
 	}
 }

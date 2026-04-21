@@ -69,8 +69,10 @@ Every Git repository using Git DRS requires configuration, whether you're creati
 
    Contact your data coordinator for:
    - DRS server URL
+   - Organization name
    - Project ID
    - Bucket name
+   - Confirmation that bucket mapping exists for your organization/project
 
 5. **Initialize Git DRS**
 
@@ -100,6 +102,8 @@ Every Git repository using Git DRS requires configuration, whether you're creati
    ```
    * production  gen3    https://calypr-public.ohsu.edu
    ```
+
+   **Important:** `git drs remote add` alone is not enough. Push/pull requires an existing bucket mapping for your `organization/project` (usually provisioned once by a steward/admin).
 
 **Managing Additional Remotes**
 
@@ -232,27 +236,28 @@ git lfs ls-files -I "*.bam"
 git lfs ls-files
 ```
 
-## Working with S3 Files
+## Working with Cloud Object URLs
 
-You can add references to existing S3 files without copying them:
+You can add references to existing bucket objects without copying them:
 
 ```bash
 # Track the file pattern first
 git lfs track "myfile.txt"
 git add .gitattributes
 
-# Add S3 reference
+# Add object reference (known sha256 path)
 git drs add-url s3://bucket/path/to/file \
-  --sha256 <file-hash> \
-  --aws-access-key <key> \
-  --aws-secret-key <secret>
+  --sha256 <file-hash>
+
+# Or use unknown-sha (experimental sentinel mode)
+git drs add-url s3://bucket/path/to/file
 
 # Commit and push
 git commit -m "Add S3 file reference"
 git push
 ```
 
-See [S3 Integration Guide](adding-s3-files.md) for detailed examples.
+See [Cloud URL Integration Guide](adding-s3-files.md) for detailed examples.
 
 ## Configuration Management
 
@@ -312,6 +317,48 @@ For each work session:
    ```
 
 2. **Work with files** (track, add, commit, push)
+
+## Local DRS Server Setup
+
+Use this flow when developing against a local `drs-server` instead of hosted Gen3.
+
+1. **Initialize repo**
+
+   ```bash
+   git drs init
+   ```
+
+2. **Add local remote**
+
+   ```bash
+   git drs remote add local origin http://localhost:8080 \
+       --organization calypr \
+       --project end_to_end_test \
+       --bucket cbds \
+       --username drs-user \
+       --password drs-pass
+   ```
+
+   If your local server has no basic auth, omit `--username/--password`.
+
+3. **Track and push**
+
+   ```bash
+   git lfs track "*.bin"
+   git add .gitattributes data/example.bin
+   git commit -m "Add local DRS test file"
+   git drs push
+   ```
+
+4. **Verify pull**
+
+   ```bash
+   git drs pull
+   # or Git LFS compatibility path
+   git lfs pull
+   ```
+
+For complete local/remote mode behavior and e2e runbooks, see [E2E Modes + Local Setup](e2e-modes-and-local-setup.md).
 
 3. **Download files as needed**
 

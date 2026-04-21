@@ -1,7 +1,6 @@
 package addurl
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -18,11 +17,11 @@ var Cmd = NewCommand()
 // wiring usage, argument validation and the RunE handler.
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add-url <s3-url> [path]",
-		Short: "Add a file to the Git DRS repo using an S3 URL",
+		Use:   "add-url <cloud-url> [path]",
+		Short: "Add a file to the Git DRS repo using a cloud object URL",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 || len(args) > 2 {
-				return errors.New("usage: add-url <s3-url> [path]")
+				return errors.New("usage: add-url <cloud-url> [path]")
 			}
 			return nil
 		},
@@ -32,34 +31,8 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-// addFlags registers command-line flags for AWS credentials, endpoint and an
-// optional `sha256` expected checksum.
+// addFlags registers optional expected SHA256 checksum.
 func addFlags(cmd *cobra.Command) {
-	cmd.Flags().String(
-		cloud.AWS_KEY_FLAG_NAME,
-		os.Getenv(cloud.AWS_KEY_ENV_VAR),
-		"AWS access key",
-	)
-
-	cmd.Flags().String(
-		cloud.AWS_SECRET_FLAG_NAME,
-		os.Getenv(cloud.AWS_SECRET_ENV_VAR),
-		"AWS secret key",
-	)
-
-	cmd.Flags().String(
-		cloud.AWS_REGION_FLAG_NAME,
-		os.Getenv(cloud.AWS_REGION_ENV_VAR),
-		"AWS S3 region",
-	)
-
-	cmd.Flags().String(
-		cloud.AWS_ENDPOINT_URL_FLAG_NAME,
-		os.Getenv(cloud.AWS_ENDPOINT_URL_ENV_VAR),
-		"AWS S3 endpoint (optional, for Ceph/MinIO)",
-	)
-
-	// New flag: optional expected SHA256
 	cmd.Flags().String(
 		"sha256",
 		"",
@@ -72,89 +45,62 @@ func runAddURL(cmd *cobra.Command, args []string) (err error) {
 	return NewAddURLService().Run(cmd, args)
 }
 
-// download uses cloud.AgentFetchReader to download the S3 object, returning
-// the computed SHA256 and the path to the temporary downloaded file.
-// The caller is responsible for moving/deleting the temporary file.
-// we include this wrapper function to allow mocking in tests.
-var download = func(ctx context.Context, info *cloud.S3Object, input cloud.S3ObjectParameters, lfsRoot string) (string, string, error) {
-	return cloud.Download(ctx, info, input, lfsRoot)
-}
-
-// addURLInput parses CLI args and flags into an addURLInput, validates
-// required AWS credentials and region, and constructs cloud.S3ObjectParameters.
+// addURLInput parses CLI args and flags into an addURLInput and constructs
+// cloud.ObjectParameters for metadata inspection.
 type addURLInput struct {
-	s3URL    string
-	path     string
-	sha256   string
-	s3Params cloud.S3ObjectParameters
+	objectURL    string
+	path         string
+	sha256       string
+	objectParams cloud.ObjectParameters
 }
 
 func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
-	s3URL := args[0]
+	objectURL := args[0]
 
-	pathArg, err := resolvePathArg(s3URL, args)
+	pathArg, err := resolvePathArg(objectURL, args)
 	if err != nil {
 		return addURLInput{}, err
 	}
 
-	sha256ParamRaw, err := cmd.Flags().GetString("sha256")
+	sha256Param, err := cmd.Flags().GetString("sha256")
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag sha256: %w", err)
 	}
-	sha256Param := cloud.NormalizeSHA256(sha256ParamRaw)
-	if sha256ParamRaw != "" && sha256Param == "" {
-		return addURLInput{}, fmt.Errorf("invalid sha256: %s", sha256ParamRaw)
-	}
-
-	awsKey, err := cmd.Flags().GetString(cloud.AWS_KEY_FLAG_NAME)
-	if err != nil {
-		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_KEY_FLAG_NAME, err)
-	}
-	awsSecret, err := cmd.Flags().GetString(cloud.AWS_SECRET_FLAG_NAME)
-	if err != nil {
-		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_SECRET_FLAG_NAME, err)
-	}
-	awsRegion, err := cmd.Flags().GetString(cloud.AWS_REGION_FLAG_NAME)
-	if err != nil {
-		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_REGION_FLAG_NAME, err)
-	}
-	awsEndpoint, err := cmd.Flags().GetString(cloud.AWS_ENDPOINT_URL_FLAG_NAME)
-	if err != nil {
-		return addURLInput{}, fmt.Errorf("read flag %s: %w", cloud.AWS_ENDPOINT_URL_FLAG_NAME, err)
-	}
-
-	if awsKey == "" || awsSecret == "" {
-		return addURLInput{}, errors.New("AWS credentials must be provided via flags or environment variables")
-	}
-	if awsRegion == "" {
-		return addURLInput{}, errors.New("AWS region must be provided via flag or environment variable")
-	}
-
-	s3Input := cloud.S3ObjectParameters{
-		S3URL:           s3URL,
-		AWSAccessKey:    awsKey,
-		AWSSecretKey:    awsSecret,
-		AWSRegion:       awsRegion,
-		AWSEndpoint:     awsEndpoint,
+	objectParams := cloud.ObjectParameters{
+		ObjectURL:       objectURL,
+		S3Region:        firstNonEmpty(os.Getenv("AWS_REGION"), os.Getenv("AWS_DEFAULT_REGION"), os.Getenv("TEST_BUCKET_REGION")),
+		S3Endpoint:      firstNonEmpty(os.Getenv("AWS_ENDPOINT_URL_S3"), os.Getenv("AWS_ENDPOINT_URL"), os.Getenv("TEST_BUCKET_ENDPOINT")),
+		S3AccessKey:     firstNonEmpty(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("TEST_BUCKET_ACCESS_KEY")),
+		S3SecretKey:     firstNonEmpty(os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("TEST_BUCKET_SECRET_KEY")),
 		SHA256:          sha256Param,
 		DestinationPath: pathArg,
 	}
 
 	return addURLInput{
-		s3URL:    s3URL,
-		path:     pathArg,
-		sha256:   sha256Param,
-		s3Params: s3Input,
+		objectURL:    objectURL,
+		path:         pathArg,
+		sha256:       sha256Param,
+		objectParams: objectParams,
 	}, nil
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // resolvePathArg returns the explicit destination path argument when provided,
-// otherwise derives the worktree path from the given S3 URL path component.
-func resolvePathArg(s3URL string, args []string) (string, error) {
+// otherwise derives the worktree path from the given cloud URL path component.
+func resolvePathArg(objectURL string, args []string) (string, error) {
 	if len(args) == 2 {
 		return args[1], nil
 	}
-	u, err := url.Parse(s3URL)
+	u, err := url.Parse(objectURL)
 	if err != nil {
 		return "", err
 	}

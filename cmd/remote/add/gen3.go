@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
-	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
-	"github.com/calypr/git-drs/client/indexd"
-	"github.com/calypr/git-drs/cmd/initialize"
+	gitauth "github.com/calypr/git-drs/auth"
+	"github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +38,7 @@ var Gen3Cmd = &cobra.Command{
 			remoteName = args[0]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, project, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, project, organization, bucket, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -46,12 +46,37 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
 	if project == "" {
 		return fmt.Errorf("project is required for Gen3 remote")
+	}
+
+	resolvedBucket := strings.TrimSpace(bucket)
+	resolvedStoragePrefix := ""
+	if strings.TrimSpace(organization) != "" {
+		m, ok, err := gitrepo.GetBucketMapping(organization, project)
+		if err != nil {
+			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
+		}
+		if ok {
+			if resolvedBucket == "" {
+				resolvedBucket = strings.TrimSpace(m.Bucket)
+			} else if strings.TrimSpace(m.Bucket) != "" && !strings.EqualFold(strings.TrimSpace(m.Bucket), resolvedBucket) {
+				return fmt.Errorf("bucket %q conflicts with mapping bucket %q for organization=%q project=%q", resolvedBucket, m.Bucket, organization, project)
+			}
+			resolvedStoragePrefix = strings.TrimSpace(m.Prefix)
+		}
+	}
+	if resolvedBucket == "" {
+		if strings.TrimSpace(organization) == "" {
+			return fmt.Errorf("bucket is required when organization is empty")
+		}
+		if strings.TrimSpace(resolvedBucket) == "" {
+			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add --organization %s --project %s --bucket <name> [--path ...]`)", organization, project)
+		}
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
@@ -96,9 +121,12 @@ func gen3Init(remoteName, credFile, fenceToken, project string, logg *slog.Logge
 	}
 
 	remoteGen3 := config.RemoteSelect{
-		Gen3: &indexd.Gen3Remote{
-			Endpoint:  apiEndpoint,
-			ProjectID: project,
+		Gen3: &drs.Gen3Remote{
+			Endpoint:      apiEndpoint,
+			ProjectID:     project,
+			Organization:  organization,
+			Bucket:        resolvedBucket,
+			StoragePrefix: resolvedStoragePrefix,
 		},
 	}
 
@@ -106,7 +134,7 @@ func gen3Init(remoteName, credFile, fenceToken, project string, logg *slog.Logge
 	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
 		return fmt.Errorf("failed to update remote config: %w", err)
 	}
-	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s)", remoteName, apiEndpoint, project))
+	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s, storage_prefix: %s)", remoteName, apiEndpoint, project, resolvedBucket, resolvedStoragePrefix))
 
 	// Step 3: Ensure credential profile is up-to-date (refreshes token if needed)
 	cred := &conf.Credential{
@@ -119,23 +147,26 @@ func gen3Init(remoteName, credFile, fenceToken, project string, logg *slog.Logge
 		MinShepherdVersion: "",
 	}
 
-	gen3Logger := logs.NewGen3Logger(logg, "", remoteName)
-	if err := g3client.EnsureValidCredential(context.Background(), cred, configure, gen3Logger, nil); err != nil {
+	if err := gitauth.EnsureValidCredential(context.Background(), cred, logg); err != nil {
 		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", err)
 	}
 
 	if err := configure.Save(cred); err != nil {
 		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
 	}
+	// Configure stock git credential plumbing for lfs + persist the refreshed token locally.
+	if err := gitrepo.ConfigureCredentialHelperForRepo(); err != nil {
+		return fmt.Errorf("failed to configure git credential helper: %w", err)
+	}
+	if err := gitrepo.SetRemoteLFSURL(remoteName, apiEndpoint); err != nil {
+		return fmt.Errorf("failed to set lfs url for remote %s: %w", remoteName, err)
+	}
+	if strings.TrimSpace(cred.AccessToken) != "" {
+		if err := gitrepo.SetRemoteToken(remoteName, strings.TrimSpace(cred.AccessToken)); err != nil {
+			return fmt.Errorf("failed to persist repo token for remote %s: %w", remoteName, err)
+		}
+	}
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
-
-	// Ensure Git DRS is fully initialized (hooks, LFS config, etc.)
-	newlyInitialized, err := initialize.InitializeRepo(logg, 1, false, 500, false)
-	if err != nil {
-		logg.Warn(fmt.Sprintf("Warning: failed to automatically initialize Git DRS: %v", err))
-	}
-	logg.Debug(fmt.Sprintf("initialized: %t", newlyInitialized))
-
 	return nil
 }

@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -59,7 +59,7 @@ func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, e
 
 	return client.GetObjectByHash(context.Background(), &hash.Checksum{
 		Checksum: checksum,
-		Type:     checksumType,
+		Type:     string(checksumType),
 	})
 }
 
@@ -97,7 +97,7 @@ var Cmd = &cobra.Command{
 		var obj *drs.DRSObject
 
 		if checksum {
-			objs, err := queryByChecksum(client, args[0])
+			objs, err := queryByChecksum(client.API, args[0])
 			if err != nil {
 				return err
 			}
@@ -107,7 +107,7 @@ var Cmd = &cobra.Command{
 				}
 			}
 		} else {
-			obj, err = client.GetObject(context.Background(), args[0])
+			obj, err = client.API.GetObject(context.Background(), args[0])
 			if err != nil {
 				return err
 			}

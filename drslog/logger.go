@@ -14,7 +14,7 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
 
-	"github.com/calypr/data-client/logs"
+	"github.com/calypr/syfon/client/logs"
 )
 
 var globalLogger *slog.Logger
@@ -219,7 +219,7 @@ func resolveLogLevel() slog.Level {
 // readLogLevelFromGitConfig queries git configuration for a custom log level.
 //
 // Documented calls inside:
-//   - exec.Command("git", "config", "--get", "lfs.customtransfer.drs.loglevel")
+//   - exec.Command("git", "config", "--get", "drs.loglevel")
 //     Constructs the command to query git config.
 //   - cmd.Output()
 //     Executes the command and returns raw output or an error.
@@ -233,7 +233,7 @@ func resolveLogLevel() slog.Level {
 // Typical callers:
 // - resolveLogLevel when initializing a logger.
 func readLogLevelFromGitConfig() (slog.Level, bool) {
-	val, err := gitrepo.GetGitConfigString("lfs.customtransfer.drs.loglevel")
+	val, err := gitrepo.GetGitConfigString("drs.loglevel")
 	if err != nil || val == "" {
 		return slog.LevelInfo, false
 	}

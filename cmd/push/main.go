@@ -1,25 +1,29 @@
 package push
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 
-	"github.com/calypr/data-client/drs"
+	gitdrsdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/lfs"
 	"github.com/spf13/cobra"
 )
 
-var (
-	stage bool
-	all   bool
-)
+var pushWithHooks bool
+
+var runCommand = func(name string, args ...string) ([]byte, error) {
+	cmd := exec.Command(name, args...)
+	return cmd.CombinedOutput()
+}
 
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
-	Short: "push local objects to drs server.",
-	Long:  "push local objects to drs server. This command ensures all local DRS records and their corresponding files are synced to the remote DRS server.",
+	Short: "Upload/register DRS objects and push Git refs",
+	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push (without pre-push hooks by default).",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -31,55 +35,61 @@ var Cmd = &cobra.Command{
 		myLogger := drslog.GetLogger()
 		cfg, err := config.LoadConfig()
 		if err != nil {
+			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
 			return err
 		}
 
-		var remoteInput string
+		var remote config.Remote
 		if len(args) > 0 {
-			remoteInput = args[0]
-		}
-
-		remote, err := cfg.GetRemoteOrDefault(remoteInput)
-		if err != nil {
-			return err
-		}
-
-		// Determine which Git remote name to use for discovery (dry-run)
-		gitRemote := remoteInput
-		if !gitrepo.IsGitRemote(gitRemote) {
-			gitRemote = "origin"
+			remote = config.Remote(args[0])
+		} else {
+			remote, err = cfg.GetDefaultRemote()
+			if err != nil {
+				myLogger.Debug(fmt.Sprintf("Error getting default remote: %v", err))
+				return err
+			}
 		}
 
 		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
 		if err != nil {
-			return fmt.Errorf("error creating DRS client: %v", err)
+			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))
+			return err
 		}
-
-		remoteConfig := cfg.GetRemote(remote)
-		if remoteConfig == nil {
-			return fmt.Errorf("no configuration found for remote: %s", remote)
-		}
-
-		myLogger.Info(fmt.Sprintf("Updating DRS objects for remote '%s' (discovery via '%s')...", remote, gitRemote))
-		builder := drs.NewObjectBuilder(drsClient.GetBucketName(), remoteConfig.GetProjectId())
-		err = drsmap.UpdateDrsObjects(
-			drsClient,
-			builder,
-			gitRemote,
-			"",
-			[]string{"HEAD"},
-			all,
-			myLogger,
-		)
+		lfsFiles, err := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, myLogger)
 		if err != nil {
-			return fmt.Errorf("error updating DRS objects: %v", err)
+			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
 
-		return drsmap.PushLocalDrsObjects(drsClient, myLogger, stage)
+		ctx := context.Background()
+		if err := gitdrsdrs.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
+			if err.Error() == "not implemented" {
+				for _, file := range lfsFiles {
+					if _, err := gitdrsdrs.RegisterFile(drsClient, ctx, file.Oid, file.Name); err != nil {
+						return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
+					}
+				}
+			} else {
+				return fmt.Errorf("failed batch register/upload workflow: %w", err)
+			}
+		}
+
+		pushArgs := []string{"push"}
+		if !pushWithHooks {
+			pushArgs = append(pushArgs, "--no-verify")
+		}
+		pushArgs = append(pushArgs, string(remote))
+		out, err := runCommand("git", pushArgs...)
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if msg == "" {
+				msg = err.Error()
+			}
+			return fmt.Errorf("git push failed for remote %q: %s", remote, msg)
+		}
+		return nil
 	},
 }
 
 func init() {
-	Cmd.Flags().BoolVarP(&stage, "stage", "s", false, "Locally stage LFS objects from DRS server if they don't already exist in git index")
-	Cmd.Flags().BoolVarP(&all, "all", "a", false, "Check all LFS-tracked files in the current branch for missing DRS records (slower)")
+	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
 }

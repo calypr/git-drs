@@ -7,9 +7,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
 	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func TestObjectWalk(t *testing.T) {
@@ -18,10 +17,13 @@ func TestObjectWalk(t *testing.T) {
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		t.Fatalf("mkdir failed: %v", err)
 	}
+	name := "object-name"
 	obj := drs.DRSObject{
-		Id:        "object-1",
-		Name:      "object-name",
-		Checksums: hash.HashInfo{SHA256: "sha-256"},
+		Id:   "object-1",
+		Name: name,
+		Checksums: []drs.Checksum{
+			{Type: "sha256", Checksum: "sha-256"},
+		},
 	}
 	data, err := sonic.ConfigFastest.Marshal(obj)
 	if err != nil {

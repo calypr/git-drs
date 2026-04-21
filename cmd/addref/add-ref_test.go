@@ -5,17 +5,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/hash"
+	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/drs"
 )
 
 func TestCreateLfsPointer(t *testing.T) {
 	obj := &drs.DRSObject{
 		Size:      10,
-		Checksums: hash.HashInfo{SHA256: "abc"},
+		Checksums: []drs.Checksum{{Type: "sha256", Checksum: "abc"}},
 	}
 	path := filepath.Join(t.TempDir(), "pointer")
-	if err := CreateLfsPointer(obj, path); err != nil {
+	if err := lfs.CreateLfsPointer(obj, path); err != nil {
 		t.Fatalf("CreateLfsPointer error: %v", err)
 	}
 	data, err := os.ReadFile(path)
@@ -29,14 +29,14 @@ func TestCreateLfsPointer(t *testing.T) {
 
 func TestCreateLfsPointer_NoChecksum(t *testing.T) {
 	obj := &drs.DRSObject{}
-	if err := CreateLfsPointer(obj, filepath.Join(t.TempDir(), "pointer")); err == nil {
+	if err := lfs.CreateLfsPointer(obj, filepath.Join(t.TempDir(), "pointer")); err == nil {
 		t.Fatalf("expected error for missing checksums")
 	}
 }
 
 func TestCreateLfsPointer_NoSHA256(t *testing.T) {
-	obj := &drs.DRSObject{Checksums: hash.HashInfo{MD5: "md5"}}
-	if err := CreateLfsPointer(obj, filepath.Join(t.TempDir(), "pointer")); err == nil {
+	obj := &drs.DRSObject{Checksums: []drs.Checksum{{Type: "md5", Checksum: "md5"}}}
+	if err := lfs.CreateLfsPointer(obj, filepath.Join(t.TempDir(), "pointer")); err == nil {
 		t.Fatalf("expected error for missing sha256")
 	}
 }

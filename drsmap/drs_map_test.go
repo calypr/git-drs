@@ -1,26 +1,22 @@
 package drsmap
 
 import (
-	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/data-client/drs"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/hash"
-	"github.com/calypr/data-client/s3utils"
-	"github.com/calypr/git-drs/cloud"
+	"github.com/calypr/git-drs/client"
 	localCommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/syfon/client/drs"
+	"github.com/calypr/syfon/client/mocks"
+	"go.uber.org/mock/gomock"
 )
 
 func setupTestRepo(t *testing.T) {
 	t.Helper()
-
 	tmpDir := t.TempDir()
 	cmd := exec.Command("git", "init", tmpDir)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -33,9 +29,7 @@ func setupTestRepo(t *testing.T) {
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("chdir: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
 }
 
 func TestWriteAndReadDrsObject(t *testing.T) {
@@ -45,17 +39,14 @@ func TestWriteAndReadDrsObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectPath error: %v", err)
 	}
-
 	obj := &drs.DRSObject{
 		Id:        "did-1",
 		Name:      "file.txt",
-		Checksums: hash.HashInfo{SHA256: oid},
+		Checksums: []drs.Checksum{{Type: "sha256", Checksum: oid}},
 	}
-
 	if err := WriteDrsObj(obj, oid, path); err != nil {
 		t.Fatalf("WriteDrsObj error: %v", err)
 	}
-
 	read, err := DrsInfoFromOid(oid)
 	if err != nil {
 		t.Fatalf("DrsInfoFromOid error: %v", err)
@@ -72,8 +63,8 @@ func TestGetObjectPathValidation(t *testing.T) {
 }
 
 func TestDrsUUIDDeterministic(t *testing.T) {
-	id1 := DrsUUID("project", "hash")
-	id2 := DrsUUID("project", "hash")
+	id1 := DrsUUID("org", "project", "hash")
+	id2 := DrsUUID("org", "project", "hash")
 	if id1 != id2 {
 		t.Fatalf("expected deterministic UUIDs, got %s vs %s", id1, id2)
 	}
@@ -92,14 +83,12 @@ func TestGetObjectPathLayout(t *testing.T) {
 
 func TestWriteDrsFile(t *testing.T) {
 	setupTestRepo(t)
-
 	builder := drs.NewObjectBuilder("bucket", "prog-project")
 	file := lfs.LfsFileInfo{
 		Name: "file.txt",
 		Size: 12,
 		Oid:  "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	}
-
 	drsObj, err := WriteDrsFile(builder, file, nil)
 	if err != nil {
 		t.Fatalf("WriteDrsFile error: %v", err)
@@ -107,249 +96,49 @@ func TestWriteDrsFile(t *testing.T) {
 	if drsObj.Id == "" {
 		t.Fatalf("expected drs object id")
 	}
-
 	read, err := DrsInfoFromOid(file.Oid)
 	if err != nil {
 		t.Fatalf("DrsInfoFromOid error: %v", err)
 	}
-	if read.Checksums.SHA256 != file.Oid {
+	if read.Checksums[0].Checksum != file.Oid {
 		t.Fatalf("unexpected checksum: %+v", read.Checksums)
 	}
 }
 
-// MockDRSClient implements client.DRSClient for testing
-type MockDRSClient struct {
-	Objects []drs.DRSObjectResult
-	Project string
-}
-
-func (m *MockDRSClient) GetProjectId() string {
-	return m.Project
-}
-
-func (m *MockDRSClient) GetObject(ctx context.Context, id string) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) ListObjects(ctx context.Context) (chan drs.DRSObjectResult, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) ListObjectsByProject(ctx context.Context, project string) (chan drs.DRSObjectResult, error) {
-	ch := make(chan drs.DRSObjectResult, len(m.Objects))
-	go func() {
-		defer close(ch)
-		for _, obj := range m.Objects {
-			ch <- obj
-		}
-	}()
-	return ch, nil
-}
-
-func (m *MockDRSClient) GetDownloadURL(ctx context.Context, oid string) (*drs.AccessURL, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) DeleteRecordsByProject(ctx context.Context, project string) error {
-	return nil
-}
-
-func (m *MockDRSClient) DeleteRecord(ctx context.Context, oid string) error {
-	return nil
-}
-
-func (m *MockDRSClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) BuildDrsObj(fileName string, checksum string, size int64, drsId string) (*drs.DRSObject, error) {
-	return &drs.DRSObject{
-		Id:   drsId,
-		Name: fileName,
-		Size: size,
-		Checksums: hash.HashInfo{
-			SHA256: checksum,
-		},
-	}, nil
-}
-
-func (m *MockDRSClient) AddURL(s3URL, sha256, awsAccessKey, awsSecretKey, regionFlag, endpointFlag string, opts ...cloud.AddURLOption) (s3utils.S3Meta, error) {
-	return s3utils.S3Meta{}, fmt.Errorf("not implemented")
-}
-
-func (m *MockDRSClient) GetGen3Interface() g3client.Gen3Interface {
-	return nil
-}
-
-func (m *MockDRSClient) GetBucketName() string {
-	return ""
-}
-
 func TestPullRemoteDrsObjects(t *testing.T) {
 	setupTestRepo(t)
-	// mockClient and setup
 	sha := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	mockClient := &MockDRSClient{
-		Project: "test-project",
-		Objects: []drs.DRSObjectResult{
-			{
-				Object: &drs.DRSObject{
-					Id: "obj1",
-					Checksums: hash.HashInfo{
-						SHA256: sha,
-					},
-					Name: "test-file",
-				},
-			},
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	results := make(chan drs.DRSObjectResult, 1)
+	results <- drs.DRSObjectResult{
+		Object: &drs.DRSObject{
+			Id:        "obj1",
+			Checksums: []drs.Checksum{{Type: "sha256", Checksum: sha}},
+			Name:      "test-file",
 		},
 	}
+	close(results)
 
-	// Create required directory structure (mimicking setup that might be missing)
+	mockAPI := mocks.NewMockDrsClient(ctrl)
+	mockAPI.EXPECT().
+		ListObjectsByProject(gomock.Any(), "test-project").
+		Return(results, nil)
+
 	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
-
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	err := PullRemoteDrsObjects(mockClient, logger)
-	if err != nil {
+	if err := PullRemoteDrsObjects(&client.GitContext{API: mockAPI, ProjectId: "test-project"}, logger); err != nil {
 		t.Fatalf("PullRemoteDrsObjects failed: %v", err)
 	}
 
-	// Verify file exists using correct project path variable
-	// PullRemoteDrsObjects uses projectdir.DRS_OBJS_PATH
 	path, err := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
 	if err != nil {
 		t.Fatalf("GetObjectPath failed: %v", err)
 	}
-
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("Expected DRS object file to be created at %s", path)
-	}
-}
-
-func (m *MockDRSClient) GetDownloadURLFromRecords(ctx context.Context, oid string, records []drs.DRSObject) (*drs.AccessURL, error) {
-	return nil, nil
-}
-
-type PushMockClient struct {
-	MockDRSClient
-	RegisterFileCalled   bool
-	RegisteredFile       string
-	RegisteredOid        string
-	RegisterRecordCalled bool
-	UpdateRecordCalled   bool
-	RecordedRecord       *drs.DRSObject
-	RegisterRecordError  error
-}
-
-func (m *PushMockClient) RegisterFile(ctx context.Context, oid string, path string) (*drs.DRSObject, error) {
-	m.RegisterFileCalled = true
-	m.RegisteredFile = path
-	m.RegisteredOid = oid
-	return nil, nil
-}
-
-func (m *PushMockClient) RegisterRecord(ctx context.Context, indexdObject *drs.DRSObject) (*drs.DRSObject, error) {
-	m.RegisterRecordCalled = true
-	m.RecordedRecord = indexdObject
-	return indexdObject, m.RegisterRecordError
-}
-
-func (m *PushMockClient) UpdateRecord(ctx context.Context, updateInfo *drs.DRSObject, did string) (*drs.DRSObject, error) {
-	m.UpdateRecordCalled = true
-	m.RecordedRecord = updateInfo
-	return updateInfo, nil
-}
-
-func (m *PushMockClient) GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error) {
-	return nil, nil // Return empty to trigger push
-}
-
-func TestPushLocalDrsObjects(t *testing.T) {
-	setupTestRepo(t)
-	sha := "f3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-	// Create local DRS object
-	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
-	obj := &drs.DRSObject{
-		Id:   "did-push-test",
-		Name: "test-push.txt",
-		Checksums: hash.HashInfo{
-			SHA256: sha,
-		},
-	}
-	path, _ := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
-	WriteDrsObj(obj, sha, path)
-
-	// Mock file on disk
-	os.WriteFile("test-push.txt", []byte("hello"), 0644)
-
-	mockClient := &PushMockClient{}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
-	err := PushLocalDrsObjects(mockClient, logger, false)
-	if err != nil {
-		t.Fatalf("PushLocalDrsObjects failed: %v", err)
-	}
-
-	if !mockClient.RegisterFileCalled {
-		t.Errorf("Expected RegisterFile to be called")
-	}
-	if mockClient.RegisteredFile != "test-push.txt" {
-		t.Errorf("Expected RegisteredFile to be test-push.txt, got %s", mockClient.RegisteredFile)
-	}
-}
-
-func TestPushLocalDrsObjects_MetadataOnly(t *testing.T) {
-	setupTestRepo(t)
-	sha := "a3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-	// Create local DRS object
-	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
-	url := "s3://bucket/path/to/file.bin"
-	obj := &drs.DRSObject{
-		Id:   "did-metadata-test",
-		Name: "test-metadata.bin",
-		Checksums: hash.HashInfo{
-			SHA256: sha,
-		},
-		AccessMethods: []drs.AccessMethod{
-			{AccessURL: drs.AccessURL{URL: url}},
-		},
-	}
-	path, _ := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
-	WriteDrsObj(obj, sha, path)
-
-	// NO local file exists (simulating add-url case)
-
-	mockClient := &PushMockClient{
-		RegisterRecordError: fmt.Errorf("already exists"),
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
-	err := PushLocalDrsObjects(mockClient, logger, false)
-	if err != nil {
-		t.Fatalf("PushLocalDrsObjects failed: %v", err)
-	}
-
-	if !mockClient.RegisterRecordCalled {
-		t.Errorf("Expected RegisterRecord to be called")
-	}
-	if !mockClient.UpdateRecordCalled {
-		t.Errorf("Expected UpdateRecord to be called on 'already exists'")
-	}
-	if mockClient.RecordedRecord.AccessMethods[0].AccessURL.URL != url {
-		t.Errorf("Expected URL %s, got %s", url, mockClient.RecordedRecord.AccessMethods[0].AccessURL.URL)
+		t.Errorf("Expected DRS object file at %s", path)
 	}
 }

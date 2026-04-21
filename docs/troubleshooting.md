@@ -67,7 +67,7 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 - `git drs init` - Initialize Git LFS hooks
 - `git drs remote add` - Configure DRS server connections
 - `git drs remote list` - View configured remotes
-- `git drs add-url` - Add S3 file references
+- `git drs add-url` - Add cloud object references
 
 **When**:
 
@@ -332,9 +332,6 @@ git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --project my-project \
     --bucket my-bucket
-
-# For AnVIL
-git drs remote add anvil development --terraProject <project-id>
 
 # Verify configuration
 git drs remote list

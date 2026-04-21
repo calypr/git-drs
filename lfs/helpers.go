@@ -70,7 +70,7 @@ func resolveLFSRoot(ctx context.Context, gitCommonDir string) (string, error) {
 
 func runGit(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	b, err := cmd.Output()
+	b, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(string(b)))
 	}
@@ -87,7 +87,7 @@ func userHomeDir() (string, error) {
 		return home, nil
 	}
 	// macOS/Linux
-	out, err := exec.Command("sh", "-lc", "printf %s \"$HOME\"").Output()
+	out, err := exec.Command("sh", "-lc", "printf %s \"$HOME\"").CombinedOutput()
 	if err != nil {
 		return "", err
 	}

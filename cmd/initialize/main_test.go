@@ -58,8 +58,8 @@ func TestInstallPreCommitHook(t *testing.T) {
 func TestInitGitConfig(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	transfers = 2
-	if err := gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs); err != nil {
-		t.Fatalf("InitializeLfsConfig error: %v", err)
+	if err := initGitConfig(); err != nil {
+		t.Fatalf("initGitConfig error: %v", err)
 	}
 }
 func TestInitRun_Error(t *testing.T) {
@@ -87,12 +87,9 @@ func TestInitCmdArgs(t *testing.T) {
 func TestInitConfigValues(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	transfers = 8
-	upsert = true
-	multiPartThreshold = 100
-	enableDataClientLogs = true
 
-	if err := gitrepo.InitializeLfsConfig(transfers, upsert, multiPartThreshold, enableDataClientLogs); err != nil {
-		t.Fatalf("InitializeLfsConfig error: %v", err)
+	if err := initGitConfig(); err != nil {
+		t.Fatalf("initGitConfig error: %v", err)
 	}
 
 	// Verify values using gitrepo (which we know works from previous steps)
@@ -107,7 +104,5 @@ func TestInitConfigValues(t *testing.T) {
 	}
 
 	check("lfs.concurrenttransfers", "8")
-	check("lfs.customtransfer.drs.upsert", "true")
-	check("lfs.customtransfer.drs.multipart-threshold", "100")
-	check("lfs.customtransfer.drs.enable-data-client-logs", "true")
+	check("lfs.allowincompletepush", "false")
 }

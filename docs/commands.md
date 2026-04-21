@@ -8,7 +8,7 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ### `git drs init`
 
-Initialize Git DRS in a repository. Sets up Git LFS custom transfer hooks and creates a `.git/drs/` directory that Git ignores automatically.
+Initialize Git DRS in a repository. Sets up Git DRS hooks and creates a `.git/drs/` directory that Git ignores automatically.
 
 **Usage:**
 
@@ -29,7 +29,7 @@ git drs init
 **What it does:**
 
 - Creates `.git/drs/` directory structure
-- Configures Git LFS custom transfer agent
+- Configures Git/LFS settings for git-drs managed push/pull
 - Installs Git hooks for DRS workflows
 
 **When to run:**
@@ -91,28 +91,7 @@ git drs remote add gen3 staging \
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
-
-#### `git drs remote add anvil <name>`
-
-Add an AnVIL/Terra DRS server configuration.
-
-> **Note:** AnVIL support is under active development. For production use, we recommend Gen3 workflows or version 0.2.2 for AnVIL functionality.
-
-**Usage:**
-
-```bash
-git drs remote add anvil <remote-name> --terraProject <project-id>
-```
-
-**Options:**
-
-- `--terraProject <id>`: Terra/Google Cloud project ID (required)
-
-**Example:**
-
-```bash
-git drs remote add anvil development --terraProject my-terra-project
-```
+**Important:** A bucket mapping for the target `organization/project` must already exist (typically created once by a steward/admin via `git drs bucket add ...`). Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
 
@@ -154,6 +133,29 @@ git drs remote set staging
 git drs remote set production
 
 # Verify change
+git drs remote list
+```
+
+
+#### `git drs remote remove <name>` / `git drs remote rm <name>`
+
+Remove a configured DRS remote. If you remove the current default remote, Git DRS automatically selects another configured remote as the new default.
+
+**Usage:**
+
+```bash
+git drs remote remove <remote-name>
+# alias
+git drs remote rm <remote-name>
+```
+
+**Examples:**
+
+```bash
+# Remove an old staging remote
+git drs remote remove staging
+
+# Confirm remaining remotes and default
 git drs remote list
 ```
 
@@ -249,43 +251,37 @@ git drs query did:example:12345 --remote staging
 
 ### `git drs add-url`
 
-Add a file reference via S3 URL without copying the data.
+Prepare a file reference via cloud object URL for DRS registration.
 
 **Usage:**
 
 ```bash
-# Use default remote
-git drs add-url s3://bucket/path/file --sha256 <hash>
-
-# Use specific remote
-git drs add-url s3://bucket/path/file --sha256 <hash> --remote staging
+# Stage local pointer + DRS metadata
+git drs add-url <cloud-url> [path] [--sha256 <hash>]
+# Register/push prepared records
+git drs push
 ```
 
-**With AWS Credentials:**
+**Examples:**
 
 ```bash
-git drs add-url s3://bucket/path/file \
-  --sha256 <hash> \
-  --aws-access-key <key> \
-  --aws-secret-key <secret>
+# Known SHA path
+git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
+
+# Unknown SHA path (experimental sentinel mode)
+git drs add-url s3://bucket/path/file.bin data/file.bin
 ```
 
 **Options:**
 
-- `--sha256 <hash>`: Required SHA256 hash of the file
-- `--remote <name>`: Target remote (default: default_remote)
-- `--aws-access-key <key>`: AWS access key
-- `--aws-secret-key <secret>`: AWS secret key
-- `--endpoint <url>`: Custom S3 endpoint
-- `--region <region>`: AWS region
+- `--sha256 <hash>`: Optional SHA256 hash of the source object.  
+  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
 
-### `git drs create-cache`
+**Notes:**
 
-Create a cache from a manifest file (Terra/AnVIL).
-
-```bash
-git drs create-cache manifest.tsv
-```
+- `add-url` no longer accepts per-command AWS credential flags.
+- S3 connection hints are resolved from environment/runtime config when needed (for example `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- Registration happens on `git drs push`, not at `add-url` time.
 
 ### `git drs version`
 
@@ -300,9 +296,8 @@ git drs version
 These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
-- `git drs prepush`: Update DRS objects before push
-- `git drs transfer`: Handle file transfers during push/pull
-- `git drs transferref`: Handle reference transfers (AnVIL/Terra)
+- `git drs pre-push-prepare`: Stage DRS metadata before push
+- `git lfs pre-push`: Standard Git LFS push flow (invoked by pre-push hook)
 
 ## Git LFS Commands
 
@@ -533,8 +528,6 @@ Git DRS respects these environment variables:
 
 - `AWS_ACCESS_KEY_ID`: AWS access key (for S3 operations)
 - `AWS_SECRET_ACCESS_KEY`: AWS secret key (for S3 operations)
-- `GOOGLE_PROJECT`: Google Cloud project ID (for AnVIL)
-- `WORKSPACE_BUCKET`: Terra workspace bucket (for AnVIL)
 
 ## Help and Documentation
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/client/indexd"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
@@ -20,8 +19,8 @@ var (
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:    "delete-project <project_id>",
-	Short:  "Delete all indexd records for a given project",
-	Long:   "Delete all indexd records for a given project",
+	Short:  "Delete all DRS objects for a given project",
+	Long:   "Delete all DRS objects for a given project",
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -40,18 +39,12 @@ var Cmd = &cobra.Command{
 
 		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
-			logger.Error(fmt.Sprintf("error creating indexd client: %s", err))
+			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
 
-		// Cast to GitDrsIdxdClient to access GetProjectSample
-		indexdClient, ok := drsClient.(*indexd.GitDrsIdxdClient)
-		if !ok {
-			return fmt.Errorf("client is not an IndexDClient, cannot proceed with delete-project")
-		}
-
 		// Get a sample record to show the user what will be deleted
-		sampleRecords, err := indexdClient.GetProjectSample(context.Background(), projectId, 1)
+		sampleRecords, err := drsClient.API.GetProjectSample(context.Background(), projectId, 1)
 		if err != nil {
 			return fmt.Errorf("error getting sample records for project %s: %v", projectId, err)
 		}
@@ -73,8 +66,8 @@ var Cmd = &cobra.Command{
 					common.DisplayField(os.Stderr, "  Filename", sample.Name)
 				}
 				common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
-				if sample.CreatedTime != "" {
-					common.DisplayField(os.Stderr, "  Created", sample.CreatedTime)
+				if !sample.CreatedTime.IsZero() {
+					common.DisplayField(os.Stderr, "  Created", sample.CreatedTime.String())
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "\nNo records found for this project.\n")
@@ -90,7 +83,7 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		err = drsClient.DeleteRecordsByProject(context.Background(), projectId)
+		err = drsClient.API.DeleteRecordsByProject(context.Background(), projectId)
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}

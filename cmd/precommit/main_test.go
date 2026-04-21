@@ -93,11 +93,11 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	if pathCache.Path != "data/file.bin" {
 		t.Fatalf("expected path entry to be data/file.bin, got %q", pathCache.Path)
 	}
-	if pathCache.LFSOID != "sha256:deadbeef" {
-		t.Fatalf("expected lfs oid sha256:deadbeef, got %q", pathCache.LFSOID)
+	if pathCache.LFSOID != "deadbeef" {
+		t.Fatalf("expected lfs oid deadbeef, got %q", pathCache.LFSOID)
 	}
 
-	oidEntry := oidEntryFile(oidsDir, "sha256:deadbeef")
+	oidEntry := oidEntryFile(oidsDir, "deadbeef")
 	oidData, err := os.ReadFile(oidEntry)
 	if err != nil {
 		t.Fatalf("read oid entry: %v", err)
@@ -106,8 +106,8 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	if err := json.Unmarshal(oidData, &oidCache); err != nil {
 		t.Fatalf("unmarshal oid entry: %v", err)
 	}
-	if oidCache.LFSOID != "sha256:deadbeef" {
-		t.Fatalf("expected oid entry sha256:deadbeef, got %q", oidCache.LFSOID)
+	if oidCache.LFSOID != "deadbeef" {
+		t.Fatalf("expected oid entry deadbeef, got %q", oidCache.LFSOID)
 	}
 	if len(oidCache.Paths) != 1 || oidCache.Paths[0] != "data/file.bin" {
 		t.Fatalf("expected oid paths to include data/file.bin, got %v", oidCache.Paths)

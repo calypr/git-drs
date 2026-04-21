@@ -330,7 +330,7 @@ func stagedLFSOID(ctx context.Context, path string) (string, bool, error) {
 			hex := strings.TrimPrefix(line, "oid sha256:")
 			hex = strings.TrimSpace(hex)
 			if hex != "" {
-				oid = "sha256:" + hex
+				oid = hex
 			}
 			// keep scanning a bit in case spec is below (rare), but we can break once both are found.
 		}

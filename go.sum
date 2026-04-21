@@ -117,6 +117,8 @@ github.com/calypr/data-client v0.0.0-20260407224147-5ef59a202830 h1:rnrVeDvzx/wk
 github.com/calypr/data-client v0.0.0-20260407224147-5ef59a202830/go.mod h1:J8oUucE8HgRYIf7ZBLy7P4COZ5OoN7PTCQvYow+uWBM=
 github.com/calypr/syfon v0.1.11 h1:bc4An7Gve9HsYb48FirZerZgYXKbQGFDNH/bwsdTRb8=
 github.com/calypr/syfon v0.1.11/go.mod h1:9Lx73pAnrFbYu2/QjbmJ2xPcpTltqZkt+3U5EOwJ1QA=
+github.com/calypr/syfon v0.1.12-0.20260416152543-d5f9f319bd81 h1:Zphe1Ed9rn1wEpI0xdTIi/T1sUu9FBUtHOPuZ2ntL+c=
+github.com/calypr/syfon v0.1.12-0.20260416152543-d5f9f319bd81/go.mod h1:9Lx73pAnrFbYu2/QjbmJ2xPcpTltqZkt+3U5EOwJ1QA=
 github.com/calypr/syfon/apigen v0.1.3 h1:+vih5rHVjrkIoiWaMJa3OnFUrrTIKcMH940XyQKnWRc=
 github.com/calypr/syfon/apigen v0.1.3/go.mod h1:2oqNkseovHqbU8kYu4nU+w5VrwhzAj6KfPL7YTBQEGk=
 github.com/calypr/syfon/apigen v0.1.4 h1:HIyYxScWyESFMBpGfFfGLnHJbbRlOnTQVz3ZKmIclN0=

@@ -14,7 +14,7 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
 
-	"github.com/calypr/syfon/client/pkg/logs"
+	"github.com/calypr/syfon/client/logs"
 )
 
 var globalLogger *slog.Logger

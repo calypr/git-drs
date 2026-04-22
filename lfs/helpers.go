@@ -218,7 +218,7 @@ func GitLFSUntrackPatterns(ctx context.Context, patterns []string, verbose bool,
 	scanner := bufio.NewScanner(bytes.NewReader(attribContents))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(line, "filter=lfs") {
+		if !strings.Contains(line, "filter=drs") {
 			keptLines = append(keptLines, line)
 			continue
 		}
@@ -270,7 +270,7 @@ func parseKnownLFSPatterns(content []byte) map[string]string {
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	for scanner.Scan() {
 		line := scanner.Text()
-		if !strings.Contains(line, "filter=lfs") {
+		if !strings.Contains(line, "filter=drs") {
 			continue
 		}
 		fields := strings.Fields(line)

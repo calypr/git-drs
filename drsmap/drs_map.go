@@ -17,10 +17,12 @@ import (
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 )
+
+var drsUUIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 // execCommand is a variable to allow mocking in tests
 var execCommandContext = exec.CommandContext
@@ -35,7 +37,7 @@ func PushLocalDrsObjects(drsClient *client.GitContext, myLogger *slog.Logger) er
 	return SyncObjectsWithServer(drsClient, drsLfsObjs, myLogger)
 }
 
-func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*drs.DRSObject, myLogger *slog.Logger) error {
+func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*drsapi.DrsObject, myLogger *slog.Logger) error {
 	if len(drsObjects) == 0 {
 		return nil
 	}
@@ -45,13 +47,21 @@ func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*
 	for h := range drsObjects {
 		hashes = append(hashes, h)
 	}
-	bulkByHash, bulkErr := drsClient.API.BatchGetObjectsByHash(context.Background(), hashes)
+	bulkPage, bulkErr := drsClient.API.SyfonClient().DRS().BatchGetObjectsByHash(context.Background(), hashes)
 	if bulkErr != nil {
 		return fmt.Errorf("bulk hash lookup failed: %w", bulkErr)
 	}
+	bulkByHash := make(map[string][]drsapi.DrsObject, len(bulkPage.DrsObjects))
+	for _, obj := range bulkPage.DrsObjects {
+		hInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
+		if hInfo.SHA256 == "" {
+			continue
+		}
+		bulkByHash[hInfo.SHA256] = append(bulkByHash[hInfo.SHA256], obj)
+	}
 
 	// 2. Identify missing records by hash.
-	missingRecords := make([]*drs.DRSObject, 0)
+	missingRecords := make([]*drsapi.DrsObject, 0)
 	for h, localObj := range drsObjects {
 		foundOnServer := false
 		recs := bulkByHash[h]
@@ -70,7 +80,23 @@ func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*
 	// 3. Register missing records in one bulk request when possible.
 	if len(missingRecords) > 0 {
 		myLogger.Info(fmt.Sprintf("Registering %d missing records", len(missingRecords)))
-		if _, err := drsClient.API.RegisterRecords(context.Background(), missingRecords); err != nil {
+		req := drsapi.RegisterObjectsJSONRequestBody{}
+		req.Candidates = make([]drsapi.DrsObjectCandidate, 0, len(missingRecords))
+		for _, obj := range missingRecords {
+			candidate := drsapi.DrsObjectCandidate{
+				AccessMethods: obj.AccessMethods,
+				Aliases:       obj.Aliases,
+				Checksums:     obj.Checksums,
+				Contents:      obj.Contents,
+				Description:   obj.Description,
+				MimeType:      obj.MimeType,
+				Name:          obj.Name,
+				Size:          obj.Size,
+				Version:       obj.Version,
+			}
+			req.Candidates = append(req.Candidates, candidate)
+		}
+		if _, err := drsClient.API.SyfonClient().DRS().RegisterObjects(context.Background(), req); err != nil {
 			myLogger.Error(fmt.Sprintf("Failed to register records in bulk: %v", err))
 			return fmt.Errorf("error in bulk registration: %v", err)
 		}
@@ -81,7 +107,7 @@ func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*
 }
 
 func SyncFilesWithServer(drsClient *client.GitContext, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
-	objectsToSync := make(map[string]*drs.DRSObject)
+	objectsToSync := make(map[string]*drsapi.DrsObject)
 	for _, file := range lfsFiles {
 		obj, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
 		if err == nil && obj != nil {
@@ -92,19 +118,15 @@ func SyncFilesWithServer(drsClient *client.GitContext, lfsFiles map[string]lfs.L
 }
 
 func PullRemoteDrsObjects(drsClient *client.GitContext, logger *slog.Logger) error {
-	objChan, err := drsClient.API.ListObjectsByProject(context.Background(), drsClient.ProjectId)
+	page, err := drsClient.API.SyfonClient().DRS().ListObjectsByProject(context.Background(), drsClient.ProjectId, 1000, 1)
 	if err != nil {
 		return err
 	}
 	writtenObjs := 0
-	for drsObj := range objChan {
-		if drsObj.Object == nil {
-			logger.Debug(fmt.Sprintf("OBJ is nil: %#v, continuing...", drsObj))
-			continue
-		}
-		hashInfo := hash.ConvertDrsChecksumsToHashInfo(drsObj.Object.Checksums)
+	for _, obj := range page.DrsObjects {
+		hashInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
 		if hashInfo.SHA256 == "" {
-			return fmt.Errorf("error: drs Object '%s' does not contain a sha256 checksum", drsObj.Object.Id)
+			return fmt.Errorf("error: drs Object '%s' does not contain a sha256 checksum", obj.Id)
 		}
 		oid := hashInfo.SHA256
 		drsObjPath, err := GetObjectPath(common.DRS_OBJS_PATH, oid)
@@ -115,7 +137,7 @@ func PullRemoteDrsObjects(drsClient *client.GitContext, logger *slog.Logger) err
 		if drsObjPath != "" && oid != "" {
 			writtenObjs++
 			// write drs objects to DRS_OBJS_PATH
-			err = WriteDrsObj(drsObj.Object, oid, drsObjPath)
+			err = WriteDrsObj(&obj, oid, drsObjPath)
 			if err != nil {
 				return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
 			}
@@ -124,7 +146,7 @@ func PullRemoteDrsObjects(drsClient *client.GitContext, logger *slog.Logger) err
 	logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))
 	return nil
 }
-func UpdateDrsObjects(builder drs.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
+func UpdateDrsObjects(builder common.ObjectBuilder, gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) error {
 
 	logger.Debug("Update to DRS objects started")
 
@@ -148,7 +170,7 @@ type UpdateOptions struct {
 	Logger         *slog.Logger
 }
 
-func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error {
+func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string]lfs.LfsFileInfo, opts UpdateOptions) error {
 	if opts.Logger == nil {
 		return fmt.Errorf("logger is required")
 	}
@@ -163,31 +185,50 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 	}
 
 	for _, file := range lfsFiles {
-		var authoritativeObj *drs.DRSObject
+		var authoritativeObj *drsapi.DrsObject
 		existing, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
 		if err == nil && existing != nil {
 			authoritativeObj = existing
 			// Update basic info if necessary
-			authoritativeObj.Name = file.Name
+			name := file.Name
+			authoritativeObj.Name = &name
 			authoritativeObj.Size = file.Size
 
 			// Ensure Authorizations are populated (backwards compatibility for old local records)
 			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
-			for i := range authoritativeObj.AccessMethods {
-				if len(authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers) == 0 {
-					authoritativeObj.AccessMethods[i].Authorizations.BearerAuthIssuers = []string{authzStr}
+			if authoritativeObj.AccessMethods == nil {
+				authoritativeObj.AccessMethods = &[]drsapi.AccessMethod{}
+			}
+			for i := range *authoritativeObj.AccessMethods {
+				am := &(*authoritativeObj.AccessMethods)[i]
+				if am.Authorizations == nil || am.Authorizations.BearerAuthIssuers == nil || len(*am.Authorizations.BearerAuthIssuers) == 0 {
+					issuers := []string{authzStr}
+					am.Authorizations = &struct {
+						BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
+						DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
+						PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
+						SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
+					}{BearerAuthIssuers: &issuers}
 				}
 				// Ensure URL matches current policy of namespaced CAS-style
 				// s3://bucket/{org}/{project}/HASH.
 				if builder.Bucket != "" {
 					prefix := strings.Trim(strings.TrimSpace(builder.StoragePrefix), "/")
 					if prefix == "" {
-						prefix = drs.StoragePrefix(builder.Organization, builder.ProjectID)
+						prefix = common.StoragePrefix(builder.Organization, builder.ProjectID)
 					}
 					if prefix != "" {
-						authoritativeObj.AccessMethods[i].AccessUrl = drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)}
+						url := fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)
+						am.AccessUrl = &struct {
+							Headers *[]string `json:"headers,omitempty"`
+							Url     string    `json:"url"`
+						}{Url: url}
 					} else {
-						authoritativeObj.AccessMethods[i].AccessUrl = drs.AccessURL{Url: fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)}
+						url := fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
+						am.AccessUrl = &struct {
+							Headers *[]string `json:"headers,omitempty"`
+							Url     string    `json:"url"`
+						}{Url: url}
 					}
 				}
 			}
@@ -201,8 +242,8 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 		}
 
 		authoritativeURL := ""
-		if len(authoritativeObj.AccessMethods) > 0 {
-			authoritativeURL = authoritativeObj.AccessMethods[0].AccessUrl.Url
+		if authoritativeObj.AccessMethods != nil && len(*authoritativeObj.AccessMethods) > 0 && (*authoritativeObj.AccessMethods)[0].AccessUrl != nil {
+			authoritativeURL = (*authoritativeObj.AccessMethods)[0].AccessUrl.Url
 		}
 
 		var hint string
@@ -224,18 +265,36 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 
 		if opts.PreferCacheURL && hint != "" {
 			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
-			authz := drs.Authorizations{
-				BearerAuthIssuers: []string{authzStr},
-			}
-			if len(authoritativeObj.AccessMethods) > 0 {
-				authoritativeObj.AccessMethods[0].AccessUrl = drs.AccessURL{Url: hint}
-				authoritativeObj.AccessMethods[0].Authorizations = authz
+			bearer := []string{authzStr}
+			if authoritativeObj.AccessMethods != nil && len(*authoritativeObj.AccessMethods) > 0 {
+				am := &(*authoritativeObj.AccessMethods)[0]
+				am.AccessUrl = &struct {
+					Headers *[]string `json:"headers,omitempty"`
+					Url     string    `json:"url"`
+				}{Url: hint}
+				am.Authorizations = &struct {
+					BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
+					DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
+					PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
+					SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
+				}{BearerAuthIssuers: &bearer}
 			} else {
-				authoritativeObj.AccessMethods = append(authoritativeObj.AccessMethods, drs.AccessMethod{
-					Type:           "s3",
-					AccessUrl:      drs.AccessURL{Url: hint},
-					Authorizations: authz,
-				})
+				ams := []drsapi.AccessMethod{
+					{
+						Type: drsapi.AccessMethodTypeS3,
+						AccessUrl: &struct {
+							Headers *[]string `json:"headers,omitempty"`
+							Url     string    `json:"url"`
+						}{Url: hint},
+						Authorizations: &struct {
+							BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
+							DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
+							PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
+							SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
+						}{BearerAuthIssuers: &bearer},
+					},
+				}
+				authoritativeObj.AccessMethods = &ams
 			}
 		}
 
@@ -250,7 +309,7 @@ func UpdateDrsObjectsWithFiles(builder drs.ObjectBuilder, lfsFiles map[string]lf
 }
 
 // WriteDrsFile creates drsObject record from LFS file info
-func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drs.DRSObject, error) {
+func WriteDrsFile(builder common.ObjectBuilder, file lfs.LfsFileInfo, objectPath *string) (*drsapi.DrsObject, error) {
 
 	// determine drs object path: use provided objectPath if non-nil/non-empty, otherwise compute default
 
@@ -259,10 +318,11 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	// TODO: determine git to gen3 project hierarchy mapping (eg repo name to project ID)
 	// If objectPath is provided, we use it. Otherwise compute default.
 	existing, err := lfs.ReadObject(common.DRS_OBJS_PATH, file.Oid)
-	var drsObj *drs.DRSObject
+	var drsObj *drsapi.DrsObject
 	if err == nil && existing != nil {
 		drsObj = existing
-		drsObj.Name = file.Name
+		name := file.Name
+		drsObj.Name = &name
 		drsObj.Size = file.Size
 	} else {
 		drsId := DrsUUID(builder.ProjectID, file.Oid)
@@ -273,13 +333,23 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	}
 
 	if objectPath != nil && *objectPath != "" {
-		if len(drsObj.AccessMethods) > 0 {
-			drsObj.AccessMethods[0].AccessUrl = drs.AccessURL{Url: *objectPath}
+		if drsObj.AccessMethods != nil && len(*drsObj.AccessMethods) > 0 {
+			am := &(*drsObj.AccessMethods)[0]
+			am.AccessUrl = &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: *objectPath}
 		} else {
-			drsObj.AccessMethods = append(drsObj.AccessMethods, drs.AccessMethod{
-				Type:      "s3",
-				AccessUrl: drs.AccessURL{Url: *objectPath},
-			})
+			ams := []drsapi.AccessMethod{
+				{
+					Type: drsapi.AccessMethodTypeS3,
+					AccessUrl: &struct {
+						Headers *[]string `json:"headers,omitempty"`
+						Url     string    `json:"url"`
+					}{Url: *objectPath},
+				},
+			}
+			drsObj.AccessMethods = &ams
 		}
 	}
 
@@ -291,7 +361,7 @@ func WriteDrsFile(builder drs.ObjectBuilder, file lfs.LfsFileInfo, objectPath *s
 	return drsObj, nil
 }
 
-func WriteDrsObj(drsObj *drs.DRSObject, oid string, drsObjPath string) error {
+func WriteDrsObj(drsObj *drsapi.DrsObject, oid string, drsObjPath string) error {
 	basePath := filepath.Dir(filepath.Dir(filepath.Dir(drsObjPath)))
 	return lfs.WriteObject(basePath, drsObj, oid)
 }
@@ -302,11 +372,11 @@ func DrsUUID(projectId string, hash string) string {
 
 	// create UUID based on project ID and hash
 	hashStr := fmt.Sprintf("%s:%s", projectId, hash)
-	return uuid.NewSHA1(drs.NAMESPACE, []byte(hashStr)).String()
+	return uuid.NewSHA1(drsUUIDNamespace, []byte(hashStr)).String()
 }
 
 // creates drsObject record from file
-func DrsInfoFromOid(oid string) (*drs.DRSObject, error) {
+func DrsInfoFromOid(oid string) (*drsapi.DrsObject, error) {
 	return lfs.ReadObject(common.DRS_OBJS_PATH, oid)
 }
 
@@ -342,7 +412,7 @@ func CreateCustomPath(baseDir, drsURI string) (string, error) {
 
 // FindMatchingRecord finds a record from the list that matches the given project ID authz
 // If no matching record is found return nil
-func FindMatchingRecord(records []drs.DRSObject, organization, projectId string) (*drs.DRSObject, error) {
+func FindMatchingRecord(records []drsapi.DrsObject, organization, projectId string) (*drsapi.DrsObject, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -354,14 +424,18 @@ func FindMatchingRecord(records []drs.DRSObject, organization, projectId string)
 	}
 
 	for _, record := range records {
-		for _, access := range record.AccessMethods {
-			if len(access.Authorizations.BearerAuthIssuers) == 0 {
+		if record.AccessMethods == nil {
+			continue
+		}
+		for _, access := range *record.AccessMethods {
+			if access.Authorizations == nil || access.Authorizations.BearerAuthIssuers == nil || len(*access.Authorizations.BearerAuthIssuers) == 0 {
 				continue
 			}
 
 			// Check BearerAuthIssuers using a map for O(1) lookup (ref: "lists suck")
-			issuersMap := make(map[string]struct{}, len(access.Authorizations.BearerAuthIssuers))
-			for _, issuer := range access.Authorizations.BearerAuthIssuers {
+			issuers := *access.Authorizations.BearerAuthIssuers
+			issuersMap := make(map[string]struct{}, len(issuers))
+			for _, issuer := range issuers {
 				issuersMap[issuer] = struct{}{}
 			}
 

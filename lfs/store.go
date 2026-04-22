@@ -9,8 +9,8 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/common"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 )
 
 // This file contains functions that pertain to .git/drs/lfs/objects directory walk
@@ -36,12 +36,12 @@ func ObjectPath(basePath string, oid string) (string, error) {
 	return store.ObjectPath(oid)
 }
 
-func WriteObject(basePath string, drsObj *drs.DRSObject, oid string) error {
+func WriteObject(basePath string, drsObj *drsapi.DrsObject, oid string) error {
 	store := NewObjectStore(basePath, nil)
 	return store.WriteObject(drsObj, oid)
 }
 
-func ReadObject(basePath string, oid string) (*drs.DRSObject, error) {
+func ReadObject(basePath string, oid string) (*drsapi.DrsObject, error) {
 	store := NewObjectStore(basePath, nil)
 	return store.ReadObject(oid)
 }
@@ -58,7 +58,7 @@ func (s *ObjectStore) ObjectPath(oid string) (string, error) {
 	return filepath.Join(s.BasePath, oid[:2], oid[2:4], oid), nil
 }
 
-func (s *ObjectStore) WriteObject(drsObj *drs.DRSObject, oid string) error {
+func (s *ObjectStore) WriteObject(drsObj *drsapi.DrsObject, oid string) error {
 	drsObjBytes, err := sonic.ConfigFastest.Marshal(drsObj)
 	if err != nil {
 		return fmt.Errorf("error marshalling DRS object for oid %s: %v", oid, err)
@@ -78,7 +78,7 @@ func (s *ObjectStore) WriteObject(drsObj *drs.DRSObject, oid string) error {
 	return nil
 }
 
-func (s *ObjectStore) ReadObject(oid string) (*drs.DRSObject, error) {
+func (s *ObjectStore) ReadObject(oid string) (*drsapi.DrsObject, error) {
 	path, err := s.ObjectPath(oid)
 	if err != nil {
 		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
@@ -89,7 +89,7 @@ func (s *ObjectStore) ReadObject(oid string) (*drs.DRSObject, error) {
 		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
 	}
 
-	var drsObject drs.DRSObject
+	var drsObject drsapi.DrsObject
 	if err := sonic.ConfigFastest.Unmarshal(drsObjBytes, &drsObject); err != nil {
 		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
 	}
@@ -134,8 +134,8 @@ func GetPendingObjects(logger *slog.Logger) ([]*PendingObject, error) {
 	return objects, nil
 }
 
-func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
-	objects := map[string]*drs.DRSObject{}
+func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drsapi.DrsObject, error) {
+	objects := map[string]*drsapi.DrsObject{}
 	objectsDir := common.DRS_OBJS_PATH
 	if _, err := os.Stat(objectsDir); os.IsNotExist(err) {
 		logger.Debug(fmt.Sprintf("DRS objects directory not found: %s", objectsDir))
@@ -164,7 +164,7 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
 			logger.Error(fmt.Sprintf("Error reading file %s: %v", path, err))
 			return err
 		}
-		var drsObject drs.DRSObject
+		var drsObject drsapi.DrsObject
 		if err := sonic.ConfigFastest.Unmarshal(data, &drsObject); err != nil {
 			logger.Error(fmt.Sprintf("Error unmarshalling JSON from %s: %v", path, err))
 			return nil
@@ -176,7 +176,7 @@ func GetDrsLfsObjects(logger *slog.Logger) (map[string]*drs.DRSObject, error) {
 			objects[hInfo.SHA256] = &drsObject
 		}
 
-		logger.Debug(fmt.Sprintf("Successfully unmarshaled drs.DRSObject from %s:\n%+v", path, drsObject))
+		logger.Debug(fmt.Sprintf("Successfully unmarshaled drsapi.DrsObject from %s:\n%+v", path, drsObject))
 		return nil
 	})
 	if err != nil {

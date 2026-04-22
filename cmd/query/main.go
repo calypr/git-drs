@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/calypr/git-drs/client"
+	clientdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
 
@@ -16,32 +17,24 @@ var remote string
 var checksum = false
 var pretty = false
 
-type checksumClient interface {
-	GetObjectByHash(ctx context.Context, hash *hash.Checksum) ([]drs.DRSObject, error)
+func checksumTypeForString(sum string) string {
+	switch len(sum) {
+	case 32:
+		return "md5"
+	case 40:
+		return "sha1"
+	case 64:
+		return "sha256"
+	case 128:
+		return "sha512"
+	default:
+		return "sha256"
+	}
 }
 
-func queryByChecksum(client checksumClient, checksum string) ([]drs.DRSObject, error) {
-	// Auto-detect checksum type based on hash length
-	checksumType := hash.ChecksumTypeSHA256
-	switch len(checksum) {
-	case 32:
-		// 128-bit / 32-hex-character checksum (e.g., MD5)
-		checksumType = hash.ChecksumTypeMD5
-	case 40:
-		// 160-bit / 40-hex-character checksum (e.g., SHA1)
-		checksumType = hash.ChecksumTypeSHA1
-	case 64:
-		// 256-bit / 64-hex-character checksum (e.g., SHA256)
-		checksumType = hash.ChecksumTypeSHA256
-	case 128:
-		// 512-bit / 128-hex-character checksum (e.g., SHA512)
-		checksumType = hash.ChecksumTypeSHA512
-	}
-
-	return client.GetObjectByHash(context.Background(), &hash.Checksum{
-		Checksum: checksum,
-		Type:     string(checksumType),
-	})
+func queryByChecksum(ctx context.Context, gc *client.GitContext, checksum string) ([]drsapi.DrsObject, error) {
+	_ = ctx
+	return clientdrs.GetObjectByHashForGit(context.Background(), gc.API, checksum, gc.Organization, gc.ProjectId)
 }
 
 // Cmd line declaration
@@ -59,26 +52,24 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
 
-		config, err := config.LoadConfig()
+		cfg, err := config.LoadConfig()
 		if err != nil {
 			return err
 		}
 
-		remoteName, err := config.GetRemoteOrDefault(remote)
+		remoteName, err := cfg.GetRemoteOrDefault(remote)
 		if err != nil {
 			logger.Error(fmt.Sprintf("Error getting remote: %v", err))
 			return err
 		}
 
-		client, err := config.GetRemoteClient(remoteName, logger)
+		gc, err := cfg.GetRemoteClient(remoteName, logger)
 		if err != nil {
 			return err
 		}
 
-		var obj *drs.DRSObject
-
 		if checksum {
-			objs, err := queryByChecksum(client.API, args[0])
+			objs, err := queryByChecksum(context.Background(), gc, args[0])
 			if err != nil {
 				return err
 			}
@@ -87,16 +78,14 @@ var Cmd = &cobra.Command{
 					return err
 				}
 			}
-		} else {
-			obj, err = client.API.GetObject(context.Background(), args[0])
-			if err != nil {
-				return err
-			}
-			if err := common.PrintDRSObject(*obj, pretty); err != nil {
-				return err
-			}
+			return nil
 		}
-		return nil
+
+		obj, err := gc.API.SyfonClient().DRS().GetObject(context.Background(), args[0])
+		if err != nil {
+			return err
+		}
+		return common.PrintDRSObject(obj, pretty)
 	},
 }
 

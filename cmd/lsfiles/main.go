@@ -1,15 +1,13 @@
 package lsfiles
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	//"github.com/calypr/data-client/hash"
+	gitdrsdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/syfon/client/pkg/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +47,7 @@ var Cmd = &cobra.Command{
 
 		for fileName, info := range lfsFiles {
 
-			results, err := client.API.GetObjectByHash(context.Background(), &hash.Checksum{Checksum: info.Oid, Type: string(hash.ChecksumTypeSHA256)})
+			results, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client.API, info.Oid, client.Organization, client.ProjectId)
 			if err != nil {
 				fmt.Printf("%s x %s\n", info.Oid, fileName)
 			} else {

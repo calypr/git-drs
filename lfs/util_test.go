@@ -8,7 +8,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/syfon/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 func TestObjectWalk(t *testing.T) {
@@ -18,10 +18,10 @@ func TestObjectWalk(t *testing.T) {
 		t.Fatalf("mkdir failed: %v", err)
 	}
 	name := "object-name"
-	obj := drs.DRSObject{
+	obj := drsapi.DrsObject{
 		Id:   "object-1",
-		Name: name,
-		Checksums: []drs.Checksum{
+		Name: ptrString(name),
+		Checksums: []drsapi.Checksum{
 			{Type: "sha256", Checksum: "sha-256"},
 		},
 	}
@@ -36,7 +36,7 @@ func TestObjectWalk(t *testing.T) {
 
 	var seenPath string
 	var seenID string
-	err = ObjectWalk(func(path string, d *drs.DRSObject) error {
+	err = ObjectWalk(func(path string, d *drsapi.DrsObject) error {
 		seenPath = path
 		if d != nil {
 			seenID = d.Id
@@ -56,44 +56,15 @@ func TestObjectWalk(t *testing.T) {
 
 func TestIsLFSTrackedFile(t *testing.T) {
 	t.Skip("temporarily disabled TODO - fix git attributes handling in tests")
-	tmp := t.TempDir()
-	attrPath := filepath.Join(tmp, ".gitattributes")
-	err := os.WriteFile(attrPath, []byte("*.bin filter=lfs diff=lfs merge=lfs -text\n"), 0644)
-	if err != nil {
-		t.Fatalf("write .gitattributes: %v", err)
-	}
-
-	tests := []struct {
-		path    string
-		tracked bool
-	}{
-		{"test.bin", true},
-		{"sub/test.bin", true},
-		{"test.txt", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			tracked, err := IsLFSTracked(tt.path)
-			if err != nil {
-				t.Fatalf("IsLFSTracked error: %v", err)
-			}
-			if tracked != tt.tracked {
-				t.Errorf("IsLFSTracked(%s) = %v, want %v", tt.path, tracked, tt.tracked)
-			}
-		})
-	}
 }
 
 func TestDrsTopLevel(t *testing.T) {
 	tmp := t.TempDir()
 	drsDir := filepath.Join(tmp, ".git", "drs")
-	err := os.MkdirAll(drsDir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(drsDir, 0755); err != nil {
 		t.Fatalf("mkdir .git/drs: %v", err)
 	}
 
-	// Initialize git repo so git commands work
 	cmd := exec.Command("git", "-C", tmp, "init")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, string(out))
@@ -113,4 +84,23 @@ func TestDrsTopLevel(t *testing.T) {
 	if actual != expected {
 		t.Errorf("expected %s, got %s", expected, actual)
 	}
+}
+
+func ptrString(s string) *string { return &s }
+
+func setupTempRepo(t *testing.T) {
+	t.Helper()
+	tmp := t.TempDir()
+	cmd := exec.Command("git", "init", tmp)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v: %s", err, string(out))
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
 }

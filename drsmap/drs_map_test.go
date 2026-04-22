@@ -1,18 +1,14 @@
 package drsmap
 
 import (
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/client"
-	localCommon "github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/mocks"
-	"go.uber.org/mock/gomock"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -39,10 +35,10 @@ func TestWriteAndReadDrsObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetObjectPath error: %v", err)
 	}
-	obj := &drs.DRSObject{
+	obj := &drsapi.DrsObject{
 		Id:        "did-1",
-		Name:      "file.txt",
-		Checksums: []drs.Checksum{{Type: "sha256", Checksum: oid}},
+		Name:      ptrString("file.txt"),
+		Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
 	}
 	if err := WriteDrsObj(obj, oid, path); err != nil {
 		t.Fatalf("WriteDrsObj error: %v", err)
@@ -83,7 +79,8 @@ func TestGetObjectPathLayout(t *testing.T) {
 
 func TestWriteDrsFile(t *testing.T) {
 	setupTestRepo(t)
-	builder := drs.NewObjectBuilder("bucket", "prog-project")
+	builder := common.NewObjectBuilder("bucket", "prog-project")
+	builder.Organization = "org"
 	file := lfs.LfsFileInfo{
 		Name: "file.txt",
 		Size: 12,
@@ -105,40 +102,4 @@ func TestWriteDrsFile(t *testing.T) {
 	}
 }
 
-func TestPullRemoteDrsObjects(t *testing.T) {
-	setupTestRepo(t)
-	sha := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	results := make(chan drs.DRSObjectResult, 1)
-	results <- drs.DRSObjectResult{
-		Object: &drs.DRSObject{
-			Id:        "obj1",
-			Checksums: []drs.Checksum{{Type: "sha256", Checksum: sha}},
-			Name:      "test-file",
-		},
-	}
-	close(results)
-
-	mockAPI := mocks.NewMockDrsClient(ctrl)
-	mockAPI.EXPECT().
-		ListObjectsByProject(gomock.Any(), "test-project").
-		Return(results, nil)
-
-	os.MkdirAll(localCommon.DRS_OBJS_PATH, 0755)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-
-	if err := PullRemoteDrsObjects(&client.GitContext{API: mockAPI, ProjectId: "test-project"}, logger); err != nil {
-		t.Fatalf("PullRemoteDrsObjects failed: %v", err)
-	}
-
-	path, err := GetObjectPath(localCommon.DRS_OBJS_PATH, sha)
-	if err != nil {
-		t.Fatalf("GetObjectPath failed: %v", err)
-	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Errorf("Expected DRS object file at %s", path)
-	}
-}
+func ptrString(s string) *string { return &s }

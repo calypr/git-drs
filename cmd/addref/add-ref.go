@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.API.GetObject(context.Background(), drsUri)
+		obj, err := client.API.SyfonClient().DRS().GetObject(context.Background(), drsUri)
 		if err != nil {
 			return err
 		}
@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		err = lfs.CreateLfsPointer(obj, dstPath)
+		err = lfs.CreateLfsPointer(&obj, dstPath)
 		return err
 	},
 }

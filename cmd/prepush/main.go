@@ -16,13 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/gitrepo"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
-	"github.com/calypr/syfon/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +41,7 @@ var Cmd = &cobra.Command{
 type PrePushService struct {
 	newLogger        func(string, bool) (*slog.Logger, error)
 	loadConfig       func() (*config.Config, error)
-	updateDrsObjects func(drs.ObjectBuilder, map[string]lfs.LfsFileInfo, drsmap.UpdateOptions) error
+	updateDrsObjects func(common.ObjectBuilder, map[string]lfs.LfsFileInfo, drsmap.UpdateOptions) error
 	createTempFile   func(dir, pattern string) (*os.File, error)
 }
 
@@ -94,7 +95,7 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return err
 	}
 
-	builder := drs.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
+	builder := common.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
 	builder.StoragePrefix = scope.Prefix
 	// git-drs native backend uses CAS-style paths
@@ -185,14 +186,33 @@ type metadataCandidate struct {
 	Aliases       []string               `json:"aliases,omitempty"`
 }
 
-func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
+func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
+	name := ""
+	if c.Name != nil {
+		name = *c.Name
+	}
+	mimeType := ""
+	if c.MimeType != nil {
+		mimeType = *c.MimeType
+	}
+	description := ""
+	if c.Description != nil {
+		description = *c.Description
+	}
+	aliases := []string(nil)
+	if c.Aliases != nil {
+		aliases = append([]string(nil), (*c.Aliases)...)
+	}
 	out := metadataCandidate{
-		Name:        c.Name,
+		Name:        name,
 		Size:        c.Size,
-		Version:     c.Version,
-		MimeType:    c.MimeType,
-		Description: c.Description,
-		Aliases:     append([]string(nil), c.Aliases...),
+		Version:     "",
+		MimeType:    mimeType,
+		Description: description,
+		Aliases:     aliases,
+	}
+	if c.Version != nil {
+		out.Version = *c.Version
 	}
 
 	if len(c.Checksums) > 0 {
@@ -205,23 +225,32 @@ func toMetadataCandidate(c drs.DRSObjectCandidate) metadataCandidate {
 		}
 	}
 
-	if len(c.AccessMethods) > 0 {
-		out.AccessMethods = make([]metadataAccessMethod, 0, len(c.AccessMethods))
-		for _, am := range c.AccessMethods {
-			accID := am.AccessId
-			region := am.Region
-			accURL := am.AccessUrl.Url
+	if c.AccessMethods != nil && len(*c.AccessMethods) > 0 {
+		out.AccessMethods = make([]metadataAccessMethod, 0, len(*c.AccessMethods))
+		for _, am := range *c.AccessMethods {
+			accID := ""
+			if am.AccessId != nil {
+				accID = *am.AccessId
+			}
+			region := ""
+			if am.Region != nil {
+				region = *am.Region
+			}
+			accURL := ""
+			if am.AccessUrl != nil {
+				accURL = am.AccessUrl.Url
+			}
 			m := metadataAccessMethod{
-				Type:     am.Type,
+				Type:     string(am.Type),
 				AccessID: accID,
 				Region:   region,
 				AccessURL: metadataAccessURL{
 					URL: accURL,
 				},
 			}
-			if len(am.Authorizations.BearerAuthIssuers) > 0 {
+			if am.Authorizations != nil && am.Authorizations.BearerAuthIssuers != nil && len(*am.Authorizations.BearerAuthIssuers) > 0 {
 				m.Authorizations = &metadataAuthorizations{
-					BearerAuthIssuers: append([]string(nil), am.Authorizations.BearerAuthIssuers...),
+					BearerAuthIssuers: append([]string(nil), (*am.Authorizations.BearerAuthIssuers)...),
 				}
 			}
 			out.AccessMethods = append(out.AccessMethods, m)
@@ -245,7 +274,7 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 			logger.Debug(fmt.Sprintf("skipping oid %s: local DRS object not found", file.Oid))
 			continue
 		}
-		candidates = append(candidates, toMetadataCandidate(drs.ConvertToCandidate(obj)))
+		candidates = append(candidates, toMetadataCandidate(common.ConvertToCandidate(obj)))
 	}
 	if len(candidates) == 0 {
 		logger.Debug("no metadata candidates to stage")
@@ -271,7 +300,7 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 		httpReq.Header.Set("Authorization", authHeader)
 	}
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := pendingMetadataClientFactory()
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("pending metadata request failed: %w", err)
@@ -443,6 +472,10 @@ func collectLfsFiles(ctx context.Context, cache *precommit_cache.Cache, cacheRea
 }
 
 const cacheMaxAge = 24 * time.Hour
+
+var pendingMetadataClientFactory = func() *http.Client {
+	return &http.Client{Timeout: 20 * time.Second}
+}
 
 func normalizeCachedOID(oid string) string {
 	normalized := strings.TrimSpace(oid)

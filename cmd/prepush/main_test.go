@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +18,7 @@ import (
 	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/calypr/git-drs/lfs"
 	"github.com/calypr/git-drs/precommit_cache"
-	"github.com/calypr/syfon/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 func TestPrepushCmd(t *testing.T) {
@@ -324,11 +323,11 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 
 	oid := strings.Repeat("b", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
+	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
-		Name: name,
+		Name: ptrString(name),
 		Size: 123,
-		Checksums: []drs.Checksum{
+		Checksums: []drsapi.Checksum{
 			{Type: "sha256", Checksum: oid},
 		},
 	}, oid); err != nil {
@@ -337,24 +336,29 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 
 	var gotPath, gotAuth, gotContentType, gotAccept string
 	var gotBody metadataSubmitRequest
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotAuth = r.Header.Get("Authorization")
-		gotContentType = r.Header.Get("Content-Type")
-		gotAccept = r.Header.Get("Accept")
-		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+	restoreClient := stubPendingMetadataClient(t, func(req *http.Request) (*http.Response, error) {
+		gotPath = req.URL.Path
+		gotAuth = req.Header.Get("Authorization")
+		gotContentType = req.Header.Get("Content-Type")
+		gotAccept = req.Header.Get("Accept")
+		defer req.Body.Close()
+		if err := json.NewDecoder(req.Body).Decode(&gotBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(restoreClient)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	err := submitPendingLFSMeta(
 		context.Background(),
 		config.Remote("origin"),
-		srv.URL+"/  ",
+		"https://example.test/  ",
 		map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 		logger,
 	)
@@ -388,11 +392,11 @@ func TestSubmitPendingLFSMetaStatusHandling(t *testing.T) {
 
 	oid := strings.Repeat("c", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
+	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
-		Name: name,
+		Name: ptrString(name),
 		Size: 123,
-		Checksums: []drs.Checksum{
+		Checksums: []drsapi.Checksum{
 			{Type: "sha256", Checksum: oid},
 		},
 	}, oid); err != nil {
@@ -418,17 +422,20 @@ func TestSubmitPendingLFSMetaStatusHandling(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", tc.contentType)
-				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte(tc.body))
-			}))
-			defer srv.Close()
+			restoreClient := stubPendingMetadataClient(t, func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: tc.status,
+					Header:     http.Header{"Content-Type": []string{tc.contentType}},
+					Body:       io.NopCloser(strings.NewReader(tc.body)),
+					Request:    req,
+				}, nil
+			})
+			t.Cleanup(restoreClient)
 
 			err := submitPendingLFSMeta(
 				context.Background(),
 				config.Remote("origin"),
-				srv.URL,
+				"https://example.test",
 				map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 				logger,
 			)
@@ -500,11 +507,11 @@ func TestSubmitPendingLFSMetaRequestWiringBasicAuth(t *testing.T) {
 
 	oid := strings.Repeat("d", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drs.DRSObject{
+	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
-		Name: name,
+		Name: ptrString(name),
 		Size: 123,
-		Checksums: []drs.Checksum{
+		Checksums: []drsapi.Checksum{
 			{Type: "sha256", Checksum: oid},
 		},
 	}, oid); err != nil {
@@ -512,17 +519,22 @@ func TestSubmitPendingLFSMetaRequestWiringBasicAuth(t *testing.T) {
 	}
 
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
+	restoreClient := stubPendingMetadataClient(t, func(req *http.Request) (*http.Response, error) {
+		gotAuth = req.Header.Get("Authorization")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Request:    req,
+		}, nil
+	})
+	t.Cleanup(restoreClient)
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	err := submitPendingLFSMeta(
 		context.Background(),
 		config.Remote("origin"),
-		srv.URL,
+		"https://example.test",
 		map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 		logger,
 	)
@@ -597,3 +609,22 @@ func mustChdir(t *testing.T, dir string) string {
 	}
 	return old
 }
+
+func stubPendingMetadataClient(t *testing.T, respond func(*http.Request) (*http.Response, error)) func() {
+	t.Helper()
+	orig := pendingMetadataClientFactory
+	pendingMetadataClientFactory = func() *http.Client {
+		return &http.Client{Transport: roundTripperFunc(respond)}
+	}
+	return func() {
+		pendingMetadataClientFactory = orig
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func ptrString(s string) *string { return &s }

@@ -27,7 +27,7 @@ func EnsureValidCredential(ctx context.Context, cred *syconf.Credential, baseLog
 		return fmt.Errorf("invalid credential")
 	}
 
-	// Keep legacy behavior: only auto-refresh when API key is valid but token expired.
+	// Only auto-refresh when the API key is valid but the token has expired.
 	if !strings.Contains(err.Error(), "access_token is invalid but api_key is valid") {
 		return fmt.Errorf("invalid credential: %v", err)
 	}

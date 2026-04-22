@@ -7,25 +7,29 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/calypr/data-client/g3client"
+	localcommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
-	"github.com/calypr/syfon/client/transfer"
-	"github.com/calypr/syfon/client/xfer/download"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 )
 
 var ErrNoRecordsForOID = errors.New("no records found for OID")
+
+type scopedClient interface {
+	SyfonClient() g3client.SyfonClientInterface
+}
 
 // ResolveGitScopedURL implements the specialized git-drs logic of performing an
 // issuer-filtered hash lookup to find the appropriate download record.
 func ResolveGitScopedURL(
 	ctx context.Context,
-	api drs.Client,
+	api scopedClient,
 	oid string,
 	organization string,
 	projectId string,
 	logger *slog.Logger,
-) (*drs.AccessURL, error) {
+) (*drsapi.AccessURL, error) {
 	logger.Debug(fmt.Sprintf("Try to get download url for file OID %s", oid))
 
 	records, err := GetObjectByHashForGit(ctx, api, oid, organization, projectId)
@@ -51,43 +55,53 @@ func ResolveGitScopedURL(
 
 	logger.Debug(fmt.Sprintf("Matching record: %#v for oid %s", matchingRecord, oid))
 
-	if len(matchingRecord.AccessMethods) == 0 {
+	if matchingRecord.AccessMethods == nil || len(*matchingRecord.AccessMethods) == 0 {
 		return nil, fmt.Errorf("no access methods available for DRS object %s", matchingRecord.Id)
 	}
 
-	accessType := matchingRecord.AccessMethods[0].Type
+	accessType := (*matchingRecord.AccessMethods)[0].Type
 	if accessType == "" {
-		return nil, fmt.Errorf("no accessType found in access method for DRS object %v", matchingRecord.AccessMethods[0])
+		return nil, fmt.Errorf("no accessType found in access method for DRS object %v", (*matchingRecord.AccessMethods)[0])
 	}
 
-	return api.GetDownloadURL(ctx, matchingRecord.Id, accessType)
+	accessURL, err := api.SyfonClient().DRS().GetAccessURL(ctx, matchingRecord.Id, string(accessType))
+	if err != nil {
+		return nil, err
+	}
+	return &accessURL, nil
 }
 
 // GetObjectByHashForGit queries for an object by hash but uniquely filters
 // the results based on the BearerAuthIssuers intersecting with the Git scopes.
 func GetObjectByHashForGit(
 	ctx context.Context,
-	api drs.Client,
+	api scopedClient,
 	oid string,
 	organization string,
 	projectId string,
-) ([]drs.DRSObject, error) {
+) ([]drsapi.DrsObject, error) {
 	sum := &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid}
-	res, err := api.GetObjectByHash(ctx, sum)
+	res, err := api.SyfonClient().DRS().BatchGetObjectsByHash(ctx, []string{sum.Checksum})
 	if err != nil {
 		return nil, err
 	}
 
-	resourcePath, err := drs.ProjectToResource(organization, projectId)
+	resourcePath, err := localcommon.ProjectToResource(organization, projectId)
 	if err != nil {
 		return nil, err
 	}
 
-	filtered := make([]drs.DRSObject, 0)
-	for _, o := range res {
+	filtered := make([]drsapi.DrsObject, 0)
+	for _, o := range res.DrsObjects {
 		found := false
-		for _, am := range o.AccessMethods {
-			for _, issuer := range am.Authorizations.BearerAuthIssuers {
+		if o.AccessMethods == nil {
+			continue
+		}
+		for _, am := range *o.AccessMethods {
+			if am.Authorizations == nil || am.Authorizations.BearerAuthIssuers == nil {
+				continue
+			}
+			for _, issuer := range *am.Authorizations.BearerAuthIssuers {
 				if issuer == resourcePath {
 					found = true
 					break
@@ -105,17 +119,17 @@ func GetObjectByHashForGit(
 }
 
 // DeleteRecordsByOID sweeps and deletes all DIDs matching a git OID hash.
-func DeleteRecordsByOID(ctx context.Context, api drs.Client, oid string) error {
-	records, err := api.GetObjectByHash(ctx, &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
+func DeleteRecordsByOID(ctx context.Context, api scopedClient, oid string) error {
+	page, err := api.SyfonClient().DRS().BatchGetObjectsByHash(ctx, []string{oid})
 	if err != nil {
 		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
 	}
-	if len(records) == 0 {
+	if len(page.DrsObjects) == 0 {
 		return fmt.Errorf("%w %s", ErrNoRecordsForOID, oid)
 	}
 
-	seen := make(map[string]struct{}, len(records))
-	for _, record := range records {
+	seen := make(map[string]struct{}, len(page.DrsObjects))
+	for _, record := range page.DrsObjects {
 		did := strings.TrimSpace(record.Id)
 		if did == "" {
 			continue
@@ -124,7 +138,7 @@ func DeleteRecordsByOID(ctx context.Context, api drs.Client, oid string) error {
 			continue
 		}
 		seen[did] = struct{}{}
-		if err := api.DeleteRecord(ctx, did); err != nil {
+		if err := api.SyfonClient().Index().Delete(ctx, did); err != nil {
 			return fmt.Errorf("error deleting DID %s for OID %s: %w", did, oid, err)
 		}
 	}
@@ -134,16 +148,6 @@ func DeleteRecordsByOID(ctx context.Context, api drs.Client, oid string) error {
 	return nil
 }
 
-func BuildDrsObj(fileName string, checksum string, size int64, drsId string, bucket string, org string, projectId string, prefix string) (*drs.DRSObject, error) {
-	return drs.BuildDrsObjWithPrefix(fileName, checksum, size, drsId, bucket, org, projectId, prefix)
-}
-
-func DownloadFile(ctx context.Context, api drs.Client, reader transfer.Downloader, logger *slog.Logger, oid string, destPath string, multiPartThreshold int64) error {
-	opts := download.DownloadOptions{
-		MultipartThreshold: 5 * 1024 * 1024,
-	}
-	if multiPartThreshold > 0 {
-		opts.MultipartThreshold = multiPartThreshold
-	}
-	return download.DownloadToPathWithOptions(ctx, api, reader, logger, oid, destPath, "", opts)
+func BuildDrsObj(fileName string, checksum string, size int64, drsId string, bucket string, org string, projectId string, prefix string) (*drsapi.DrsObject, error) {
+	return localcommon.BuildDrsObjWithPrefix(fileName, checksum, size, drsId, bucket, org, projectId, prefix)
 }

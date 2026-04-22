@@ -100,7 +100,7 @@ func TestSmudgeContent_DownloadsWhenCacheMiss(t *testing.T) {
 	}
 }
 
-func TestSmudgeContent_ErrorsWithoutDownloaderOnCacheMiss(t *testing.T) {
+func TestSmudgeContent_WritesPointerWithoutDownloaderOnCacheMiss(t *testing.T) {
 	oid := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	setupSmudgeTestRepo(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -114,8 +114,11 @@ func TestSmudgeContent_ErrorsWithoutDownloaderOnCacheMiss(t *testing.T) {
 		logger,
 		nil,
 	)
-	if err == nil {
-		t.Fatal("expected error on cache miss without downloader")
+	if err != nil {
+		t.Fatalf("SmudgeContent returned error: %v", err)
+	}
+	if got := out.String(); got != pointerForOID(oid, 10) {
+		t.Fatalf("expected pointer passthrough, got %q", got)
 	}
 }
 

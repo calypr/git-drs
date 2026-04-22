@@ -5,13 +5,11 @@ import (
 	"log/slog"
 	"net/url"
 
+	"github.com/calypr/data-client/conf"
+	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/syfon/client/conf"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/logs"
-	"github.com/calypr/syfon/client/pkg/request"
 )
 
 // GetContext returns a pure functional context wrapper bridging git-drs to data-client capability.
@@ -37,7 +35,7 @@ func GetContext(profileConfig conf.Credential, remote Gen3Remote, logger *slog.L
 	}
 	bucketName := scope.Bucket
 
-	// Initialize syfon DRS client with slog-adapted logger.
+	// Initialize the data-client wrapper with slog-adapted logger.
 	enableDataClientLogs := gitrepo.GetGitConfigBool("drs.enable-data-client-logs", false)
 
 	logOpts := []logs.Option{
@@ -53,17 +51,12 @@ func GetContext(profileConfig conf.Credential, remote Gen3Remote, logger *slog.L
 
 	dLogger, closer := logs.New(profileConfig.Profile, logOpts...)
 	_ = closer
-
-	req := request.NewRequestInterface(dLogger, &profileConfig, conf.NewConfigure(logger))
-	api := drs.NewDrsClient(req, &profileConfig, dLogger).
-		WithProject(projectId).
-		WithOrganization(remote.GetOrganization()).
-		WithBucket(bucketName)
+	api := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, g3client.WithClients(g3client.SyfonClient))
 
 	// Configure the DRS client with git-specific context
 	upsert := gitrepo.GetGitConfigBool("drs.upsert", false)
 	multiPartThresholdInt := gitrepo.GetGitConfigInt("drs.multipart-threshold", 5120)
-	var multiPartThreshold int64 = int64(multiPartThresholdInt) * common.MB
+	var multiPartThreshold int64 = int64(multiPartThresholdInt) * 1024 * 1024
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
 	if uploadConcurrency < 1 {
 		uploadConcurrency = 1

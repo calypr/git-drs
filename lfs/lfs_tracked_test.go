@@ -15,7 +15,7 @@ func TestIsLFSTracked(t *testing.T) {
 	repo := t.TempDir()
 	mustRun(t, repo, "git", "init")
 
-	// Add an LFS tracking rule (we only need attributes; git-lfs binary not required)
+	// Add a tracking rule (we only need attributes; the git-lfs binary is not required)
 	attr := []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n")
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), attr, 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)

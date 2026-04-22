@@ -2,7 +2,7 @@
 // (https://git-scm.com/docs/gitattributes#_long_running_filter_process) for
 // git-drs. It is configured as the filter.lfs.process handler and intercepts
 // smudge (checkout) and clean (stage) operations, wiring them directly to the
-// DRS transfer stack without spawning a separate git-lfs transfer agent.
+// DRS transfer stack without spawning a separate transfer agent.
 //
 // The command is hidden and invoked automatically by git when
 //
@@ -53,11 +53,11 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
-		logger.Info("filter: no default remote: %w", err)
+		logger.Info("filter: no default remote", "err", err)
 	} else {
 		drsCtx, err = cfg.GetRemoteClient(remote, logger)
 		if err != nil {
-			logger.Info("DRS server not configured or unreachable: %w", err)
+			logger.Info("DRS server not configured or unreachable", "err", err)
 		}
 	}
 

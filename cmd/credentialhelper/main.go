@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd implements a git credential helper bridge for git-lfs over HTTP.
+// Cmd implements a git credential helper bridge for git-drs over HTTP.
 var Cmd = &cobra.Command{
 	Use:    "credential-helper <get|store|erase>",
 	Hidden: true,
@@ -58,7 +58,7 @@ var Cmd = &cobra.Command{
 		}
 
 		token := ""
-		// Prefer repo-local token first to keep git-lfs local and deterministic.
+		// Prefer repo-local token first to keep git-drs local and deterministic.
 		if repoToken, err := gitrepo.GetRemoteToken(remoteName); err == nil && strings.TrimSpace(repoToken) != "" {
 			token = strings.TrimSpace(repoToken)
 		}

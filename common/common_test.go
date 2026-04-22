@@ -7,7 +7,7 @@ import (
 )
 
 func TestProjectToResource(t *testing.T) {
-	// Test legacy format (no org)
+	// Test project-only format (no org)
 	resource, err := ProjectToResource("", "prog-project")
 	if err != nil {
 		t.Fatalf("ProjectToResource error: %v", err)
@@ -25,7 +25,7 @@ func TestProjectToResource(t *testing.T) {
 		t.Fatalf("unexpected resource: %s", resource)
 	}
 
-	// Test legacy format fallback (invalid format -> default program)
+	// Test project-only fallback (invalid format -> default program)
 	res, err := ProjectToResource("", "invalid")
 	if err != nil {
 		t.Fatalf("unexpected error for invalid project: %v", err)

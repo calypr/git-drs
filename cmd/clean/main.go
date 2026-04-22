@@ -1,10 +1,9 @@
 package clean
 
-// Package clean implements the `git drs clean` sub command, which mirrors the
-// behaviour of `git lfs clean`. It reads raw file content from stdin, stores
-// the content in the local git-lfs object cache, and writes an LFS pointer to
-// stdout. A DRS map entry is also recorded so that `git drs push` can upload
-// the object to the configured DRS server.
+// Package clean implements the `git drs clean` sub command. It reads raw file
+// content from stdin, stores the content in the local object cache, and writes
+// an LFS pointer to stdout. A DRS map entry is also recorded so that
+// `git drs push` can upload the object to the configured DRS server.
 //
 // git configures this command as the clean filter when
 //
@@ -27,12 +26,11 @@ var Cmd = &cobra.Command{
 	Use:   "clean -- <path>",
 	Short: "Clean a file by converting its content to an LFS pointer (invoked by git)",
 	Long: `git drs clean reads raw file content from stdin, hashes it, stores it in
-the local git-lfs object cache (.git/lfs/objects), and writes an LFS pointer
+the local object cache (.git/lfs/objects), and writes an LFS pointer
 to stdout.  It also records a DRS map entry so that 'git drs push' can upload
 the object to the configured DRS server.
 
-This command mirrors 'git lfs clean' and is intended to be configured as the
-git clean filter:
+This command is intended to be configured as the git clean filter:
 
   git config filter.lfs.clean 'git-drs clean -- %f'`,
 	Hidden: true,

@@ -143,8 +143,8 @@ cat > "$TMPFILE"
 # Run DRS preparation
 git drs pre-push-prepare "$remote" "$url" < "$TMPFILE" || exit 1
 
-# Run LFS push
-exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
+# The managed git-drs push command handles upload/register directly.
+# The hook only stages metadata before the Git push proceeds.
 `
 	hookScript := "#!/bin/sh\n" + hookBody
 

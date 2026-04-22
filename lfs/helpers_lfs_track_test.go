@@ -26,10 +26,10 @@ func TestGitLFSTrackPatterns_WritesGitattributes(t *testing.T) {
 		t.Fatalf("read .gitattributes: %v", err)
 	}
 	got := string(b)
-	if !strings.Contains(got, "*.bam filter=lfs diff=lfs merge=lfs -text") {
+	if !strings.Contains(got, "*.bam filter=drs diff=drs merge=drs -text") {
 		t.Fatalf("missing tracked pattern in .gitattributes: %q", got)
 	}
-	if !strings.Contains(got, "data/** filter=lfs diff=lfs merge=lfs -text") {
+	if !strings.Contains(got, "data/** filter=drs diff=drs merge=drs -text") {
 		t.Fatalf("missing tracked pattern in .gitattributes: %q", got)
 	}
 }
@@ -56,7 +56,7 @@ func TestGitLFSListTrackedPatterns_ReadsGitattributes(t *testing.T) {
 	oldwd := mustChdirTrackTest(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	content := "*.bam filter=lfs diff=lfs merge=lfs -text\n*.vcf filter=lfs diff=lfs merge=lfs -text\n"
+	content := "*.bam filter=drs diff=drs merge=drs -text\n*.vcf filter=drs diff=drs merge=drs -text\n"
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGitLFSUntrackPatterns_RemovesPattern(t *testing.T) {
 	oldwd := mustChdirTrackTest(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	content := "*.bam filter=lfs diff=lfs merge=lfs -text\n*.vcf filter=lfs diff=lfs merge=lfs -text\n"
+	content := "*.bam filter=drs diff=drs merge=drs -text\n*.vcf filter=drs diff=drs merge=drs -text\n"
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}
@@ -96,10 +96,10 @@ func TestGitLFSUntrackPatterns_RemovesPattern(t *testing.T) {
 		t.Fatalf("read .gitattributes: %v", err)
 	}
 	got := string(b)
-	if strings.Contains(got, "*.bam filter=lfs") {
+	if strings.Contains(got, "*.bam filter=drs") {
 		t.Fatalf("expected *.bam to be removed, got %q", got)
 	}
-	if !strings.Contains(got, "*.vcf filter=lfs") {
+	if !strings.Contains(got, "*.vcf filter=drs") {
 		t.Fatalf("expected *.vcf to remain, got %q", got)
 	}
 }
@@ -109,7 +109,7 @@ func TestGitLFSUntrackPatterns_DryRunDoesNotWrite(t *testing.T) {
 	oldwd := mustChdirTrackTest(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
-	content := "*.bam filter=lfs diff=lfs merge=lfs -text\n"
+	content := "*.bam filter=drs diff=drs merge=drs -text\n"
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte(content), 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}

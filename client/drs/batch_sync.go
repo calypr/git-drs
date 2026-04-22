@@ -8,11 +8,11 @@ import (
 	"sort"
 
 	"github.com/calypr/git-drs/client"
+	localcommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
 	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/common"
-	"github.com/calypr/syfon/client/pkg/hash"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -21,14 +21,14 @@ type batchSyncSession struct {
 	rt             *pushRuntime
 	filesByOID     map[string]lfs.LfsFileInfo
 	oids           []string
-	drsObjByOID    map[string]*drs.DRSObject
-	existingByHash map[string][]drs.DRSObject
+	drsObjByOID    map[string]*drsapi.DrsObject
+	existingByHash map[string][]drsapi.DrsObject
 	registeredOids map[string]bool
 }
 
 type uploadCandidate struct {
 	oid  string
-	obj  *drs.DRSObject
+	obj  *drsapi.DrsObject
 	file lfs.LfsFileInfo
 	size int64
 	src  string
@@ -39,26 +39,22 @@ func BatchSyncForPush(cl *client.GitContext, ctx context.Context, files map[stri
 	session := &batchSyncSession{
 		ctx:            ctx,
 		rt:             newPushRuntime(cl),
-		drsObjByOID:    make(map[string]*drs.DRSObject),
-		existingByHash: make(map[string][]drs.DRSObject),
+		drsObjByOID:    make(map[string]*drsapi.DrsObject),
+		existingByHash: make(map[string][]drsapi.DrsObject),
 		registeredOids: make(map[string]bool),
 	}
 	if len(files) == 0 {
 		return nil
 	}
 
-	// 1. Preparation: Normalize input and initial bulk lookup.
 	session.normalizeFiles(files)
 	if err := session.lookupMetadata(); err != nil {
 		return err
 	}
-
-	// 2. Metadata: Resolve OIDs to DRS objects and register missing ones.
 	if err := session.ensureMetadataRegistered(); err != nil {
 		return err
 	}
 
-	// 3. Filtering: Decide which files actually need storage uploads.
 	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
 		return err
@@ -67,14 +63,13 @@ func BatchSyncForPush(cl *client.GitContext, ctx context.Context, files map[stri
 		return nil
 	}
 
-	// 4. Execution: Perform the actual transfers.
 	return session.executeUploadPlan(candidates)
 }
 
 func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 	s.filesByOID = make(map[string]lfs.LfsFileInfo, len(files))
 	for _, f := range files {
-		oid := drs.NormalizeOid(f.Oid)
+		oid := localcommon.NormalizeOid(f.Oid)
 		if oid == "" {
 			continue
 		}
@@ -89,16 +84,23 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 }
 
 func (s *batchSyncSession) lookupMetadata() error {
-	existing, err := s.rt.API.BatchGetObjectsByHash(s.ctx, s.oids)
+	page, err := s.rt.API.SyfonClient().DRS().BatchGetObjectsByHash(s.ctx, s.oids)
 	if err != nil {
 		return fmt.Errorf("bulk hash lookup failed: %w", err)
 	}
-	s.existingByHash = existing
+	s.existingByHash = make(map[string][]drsapi.DrsObject, len(page.DrsObjects))
+	for _, obj := range page.DrsObjects {
+		oid := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		if oid == "" {
+			continue
+		}
+		s.existingByHash[oid] = append(s.existingByHash[oid], obj)
+	}
 	return nil
 }
 
 func (s *batchSyncSession) ensureMetadataRegistered() error {
-	toRegister := make([]*drs.DRSObject, 0)
+	toRegister := make([]drsapi.DrsObjectCandidate, 0)
 
 	for _, oid := range s.oids {
 		obj, err := s.getOrCreateDRSObjectCandidate(oid)
@@ -109,7 +111,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
-			toRegister = append(toRegister, obj)
+			toRegister = append(toRegister, localcommon.ConvertToCandidate(obj))
 			s.registeredOids[oid] = true
 			continue
 		}
@@ -118,25 +120,29 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		}
 	}
 
-	if len(toRegister) > 0 {
-		s.rt.Logger.InfoContext(s.ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
-		registered, err := s.rt.API.RegisterRecords(s.ctx, toRegister)
-		if err != nil {
-			return fmt.Errorf("bulk register failed: %w", err)
-		}
-		for _, obj := range registered {
-			if obj != nil {
-				oid := drs.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
-				if oid != "" {
-					s.drsObjByOID[oid] = obj
-				}
-			}
+	if len(toRegister) == 0 {
+		return nil
+	}
+
+	s.rt.Logger.InfoContext(s.ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
+	registered, err := s.rt.API.SyfonClient().DRS().RegisterObjects(s.ctx, drsapi.RegisterObjectsJSONRequestBody{
+		Candidates: toRegister,
+	})
+	if err != nil {
+		return fmt.Errorf("bulk register failed: %w", err)
+	}
+	for i := range registered.Objects {
+		obj := registered.Objects[i]
+		oid := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		if oid != "" {
+			copyObj := obj
+			s.drsObjByOID[oid] = &copyObj
 		}
 	}
 	return nil
 }
 
-func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drs.DRSObject, error) {
+func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
 	if localObj, err := drsmap.DrsInfoFromOid(oid); err == nil && localObj != nil {
 		return localObj, nil
 	}
@@ -193,9 +199,6 @@ func (s *batchSyncSession) needsUpload(oid string, validity map[string]bool) boo
 		return true
 	}
 	if validity == nil {
-		// Validity endpoint unavailable (common in local/basic-auth flows):
-		// do not assume "metadata exists" implies blob exists. Verify by attempting
-		// a downloadability check against the selected scoped record.
 		if len(s.existingByHash[oid]) == 0 {
 			return true
 		}
@@ -207,7 +210,6 @@ func (s *batchSyncSession) needsUpload(oid string, validity map[string]bool) boo
 	if !validity[oid] {
 		return true
 	}
-	// Verify downloadability if reported present by validity check.
 	if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {
 		return true
 	}
@@ -252,37 +254,10 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 }
 
 func (s *batchSyncSession) resolveBatchUploadURLs(candidates []uploadCandidate) map[string]string {
-	urls := make(map[string]string)
-	batchReqs := make([]common.UploadURLResolveRequest, 0, len(candidates))
-	for _, c := range candidates {
-		batchReqs = append(batchReqs, common.UploadURLResolveRequest{
-			GUID:     c.obj.Id,
-			Filename: uploadKeyFromObject(c.obj, s.rt.Scope.Bucket, s.rt.Scope.StoragePref),
-			Bucket:   s.rt.Scope.Bucket,
-		})
-	}
-	if len(batchReqs) == 0 {
-		return urls
-	}
-
-	resolver, ok := s.rt.API.(interface {
-		ResolveUploadURLs(context.Context, []common.UploadURLResolveRequest) ([]common.UploadURLResolveResponse, error)
-	})
-	if !ok {
-		s.rt.Logger.DebugContext(s.ctx, "batch upload URL resolve unavailable on API; falling back to per-object resolve")
-		return urls
-	}
-	resolved, err := resolver.ResolveUploadURLs(s.ctx, batchReqs)
-	if err != nil {
-		s.rt.Logger.WarnContext(s.ctx, "batch upload URL resolve failed", "error", err)
-		return urls
-	}
-	for _, res := range resolved {
-		if res.Status >= 200 && res.Status < 300 && res.URL != "" {
-			urls[res.GUID+"|"+res.Filename] = res.URL
-		}
-	}
-	return urls
+	// The current syfon client does not expose a batch upload URL endpoint.
+	// Fall back to direct upload behavior for all uploads.
+	_ = candidates
+	return map[string]string{}
 }
 
 func splitCandidatesByThreshold(candidates []uploadCandidate, threshold int64) (small, large []uploadCandidate) {

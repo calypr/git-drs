@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/common"
-	datadrs "github.com/calypr/syfon/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 // ParseLFSPointer extracts the oid and size from an LFS pointer payload.
@@ -47,10 +47,11 @@ func ParseLFSPointer(data []byte) (oid string, size int64, ok bool) {
 // the pre-push workflow can discover and upload the file. This mirrors the
 // ObjectStore.WriteObject pattern.
 func WriteDrsMap(pathname string, oid string, size int64) error {
-	drsObj := &datadrs.DRSObject{
-		Name: filepath.Base(pathname),
+	name := filepath.Base(pathname)
+	drsObj := &drsapi.DrsObject{
+		Name: &name,
 		Size: size,
-		Checksums: []datadrs.Checksum{
+		Checksums: []drsapi.Checksum{
 			{Type: "sha256", Checksum: oid},
 		},
 	}

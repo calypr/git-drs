@@ -38,13 +38,13 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		objs, err := client.API.ListObjects(context.Background())
+		objs, err := client.API.SyfonClient().DRS().ListObjects(context.Background(), 1000, 1)
 		if err != nil {
 			return err
 		}
 
-		for drsObj := range objs {
-			if err := common.PrintDRSObject(*drsObj.Object, pretty); err != nil {
+		for _, drsObj := range objs.DrsObjects {
+			if err := common.PrintDRSObject(drsObj, pretty); err != nil {
 				return err
 			}
 		}

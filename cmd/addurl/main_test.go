@@ -54,6 +54,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		{"config", "drs.default-remote", "calypr-dev"},
 		{"config", "drs.remote.calypr-dev.type", "gen3"},
 		{"config", "drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.organization", "calypr"},
 		{"config", "drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
 		{"config", "drs.remote.calypr-dev.bucket", "cbds"},
 	}
@@ -137,10 +138,10 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
-	if len(drsObject.AccessMethods) == 0 {
+	if drsObject.AccessMethods == nil || len(*drsObject.AccessMethods) == 0 {
 		t.Fatalf("expected access methods in drs object")
 	}
-	if got := drsObject.AccessMethods[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
+	if got := (*drsObject.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
 	}
 }

@@ -8,10 +8,10 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/syfon/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
-type DrsWalkFunc func(path string, d *drs.DRSObject) error
+type DrsWalkFunc func(path string, d *drsapi.DrsObject) error
 
 func BaseDir() (string, error) {
 	gitTopLevel, err := gitrepo.GitTopLevel()
@@ -31,7 +31,7 @@ func (d *dirWalker) call(path string, dir fs.DirEntry, cErr error) error {
 	if err != nil {
 		return nil
 	}
-	obj := drs.DRSObject{}
+	obj := drsapi.DrsObject{}
 	err = sonic.ConfigFastest.Unmarshal(data, &obj)
 	if err != nil {
 		return err

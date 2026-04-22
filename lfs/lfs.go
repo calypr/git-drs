@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/calypr/syfon/client/drs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 )
 
 type DryRunSpec struct {
@@ -346,7 +346,7 @@ func addFilesFromDryRun(out, repoDir string, logger *slog.Logger, lfsFileMap map
 }
 
 // CreateLfsPointer creates a Git LFS pointer file for the given DRS object.
-func CreateLfsPointer(drsObj *drs.DRSObject, dst string) error {
+func CreateLfsPointer(drsObj *drsapi.DrsObject, dst string) error {
 	hashInfo := hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums)
 	shaSum := hashInfo.SHA256
 	if shaSum == "" {

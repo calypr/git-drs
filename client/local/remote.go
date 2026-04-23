@@ -1,13 +1,15 @@
 package local
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
+	syclient "github.com/calypr/syfon/client"
+	syrequest "github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/syfonclient"
 )
 
 type LocalRemote struct {
@@ -46,12 +48,22 @@ func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger) (*client.
 		cred.APIKey = l.BasicPassword
 	}
 
-	dLogger, closer := logs.New("local", logs.WithBaseLogger(logger), logs.WithNoConsole(), logs.WithNoMessageFile())
-	_ = closer
-	api := g3client.NewGen3InterfaceFromCredential(cred, dLogger, g3client.WithClients(g3client.SyfonClient))
+	rawClient, err := syclient.New(l.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
+	if err != nil {
+		return nil, err
+	}
+	reqClient, ok := rawClient.(interface{ Requestor() syrequest.Requester })
+	if !ok {
+		return nil, fmt.Errorf("syfon client does not expose requestor")
+	}
+	syfonClient, ok := rawClient.(syfonclient.SyfonClient)
+	if !ok {
+		return nil, fmt.Errorf("syfon client does not implement syfonclient.SyfonClient")
+	}
 
 	return &client.GitContext{
-		API:           api,
+		Client:        syfonClient,
+		Requestor:     reqClient.Requestor(),
 		Organization:  l.GetOrganization(),
 		ProjectId:     l.GetProjectId(),
 		BucketName:    l.GetBucketName(),

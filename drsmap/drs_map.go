@@ -47,7 +47,7 @@ func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*
 	for h := range drsObjects {
 		hashes = append(hashes, h)
 	}
-	bulkPage, bulkErr := drsClient.API.SyfonClient().DRS().BatchGetObjectsByHash(context.Background(), hashes)
+	bulkPage, bulkErr := drsClient.Client.DRS().BatchGetObjectsByHash(context.Background(), hashes)
 	if bulkErr != nil {
 		return fmt.Errorf("bulk hash lookup failed: %w", bulkErr)
 	}
@@ -96,7 +96,7 @@ func SyncObjectsWithServer(drsClient *client.GitContext, drsObjects map[string]*
 			}
 			req.Candidates = append(req.Candidates, candidate)
 		}
-		if _, err := drsClient.API.SyfonClient().DRS().RegisterObjects(context.Background(), req); err != nil {
+		if _, err := drsClient.Client.DRS().RegisterObjects(context.Background(), req); err != nil {
 			myLogger.Error(fmt.Sprintf("Failed to register records in bulk: %v", err))
 			return fmt.Errorf("error in bulk registration: %v", err)
 		}
@@ -118,29 +118,33 @@ func SyncFilesWithServer(drsClient *client.GitContext, lfsFiles map[string]lfs.L
 }
 
 func PullRemoteDrsObjects(drsClient *client.GitContext, logger *slog.Logger) error {
-	page, err := drsClient.API.SyfonClient().DRS().ListObjectsByProject(context.Background(), drsClient.ProjectId, 1000, 1)
-	if err != nil {
-		return err
-	}
+	const pageSize = 1000
 	writtenObjs := 0
-	for _, obj := range page.DrsObjects {
-		hashInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
-		if hashInfo.SHA256 == "" {
-			return fmt.Errorf("error: drs Object '%s' does not contain a sha256 checksum", obj.Id)
-		}
-		oid := hashInfo.SHA256
-		drsObjPath, err := GetObjectPath(common.DRS_OBJS_PATH, oid)
+	for pageNum := 1; ; pageNum++ {
+		page, err := drsClient.Client.DRS().ListObjectsByProject(context.Background(), drsClient.ProjectId, pageSize, pageNum)
 		if err != nil {
-			return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+			return err
 		}
-		// Only write a record if there exists a proper checksum to use. Checksums besides sha256 are not used
-		if drsObjPath != "" && oid != "" {
-			writtenObjs++
-			// write drs objects to DRS_OBJS_PATH
-			err = WriteDrsObj(&obj, oid, drsObjPath)
-			if err != nil {
-				return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
+		for _, obj := range page.DrsObjects {
+			hashInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
+			if hashInfo.SHA256 == "" {
+				return fmt.Errorf("error: drs Object '%s' does not contain a sha256 checksum", obj.Id)
 			}
+			oid := hashInfo.SHA256
+			drsObjPath, err := GetObjectPath(common.DRS_OBJS_PATH, oid)
+			if err != nil {
+				return fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+			}
+			if drsObjPath != "" && oid != "" {
+				writtenObjs++
+				err = WriteDrsObj(&obj, oid, drsObjPath)
+				if err != nil {
+					return fmt.Errorf("error writing DRS object for oid %s: %v", oid, err)
+				}
+			}
+		}
+		if len(page.DrsObjects) < pageSize {
+			break
 		}
 	}
 	logger.Debug(fmt.Sprintf("Wrote %d new objs to object store", writtenObjs))

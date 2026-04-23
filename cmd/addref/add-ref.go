@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.API.SyfonClient().DRS().GetObject(context.Background(), drsUri)
+		obj, err := client.Client.DRS().GetObject(context.Background(), drsUri)
 		if err != nil {
 			return err
 		}

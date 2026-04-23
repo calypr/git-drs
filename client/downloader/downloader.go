@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	dcrequest "github.com/calypr/data-client/request"
 	"github.com/calypr/git-drs/client"
 	clientdrs "github.com/calypr/git-drs/client/drs"
 	"github.com/calypr/git-drs/drsmap"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycommon "github.com/calypr/syfon/client/common"
+	syrequest "github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/transfer"
 	"github.com/calypr/syfon/client/xfer/download"
 )
@@ -42,17 +42,17 @@ func DownloadToCachePath(ctx context.Context, drsCtx *client.GitContext, logger 
 
 type scopedBackend struct {
 	base      transfer.Backend
-	requestor dcrequest.RequestInterface
+	requestor syrequest.Requester
 	object    *drsapi.DrsObject
 	accessURL string
 }
 
 func newScopedBackend(ctx context.Context, drsCtx *client.GitContext, logger *slog.Logger, oid string) (*scopedBackend, error) {
-	if drsCtx == nil || drsCtx.API == nil {
+	if drsCtx == nil || drsCtx.Client == nil || drsCtx.Requestor == nil {
 		return nil, fmt.Errorf("DRS client unavailable")
 	}
 
-	records, err := clientdrs.GetObjectByHashForGit(ctx, drsCtx.API, oid, drsCtx.Organization, drsCtx.ProjectId)
+	records, err := clientdrs.GetObjectByHashForGit(ctx, drsCtx, oid, drsCtx.Organization, drsCtx.ProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -64,14 +64,14 @@ func newScopedBackend(ctx context.Context, drsCtx *client.GitContext, logger *sl
 		return nil, fmt.Errorf("no matching DRS record found for oid %s", oid)
 	}
 
-	accessURL, err := clientdrs.ResolveGitScopedURL(ctx, drsCtx.API, oid, drsCtx.Organization, drsCtx.ProjectId, logger)
+	accessURL, err := clientdrs.ResolveGitScopedURL(ctx, drsCtx, oid, drsCtx.Organization, drsCtx.ProjectId, logger)
 	if err != nil {
 		return nil, err
 	}
 
 	return &scopedBackend{
-		base:      drsCtx.API.SyfonClient().Data(),
-		requestor: drsCtx.API,
+		base:      drsCtx.Client.Data(),
+		requestor: drsCtx.Requestor,
 		object:    match,
 		accessURL: strings.TrimSpace(accessURL.Url),
 	}, nil
@@ -137,19 +137,19 @@ func (b *scopedBackend) download(ctx context.Context, rangeStart, rangeEnd *int6
 	if b.accessURL == "" {
 		return nil, fmt.Errorf("empty download URL")
 	}
-	rb := b.requestor.New(http.MethodGet, b.accessURL)
+	var opts []syrequest.RequestOption
 	if rangeStart != nil {
 		rangeHeader := "bytes=" + fmt.Sprintf("%d-", *rangeStart)
 		if rangeEnd != nil {
 			rangeHeader += fmt.Sprintf("%d", *rangeEnd)
 		}
-		rb.WithHeader("Range", rangeHeader)
+		opts = append(opts, syrequest.WithHeader("Range", rangeHeader))
 	}
 	if sycommon.IsCloudPresignedURL(b.accessURL) {
-		rb.WithSkipAuth(true)
+		opts = append(opts, syrequest.WithSkipAuth(true))
 	}
-	resp, err := b.requestor.Do(ctx, rb)
-	if err != nil {
+	var resp *http.Response
+	if err := b.requestor.Do(ctx, http.MethodGet, b.accessURL, nil, &resp, opts...); err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {

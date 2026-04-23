@@ -6,10 +6,11 @@ import (
 	"net/url"
 
 	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
-	"github.com/calypr/data-client/logs"
 	"github.com/calypr/git-drs/client"
 	"github.com/calypr/git-drs/gitrepo"
+	syclient "github.com/calypr/syfon/client"
+	syrequest "github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/syfonclient"
 )
 
 // GetContext returns a pure functional context wrapper bridging git-drs to data-client capability.
@@ -35,23 +36,18 @@ func GetContext(profileConfig conf.Credential, remote Gen3Remote, logger *slog.L
 	}
 	bucketName := scope.Bucket
 
-	// Initialize the data-client wrapper with slog-adapted logger.
-	enableDataClientLogs := gitrepo.GetGitConfigBool("drs.enable-data-client-logs", false)
-
-	logOpts := []logs.Option{
-		logs.WithBaseLogger(logger),
-		logs.WithNoConsole(),
+	rawClient, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
+	if err != nil {
+		return nil, err
 	}
-
-	if enableDataClientLogs {
-		logOpts = append(logOpts, logs.WithMessageFile())
-	} else {
-		logOpts = append(logOpts, logs.WithNoMessageFile())
+	reqClient, ok := rawClient.(interface{ Requestor() syrequest.Requester })
+	if !ok {
+		return nil, fmt.Errorf("syfon client does not expose requestor")
 	}
-
-	dLogger, closer := logs.New(profileConfig.Profile, logOpts...)
-	_ = closer
-	api := g3client.NewGen3InterfaceFromCredential(&profileConfig, dLogger, g3client.WithClients(g3client.SyfonClient))
+	syfonClient, ok := rawClient.(syfonclient.SyfonClient)
+	if !ok {
+		return nil, fmt.Errorf("syfon client does not implement syfonclient.SyfonClient")
+	}
 
 	// Configure the DRS client with git-specific context
 	upsert := gitrepo.GetGitConfigBool("drs.upsert", false)
@@ -63,7 +59,8 @@ func GetContext(profileConfig conf.Credential, remote Gen3Remote, logger *slog.L
 	}
 
 	return &client.GitContext{
-		API:                api,
+		Client:             syfonClient,
+		Requestor:          reqClient.Requestor(),
 		ProjectId:          projectId,
 		BucketName:         bucketName,
 		Organization:       remote.GetOrganization(),

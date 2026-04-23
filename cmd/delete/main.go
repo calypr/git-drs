@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := gitdrsdrs.GetObjectByHashForGit(context.Background(), drsClient.API, oid, drsClient.Organization, drsClient.ProjectId)
+		records, err := gitdrsdrs.GetObjectByHashForGit(context.Background(), drsClient, oid, drsClient.Organization, drsClient.ProjectId)
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -87,7 +87,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = gitdrsdrs.DeleteRecordsByOID(context.Background(), drsClient.API, oid)
+		err = gitdrsdrs.DeleteRecordsByOID(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

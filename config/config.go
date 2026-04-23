@@ -72,12 +72,26 @@ func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (*client.Git
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
-	if x.Gen3 != nil {
-		return x.Gen3.GetClient(string(remote), logger)
-	} else if x.Local != nil {
-		// Local client may still need repo-specific credentials (e.g. basic auth),
-		// so use the same GetClient pattern as Gen3 remotes.
+	if x.Local != nil {
 		return x.Local.GetClient(string(remote), logger)
+	}
+	if x.Gen3 != nil {
+		username, password, err := gitrepo.GetRemoteBasicAuth(string(remote))
+		if err == nil && strings.TrimSpace(username) != "" && strings.TrimSpace(password) != "" {
+			// If repo-local basic auth is configured, prefer the local/basic-auth client
+			// path even when the remote entry was parsed as Gen3.
+			localRemote := &local.LocalRemote{
+				BaseURL:       x.Gen3.Endpoint,
+				ProjectID:     x.Gen3.ProjectID,
+				Bucket:        x.Gen3.Bucket,
+				Organization:  x.Gen3.Organization,
+				StoragePrefix: x.Gen3.StoragePrefix,
+				BasicUsername: username,
+				BasicPassword: password,
+			}
+			return localRemote.GetClient(string(remote), logger)
+		}
+		return x.Gen3.GetClient(string(remote), logger)
 	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }

@@ -47,7 +47,7 @@ var Cmd = &cobra.Command{
 
 		for fileName, info := range lfsFiles {
 
-			results, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client.API, info.Oid, client.Organization, client.ProjectId)
+			results, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client, info.Oid, client.Organization, client.ProjectId)
 			if err != nil {
 				fmt.Printf("%s x %s\n", info.Oid, fileName)
 			} else {

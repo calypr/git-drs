@@ -100,7 +100,7 @@ var Cmd = &cobra.Command{
 		}
 
 		if len(missingOIDs) > 0 {
-			if byHash, err := drsCtx.API.SyfonClient().DRS().BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
+			if byHash, err := drsCtx.Client.DRS().BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
 				prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 				for _, oid := range missingOIDs {
 					recs := byHash.DrsObjects
@@ -150,7 +150,7 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *client.GitContext, oid string) string {
-	recs, err := clientdrs.GetObjectByHashForGit(ctx, drsCtx.API, oid, drsCtx.Organization, drsCtx.ProjectId)
+	recs, err := clientdrs.GetObjectByHashForGit(ctx, drsCtx, oid, drsCtx.Organization, drsCtx.ProjectId)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}

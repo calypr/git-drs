@@ -84,7 +84,7 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 }
 
 func (s *batchSyncSession) lookupMetadata() error {
-	page, err := s.rt.API.SyfonClient().DRS().BatchGetObjectsByHash(s.ctx, s.oids)
+	page, err := s.rt.API.Client.DRS().BatchGetObjectsByHash(s.ctx, s.oids)
 	if err != nil {
 		return fmt.Errorf("bulk hash lookup failed: %w", err)
 	}
@@ -125,7 +125,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 	}
 
 	s.rt.Logger.InfoContext(s.ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
-	registered, err := s.rt.API.SyfonClient().DRS().RegisterObjects(s.ctx, drsapi.RegisterObjectsJSONRequestBody{
+	registered, err := s.rt.API.Client.DRS().RegisterObjects(s.ctx, drsapi.RegisterObjectsJSONRequestBody{
 		Candidates: toRegister,
 	})
 	if err != nil {

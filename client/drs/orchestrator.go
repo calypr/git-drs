@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/calypr/data-client/g3client"
+	"github.com/calypr/git-drs/client"
 	localcommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -16,15 +16,11 @@ import (
 
 var ErrNoRecordsForOID = errors.New("no records found for OID")
 
-type scopedClient interface {
-	SyfonClient() g3client.SyfonClientInterface
-}
-
 // ResolveGitScopedURL implements the specialized git-drs logic of performing an
 // issuer-filtered hash lookup to find the appropriate download record.
 func ResolveGitScopedURL(
 	ctx context.Context,
-	api scopedClient,
+	api *client.GitContext,
 	oid string,
 	organization string,
 	projectId string,
@@ -64,7 +60,7 @@ func ResolveGitScopedURL(
 		return nil, fmt.Errorf("no accessType found in access method for DRS object %v", (*matchingRecord.AccessMethods)[0])
 	}
 
-	accessURL, err := api.SyfonClient().DRS().GetAccessURL(ctx, matchingRecord.Id, string(accessType))
+	accessURL, err := api.Client.DRS().GetAccessURL(ctx, matchingRecord.Id, string(accessType))
 	if err != nil {
 		return nil, err
 	}
@@ -75,13 +71,13 @@ func ResolveGitScopedURL(
 // the results based on the BearerAuthIssuers intersecting with the Git scopes.
 func GetObjectByHashForGit(
 	ctx context.Context,
-	api scopedClient,
+	api *client.GitContext,
 	oid string,
 	organization string,
 	projectId string,
 ) ([]drsapi.DrsObject, error) {
 	sum := &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid}
-	res, err := api.SyfonClient().DRS().BatchGetObjectsByHash(ctx, []string{sum.Checksum})
+	res, err := api.Client.DRS().BatchGetObjectsByHash(ctx, []string{sum.Checksum})
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +115,8 @@ func GetObjectByHashForGit(
 }
 
 // DeleteRecordsByOID sweeps and deletes all DIDs matching a git OID hash.
-func DeleteRecordsByOID(ctx context.Context, api scopedClient, oid string) error {
-	page, err := api.SyfonClient().DRS().BatchGetObjectsByHash(ctx, []string{oid})
+func DeleteRecordsByOID(ctx context.Context, api *client.GitContext, oid string) error {
+	page, err := api.Client.DRS().BatchGetObjectsByHash(ctx, []string{oid})
 	if err != nil {
 		return fmt.Errorf("error resolving DRS object for OID %s: %w", oid, err)
 	}
@@ -138,7 +134,7 @@ func DeleteRecordsByOID(ctx context.Context, api scopedClient, oid string) error
 			continue
 		}
 		seen[did] = struct{}{}
-		if err := api.SyfonClient().Index().Delete(ctx, did); err != nil {
+		if err := api.Client.Index().Delete(ctx, did); err != nil {
 			return fmt.Errorf("error deleting DID %s for OID %s: %w", did, oid, err)
 		}
 	}

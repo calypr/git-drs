@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -42,11 +43,12 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		_ = req // currently not used; remote selection is repo-default oriented.
-
 		logg := drslog.GetLogger()
 		remoteName, endpoint, err := resolveRemote()
 		if err != nil {
+			return nil
+		}
+		if !requestMatchesEndpointHost(req, endpoint) {
 			return nil
 		}
 
@@ -142,4 +144,20 @@ func resolveRemote() (string, string, error) {
 		return "", "", fmt.Errorf("remote %q endpoint not found", remoteName)
 	}
 	return remoteName, endpoint, nil
+}
+
+func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
+	if strings.TrimSpace(req.Host) == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return false
+	}
+
+	return strings.EqualFold(req.Host, parsed.Host)
 }

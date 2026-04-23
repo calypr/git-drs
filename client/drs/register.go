@@ -1,9 +1,7 @@
 package drs
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,10 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/calypr/data-client/g3client"
-	dcrequest "github.com/calypr/data-client/request"
 	"github.com/calypr/git-drs/client"
 	localcommon "github.com/calypr/git-drs/common"
 	"github.com/calypr/git-drs/drsmap"
@@ -24,6 +19,7 @@ import (
 	"github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/calypr/syfon/client/hash"
+	syrequest "github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/xfer/upload"
 )
 
@@ -41,15 +37,11 @@ type pushTuning struct {
 }
 
 type pushRuntime struct {
-	API        gitDRSAPI
+	API        *client.GitContext
 	Credential *conf.Credential
 	Logger     *slog.Logger
 	Scope      pushScope
 	Tuning     pushTuning
-}
-
-type gitDRSAPI interface {
-	g3client.Gen3Interface
 }
 
 func newPushRuntime(cl *client.GitContext) *pushRuntime {
@@ -57,7 +49,7 @@ func newPushRuntime(cl *client.GitContext) *pushRuntime {
 		return &pushRuntime{}
 	}
 	return &pushRuntime{
-		API:        cl.API,
+		API:        cl,
 		Credential: cl.Credential,
 		Logger:     cl.Logger,
 		Scope: pushScope{
@@ -99,7 +91,7 @@ func isFileDownloadable(rt *pushRuntime, ctx context.Context, drsObject *drsapi.
 		return false, nil
 	}
 	accessType := (*drsObject.AccessMethods)[0].Type
-	res, err := rt.API.SyfonClient().DRS().GetAccessURL(ctx, drsObject.Id, string(accessType))
+	res, err := rt.API.Client.DRS().GetAccessURL(ctx, drsObject.Id, string(accessType))
 	if err != nil {
 		// If we can't get a download URL, assume file is not downloadable
 		return false, nil
@@ -190,7 +182,7 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		}
 	}
 	rt.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS object (did: %s)", oid, drsObject.Id))
-	registeredObjs, err := rt.API.SyfonClient().DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
+	registeredObjs, err := rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
 		Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
 	})
 	var registeredObj *drsapi.DrsObject
@@ -212,7 +204,7 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 				if err != nil {
 					return nil, fmt.Errorf("error deleting existing DRS object oid %s: did: %s err: %v", oid, drsObject.Id, err)
 				}
-				registeredObjs, err = rt.API.SyfonClient().DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
+				registeredObjs, err = rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
 					Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
 				})
 				if err != nil {
@@ -280,14 +272,14 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 			return fmt.Errorf("error opening file %s: %v", filePath, err)
 		}
 		defer file.Close()
-		if err := doPresignedUpload(ctx, rt.API, presignedURL, file, fileSize); err != nil {
+		if err := doPresignedUpload(ctx, rt.API.Requestor, presignedURL, file, fileSize); err != nil {
 			return fmt.Errorf("presigned upload failed: %w", err)
 		}
 		return nil
 	}
 
 	objectKey := uploadKeyFromObject(drsObject, rt.Scope.Bucket, rt.Scope.StoragePref)
-	uploader := rt.API.SyfonClient().Data()
+	uploader := rt.API.Client.Data()
 	if uploader == nil {
 		return fmt.Errorf("drs API does not expose upload capability")
 	}
@@ -309,7 +301,7 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 	return nil
 }
 
-func doPresignedUpload(ctx context.Context, req dcrequest.RequestInterface, urlStr string, body io.Reader, size int64) error {
+func doPresignedUpload(ctx context.Context, req syrequest.Requester, urlStr string, body io.Reader, size int64) error {
 	parsed, err := url.Parse(strings.TrimSpace(urlStr))
 	if err != nil {
 		return fmt.Errorf("parse presigned upload url: %w", err)
@@ -320,20 +312,19 @@ func doPresignedUpload(ctx context.Context, req dcrequest.RequestInterface, urlS
 		method = http.MethodPost
 	}
 
-	rb := req.New(method, urlStr)
-	rb.WithBody(body)
+	var resp *http.Response
+	var opts []syrequest.RequestOption
 	if size > 0 {
-		rb.WithPartSize(size)
+		opts = append(opts, syrequest.WithPartSize(size))
 	}
 	if common.IsCloudPresignedURL(urlStr) {
-		rb.WithSkipAuth(true)
+		opts = append(opts, syrequest.WithSkipAuth(true))
 	}
 	if method == http.MethodPut && needsAzureBlobTypeHeader(parsed) {
-		rb.WithHeader("x-ms-blob-type", "BlockBlob")
+		opts = append(opts, syrequest.WithHeader("x-ms-blob-type", "BlockBlob"))
 	}
 
-	resp, err := req.Do(ctx, rb)
-	if err != nil {
+	if err := req.Do(ctx, method, urlStr, body, &resp, opts...); err != nil {
 		return fmt.Errorf("upload to %s failed: %w", urlStr, err)
 	}
 	defer resp.Body.Close()
@@ -391,43 +382,12 @@ func getSHA256ValidityMap(cl *client.GitContext, ctx context.Context, oids []str
 }
 
 func getSHA256ValidityMapRuntime(rt *pushRuntime, ctx context.Context, oids []string) (map[string]bool, error) {
-	if rt == nil || rt.Credential == nil {
-		return nil, fmt.Errorf("gen3 context not available for validity check")
+	if rt == nil || rt.API == nil || rt.API.Requestor == nil {
+		return nil, fmt.Errorf("DRS client not available for validity check")
 	}
-	cred := rt.Credential
-	if strings.TrimSpace(cred.APIEndpoint) == "" {
-		return nil, fmt.Errorf("missing API endpoint for validity check")
-	}
-
-	reqBody, err := json.Marshal(map[string][]string{"sha256": oids})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(cred.APIEndpoint, "/")+"/index/bulk/sha256/validity", bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if token := strings.TrimSpace(cred.AccessToken); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("validity endpoint status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
 	var out map[string]bool
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+	if err := rt.API.Requestor.Do(ctx, http.MethodPost, "/index/bulk/sha256/validity", map[string][]string{"sha256": oids}, &out); err != nil {
+		return nil, fmt.Errorf("validity check: %w", err)
 	}
 	return out, nil
 }

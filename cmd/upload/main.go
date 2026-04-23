@@ -68,7 +68,7 @@ var Cmd = &cobra.Command{
 					return err
 				}
 
-				objs, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client.API, sha256, organization, projectID)
+				objs, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client, sha256, organization, projectID)
 				if err != nil || len(objs) == 0 {
 					did := sha256
 					name := filepath.Base(src)
@@ -76,7 +76,7 @@ var Cmd = &cobra.Command{
 					if err != nil {
 						return fmt.Errorf("build DRS object for %s: %w", src, err)
 					}
-					registered, err := xferupload.RegisterFile(cmd.Context(), client.API.SyfonClient().Data(), client.API.SyfonClient().DRS(), drsObj, src, bucketName)
+					registered, err := xferupload.RegisterFile(cmd.Context(), client.Client.Data(), client.Client.DRS(), drsObj, src, bucketName)
 					if err != nil {
 						return fmt.Errorf("error uploading %s: %v", src, err)
 					}

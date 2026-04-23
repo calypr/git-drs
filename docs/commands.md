@@ -29,7 +29,7 @@ git drs install
 [filter "drs"]
     clean = git-drs clean -- %f
     smudge = git-drs smudge -- %f
-    process = git-drs filter-process
+    process = git-drs filter
     required = true
 ```
 

@@ -51,7 +51,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get a sample record to show the user what will be deleted
-		sampleResp, err := drsClient.API.SyfonClient().Index().List(context.Background(), syfonclient.ListRecordsOptions{
+		sampleResp, err := drsClient.Client.Index().List(context.Background(), syfonclient.ListRecordsOptions{
 			Organization: organization,
 			ProjectID:    projectId,
 			Limit:        1,
@@ -94,7 +94,7 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		_, err = drsClient.API.SyfonClient().Index().DeleteByQuery(context.Background(), syfonclient.DeleteByQueryOptions{
+		_, err = drsClient.Client.Index().DeleteByQuery(context.Background(), syfonclient.DeleteByQueryOptions{
 			Organization: organization,
 			ProjectID:    projectId,
 		})

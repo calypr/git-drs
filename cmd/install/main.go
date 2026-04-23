@@ -40,7 +40,7 @@ func installGlobalFilterConfig(runner gitConfigRunner) error {
 	}{
 		{key: "filter.drs.clean", value: "git-drs clean -- %f"},
 		{key: "filter.drs.smudge", value: "git-drs smudge -- %f"},
-		{key: "filter.drs.process", value: "git-drs filter-process"},
+		{key: "filter.drs.process", value: "git-drs filter"},
 		{key: "filter.drs.required", value: "true"},
 	}
 

@@ -3,6 +3,7 @@ package query
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/calypr/git-drs/client"
 	clientdrs "github.com/calypr/git-drs/client/drs"
@@ -10,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/config"
 	"github.com/calypr/git-drs/drslog"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +19,16 @@ var remote string
 var checksum = false
 var pretty = false
 
+func queryByChecksum(ctx context.Context, gc *client.GitContext, checksum string) ([]drsapi.DrsObject, error) {
+	hashType := checksumTypeForString(checksum)
+	if hashType != hash.ChecksumTypeSHA256.String() {
+		return nil, fmt.Errorf("checksum lookup currently only supports sha256 (got %q); non-sha256 support is tracked in syfon DRSService.GetObjectsByChecksum", hashType)
+	}
+	return clientdrs.GetObjectByHashForGit(ctx, gc, checksum, gc.Organization, gc.ProjectId)
+}
+
 func checksumTypeForString(sum string) string {
-	switch len(sum) {
+	switch len(strings.TrimSpace(sum)) {
 	case 32:
 		return "md5"
 	case 40:
@@ -28,13 +38,8 @@ func checksumTypeForString(sum string) string {
 	case 128:
 		return "sha512"
 	default:
-		return "sha256"
+		return string(hash.NormalizeChecksumType(sum))
 	}
-}
-
-func queryByChecksum(ctx context.Context, gc *client.GitContext, checksum string) ([]drsapi.DrsObject, error) {
-	_ = ctx
-	return clientdrs.GetObjectByHashForGit(context.Background(), gc.API, checksum, gc.Organization, gc.ProjectId)
 }
 
 // Cmd line declaration
@@ -81,7 +86,7 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		obj, err := gc.API.SyfonClient().DRS().GetObject(context.Background(), args[0])
+		obj, err := gc.Client.DRS().GetObject(context.Background(), args[0])
 		if err != nil {
 			return err
 		}

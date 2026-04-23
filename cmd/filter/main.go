@@ -6,7 +6,7 @@
 //
 // The command is hidden and invoked automatically by git when
 //
-//	filter.lfs.process = git-drs filter
+//	filter.drs.process = git-drs filter
 //
 // is set in the repository config (written by `git drs init`).
 package filter
@@ -28,7 +28,8 @@ import (
 
 // Cmd is the hidden cobra command registered in cmd/root.go.
 var Cmd = &cobra.Command{
-	Use:    "filter-process",
+	Use:    "filter",
+	Aliases: []string{"filter-process"},
 	Short:  "Run git-drs as a git long-running filter process (invoked by git)",
 	Hidden: true,
 	Args:   cobra.NoArgs,

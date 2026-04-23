@@ -38,7 +38,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		objs, err := client.API.SyfonClient().DRS().ListObjects(context.Background(), 1000, 1)
+		objs, err := client.Client.DRS().ListObjects(context.Background(), 1000, 1)
 		if err != nil {
 			return err
 		}

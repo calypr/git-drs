@@ -1,0 +1,51 @@
+name: Syfon Backend E2E
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Standalone Syfon-backed Go E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out git-drs
+        uses: actions/checkout@v4
+        with:
+          path: git-drs
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: git-drs/go.mod
+
+      - name: Check out Syfon
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/syfon
+          path: syfon
+          fetch-depth: 1
+
+      - name: Check out data-client
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/data-client
+          path: data-client
+          fetch-depth: 1
+
+      - name: Install test prerequisites
+        working-directory: git-drs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs
+          git lfs install --local
+
+      - name: Run Docker-backed git-drs integration tests
+        working-directory: git-drs
+        env:
+          SYFON_E2E_DOCKER: "1"
+          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
+        run: go test -count=1 -tags integration ./cmd -run 'TestGitDrsDockerMinIOE2E|TestGitDrsDockerAddURLE2E' -v

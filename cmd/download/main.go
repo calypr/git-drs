@@ -41,7 +41,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		for _, src := range args {
-			obj, err := client.API.SyfonClient().DRS().GetObject(context.Background(), src)
+			obj, err := client.Client.DRS().GetObject(context.Background(), src)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error downloading object %s: %v", src, err))
 			} else {
@@ -52,7 +52,7 @@ var Cmd = &cobra.Command{
 				}
 				dstPath := filepath.Join(outdir, dstName)
 				logger.Info(fmt.Sprintf("Downloading object %s to path %s", src, dstPath))
-				if err := download.DownloadToPath(cmd.Context(), client.API.SyfonClient().Data(), obj.Id, dstPath); err != nil {
+				if err := download.DownloadToPath(cmd.Context(), client.Client.Data(), obj.Id, dstPath); err != nil {
 					logger.Error(fmt.Sprintf("Error downloading object %s to path %s: %v", src, dstPath, err))
 				} else {
 					logger.Info(fmt.Sprintf("Successfully downloaded object %s to path %s", src, dstPath))

@@ -4,14 +4,16 @@ import (
 	"log/slog"
 
 	"github.com/calypr/data-client/conf"
-	"github.com/calypr/data-client/g3client"
+	syrequest "github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/syfonclient"
 )
 
 // GitContext is the lightweight composition root grouping the operational capability (API)
 // with the target environment layout strings (Project, Bucket, Organization).
 // It replaces the legacy DRSClient god-object wrapper.
 type GitContext struct {
-	API                g3client.Gen3Interface
+	Client             syfonclient.SyfonClient
+	Requestor          syrequest.Requester
 	Organization       string
 	ProjectId          string
 	BucketName         string

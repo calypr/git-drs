@@ -3,6 +3,8 @@ package gitrepo
 import (
 	"fmt"
 	"strings"
+
+	gitconfig "github.com/go-git/go-git/v5/plumbing/format/config"
 )
 
 func remoteTokenKey(remoteName string) string {
@@ -73,12 +75,39 @@ func SetRemoteBasicAuth(remoteName, username, password string) error {
 
 // ConfigureCredentialHelperForRepo installs repo-local git credential helper wiring
 // so git-lfs uses standard git credential resolution.
+//
+// credential.helper is a multi-valued git config key: using SetOption would
+// overwrite any pre-existing helpers (e.g. a credential store with other remote
+// credentials).  We use AddOption instead, guarded by a presence check to avoid
+// accumulating duplicate entries on repeated calls.
 func ConfigureCredentialHelperForRepo() error {
-	configs := map[string]string{
-		"credential.helper":      "!git drs credential-helper",
-		"credential.useHttpPath": "true",
+	repo, err := GetRepo()
+	if err != nil {
+		return err
 	}
-	return SetGitConfigOptions(configs)
+	conf, err := repo.Config()
+	if err != nil {
+		return err
+	}
+
+	const helperValue = "!git drs credential-helper"
+	credSection := conf.Raw.Section("credential")
+
+	if !containsOption(credSection.Options, "helper", helperValue) {
+		credSection.AddOption("helper", helperValue)
+	}
+	credSection.SetOption("useHttpPath", "true")
+
+	return repo.Storer.SetConfig(conf)
+}
+
+func containsOption(opts gitconfig.Options, key, value string) bool {
+	for _, v := range opts.GetAll(key) {
+		if v == value {
+			return true
+		}
+	}
+	return false
 }
 
 // SetRemoteLFSURL stores the LFS API endpoint for the provided git remote.

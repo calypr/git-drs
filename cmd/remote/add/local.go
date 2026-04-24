@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/calypr/git-drs/client/local"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +23,7 @@ var LocalCmd = &cobra.Command{
 		}
 
 		remoteSelect := config.RemoteSelect{
-			Local: &local.LocalRemote{
+			Local: &config.LocalRemote{
 				BaseURL:      url,
 				ProjectID:    project,
 				Bucket:       bucket,

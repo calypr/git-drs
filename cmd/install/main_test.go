@@ -30,7 +30,7 @@ func TestInstallGlobalFilterConfig(t *testing.T) {
 	want := [][]string{
 		{"config", "--global", "filter.drs.clean", "git-drs clean -- %f"},
 		{"config", "--global", "filter.drs.smudge", "git-drs smudge -- %f"},
-		{"config", "--global", "filter.drs.process", "git-drs filter-process"},
+		{"config", "--global", "filter.drs.process", "git-drs filter"},
 		{"config", "--global", "filter.drs.required", "true"},
 	}
 

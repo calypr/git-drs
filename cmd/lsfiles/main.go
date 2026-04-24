@@ -1,15 +1,12 @@
 package lsfiles
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	//"github.com/calypr/data-client/hash"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -49,7 +46,7 @@ var Cmd = &cobra.Command{
 
 		for fileName, info := range lfsFiles {
 
-			results, err := client.API.GetObjectByHash(context.Background(), &hash.Checksum{Checksum: info.Oid, Type: string(hash.ChecksumTypeSHA256)})
+			results, err := client.Client.DRS().GetObjectsByHashForResource(cmd.Context(), info.Oid, client.Organization, client.ProjectId)
 			if err != nil {
 				fmt.Printf("%s x %s\n", info.Oid, fileName)
 			} else {

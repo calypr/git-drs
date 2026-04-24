@@ -29,7 +29,7 @@ git drs install
 [filter "drs"]
     clean = git-drs clean -- %f
     smudge = git-drs smudge -- %f
-    process = git-drs filter-process
+    process = git-drs filter
     required = true
 ```
 
@@ -342,7 +342,7 @@ These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
 - `git drs pre-push-prepare`: Stage DRS metadata before push
-- `git lfs pre-push`: Standard Git LFS push flow (invoked by pre-push hook)
+- `git lfs pre-push`: Optional Git LFS compatibility push flow (invoked by the pre-push hook when enabled)
 
 ## Git LFS Commands
 

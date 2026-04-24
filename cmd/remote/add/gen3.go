@@ -6,12 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/auth"
-	"github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
@@ -121,7 +120,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 	}
 
 	remoteGen3 := config.RemoteSelect{
-		Gen3: &drs.Gen3Remote{
+		Gen3: &config.Gen3Remote{
 			Endpoint:      apiEndpoint,
 			ProjectID:     project,
 			Organization:  organization,

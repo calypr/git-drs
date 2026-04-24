@@ -1,14 +1,15 @@
 package upload
 
 import (
-	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/syfon/client/pkg/hash"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	xferupload "github.com/calypr/syfon/client/xfer/upload"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,18 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
+		remoteConfig := config.GetRemote(remoteName)
+		organization := ""
+		project := ""
+		storagePrefix := ""
+		bucketName := ""
+		if remoteConfig != nil {
+			organization = remoteConfig.GetOrganization()
+			project = remoteConfig.GetProjectId()
+			storagePrefix = remoteConfig.GetStoragePrefix()
+			bucketName = remoteConfig.GetBucketName()
+		}
+
 		for _, src := range args {
 			if s, err := os.Stat(src); err != nil {
 				logger.Error(fmt.Sprintf("Error stating file %s: %v", src, err))
@@ -54,18 +67,23 @@ var Cmd = &cobra.Command{
 					return err
 				}
 
-				objs, err := client.API.GetObjectByHash(context.Background(), &hash.Checksum{
-					Checksum: sha256,
-					Type:     string(hash.ChecksumTypeSHA256),
-				})
+				objs, err := client.Client.DRS().GetObjectsByHashForResource(cmd.Context(), sha256, organization, project)
 				if err != nil || len(objs) == 0 {
-					if obj, err := client.API.RegisterFile(cmd.Context(), sha256, src); err != nil {
+					did := sha256
+					name := filepath.Base(src)
+					drsObj, err := common.BuildDrsObjWithPrefix(name, sha256, s.Size(), did, bucketName, organization, project, storagePrefix)
+					if err != nil {
+						return fmt.Errorf("build DRS object for %s: %w", src, err)
+					}
+					registered, err := xferupload.RegisterFile(cmd.Context(), client.Client.Data(), client.Client.DRS(), drsObj, src, bucketName)
+					if err != nil {
 						return fmt.Errorf("error uploading %s: %v", src, err)
-					} else {
-						logger.Info(fmt.Sprintf("Successfully uploaded %s to server with DRS ID %s", src, obj.Id))
+					}
+					if registered != nil {
+						logger.Info(fmt.Sprintf("Successfully uploaded %s to server with DRS ID %s", src, registered.Id))
 					}
 				} else {
-					logger.Info(fmt.Sprintf("File %s already exists on server with DRS ID %s, skipping upload", src, objs[0].Id))
+					logger.Info(fmt.Sprintf("File %s already exists on server with DRS ID %s, skipping upload", src, strings.TrimSpace(objs[0].Id)))
 				}
 			}
 		}

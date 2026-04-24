@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/spf13/cobra"
 )
 
@@ -38,13 +38,13 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		objs, err := client.API.ListObjects(context.Background())
+		objs, err := client.Client.DRS().ListObjects(context.Background(), 1000, 1)
 		if err != nil {
 			return err
 		}
 
-		for drsObj := range objs {
-			if err := common.PrintDRSObject(*drsObj.Object, pretty); err != nil {
+		for _, drsObj := range objs.DrsObjects {
+			if err := common.PrintDRSObject(drsObj, pretty); err != nil {
 				return err
 			}
 		}

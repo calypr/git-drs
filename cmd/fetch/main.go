@@ -5,8 +5,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/spf13/cobra"
 )
 

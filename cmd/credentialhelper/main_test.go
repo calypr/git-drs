@@ -21,3 +21,46 @@ func TestReadCredentialRequest(t *testing.T) {
 		t.Fatalf("expected path repo.git/info/lfs, got %q", req.Path)
 	}
 }
+
+func TestRequestMatchesEndpointHost(t *testing.T) {
+	tests := []struct {
+		name     string
+		req      credentialRequest
+		endpoint string
+		want     bool
+	}{
+		{
+			name:     "matches exact host",
+			req:      credentialRequest{Host: "example.org"},
+			endpoint: "https://example.org/api/v1",
+			want:     true,
+		},
+		{
+			name:     "matches host with port",
+			req:      credentialRequest{Host: "127.0.0.1:8080"},
+			endpoint: "http://127.0.0.1:8080/drs",
+			want:     true,
+		},
+		{
+			name:     "rejects different host",
+			req:      credentialRequest{Host: "gogs.local"},
+			endpoint: "http://127.0.0.1:8080/drs",
+			want:     false,
+		},
+		{
+			name:     "rejects empty host",
+			req:      credentialRequest{},
+			endpoint: "http://127.0.0.1:8080/drs",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := requestMatchesEndpointHost(tt.req, tt.endpoint)
+			if got != tt.want {
+				t.Fatalf("requestMatchesEndpointHost(%+v, %q) = %v, want %v", tt.req, tt.endpoint, got, tt.want)
+			}
+		})
+	}
+}

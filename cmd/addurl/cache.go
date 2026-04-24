@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
 // updatePrecommitCache updates the project's pre-commit cache with a mapping

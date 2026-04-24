@@ -5,17 +5,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/auth"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
 
-// Cmd implements a git credential helper bridge for git-lfs over HTTP.
+// Cmd implements a git credential helper bridge for git-drs over HTTP.
 var Cmd = &cobra.Command{
 	Use:    "credential-helper <get|store|erase>",
 	Hidden: true,
@@ -42,11 +43,12 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		_ = req // currently not used; remote selection is repo-default oriented.
-
 		logg := drslog.GetLogger()
 		remoteName, endpoint, err := resolveRemote()
 		if err != nil {
+			return nil
+		}
+		if !requestMatchesEndpointHost(req, endpoint) {
 			return nil
 		}
 
@@ -58,7 +60,7 @@ var Cmd = &cobra.Command{
 		}
 
 		token := ""
-		// Prefer repo-local token first to keep git-lfs local and deterministic.
+		// Prefer repo-local token first to keep git-drs local and deterministic.
 		if repoToken, err := gitrepo.GetRemoteToken(remoteName); err == nil && strings.TrimSpace(repoToken) != "" {
 			token = strings.TrimSpace(repoToken)
 		}
@@ -142,4 +144,20 @@ func resolveRemote() (string, string, error) {
 		return "", "", fmt.Errorf("remote %q endpoint not found", remoteName)
 	}
 	return remoteName, endpoint, nil
+}
+
+func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
+	if strings.TrimSpace(req.Host) == "" {
+		return false
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return false
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return false
+	}
+
+	return strings.EqualFold(req.Host, parsed.Host)
 }

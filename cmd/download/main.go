@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/syfon/client/xfer/download"
 	"github.com/spf13/cobra"
 )
 
@@ -39,26 +40,19 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		//ctx := context.Background()
-
 		for _, src := range args {
-			obj, err := client.API.GetObject(context.Background(), src)
+			obj, err := client.Client.DRS().GetObject(context.Background(), src)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error downloading object %s: %v", src, err))
 			} else {
-				common.PrintDRSObject(*obj, false)
-				dstPath := filepath.Join(outdir, filepath.Base(obj.Name)) //TODO: consider including directory structure in output path
+				common.PrintDRSObject(obj, false)
+				dstName := src
+				if obj.Name != nil && *obj.Name != "" {
+					dstName = filepath.Base(*obj.Name)
+				}
+				dstPath := filepath.Join(outdir, dstName)
 				logger.Info(fmt.Sprintf("Downloading object %s to path %s", src, dstPath))
-
-				logger.Error("This needs to be implemented")
-
-				// err = download.DownloadToPath(ctx, client.API, obj.Id, dstPath, , "")
-				//err = client.API.Download(
-				//	ctx,
-				//	obj.Id,
-				//	client.Do,
-				//)
-				if err != nil {
+				if err := download.DownloadToPath(cmd.Context(), client.Client.Data(), obj.Id, dstPath); err != nil {
 					logger.Error(fmt.Sprintf("Error downloading object %s to path %s: %v", src, dstPath, err))
 				} else {
 					logger.Info(fmt.Sprintf("Successfully downloaded object %s to path %s", src, dstPath))

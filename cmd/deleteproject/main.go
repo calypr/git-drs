@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	syfonclient "github.com/calypr/syfon/client/syfonclient"
 	"github.com/spf13/cobra"
 )
 
@@ -43,8 +44,19 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
+		remoteConfig := cfg.GetRemote(remoteName)
+		organization := ""
+		if remoteConfig != nil {
+			organization = remoteConfig.GetOrganization()
+		}
+
 		// Get a sample record to show the user what will be deleted
-		sampleRecords, err := drsClient.API.GetProjectSample(context.Background(), projectId, 1)
+		sampleResp, err := drsClient.Client.Index().List(context.Background(), syfonclient.ListRecordsOptions{
+			Organization: organization,
+			ProjectID:    projectId,
+			Limit:        1,
+			Page:         1,
+		})
 		if err != nil {
 			return fmt.Errorf("error getting sample records for project %s: %v", projectId, err)
 		}
@@ -58,16 +70,15 @@ var Cmd = &cobra.Command{
 			common.DisplayField(os.Stderr, "Remote", string(remoteName))
 			common.DisplayField(os.Stderr, "Project ID", projectId)
 
-			if len(sampleRecords) > 0 {
-				sample := sampleRecords[0]
+			if sampleResp.Records != nil && len(*sampleResp.Records) > 0 {
+				sample := (*sampleResp.Records)[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
-				common.DisplayField(os.Stderr, "  DID", sample.Id)
-				if sample.Name != "" {
-					common.DisplayField(os.Stderr, "  Filename", sample.Name)
+				common.DisplayField(os.Stderr, "  DID", sample.Did)
+				if sample.FileName != nil && *sample.FileName != "" {
+					common.DisplayField(os.Stderr, "  Filename", *sample.FileName)
 				}
-				common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", sample.Size))
-				if !sample.CreatedTime.IsZero() {
-					common.DisplayField(os.Stderr, "  Created", sample.CreatedTime.String())
+				if sample.Size != nil {
+					common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", *sample.Size))
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "\nNo records found for this project.\n")
@@ -83,7 +94,10 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		err = drsClient.API.DeleteRecordsByProject(context.Background(), projectId)
+		_, err = drsClient.Client.Index().DeleteByQuery(context.Background(), syfonclient.DeleteByQueryOptions{
+			Organization: organization,
+			ProjectID:    projectId,
+		})
 		if err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}

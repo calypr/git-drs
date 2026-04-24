@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 

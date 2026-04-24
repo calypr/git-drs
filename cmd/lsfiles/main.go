@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	gitdrsdrs "github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -47,7 +46,7 @@ var Cmd = &cobra.Command{
 
 		for fileName, info := range lfsFiles {
 
-			results, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client, info.Oid, client.Organization, client.ProjectId)
+			results, err := client.Client.DRS().GetObjectsByHashForResource(cmd.Context(), info.Oid, client.Organization, client.ProjectId)
 			if err != nil {
 				fmt.Printf("%s x %s\n", info.Oid, fileName)
 			} else {

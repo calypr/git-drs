@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 

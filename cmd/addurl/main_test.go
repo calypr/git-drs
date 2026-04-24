@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/cloud"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/git-drs/internal/cloud"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {

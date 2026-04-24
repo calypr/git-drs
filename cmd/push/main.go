@@ -6,10 +6,10 @@ import (
 	"os/exec"
 	"strings"
 
-	gitdrsdrs "github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/pushsync"
 	"github.com/spf13/cobra"
 )
 
@@ -61,10 +61,10 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		if err := gitdrsdrs.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
+		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
 			if err.Error() == "not implemented" {
 				for _, file := range lfsFiles {
-					if _, err := gitdrsdrs.RegisterFile(drsClient, ctx, file.Oid, file.Name); err != nil {
+					if _, err := pushsync.RegisterFile(drsClient, ctx, file.Oid, file.Name); err != nil {
 						return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
 					}
 				}

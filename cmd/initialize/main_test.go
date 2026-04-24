@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/testutils"
 )
 

@@ -6,7 +6,7 @@ import (
 
 	"github.com/calypr/git-drs/cmd"
 	"github.com/calypr/git-drs/cmd/credentialhelper"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/drslog"
 )
 
 func main() {

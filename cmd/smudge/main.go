@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/client/downloader"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +55,7 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	}
 
 	return lfs.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, func(callCtx context.Context, oid, cachePath string) error {
-		return downloader.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+		return lfs.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 	})
 }
 

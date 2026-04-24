@@ -18,22 +18,20 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/calypr/git-drs/client"
-	"github.com/calypr/git-drs/client/downloader"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
 // Cmd is the hidden cobra command registered in cmd/root.go.
 var Cmd = &cobra.Command{
-	Use:    "filter",
+	Use:     "filter",
 	Aliases: []string{"filter-process"},
-	Short:  "Run git-drs as a git long-running filter process (invoked by git)",
-	Hidden: true,
-	Args:   cobra.NoArgs,
-	RunE:   runFilter,
+	Short:   "Run git-drs as a git long-running filter process (invoked by git)",
+	Hidden:  true,
+	Args:    cobra.NoArgs,
+	RunE:    runFilter,
 }
 
 func runFilter(cmd *cobra.Command, _ []string) error {
@@ -50,7 +48,7 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("filter: load config: %w", err)
 	}
 
-	var drsCtx *client.GitContext
+	var drsCtx *config.GitContext
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
@@ -79,13 +77,13 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *client.GitContext, logger *slog.Logger) lfs.SmudgeFunc {
+func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) lfs.SmudgeFunc {
 	return func(ctx context.Context, req lfs.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn lfs.SmudgeDownloadFunc
 		if drsCtx != nil {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-				return downloader.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+				return lfs.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 			}
 		}
 		return lfs.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)

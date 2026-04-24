@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/auth"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )

@@ -6,13 +6,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/calypr/git-drs/cloud"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/gitrepo"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/cloud"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -130,25 +129,6 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func resolveTargetScope(remoteConfig config.DRSRemote) (organization string, project string, scope gitrepo.ResolvedBucketScope, err error) {
-	organization = remoteConfig.GetOrganization()
-	project = remoteConfig.GetProjectId()
-	if project == "" {
-		return "", "", gitrepo.ResolvedBucketScope{}, fmt.Errorf("target project is required (set remote project)")
-	}
-
-	scope, err = gitrepo.ResolveBucketScope(
-		organization,
-		project,
-		remoteConfig.GetBucketName(),
-		remoteConfig.GetStoragePrefix(),
-	)
-	if err != nil {
-		return "", "", gitrepo.ResolvedBucketScope{}, err
-	}
-	return organization, project, scope, nil
 }
 
 // ensureLFSObject ensures the LFS object identified by objectInfo exists in the

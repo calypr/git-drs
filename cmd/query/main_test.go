@@ -3,7 +3,7 @@ package query
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/common"
+	"github.com/calypr/git-drs/internal/common"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 

@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	gitdrsdrs "github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/syfon/client/drsmeta"
 	xferupload "github.com/calypr/syfon/client/xfer/upload"
 	"github.com/spf13/cobra"
 )
@@ -68,11 +68,11 @@ var Cmd = &cobra.Command{
 					return err
 				}
 
-				objs, err := gitdrsdrs.GetObjectByHashForGit(cmd.Context(), client, sha256, organization, projectID)
+				objs, err := client.Client.DRS().GetObjectsByHashForResource(cmd.Context(), sha256, organization, projectID)
 				if err != nil || len(objs) == 0 {
 					did := sha256
 					name := filepath.Base(src)
-					drsObj, err := gitdrsdrs.BuildDrsObj(name, sha256, s.Size(), did, bucketName, organization, projectID, storagePrefix)
+					drsObj, err := drsmeta.BuildDrsObjWithPrefix(name, sha256, s.Size(), did, bucketName, organization, projectID, storagePrefix)
 					if err != nil {
 						return fmt.Errorf("build DRS object for %s: %w", src, err)
 					}

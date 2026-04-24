@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/precommit_cache"
 	"github.com/calypr/git-drs/internal/testutils"
-	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 

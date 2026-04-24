@@ -3,7 +3,7 @@ package push
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/stretchr/testify/assert"
 )

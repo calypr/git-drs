@@ -8,14 +8,11 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/calypr/git-drs/client"
-	clientdownload "github.com/calypr/git-drs/client/downloader"
-	clientdrs "github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
@@ -127,7 +124,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
-			if err := clientdownload.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
+			if err := lfs.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
 				debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 				return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 			}
@@ -149,8 +146,8 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 	return sonic.ConfigFastest.Unmarshal(data, v)
 }
 
-func buildPullDownloadDebugContext(ctx context.Context, drsCtx *client.GitContext, oid string) string {
-	recs, err := clientdrs.GetObjectByHashForGit(ctx, drsCtx, oid, drsCtx.Organization, drsCtx.ProjectId)
+func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContext, oid string) string {
+	recs, err := drsCtx.Client.DRS().GetObjectsByHashForResource(ctx, oid, drsCtx.Organization, drsCtx.ProjectId)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}

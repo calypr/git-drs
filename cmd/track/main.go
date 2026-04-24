@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 

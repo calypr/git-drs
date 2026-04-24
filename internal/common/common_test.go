@@ -6,32 +6,55 @@ import (
 	"testing"
 )
 
-func TestProjectToResource(t *testing.T) {
-	// Test project-only format (no org)
-	resource, err := ProjectToResource("", "prog-project")
-	if err != nil {
-		t.Fatalf("ProjectToResource error: %v", err)
+func TestAuthzMapFromOrgProject(t *testing.T) {
+	m := AuthzMapFromOrgProject("myorg", "myproject")
+	if len(m) != 1 {
+		t.Fatalf("expected 1 org key, got %d", len(m))
 	}
-	if resource != "/programs/prog/projects/project" {
-		t.Fatalf("unexpected resource: %s", resource)
-	}
-
-	// Test new format (with org)
-	resource, err = ProjectToResource("myorg", "myproject")
-	if err != nil {
-		t.Fatalf("ProjectToResource error: %v", err)
-	}
-	if resource != "/programs/myorg/projects/myproject" {
-		t.Fatalf("unexpected resource: %s", resource)
+	projs, ok := m["myorg"]
+	if !ok || len(projs) != 1 || projs[0] != "myproject" {
+		t.Fatalf("unexpected map: %v", m)
 	}
 
-	// Test project-only fallback (invalid format -> default program)
-	res, err := ProjectToResource("", "invalid")
-	if err != nil {
-		t.Fatalf("unexpected error for invalid project: %v", err)
+	orgWide := AuthzMapFromOrgProject("myorg", "")
+	if projs2, ok2 := orgWide["myorg"]; !ok2 || len(projs2) != 0 {
+		t.Fatalf("expected org-wide (empty projects), got %v", orgWide)
 	}
-	if res != "/programs/default/projects/invalid" {
-		t.Fatalf("expected /programs/default/projects/invalid, got %s", res)
+
+	if AuthzMapFromOrgProject("", "anything") != nil {
+		t.Fatalf("expected nil when org is empty")
+	}
+}
+
+func TestAuthzMatchesScope(t *testing.T) {
+	m := map[string][]string{"org": {"proj1", "proj2"}}
+	if !AuthzMatchesScope(m, "org", "proj1") {
+		t.Fatal("expected match for org/proj1")
+	}
+	if AuthzMatchesScope(m, "org", "other") {
+		t.Fatal("expected no match for org/other")
+	}
+	orgWide := map[string][]string{"org": {}}
+	if !AuthzMatchesScope(orgWide, "org", "anything") {
+		t.Fatal("expected org-wide match")
+	}
+	if AuthzMatchesScope(nil, "org", "proj") {
+		t.Fatal("expected no match for nil map")
+	}
+}
+
+func TestParseOrgProject(t *testing.T) {
+	org, proj := ParseOrgProject("", "prog-project")
+	if org != "prog" || proj != "project" {
+		t.Fatalf("expected prog/project, got %s/%s", org, proj)
+	}
+	org, proj = ParseOrgProject("myorg", "myproject")
+	if org != "myorg" || proj != "myproject" {
+		t.Fatalf("expected myorg/myproject, got %s/%s", org, proj)
+	}
+	org, proj = ParseOrgProject("", "nohyphen")
+	if org != "default" || proj != "nohyphen" {
+		t.Fatalf("expected default/nohyphen, got %s/%s", org, proj)
 	}
 }
 

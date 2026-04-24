@@ -18,7 +18,6 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/conf"
-	"github.com/calypr/syfon/client/drsmeta"
 	"github.com/calypr/syfon/client/hash"
 	syrequest "github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/xfer/upload"
@@ -26,7 +25,7 @@ import (
 
 type pushScope struct {
 	Organization string
-	ProjectID    string
+	Project      string
 	Bucket       string
 	StoragePref  string
 }
@@ -55,7 +54,7 @@ func newPushRuntime(cl *config.GitContext) *pushRuntime {
 		Logger:     cl.Logger,
 		Scope: pushScope{
 			Organization: cl.Organization,
-			ProjectID:    cl.ProjectId,
+			Project:      cl.ProjectId,
 			Bucket:       cl.BucketName,
 			StoragePref:  cl.StoragePrefix,
 		},
@@ -176,15 +175,15 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		if statErr != nil {
 			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, path, statErr)
 		}
-		drsId := drsmap.DrsUUID(rt.Scope.ProjectID, oid)
-		drsObject, err = drsmeta.BuildDrsObjWithPrefix(filepath.Base(path), oid, stat.Size(), drsId, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.ProjectID, rt.Scope.StoragePref)
+		drsId := drsmap.DrsUUID(rt.Scope.Project, oid)
+		drsObject, err = localcommon.BuildDrsObjWithPrefix(filepath.Base(path), oid, stat.Size(), drsId, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.Project, rt.Scope.StoragePref)
 		if err != nil {
 			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
 		}
 	}
 	rt.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS object (did: %s)", oid, drsObject.Id))
 	registeredObjs, err := rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
-		Candidates: []drsapi.DrsObjectCandidate{drsmeta.ConvertToCandidate(drsObject)},
+		Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
 	})
 	var registeredObj *drsapi.DrsObject
 	if len(registeredObjs.Objects) > 0 {
@@ -194,8 +193,8 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		if strings.Contains(err.Error(), "already exists") {
 			if !rt.Tuning.Upsert {
 				rt.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
-				if recs, lookupErr := rt.API.Client.DRS().GetObjectsByHashForResource(ctx, oid, rt.Scope.Organization, rt.Scope.ProjectID); lookupErr == nil && len(recs) > 0 {
-					if match, matchErr := drsmap.FindMatchingRecord(recs, rt.Scope.Organization, rt.Scope.ProjectID); matchErr == nil && match != nil {
+				if recs, lookupErr := rt.API.Client.DRS().GetObjectsByHashForResource(ctx, oid, rt.Scope.Organization, rt.Scope.Project); lookupErr == nil && len(recs) > 0 {
+					if match, matchErr := drsmap.FindMatchingRecord(recs, rt.Scope.Organization, rt.Scope.Project); matchErr == nil && match != nil {
 						drsObject = match
 					}
 				}
@@ -206,7 +205,7 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 					return nil, fmt.Errorf("error deleting existing DRS object oid %s: did: %s err: %v", oid, drsObject.Id, err)
 				}
 				registeredObjs, err = rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
-					Candidates: []drsapi.DrsObjectCandidate{drsmeta.ConvertToCandidate(drsObject)},
+					Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
 				})
 				if err != nil {
 					return nil, fmt.Errorf("error re-saving DRS object after deletion: oid %s: did: %s err: %v", oid, drsObject.Id, err)

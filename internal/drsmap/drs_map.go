@@ -161,7 +161,7 @@ func UpdateDrsObjects(builder common.ObjectBuilder, gitRemoteName, gitRemoteLoca
 	}
 
 	// get project
-	if builder.ProjectID == "" {
+	if builder.Project == "" {
 		return fmt.Errorf("no project configured")
 	}
 
@@ -181,7 +181,7 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 	opts.Logger.Debug("Update to DRS objects started")
 
 	// get project
-	if builder.ProjectID == "" {
+	if builder.Project == "" {
 		return fmt.Errorf("no project configured")
 	}
 	if len(lfsFiles) == 0 {
@@ -199,27 +199,23 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 			authoritativeObj.Size = file.Size
 
 			// Ensure Authorizations are populated (backwards compatibility for old local records)
-			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
+			authzMap := common.AuthzMapFromOrgProject(builder.Organization, builder.Project)
 			if authoritativeObj.AccessMethods == nil {
 				authoritativeObj.AccessMethods = &[]drsapi.AccessMethod{}
 			}
 			for i := range *authoritativeObj.AccessMethods {
 				am := &(*authoritativeObj.AccessMethods)[i]
-				if am.Authorizations == nil || am.Authorizations.BearerAuthIssuers == nil || len(*am.Authorizations.BearerAuthIssuers) == 0 {
-					issuers := []string{authzStr}
-					am.Authorizations = &struct {
-						BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
-						DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
-						PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
-						SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
-					}{BearerAuthIssuers: &issuers}
+				if am.Authorizations == nil || len(*am.Authorizations) == 0 {
+					if authzMap != nil {
+						am.Authorizations = &authzMap
+					}
 				}
 				// Ensure URL matches current policy of namespaced CAS-style
 				// s3://bucket/{org}/{project}/HASH.
 				if builder.Bucket != "" {
 					prefix := strings.Trim(strings.TrimSpace(builder.StoragePrefix), "/")
 					if prefix == "" {
-						prefix = common.StoragePrefix(builder.Organization, builder.ProjectID)
+						prefix = common.StoragePrefix(builder.Organization, builder.Project)
 					}
 					if prefix != "" {
 						url := fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)
@@ -237,7 +233,7 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 				}
 			}
 		} else {
-			drsID := DrsUUID(builder.ProjectID, file.Oid)
+			drsID := DrsUUID(builder.Project, file.Oid)
 			authoritativeObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
 			if err != nil {
 				opts.Logger.Error(fmt.Sprintf("Could not build DRS object for %s OID %s %v", file.Name, file.Oid, err))
@@ -268,37 +264,28 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 		}
 
 		if opts.PreferCacheURL && hint != "" {
-			authzStr, _ := common.ProjectToResource(builder.Organization, builder.ProjectID)
-			bearer := []string{authzStr}
+			cacheAuthzMap := common.AuthzMapFromOrgProject(builder.Organization, builder.Project)
 			if authoritativeObj.AccessMethods != nil && len(*authoritativeObj.AccessMethods) > 0 {
 				am := &(*authoritativeObj.AccessMethods)[0]
 				am.AccessUrl = &struct {
 					Headers *[]string `json:"headers,omitempty"`
 					Url     string    `json:"url"`
 				}{Url: hint}
-				am.Authorizations = &struct {
-					BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
-					DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
-					PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
-					SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
-				}{BearerAuthIssuers: &bearer}
-			} else {
-				ams := []drsapi.AccessMethod{
-					{
-						Type: drsapi.AccessMethodTypeS3,
-						AccessUrl: &struct {
-							Headers *[]string `json:"headers,omitempty"`
-							Url     string    `json:"url"`
-						}{Url: hint},
-						Authorizations: &struct {
-							BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
-							DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
-							PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
-							SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
-						}{BearerAuthIssuers: &bearer},
-					},
+				if cacheAuthzMap != nil {
+					am.Authorizations = &cacheAuthzMap
 				}
-				authoritativeObj.AccessMethods = &ams
+			} else {
+				newAm := drsapi.AccessMethod{
+					Type: drsapi.AccessMethodTypeS3,
+					AccessUrl: &struct {
+						Headers *[]string `json:"headers,omitempty"`
+						Url     string    `json:"url"`
+					}{Url: hint},
+				}
+				if cacheAuthzMap != nil {
+					newAm.Authorizations = &cacheAuthzMap
+				}
+				authoritativeObj.AccessMethods = &[]drsapi.AccessMethod{newAm}
 			}
 		}
 
@@ -329,7 +316,7 @@ func WriteDrsFile(builder common.ObjectBuilder, file lfs.LfsFileInfo, objectPath
 		drsObj.Name = &name
 		drsObj.Size = file.Size
 	} else {
-		drsId := DrsUUID(builder.ProjectID, file.Oid)
+		drsId := DrsUUID(builder.Project, file.Oid)
 		drsObj, err = builder.Build(file.Name, file.Oid, file.Size, drsId)
 		if err != nil {
 			return nil, fmt.Errorf("error building DRS object for oid %s: %v", file.Oid, err)
@@ -414,17 +401,16 @@ func CreateCustomPath(baseDir, drsURI string) (string, error) {
 	return filepath.Join(baseDir, namespace, drsId), nil
 }
 
-// FindMatchingRecord finds a record from the list that matches the given project ID authz
-// If no matching record is found return nil
+// FindMatchingRecord finds a record from the list that matches the given project ID authz.
+// If no matching record is found return nil.
 func FindMatchingRecord(records []drsapi.DrsObject, organization, projectId string) (*drsapi.DrsObject, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
 
-	// Convert project ID to resource path format for comparison
-	expectedAuthz, err := common.ProjectToResource(organization, projectId)
-	if err != nil {
-		return nil, fmt.Errorf("error converting project ID to resource format: %v", err)
+	org, project := common.ParseOrgProject(organization, projectId)
+	if org == "" {
+		return nil, fmt.Errorf("could not determine organization from inputs org=%q project=%q", organization, projectId)
 	}
 
 	for _, record := range records {
@@ -432,18 +418,10 @@ func FindMatchingRecord(records []drsapi.DrsObject, organization, projectId stri
 			continue
 		}
 		for _, access := range *record.AccessMethods {
-			if access.Authorizations == nil || access.Authorizations.BearerAuthIssuers == nil || len(*access.Authorizations.BearerAuthIssuers) == 0 {
+			if access.Authorizations == nil || len(*access.Authorizations) == 0 {
 				continue
 			}
-
-			// Check BearerAuthIssuers using a map for O(1) lookup (ref: "lists suck")
-			issuers := *access.Authorizations.BearerAuthIssuers
-			issuersMap := make(map[string]struct{}, len(issuers))
-			for _, issuer := range issuers {
-				issuersMap[issuer] = struct{}{}
-			}
-
-			if _, ok := issuersMap[expectedAuthz]; ok {
+			if common.AuthzMatchesScope(*access.Authorizations, org, project) {
 				return &record, nil
 			}
 		}

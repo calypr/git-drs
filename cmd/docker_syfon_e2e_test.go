@@ -41,7 +41,7 @@ const (
 	dockerE2EServerReadyWait   = 20 * time.Second
 	dockerE2ELocalUser         = "drs-user"
 	dockerE2ELocalPassword     = "drs-pass"
-	dockerE2EOrganization      = "programs"
+	dockerE2EOrganization      = "syfon"
 	dockerE2EProjectID         = "e2e"
 	dockerE2EMultipartMB       = 1
 	dockerE2EResumeAfter       = 2 * 1024 * 1024

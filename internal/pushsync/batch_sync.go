@@ -12,7 +12,6 @@ import (
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	"github.com/calypr/syfon/client/drsmeta"
 	"github.com/calypr/syfon/client/hash"
 	"golang.org/x/sync/errgroup"
 )
@@ -112,11 +111,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
-			toRegister = append(toRegister, drsmeta.ConvertToCandidate(obj))
+			toRegister = append(toRegister, localcommon.ConvertToCandidate(obj))
 			s.registeredOids[oid] = true
 			continue
 		}
-		if match, err := drsmap.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.ProjectID); err == nil && match != nil {
+		if match, err := drsmap.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
 			s.drsObjByOID[oid] = match
 		}
 	}
@@ -152,8 +151,8 @@ func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.Dr
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, err)
 	}
-	did := drsmap.DrsUUID(s.rt.Scope.ProjectID, oid)
-	obj, err := drsmeta.BuildDrsObjWithPrefix(filepath.Base(file.Name), oid, stat.Size(), did, s.rt.Scope.Bucket, s.rt.Scope.Organization, s.rt.Scope.ProjectID, s.rt.Scope.StoragePref)
+	did := drsmap.DrsUUID(s.rt.Scope.Project, oid)
+	obj, err := localcommon.BuildDrsObjWithPrefix(filepath.Base(file.Name), oid, stat.Size(), did, s.rt.Scope.Bucket, s.rt.Scope.Organization, s.rt.Scope.Project, s.rt.Scope.StoragePref)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build drs object for oid %s: %w", oid, err)
 	}

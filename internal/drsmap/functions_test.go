@@ -50,18 +50,11 @@ func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	}
 }
 
-func makeAuthzRecord(id, issuer string) drsapi.DrsObject {
-	issuers := []string{issuer}
+func makeAuthzRecord(id, org, project string) drsapi.DrsObject {
+	authzMap := map[string][]string{org: {project}}
 	accessMethods := []drsapi.AccessMethod{{
-		Type: "s3",
-		Authorizations: &struct {
-			BearerAuthIssuers   *[]string                                          `json:"bearer_auth_issuers,omitempty"`
-			DrsObjectId         *string                                            `json:"drs_object_id,omitempty"`
-			PassportAuthIssuers *[]string                                          `json:"passport_auth_issuers,omitempty"`
-			SupportedTypes      *[]drsapi.AccessMethodAuthorizationsSupportedTypes `json:"supported_types,omitempty"`
-		}{
-			BearerAuthIssuers: &issuers,
-		},
+		Type:           "s3",
+		Authorizations: &authzMap,
 	}}
 	return drsapi.DrsObject{
 		Id:            id,
@@ -72,8 +65,8 @@ func makeAuthzRecord(id, issuer string) drsapi.DrsObject {
 
 func TestFindMatchingRecord_MatchFound(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "other-resource"),
-		makeAuthzRecord("match", "/programs/PROG/projects/PROJ"),
+		makeAuthzRecord("no-match", "OTHER", "resource"),
+		makeAuthzRecord("match", "PROG", "PROJ"),
 	}
 
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
@@ -87,7 +80,7 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 
 func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "other-resource"),
+		makeAuthzRecord("no-match", "OTHER", "resource"),
 	}
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
 	if err != nil {

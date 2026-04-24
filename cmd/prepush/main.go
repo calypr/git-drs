@@ -98,9 +98,7 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	builder := common.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
 	builder.StoragePrefix = scope.Prefix
-	// git-drs native backend uses CAS-style paths
-	builder.PathStyle = "CAS"
-	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.ProjectID, builder.Organization))
+	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.Project, builder.Organization))
 
 	tmp, err := bufferStdin(stdin, s.createTempFile)
 	if err != nil {
@@ -158,20 +156,17 @@ type metadataChecksum struct {
 	Checksum string `json:"checksum"`
 }
 
-type metadataAuthorizations struct {
-	BearerAuthIssuers []string `json:"bearer_auth_issuers,omitempty"`
-}
 
 type metadataAccessURL struct {
 	URL string `json:"url,omitempty"`
 }
 
 type metadataAccessMethod struct {
-	Type           string                  `json:"type,omitempty"`
-	AccessURL      metadataAccessURL       `json:"access_url,omitempty"`
-	AccessID       string                  `json:"access_id,omitempty"`
-	Region         string                  `json:"region,omitempty"`
-	Authorizations *metadataAuthorizations `json:"authorizations,omitempty"`
+	Type           string              `json:"type,omitempty"`
+	AccessURL      metadataAccessURL   `json:"access_url,omitempty"`
+	AccessID       string              `json:"access_id,omitempty"`
+	Region         string              `json:"region,omitempty"`
+	Authorizations map[string][]string `json:"authorizations,omitempty"`
 }
 
 type metadataCandidate struct {
@@ -248,10 +243,8 @@ func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
 					URL: accURL,
 				},
 			}
-			if am.Authorizations != nil && am.Authorizations.BearerAuthIssuers != nil && len(*am.Authorizations.BearerAuthIssuers) > 0 {
-				m.Authorizations = &metadataAuthorizations{
-					BearerAuthIssuers: append([]string(nil), (*am.Authorizations.BearerAuthIssuers)...),
-				}
+			if am.Authorizations != nil && len(*am.Authorizations) > 0 {
+				m.Authorizations = *am.Authorizations
 			}
 			out.AccessMethods = append(out.AccessMethods, m)
 		}

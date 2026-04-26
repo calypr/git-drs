@@ -156,7 +156,6 @@ type metadataChecksum struct {
 	Checksum string `json:"checksum"`
 }
 
-
 type metadataAccessURL struct {
 	URL string `json:"url,omitempty"`
 }

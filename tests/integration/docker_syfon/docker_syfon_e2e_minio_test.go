@@ -36,9 +36,9 @@ func startMinIOContainer(ctx context.Context) (*minioContainer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("docker run minio: %w\n%s", err, string(out))
 	}
-	containerID := strings.TrimSpace(string(out))
+	containerID := extractDockerContainerID(string(out))
 	if containerID == "" {
-		return nil, fmt.Errorf("docker run minio returned empty container id")
+		return nil, fmt.Errorf("docker run minio returned empty container id:\n%s", string(out))
 	}
 	fmt.Fprintf(os.Stderr, "MinIO container id %s\n", containerID)
 

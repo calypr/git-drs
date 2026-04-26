@@ -22,25 +22,39 @@ func startGogsContainer(t *testing.T, ctx context.Context) *gogsContainer {
 	t.Helper()
 
 	hostPort := reserveTCPPort(t)
-	hostDir := t.TempDir()
-	customConfDir := filepath.Join(hostDir, "gogs", "custom", "conf")
+	configDir := t.TempDir()
+	customConfDir := filepath.Join(configDir, "conf")
 	if err := os.MkdirAll(customConfDir, 0o755); err != nil {
 		t.Fatalf("mkdir gogs config dir: %v", err)
 	}
 	configPath := filepath.Join(customConfDir, "app.ini")
 	gogsURL := fmt.Sprintf("http://127.0.0.1:%d", hostPort)
 	gogsAPIBase := gogsURL + "/api/v1"
-	t.Logf("starting gogs container on %s with data dir %s", gogsURL, hostDir)
+	volumeName := fmt.Sprintf("git-drs-gogs-e2e-data-%d", time.Now().UnixNano())
+	t.Logf("starting gogs container on %s with docker volume %s", gogsURL, volumeName)
 	writeGogsAppConfig(t, configPath, hostPort)
 
 	containerName := fmt.Sprintf("git-drs-gogs-e2e-%d", time.Now().UnixNano())
+	volumeCreateCmd := exec.CommandContext(ctx, "docker", "volume", "create", volumeName)
+	if out, err := volumeCreateCmd.CombinedOutput(); err != nil {
+		t.Fatalf("docker volume create gogs data: %v\n%s", err, string(out))
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		rmCmd := exec.CommandContext(cleanupCtx, "docker", "volume", "rm", "-f", volumeName)
+		if out, err := rmCmd.CombinedOutput(); err != nil {
+			t.Logf("warning: failed to remove Gogs docker volume %s: %v\n%s", volumeName, err, string(out))
+		}
+	})
 	runArgs := []string{
 		"run", "-d", "--rm",
 		"--name", containerName,
 		"-e", "GOGS_WORK_DIR=/data/gogs",
 		"-e", "GOGS_CUSTOM=/data/gogs/custom",
 		"-p", fmt.Sprintf("127.0.0.1:%d:3000", hostPort),
-		"-v", hostDir + ":/data",
+		"-v", volumeName + ":/data",
+		"-v", customConfDir + ":/data/gogs/custom/conf:ro",
 		dockerE2EGogsImage,
 	}
 	runCmd := exec.CommandContext(ctx, "docker", runArgs...)
@@ -104,7 +118,7 @@ func startGogsContainer(t *testing.T, ctx context.Context) *gogsContainer {
 	}
 	t.Logf("gogs repo created: html_url=%s clone_url=%s", repo.HTMLURL, repo.CloneURL)
 
-	credentialStore := filepath.Join(hostDir, ".git-credentials")
+	credentialStore := filepath.Join(t.TempDir(), ".git-credentials")
 	if err := writeGitCredentialStore(credentialStore, repo.CloneURL, dockerE2EGogsAdminUser, dockerE2EGogsAdminPassword); err != nil {
 		t.Fatalf("write git credential store: %v", err)
 	}

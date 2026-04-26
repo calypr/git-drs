@@ -30,10 +30,28 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
+      - name: Resolve Syfon ref from go.mod
+        id: syfon-ref
+        working-directory: git-drs
+        shell: bash
+        run: |
+          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
+          if [[ -z "$version" || "$version" == "<nil>" ]]; then
+            version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon/client)"
+          fi
+          ref="$version"
+          if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
+            ref="${BASH_REMATCH[1]}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
+
       - name: Check out Syfon
         uses: actions/checkout@v4
         with:
           repository: calypr/syfon
+          ref: ${{ steps.syfon-ref.outputs.ref }}
           path: syfon
           fetch-depth: 1
 

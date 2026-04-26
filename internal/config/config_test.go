@@ -355,3 +355,31 @@ func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
 	// the test verifies that GetRemoteClient completes without error when
 	// repo credentials are present, and that a usable GitContext is returned.
 }
+
+func TestLocalRemoteGetClientResolvesBucketScopeMappings(t *testing.T) {
+	setupTestRepo(t)
+
+	if err := gitrepo.SetBucketMapping("org-a", "", "mapped-bucket", "program-root"); err != nil {
+		t.Fatalf("SetBucketMapping org: %v", err)
+	}
+	if err := gitrepo.SetBucketMapping("org-a", "proj-1", "mapped-bucket", "project-subpath"); err != nil {
+		t.Fatalf("SetBucketMapping project: %v", err)
+	}
+
+	remote := LocalRemote{
+		BaseURL:      "http://localhost:8080",
+		Organization: "org-a",
+		ProjectID:    "proj-1",
+		Bucket:       "configured-bucket",
+	}
+	gitCtx, err := remote.GetClient("origin", drslog.GetLogger())
+	if err != nil {
+		t.Fatalf("GetClient failed: %v", err)
+	}
+	if gitCtx.BucketName != "mapped-bucket" {
+		t.Fatalf("BucketName = %q, want mapped-bucket", gitCtx.BucketName)
+	}
+	if gitCtx.StoragePrefix != "program-root/project-subpath" {
+		t.Fatalf("StoragePrefix = %q, want program-root/project-subpath", gitCtx.StoragePrefix)
+	}
+}

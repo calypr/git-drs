@@ -29,30 +29,81 @@ func ResolveBucketScope(organization, project, configuredBucket, configuredPrefi
 		}, nil
 	}
 
-	mapping, ok, err := GetBucketMapping(organization, project)
+	orgMapping, hasOrgMapping, err := GetBucketMapping(organization, "")
 	if err != nil {
-		return ResolvedBucketScope{}, fmt.Errorf("resolve bucket mapping for organization=%q project=%q: %w", organization, project, err)
+		return ResolvedBucketScope{}, fmt.Errorf("resolve bucket mapping for organization=%q: %w", organization, err)
 	}
 
-	if !ok {
-		if configuredBucket == "" {
-			return ResolvedBucketScope{}, fmt.Errorf("bucket is required (or configure mapping with `git drs bucket add --organization %s --project %s --bucket <name> [--path ...]`)", organization, project)
+	var projectMapping BucketMapping
+	hasProjectMapping := false
+	if project != "" {
+		projectMapping, hasProjectMapping, err = getExactBucketMapping(organization, project)
+		if err != nil {
+			return ResolvedBucketScope{}, fmt.Errorf("resolve bucket mapping for organization=%q project=%q: %w", organization, project, err)
+		}
+	}
+
+	if hasOrgMapping {
+		bucket := strings.TrimSpace(orgMapping.Bucket)
+		if bucket == "" {
+			return ResolvedBucketScope{}, fmt.Errorf("bucket mapping for organization=%q is missing bucket", organization)
 		}
 		return ResolvedBucketScope{
-			Bucket: configuredBucket,
-			Prefix: configuredPrefix,
+			Bucket: bucket,
+			Prefix: joinBucketPrefixes(orgMapping.Prefix, projectMapping.Prefix),
 		}, nil
 	}
 
-	mappedBucket := strings.TrimSpace(mapping.Bucket)
-	mappedPrefix := strings.Trim(strings.TrimSpace(mapping.Prefix), "/")
-	if mappedBucket == "" {
-		return ResolvedBucketScope{}, fmt.Errorf("bucket mapping for organization=%q project=%q is missing bucket", organization, project)
+	if hasProjectMapping {
+		bucket := strings.TrimSpace(projectMapping.Bucket)
+		if bucket == "" {
+			return ResolvedBucketScope{}, fmt.Errorf("bucket mapping for organization=%q project=%q is missing bucket", organization, project)
+		}
+		return ResolvedBucketScope{
+			Bucket: bucket,
+			Prefix: strings.Trim(strings.TrimSpace(projectMapping.Prefix), "/"),
+		}, nil
 	}
 
-	// Mapping is authoritative when present.
+	if configuredBucket == "" {
+		return ResolvedBucketScope{}, fmt.Errorf("bucket is required (or configure mapping with `git drs bucket add-organization --organization %s --path <scheme>://<bucket>/<prefix>`)", organization)
+	}
 	return ResolvedBucketScope{
-		Bucket: mappedBucket,
-		Prefix: mappedPrefix,
+		Bucket: configuredBucket,
+		Prefix: configuredPrefix,
 	}, nil
+}
+
+func getExactBucketMapping(org, project string) (BucketMapping, bool, error) {
+	org = strings.TrimSpace(org)
+	project = strings.TrimSpace(project)
+	if org == "" || project == "" {
+		return BucketMapping{}, false, nil
+	}
+	bucket, err := GetGitConfigString(projectBucketKey(org, project, "bucket"))
+	if err != nil {
+		return BucketMapping{}, false, err
+	}
+	if strings.TrimSpace(bucket) == "" {
+		return BucketMapping{}, false, nil
+	}
+	prefix, err := GetGitConfigString(projectBucketKey(org, project, "prefix"))
+	if err != nil {
+		return BucketMapping{}, false, err
+	}
+	return BucketMapping{
+		Bucket: strings.TrimSpace(bucket),
+		Prefix: strings.Trim(strings.TrimSpace(prefix), "/"),
+	}, true, nil
+}
+
+func joinBucketPrefixes(parts ...string) string {
+	joined := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(strings.TrimSpace(part), "/")
+		if part != "" {
+			joined = append(joined, part)
+		}
+	}
+	return strings.Join(joined, "/")
 }

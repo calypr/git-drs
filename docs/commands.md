@@ -92,8 +92,9 @@ Add a Gen3 DRS server configuration.
 git drs remote add gen3 <remote-name> \
     --url <server-url> \
     --cred <credentials-file> \
+    --organization <program> \
     --project <project-id> \
-    --bucket <bucket-name>
+    [--bucket <bucket-name>]
 ```
 
 **Options:**
@@ -101,8 +102,9 @@ git drs remote add gen3 <remote-name> \
 - `--url <url>`: Gen3 server endpoint (required)
 - `--cred <file>`: Path to credentials JSON file (required)
 - `--token <token>`: Token for temporary access (alternative to --cred)
-- `--project <id>`: Project ID in format `<program>-<project>` (required)
-- `--bucket <name>`: S3 bucket name (required)
+- `--organization <name>`: Program/organization scope used for bucket mapping
+- `--project <id>`: Project ID (required)
+- `--bucket <name>`: Bucket name fallback when no org/project mapping is configured
 
 **Examples:**
 
@@ -111,19 +113,19 @@ git drs remote add gen3 <remote-name> \
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
-    --project my-project \
-    --bucket my-bucket
+    --organization my-program \
+    --project my-project
 
 # Add staging remote
 git drs remote add gen3 staging \
     --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
-    --project staging-project \
-    --bucket staging-bucket
+    --organization staging-program \
+    --project staging-project
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
-**Important:** A bucket mapping for the target `organization/project` must already exist (typically created once by a steward/admin via `git drs bucket add ...`). Without that mapping, push/pull operations will fail.
+**Important:** A bucket mapping for the target `organization/project` must already exist, typically created once by a steward/admin with `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path <scheme>://<bucket>/<prefix>`. Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
 
@@ -474,7 +476,7 @@ Clone repository. Use with Git DRS initialization:
 git clone <repo-url>
 cd <repo-name>
 git drs init
-git drs remote add gen3 production --cred /path/to/credentials.json --url ... --project ... --bucket ...
+git drs remote add gen3 production --cred /path/to/credentials.json --url ... --organization ... --project ...
 ```
 
 ## Workflow Examples
@@ -527,8 +529,8 @@ git drs init
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
-    --project my-project \
-    --bucket my-bucket
+    --organization my-program \
+    --project my-project
 
 # 4. Set up file tracking
 git lfs track "*.bam"
@@ -551,14 +553,14 @@ git push
 git drs remote add gen3 staging \
     --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
-    --project staging-project \
-    --bucket staging-bucket
+    --organization staging-program \
+    --project staging-project
 
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/prod-credentials.json \
-    --project prod-project \
-    --bucket prod-bucket
+    --organization prod-program \
+    --project prod-project
 
 # 2. Fetch metadata from staging
 git drs fetch staging

@@ -56,25 +56,19 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 	resolvedBucket := strings.TrimSpace(bucket)
 	resolvedStoragePrefix := ""
 	if strings.TrimSpace(organization) != "" {
-		m, ok, err := gitrepo.GetBucketMapping(organization, project)
+		scope, err := gitrepo.ResolveBucketScope(organization, project, resolvedBucket, "")
 		if err != nil {
 			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
 		}
-		if ok {
-			if resolvedBucket == "" {
-				resolvedBucket = strings.TrimSpace(m.Bucket)
-			} else if strings.TrimSpace(m.Bucket) != "" && !strings.EqualFold(strings.TrimSpace(m.Bucket), resolvedBucket) {
-				return fmt.Errorf("bucket %q conflicts with mapping bucket %q for organization=%q project=%q", resolvedBucket, m.Bucket, organization, project)
-			}
-			resolvedStoragePrefix = strings.TrimSpace(m.Prefix)
-		}
+		resolvedBucket = strings.TrimSpace(scope.Bucket)
+		resolvedStoragePrefix = strings.TrimSpace(scope.Prefix)
 	}
 	if resolvedBucket == "" {
 		if strings.TrimSpace(organization) == "" {
 			return fmt.Errorf("bucket is required when organization is empty")
 		}
 		if strings.TrimSpace(resolvedBucket) == "" {
-			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add --organization %s --project %s --bucket <name> [--path ...]`)", organization, project)
+			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add-project --organization %s --project %s --path <scheme>://<bucket>/<prefix>`)", organization, project)
 		}
 	}
 

@@ -96,6 +96,22 @@ func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger) (*GitCont
 		l.BasicUsername = username
 		l.BasicPassword = password
 	}
+	projectID := l.GetProjectId()
+	bucketName := l.GetBucketName()
+	storagePrefix := l.GetStoragePrefix()
+	if strings.TrimSpace(l.GetOrganization()) != "" || strings.TrimSpace(bucketName) != "" || strings.TrimSpace(storagePrefix) != "" {
+		scope, err := gitrepo.ResolveBucketScope(
+			l.GetOrganization(),
+			projectID,
+			bucketName,
+			storagePrefix,
+		)
+		if err != nil {
+			return nil, err
+		}
+		bucketName = scope.Bucket
+		storagePrefix = scope.Prefix
+	}
 
 	cred := &syconf.Credential{APIEndpoint: l.BaseURL}
 	if l.BasicUsername != "" || l.BasicPassword != "" {
@@ -120,9 +136,9 @@ func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger) (*GitCont
 		Client:        syfonClient,
 		Requestor:     reqClient.Requestor(),
 		Organization:  l.GetOrganization(),
-		ProjectId:     l.GetProjectId(),
-		BucketName:    l.GetBucketName(),
-		StoragePrefix: l.GetStoragePrefix(),
+		ProjectId:     projectID,
+		BucketName:    bucketName,
+		StoragePrefix: storagePrefix,
 		Logger:        logger,
 		Credential:    cred,
 	}, nil

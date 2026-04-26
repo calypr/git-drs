@@ -195,6 +195,9 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		return obj, nil
 	}
 
+	if existing.AccessMethods != nil && len(*existing.AccessMethods) > 0 {
+		obj.AccessMethods = existing.AccessMethods
+	}
 	obj.Aliases = existing.Aliases
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description
@@ -212,11 +215,9 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 }
 
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
-	validityByHash, _ := getSHA256ValidityMapRuntime(s.rt, s.ctx, s.oids)
-
 	candidates := make([]uploadCandidate, 0)
 	for _, oid := range s.oids {
-		if !s.needsUpload(oid, validityByHash) {
+		if !s.needsUpload(oid) {
 			continue
 		}
 
@@ -246,20 +247,11 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 	return candidates, nil
 }
 
-func (s *batchSyncSession) needsUpload(oid string, validity map[string]bool) bool {
+func (s *batchSyncSession) needsUpload(oid string) bool {
 	if s.registeredOids[oid] {
 		return true
 	}
-	if validity == nil {
-		if len(s.existingByHash[oid]) == 0 {
-			return true
-		}
-		if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {
-			return true
-		}
-		return false
-	}
-	if !validity[oid] {
+	if len(s.existingByHash[oid]) == 0 {
 		return true
 	}
 	if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {

@@ -7,8 +7,16 @@ on:
 
 jobs:
   e2e:
-    name: Standalone Syfon-backed Go E2E
+    name: Syfon Docker E2E (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: full
+            run_regex: "TestGitDrsDocker(MinIOE2E|BucketScopePathsE2E)"
+          - name: add-url
+            run_regex: "TestGitDrsDockerAddURLE2E"
     steps:
       - name: Check out git-drs
         uses: actions/checkout@v4
@@ -48,4 +56,4 @@ jobs:
         env:
           SYFON_E2E_DOCKER: "1"
           TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
-        run: go test -count=1 -tags integration ./cmd -run 'TestGitDrsDockerMinIOE2E|TestGitDrsDockerAddURLE2E' -v
+        run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

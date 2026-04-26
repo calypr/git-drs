@@ -125,7 +125,7 @@ func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix str
 				// Taking only filepath.Base(...) loses CAS/storage prefixes and causes 404 downloads.
 				key := strings.TrimSpace(strings.TrimPrefix(u.Path, "/"))
 				if key != "" && (bucket == "" || strings.EqualFold(strings.TrimSpace(u.Host), strings.TrimSpace(bucket))) {
-					return applyPrefix(key)
+					return key
 				}
 			}
 		}
@@ -384,19 +384,4 @@ func uploadChunkSizeForThreshold(threshold int64) int64 {
 		chunkSize = common.MinMultipartChunkSize
 	}
 	return chunkSize
-}
-
-func getSHA256ValidityMap(cl *config.GitContext, ctx context.Context, oids []string) (map[string]bool, error) {
-	return getSHA256ValidityMapRuntime(newPushRuntime(cl), ctx, oids)
-}
-
-func getSHA256ValidityMapRuntime(rt *pushRuntime, ctx context.Context, oids []string) (map[string]bool, error) {
-	if rt == nil || rt.API == nil || rt.API.Requestor == nil {
-		return nil, fmt.Errorf("DRS client not available for validity check")
-	}
-	var out map[string]bool
-	if err := rt.API.Requestor.Do(ctx, http.MethodPost, "/index/bulk/sha256/validity", map[string][]string{"sha256": oids}, &out); err != nil {
-		return nil, fmt.Errorf("validity check: %w", err)
-	}
-	return out, nil
 }

@@ -39,6 +39,26 @@ func DownloadToCachePath(ctx context.Context, drsCtx *config.GitContext, logger 
 	return download.DownloadToPathWithOptions(ctx, backend, oid, cachePath, opts)
 }
 
+func DownloadResolvedToCachePath(ctx context.Context, drsCtx *config.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		return fmt.Errorf("mkdir for cache path: %w", err)
+	}
+	if obj == nil || accessURL == nil || strings.TrimSpace(accessURL.Url) == "" {
+		return DownloadToCachePath(ctx, drsCtx, nil, oid, cachePath)
+	}
+	backend, err := newScopedBackendFromResolved(drsCtx, obj, strings.TrimSpace(accessURL.Url))
+	if err != nil {
+		return err
+	}
+
+	opts := download.DownloadOptions{
+		MultipartThreshold: 5 * 1024 * 1024,
+		Concurrency:        2,
+		ChunkSize:          64 * 1024 * 1024,
+	}
+	return download.DownloadToPathWithOptions(ctx, backend, oid, cachePath, opts)
+}
+
 type scopedBackend struct {
 	base      transfer.Backend
 	requestor syrequest.Requester
@@ -61,6 +81,18 @@ func newScopedBackend(ctx context.Context, drsCtx *config.GitContext, oid string
 		requestor: drsCtx.Requestor,
 		object:    match,
 		accessURL: strings.TrimSpace(accessURL.Url),
+	}, nil
+}
+
+func newScopedBackendFromResolved(drsCtx *config.GitContext, obj *drsapi.DrsObject, accessURL string) (*scopedBackend, error) {
+	if drsCtx == nil || drsCtx.Client == nil || drsCtx.Requestor == nil {
+		return nil, fmt.Errorf("DRS client unavailable")
+	}
+	return &scopedBackend{
+		base:      drsCtx.Client.Data(),
+		requestor: drsCtx.Requestor,
+		object:    obj,
+		accessURL: strings.TrimSpace(accessURL),
 	}, nil
 }
 

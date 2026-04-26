@@ -37,13 +37,17 @@ var (
 const defaultBucketAPITimeout = 30 * time.Second
 
 type putBucketPayload struct {
-	Bucket       string `json:"bucket"`
-	Region       string `json:"region,omitempty"`
-	AccessKey    string `json:"access_key,omitempty"`
-	SecretKey    string `json:"secret_key,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
-	Organization string `json:"organization,omitempty"`
-	ProjectID    string `json:"project_id,omitempty"`
+	Bucket    string `json:"bucket"`
+	Region    string `json:"region,omitempty"`
+	AccessKey string `json:"access_key,omitempty"`
+	SecretKey string `json:"secret_key,omitempty"`
+	Endpoint  string `json:"endpoint,omitempty"`
+}
+
+type addBucketScopePayload struct {
+	Organization string `json:"organization"`
+	ProjectID    string `json:"project_id"`
+	Path         string `json:"path,omitempty"`
 }
 
 func normalizeStoragePath(pathValue, bucket string) (string, error) {
@@ -51,24 +55,38 @@ func normalizeStoragePath(pathValue, bucket string) (string, error) {
 	if raw == "" {
 		return "", nil
 	}
-	if !strings.HasPrefix(strings.ToLower(raw), "s3://") {
-		return "", fmt.Errorf("path must use s3://bucket/prefix format")
-	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("invalid s3 path %q: %w", raw, err)
+		return "", fmt.Errorf("invalid storage path %q: %w", raw, err)
 	}
-	if !strings.EqualFold(u.Scheme, "s3") {
-		return "", fmt.Errorf("invalid scheme in path %q (expected s3://)", raw)
+	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
+	case "s3", "gs", "gcs", "az", "azblob":
+	default:
+		return "", fmt.Errorf("path must use s3://, gs://, or azblob:// storage URL format")
 	}
 	host := strings.TrimSpace(u.Host)
 	if host == "" {
-		return "", fmt.Errorf("invalid s3 path %q: missing bucket", raw)
+		return "", fmt.Errorf("invalid storage path %q: missing bucket", raw)
 	}
 	if strings.TrimSpace(bucket) != "" && !strings.EqualFold(host, strings.TrimSpace(bucket)) {
-		return "", fmt.Errorf("s3 path bucket %q does not match --bucket %q", host, bucket)
+		return "", fmt.Errorf("storage path bucket %q does not match expected bucket %q", host, bucket)
 	}
 	return strings.Trim(strings.TrimSpace(u.Path), "/"), nil
+}
+
+func bucketFromStoragePath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("--path is required and must include the bucket URL")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid --path %q: %w", raw, err)
+	}
+	if strings.TrimSpace(u.Scheme) == "" || strings.TrimSpace(u.Host) == "" {
+		return "", fmt.Errorf("--path must be a storage URL like s3://bucket/prefix")
+	}
+	return strings.TrimSpace(u.Host), nil
 }
 
 var Cmd = &cobra.Command{
@@ -78,7 +96,7 @@ var Cmd = &cobra.Command{
 
 var addCmd = &cobra.Command{
 	Use:   "add [remote-name]",
-	Short: "Declare bucket credentials and org/project mapping",
+	Short: "Declare bucket credentials on the server",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			return fmt.Errorf("accepts at most one optional remote name")
@@ -88,19 +106,7 @@ var addCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 
-		org := strings.TrimSpace(flagOrg)
-		project := strings.TrimSpace(flagProject)
 		bucket := strings.TrimSpace(flagBucket)
-		prefix, err := normalizeStoragePath(flagPath, bucket)
-		if err != nil {
-			return err
-		}
-		if org == "" {
-			return fmt.Errorf("--organization is required")
-		}
-		if project == "" {
-			return fmt.Errorf("--project is required")
-		}
 		if bucket == "" {
 			return fmt.Errorf("--bucket is required")
 		}
@@ -117,12 +123,6 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("--s3-endpoint is required")
 		}
 
-		if existing, ok, err := gitrepo.GetBucketMapping(org, project); err != nil {
-			return fmt.Errorf("failed checking existing mapping: %w", err)
-		} else if ok && !flagForce {
-			return fmt.Errorf("mapping already exists for organization=%q project=%q (bucket=%q prefix=%q); use --force to overwrite", org, project, existing.Bucket, existing.Prefix)
-		}
-
 		remoteName := "origin"
 		if len(args) == 1 {
 			remoteName = strings.TrimSpace(args[0])
@@ -132,24 +132,97 @@ var addCmd = &cobra.Command{
 			return err
 		}
 		payload := putBucketPayload{
-			Bucket:       bucket,
-			Region:       strings.TrimSpace(flagRegion),
-			AccessKey:    strings.TrimSpace(flagAccessKey),
-			SecretKey:    strings.TrimSpace(flagSecretKey),
-			Endpoint:     strings.TrimSpace(flagS3Endpoint),
-			Organization: org,
-			ProjectID:    project,
+			Bucket:    bucket,
+			Region:    strings.TrimSpace(flagRegion),
+			AccessKey: strings.TrimSpace(flagAccessKey),
+			SecretKey: strings.TrimSpace(flagSecretKey),
+			Endpoint:  strings.TrimSpace(flagS3Endpoint),
 		}
 		if err := upsertServerBucket(context.Background(), endpoint, token, payload); err != nil {
 			return err
 		}
-		if err := gitrepo.SetBucketMapping(org, project, bucket, prefix); err != nil {
-			return fmt.Errorf("failed to persist bucket mapping: %w", err)
-		}
 
-		logg.Info("bucket credential and mapping saved", "organization", org, "project", project, "bucket", bucket, "path", prefix)
+		logg.Info("bucket credential saved", "bucket", bucket)
 		return nil
 	},
+}
+
+var addOrganizationCmd = &cobra.Command{
+	Use:   "add-organization [remote-name]",
+	Short: "Declare organization/program bucket mapping",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			return fmt.Errorf("accepts at most one optional remote name")
+		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return addScope(args, false)
+	},
+}
+
+var addProjectCmd = &cobra.Command{
+	Use:   "add-project [remote-name]",
+	Short: "Declare project bucket mapping",
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 1 {
+			return fmt.Errorf("accepts at most one optional remote name")
+		}
+		return nil
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return addScope(args, true)
+	},
+}
+
+func addScope(args []string, requireProject bool) error {
+	logg := drslog.GetLogger()
+	org := strings.TrimSpace(flagOrg)
+	project := strings.TrimSpace(flagProject)
+	scopePath := strings.TrimSpace(flagPath)
+	bucket, err := bucketFromStoragePath(scopePath)
+	if err != nil {
+		return err
+	}
+	prefix, err := normalizeStoragePath(scopePath, bucket)
+	if err != nil {
+		return err
+	}
+	if org == "" {
+		return fmt.Errorf("--organization is required")
+	}
+	if requireProject && project == "" {
+		return fmt.Errorf("--project is required")
+	}
+	if !requireProject && project != "" {
+		return fmt.Errorf("--project is not valid for add-organization; use add-project")
+	}
+	if existing, ok, err := gitrepo.GetBucketMapping(org, project); err != nil {
+		return fmt.Errorf("failed checking existing mapping: %w", err)
+	} else if ok && !flagForce {
+		return fmt.Errorf("mapping already exists for organization=%q project=%q (bucket=%q prefix=%q); use --force to overwrite", org, project, existing.Bucket, existing.Prefix)
+	}
+
+	remoteName := "origin"
+	if len(args) == 1 {
+		remoteName = strings.TrimSpace(args[0])
+	}
+	endpoint, token, err := resolveEndpointAndToken(remoteName)
+	if err != nil {
+		return err
+	}
+	if err := addServerBucketScope(context.Background(), endpoint, token, bucket, addBucketScopePayload{
+		Organization: org,
+		ProjectID:    project,
+		Path:         scopePath,
+	}); err != nil {
+		return err
+	}
+	if err := gitrepo.SetBucketMapping(org, project, bucket, prefix); err != nil {
+		return fmt.Errorf("failed to persist bucket mapping: %w", err)
+	}
+	logg.Info("bucket mapping saved", "organization", org, "project", project, "bucket", bucket, "path", prefix)
+	return nil
 }
 
 func resolveEndpointAndToken(remoteName string) (string, string, error) {
@@ -245,11 +318,44 @@ func upsertServerBucket(ctx context.Context, endpoint, token string, payload put
 	return nil
 }
 
+func addServerBucketScope(ctx context.Context, endpoint, token, bucket string, payload addBucketScopePayload) error {
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultBucketAPITimeout)
+		defer cancel()
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to encode bucket scope request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/data/buckets/"+url.PathEscape(bucket)+"/scopes", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: defaultBucketAPITimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("bucket scope request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		bodyText, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if msg := strings.TrimSpace(string(bodyText)); msg != "" {
+			return fmt.Errorf("bucket scope failed with status %d: %s", resp.StatusCode, msg)
+		}
+		return fmt.Errorf("bucket scope failed with status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func init() {
-	addCmd.Flags().StringVar(&flagOrg, "organization", "", "Organization/program name (required)")
-	addCmd.Flags().StringVar(&flagProject, "project", "", "Project ID (required)")
 	addCmd.Flags().StringVar(&flagBucket, "bucket", "", "Bucket name (required)")
-	addCmd.Flags().StringVar(&flagPath, "path", "", "Optional storage prefix as s3://<bucket>/<prefix>")
 	addCmd.Flags().StringVar(&flagRegion, "region", "", "Bucket region (required)")
 	addCmd.Flags().StringVar(&flagAccessKey, "access-key", "", "Bucket access key (required)")
 	addCmd.Flags().StringVar(&flagSecretKey, "secret-key", "", "Bucket secret key (required)")
@@ -257,6 +363,18 @@ func init() {
 	addCmd.Flags().StringVar(&flagDRSURL, "url", "", "DRS server API endpoint (optional if remote configured)")
 	addCmd.Flags().StringVar(&flagCred, "cred", "", "Gen3 credential file (optional)")
 	addCmd.Flags().StringVar(&flagToken, "token", "", "Bearer token (optional)")
-	addCmd.Flags().BoolVar(&flagForce, "force", false, "Overwrite existing local org/project mapping")
+
+	for _, scopeCmd := range []*cobra.Command{addOrganizationCmd, addProjectCmd} {
+		scopeCmd.Flags().StringVar(&flagOrg, "organization", "", "Organization/program name (required)")
+		scopeCmd.Flags().StringVar(&flagProject, "project", "", "Project ID (required for add-project)")
+		scopeCmd.Flags().StringVar(&flagPath, "path", "", "Storage root as <scheme>://<bucket>/<prefix>")
+		scopeCmd.Flags().StringVar(&flagDRSURL, "url", "", "DRS server API endpoint (optional if remote configured)")
+		scopeCmd.Flags().StringVar(&flagCred, "cred", "", "Gen3 credential file (optional)")
+		scopeCmd.Flags().StringVar(&flagToken, "token", "", "Bearer token (optional)")
+		scopeCmd.Flags().BoolVar(&flagForce, "force", false, "Overwrite existing local org/project mapping")
+	}
+
 	Cmd.AddCommand(addCmd)
+	Cmd.AddCommand(addOrganizationCmd)
+	Cmd.AddCommand(addProjectCmd)
 }

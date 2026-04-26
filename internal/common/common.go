@@ -131,15 +131,9 @@ func NormalizeOid(raw string) string {
 }
 
 func StoragePrefix(org, project string) string {
-	org = strings.TrimSpace(org)
-	project = strings.TrimSpace(project)
-	if org == "" {
-		return ""
-	}
-	if project == "" {
-		return "programs/" + org
-	}
-	return "programs/" + org + "/projects/" + project
+	_ = org
+	_ = project
+	return ""
 }
 
 type ObjectBuilder struct {
@@ -157,9 +151,6 @@ func NewObjectBuilder(bucket, project string) ObjectBuilder {
 
 func (b ObjectBuilder) Build(fileName string, checksum string, size int64, drsID string) (*drsapi.DrsObject, error) {
 	prefix := strings.Trim(strings.TrimSpace(b.StoragePrefix), "/")
-	if prefix == "" {
-		prefix = StoragePrefix(b.Organization, b.Project)
-	}
 	return BuildDrsObjWithPrefix(fileName, checksum, size, drsID, b.Bucket, b.Organization, b.Project, prefix)
 }
 
@@ -219,9 +210,6 @@ func BuildDrsObjWithOptions(fileName string, checksum string, size int64, drsID 
 	}
 
 	prefix := strings.Trim(strings.TrimSpace(opts.StoragePrefix), "/")
-	if prefix == "" {
-		prefix = StoragePrefix(opts.Organization, opts.Project)
-	}
 
 	accessURL, methodType, err := BuildAccessURL(opts.Bucket, prefix, checksum, opts.Provider, opts.AccessScheme)
 	if err != nil {

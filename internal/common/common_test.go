@@ -26,6 +26,36 @@ func TestAuthzMapFromOrgProject(t *testing.T) {
 	}
 }
 
+func TestObjectBuilderDoesNotSynthesizeGen3StoragePrefix(t *testing.T) {
+	obj, err := BuildDrsObjWithOptions("file.txt", "abc123", 10, "drs-1", ObjectLocationOptions{
+		Bucket:       "bucket",
+		Organization: "org",
+		Project:      "proj",
+	})
+	if err != nil {
+		t.Fatalf("BuildDrsObjWithOptions returned error: %v", err)
+	}
+	if obj.AccessMethods == nil || len(*obj.AccessMethods) != 1 {
+		t.Fatalf("expected access method, got %+v", obj.AccessMethods)
+	}
+	if got := (*obj.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/abc123" {
+		t.Fatalf("unexpected access url: %q", got)
+	}
+
+	obj, err = BuildDrsObjWithOptions("file.txt", "def456", 10, "drs-2", ObjectLocationOptions{
+		Bucket:        "bucket",
+		Organization:  "org",
+		Project:       "proj",
+		StoragePrefix: "program-root/project-subpath",
+	})
+	if err != nil {
+		t.Fatalf("BuildDrsObjWithOptions with prefix returned error: %v", err)
+	}
+	if got := (*obj.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/program-root/project-subpath/def456" {
+		t.Fatalf("unexpected prefixed access url: %q", got)
+	}
+}
+
 func TestAuthzMatchesScope(t *testing.T) {
 	m := map[string][]string{"org": {"proj1", "proj2"}}
 	if !AuthzMatchesScope(m, "org", "proj1") {

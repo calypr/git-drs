@@ -55,6 +55,14 @@ func WriteDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		},
 	}
+	if existing, err := ReadObject(common.DRS_OBJS_PATH, oid); err == nil && existing != nil {
+		drsObj = existing
+		drsObj.Name = &name
+		drsObj.Size = size
+		drsObj.Checksums = []drsapi.Checksum{
+			{Type: "sha256", Checksum: oid},
+		}
+	}
 	return WriteObject(common.DRS_OBJS_PATH, drsObj, oid)
 }
 
@@ -96,6 +104,21 @@ func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Read
 	}
 	size := written
 	oid := hex.EncodeToString(h.Sum(nil))
+
+	if size > 0 && size < 2048 {
+		if data, readErr := os.ReadFile(tmpPath); readErr == nil {
+			if pointerOID, pointerSize, ok := ParseLFSPointer(data); ok {
+				if _, err := dst.Write(data); err != nil {
+					return fmt.Errorf("clean: write existing pointer: %w", err)
+				}
+				if mapErr := WriteDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
+					logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
+				}
+				logger.Debug("clean: passed through existing LFS pointer", "pathname", pathname, "oid", pointerOID, "size", pointerSize)
+				return nil
+			}
+		}
+	}
 
 	// Move temp file to the final content-addressed location.
 	cachePath, err := ObjectPath(common.LFS_OBJS_PATH, oid)

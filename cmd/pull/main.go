@@ -118,20 +118,45 @@ var Cmd = &cobra.Command{
 			} else {
 				logg.Debug("bulk prefetch found no scoped objects; continuing per-object")
 			}
-		}
 
-		for _, f := range parsed.Files {
-			if f.Downloaded {
-				continue
+			prefetchedAccess := make(map[string]drsapi.AccessURL, len(prefetched))
+			if len(prefetched) > 0 {
+				objects := make([]drsapi.DrsObject, 0, len(prefetched))
+				for _, obj := range prefetched {
+					objects = append(objects, obj)
+				}
+				if resolved, err := drslookup.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
+					prefetchedAccess = resolved
+					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
+				} else {
+					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
+				}
 			}
-			dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, f.Oid)
-			if err != nil {
-				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
+			for _, f := range parsed.Files {
+				if f.Downloaded {
+					continue
+				}
+				dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, f.Oid)
+				if err != nil {
+					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
+				}
+				if obj, ok := prefetched[f.Oid]; ok {
+					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
+						objCopy := obj
+						if err := lfs.DownloadResolvedToCachePath(ctx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
+							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
+						}
+						continue
+					}
+				}
+				if err := lfs.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
+					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
+					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
+				}
 			}
-			if err := lfs.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
-				debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
-				return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
-			}
+		} else {
+			logg.Debug("no missing LFS objects to download")
 		}
 
 		if out, err := runCommand("git", "lfs", "checkout"); err != nil {

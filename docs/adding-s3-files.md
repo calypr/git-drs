@@ -74,8 +74,8 @@ For e2e/dev harnesses, `TEST_BUCKET_*` variables are also supported by command-l
 ## Prerequisites
 
 - File path must be LFS-tracked (via `.gitattributes`).
-- Remote configuration must point to the intended org/project/bucket scope.
-- The bucket credential/scope must exist on drs-server (for example via `git drs bucket add ...` or server-side setup).
+- Remote configuration must point to the intended org/project scope.
+- The bucket credential and org/project storage scope must exist on drs-server, for example via `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path s3://bucket/prefix`.
 
 ## Troubleshooting
 

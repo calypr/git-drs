@@ -201,7 +201,9 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 			authoritativeObj.Name = &name
 			authoritativeObj.Size = file.Size
 
-			// Ensure Authorizations are populated (backwards compatibility for old local records)
+			// Ensure Authorizations are populated (backwards compatibility for old local records).
+			// Existing access URLs are authoritative, especially for add-url records
+			// that point to an already existing cloud object.
 			authzMap := common.AuthzMapFromOrgProject(builder.Organization, builder.Project)
 			if authoritativeObj.AccessMethods == nil {
 				authoritativeObj.AccessMethods = &[]drsapi.AccessMethod{}
@@ -211,27 +213,6 @@ func UpdateDrsObjectsWithFiles(builder common.ObjectBuilder, lfsFiles map[string
 				if am.Authorizations == nil || len(*am.Authorizations) == 0 {
 					if authzMap != nil {
 						am.Authorizations = &authzMap
-					}
-				}
-				// Ensure URL matches current policy of namespaced CAS-style
-				// s3://bucket/{org}/{project}/HASH.
-				if builder.Bucket != "" {
-					prefix := strings.Trim(strings.TrimSpace(builder.StoragePrefix), "/")
-					if prefix == "" {
-						prefix = common.StoragePrefix(builder.Organization, builder.Project)
-					}
-					if prefix != "" {
-						url := fmt.Sprintf("s3://%s/%s/%s", builder.Bucket, prefix, file.Oid)
-						am.AccessUrl = &struct {
-							Headers *[]string `json:"headers,omitempty"`
-							Url     string    `json:"url"`
-						}{Url: url}
-					} else {
-						url := fmt.Sprintf("s3://%s/%s", builder.Bucket, file.Oid)
-						am.AccessUrl = &struct {
-							Headers *[]string `json:"headers,omitempty"`
-							Url     string    `json:"url"`
-						}{Url: url}
 					}
 				}
 			}

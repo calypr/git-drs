@@ -2,6 +2,7 @@ package smudge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -17,8 +18,9 @@ var Cmd = &cobra.Command{
 	Short: "Smudge a file by converting an LFS pointer to file content (invoked by git)",
 	Long: `git drs smudge reads potential LFS pointer content from stdin. If the input
 is a valid LFS pointer, it restores file content from the local LFS object cache
-or downloads it from the configured DRS remote. If the input is not an LFS
-pointer, content is passed through unchanged.
+or downloads it from the configured DRS remote. If no DRS remote is configured,
+the pointer is passed through unchanged. If the input is not an LFS pointer,
+content is passed through unchanged.
 
 This command mirrors 'git lfs smudge' and is intended to be configured as the
 git smudge filter:
@@ -46,6 +48,10 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
+		if errors.Is(err, config.ErrNoDefaultRemote) {
+			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
+			return lfs.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
 

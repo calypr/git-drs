@@ -53,6 +53,7 @@ const (
 )
 
 var gitDrsBinDir string
+var gitDrsTestHomeDir string
 
 type minioContainer struct {
 	containerID string
@@ -107,6 +108,16 @@ func TestMain(m *testing.M) {
 	}
 	os.Stderr.WriteString(fmt.Sprintf("building git-drs integration binary into %s\n", gitDrsBinDir))
 
+	gitDrsTestHomeDir, err = os.MkdirTemp("", "git-drs-docker-e2e-home-")
+	if err != nil {
+		os.Stderr.WriteString(fmt.Sprintf("could not create temp home dir: %v\n", err))
+		os.Exit(2)
+	}
+	_ = os.MkdirAll(filepath.Join(gitDrsTestHomeDir, ".config"), 0o755)
+	_ = os.Setenv("HOME", gitDrsTestHomeDir)
+	_ = os.Setenv("XDG_CONFIG_HOME", filepath.Join(gitDrsTestHomeDir, ".config"))
+	_ = os.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
 	binPath := filepath.Join(gitDrsBinDir, "git-drs")
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Dir = root
@@ -120,6 +131,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 	_ = os.RemoveAll(gitDrsBinDir)
+	_ = os.RemoveAll(gitDrsTestHomeDir)
 	os.Exit(code)
 }
 
@@ -168,6 +180,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 
 	t.Logf("STEP 4: Creating git repository and configuring git-drs remote...")
 	runCommand(t, workDir, nil, "git", "init", "-b", "main", repoDir)
+	runCommand(t, repoDir, nil, "git", "drs", "install")
 	configureLocalRepo(t, repoDir, gogsEnv.credentialStore)
 	runCommand(t, repoDir, nil, "git", "remote", "add", "origin", gogsEnv.repoCloneURL)
 	runCommand(t, repoDir, nil, "git", "drs", "init")
@@ -189,7 +202,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	if err := os.WriteFile(largePath, largeData, 0o644); err != nil {
 		t.Fatalf("write multipart file: %v", err)
 	}
-	runCommand(t, repoDir, nil, "git", "lfs", "track", "*.txt", "*.bin")
+	runCommand(t, repoDir, nil, "git", "drs", "track", "*.txt", "*.bin")
 	runCommand(t, repoDir, nil, "git", "config", "--local", "drs.multipart-threshold", fmt.Sprintf("%d", dockerE2EMultipartMB))
 	runCommand(t, repoDir, nil, "git", "add", ".gitattributes", "data/source.txt", "data/multipart.bin")
 	runCommand(t, repoDir, nil, "git", "commit", "-m", "docker e2e upload")
@@ -225,15 +238,15 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	t.Logf("query verified multipart.bin DID %s", largeDid)
 
 	t.Logf("STEP 6: Cloning and pulling the files back from Syfon through Gogs...")
-	runCommand(t, workDir, []string{"GIT_LFS_SKIP_SMUDGE=1"}, "git", "-c", "credential.helper=store --file "+gogsEnv.credentialStore, "clone", "--branch", "main", gogsEnv.repoCloneURL, cloneDir)
+	runCommand(t, workDir, nil, "git", "-c", "credential.helper=store --file "+gogsEnv.credentialStore, "clone", "--branch", "main", gogsEnv.repoCloneURL, cloneDir)
 	configureLocalRepo(t, cloneDir, gogsEnv.credentialStore)
+	runCommand(t, cloneDir, nil, "git", "drs", "install")
 	runCommand(t, cloneDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, cloneDir, server.url, minioEnv)
 	runCommand(t, cloneDir, nil, "git", "config", "--local", "drs.multipart-threshold", fmt.Sprintf("%d", dockerE2EMultipartMB))
 	logRepoSnapshot(t, cloneDir, "pre-pull")
 
-	largeObjectKey := dockerE2EObjectKey(largeDid)
-	restoreLargeObject := temporarilyRemoveMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, largeObjectKey)
+	restoreLargeObject := temporarilyRemoveMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, largeDid, int64(len(largeData)))
 	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin"); err == nil {
 		t.Fatalf("expected first multipart pull to fail, but it succeeded:\n%s", out)
 	} else {
@@ -387,8 +400,9 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	logRepoSnapshot(t, repoDir, "post-add-url-push")
 
 	t.Logf("STEP 7: Cloning and pulling the add-url content back through Gogs...")
-	runCommand(t, workDir, []string{"GIT_LFS_SKIP_SMUDGE=1"}, "git", "-c", "credential.helper=store --file "+gogsEnv.credentialStore, "clone", "--branch", "main", gogsEnv.repoCloneURL, cloneDir)
+	runCommand(t, workDir, nil, "git", "-c", "credential.helper=store --file "+gogsEnv.credentialStore, "clone", "--branch", "main", gogsEnv.repoCloneURL, cloneDir)
 	configureLocalRepo(t, cloneDir, gogsEnv.credentialStore)
+	runCommand(t, cloneDir, nil, "git", "drs", "install")
 	runCommand(t, cloneDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, cloneDir, server.url, minioEnv)
 	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin")
@@ -1059,8 +1073,13 @@ func seedMinIOObject(t *testing.T, client *s3.Client, bucket, key string, body [
 	}
 }
 
-func temporarilyRemoveMinIOObject(t *testing.T, client *s3.Client, bucket, key string) func() {
+func temporarilyRemoveMinIOObject(t *testing.T, client *s3.Client, bucket, oidOrKey string, expectedSize int64) func() {
 	t.Helper()
+
+	key, err := resolveMinIOObjectKey(context.Background(), client, bucket, oidOrKey, expectedSize)
+	if err != nil {
+		t.Fatalf("resolve object key for %s/%s: %v", bucket, oidOrKey, err)
+	}
 
 	resp, err := client.GetObject(context.Background(), &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
@@ -1087,8 +1106,50 @@ func temporarilyRemoveMinIOObject(t *testing.T, client *s3.Client, bucket, key s
 	}
 }
 
-func dockerE2EObjectKey(oid string) string {
-	return fmt.Sprintf("programs/%s/projects/%s/%s", dockerE2EOrganization, dockerE2EProjectID, strings.TrimSpace(oid))
+func resolveMinIOObjectKey(ctx context.Context, client *s3.Client, bucket, oidOrKey string, expectedSize int64) (string, error) {
+	candidate := strings.TrimSpace(oidOrKey)
+	if candidate == "" {
+		return "", fmt.Errorf("object id is required")
+	}
+
+	prefix := strings.TrimLeft(strings.TrimSpace(candidate), "/")
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	})
+	var keyMatches []string
+	var sizeMatches []string
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, obj := range page.Contents {
+			key := strings.TrimSpace(aws.ToString(obj.Key))
+			if key == "" {
+				continue
+			}
+			if key == candidate || key == prefix || strings.HasSuffix(key, "/"+candidate) || strings.HasSuffix(key, candidate) {
+				keyMatches = append(keyMatches, key)
+				continue
+			}
+			if expectedSize > 0 && *obj.Size == expectedSize {
+				sizeMatches = append(sizeMatches, key)
+			}
+		}
+	}
+	if len(keyMatches) == 1 {
+		return keyMatches[0], nil
+	}
+	if len(keyMatches) > 1 {
+		return "", fmt.Errorf("multiple object keys matching %q found in bucket %q: %v", candidate, bucket, keyMatches)
+	}
+	if len(sizeMatches) == 1 {
+		return sizeMatches[0], nil
+	}
+	if len(sizeMatches) > 1 {
+		return "", fmt.Errorf("no key matching %q found in bucket %q; multiple objects matched size %d: %v", candidate, bucket, expectedSize, sizeMatches)
+	}
+	return "", fmt.Errorf("no object key matching %q or size %d found in bucket %q", candidate, expectedSize, bucket)
 }
 
 func runCommand(t *testing.T, dir string, extraEnv []string, name string, args ...string) string {
@@ -1201,8 +1262,6 @@ func configureLocalRepo(t *testing.T, dir, credentialStore string) {
 	if strings.TrimSpace(credentialStore) != "" {
 		runCommand(t, dir, nil, "git", "config", "credential.helper", fmt.Sprintf("store --file %s", credentialStore))
 	}
-	runCommand(t, dir, nil, "git", "config", "lfs.basictransfersonly", "true")
-	runCommand(t, dir, nil, "git", "lfs", "install", "--local")
 	runCommand(t, dir, nil, "git", "config", "--local", "push.default", "current")
 	logRepoSnapshot(t, dir, "post-local-config")
 }
@@ -1254,10 +1313,10 @@ func logRepoSnapshot(t *testing.T, dir, label string) {
 		}
 		t.Logf("snapshot output: %s %v\n%s", args[0], args[1:], out)
 	}
-	if out, err := runCommandOutput(t, dir, nil, "git", "lfs", "env"); err == nil {
-		t.Logf("snapshot output: git lfs env\n%s", out)
+	if out, err := runCommandOutput(t, dir, nil, "git", "config", "--global", "--get-regexp", "^filter\\.drs\\."); err == nil {
+		t.Logf("snapshot output: git config --global --get-regexp ^filter\\.drs\\.\n%s", out)
 	} else {
-		t.Logf("snapshot git lfs env unavailable: %v", err)
+		t.Logf("snapshot git drs global filter config unavailable: %v", err)
 	}
 }
 

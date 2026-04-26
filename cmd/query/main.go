@@ -8,6 +8,7 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drslookup"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
@@ -22,7 +23,7 @@ func queryByChecksum(ctx context.Context, gc *config.GitContext, checksum string
 	if hashType != hash.ChecksumTypeSHA256.String() {
 		return nil, fmt.Errorf("checksum lookup currently only supports sha256 (got %q); non-sha256 support is tracked in syfon DRSService.GetObjectsByChecksum", hashType)
 	}
-	return gc.Client.DRS().GetObjectsByHashForResource(ctx, checksum, gc.Organization, gc.ProjectId)
+	return drslookup.ObjectsByHashForScope(ctx, gc, checksum)
 }
 
 func checksumTypeForString(sum string) string {

@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -175,10 +175,19 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		if statErr != nil {
 			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, path, statErr)
 		}
-		drsId := drsmap.DrsUUID(rt.Scope.Project, oid)
-		drsObject, err = localcommon.BuildDrsObjWithPrefix(filepath.Base(path), oid, stat.Size(), drsId, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.Project, rt.Scope.StoragePref)
+		drsObject, err = scopedDRSObjectForPush(rt, oid, path, stat.Size(), nil)
 		if err != nil {
 			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
+		}
+	} else {
+		stat, statErr := os.Stat(path)
+		size := int64(0)
+		if statErr == nil {
+			size = stat.Size()
+		}
+		drsObject, err = scopedDRSObjectForPush(rt, oid, path, size, drsObject)
+		if err != nil {
+			return nil, fmt.Errorf("error applying DRS scope for oid %s: %v", oid, err)
 		}
 	}
 	rt.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS object (did: %s)", oid, drsObject.Id))
@@ -193,7 +202,7 @@ func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, pa
 		if strings.Contains(err.Error(), "already exists") {
 			if !rt.Tuning.Upsert {
 				rt.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
-				if recs, lookupErr := rt.API.Client.DRS().GetObjectsByHashForResource(ctx, oid, rt.Scope.Organization, rt.Scope.Project); lookupErr == nil && len(recs) > 0 {
+				if recs, lookupErr := drslookup.ObjectsByHashForScope(ctx, rt.API, oid); lookupErr == nil && len(recs) > 0 {
 					if match, matchErr := drsmap.FindMatchingRecord(recs, rt.Scope.Organization, rt.Scope.Project); matchErr == nil && match != nil {
 						drsObject = match
 					}

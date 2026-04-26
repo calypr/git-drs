@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslookup"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycommon "github.com/calypr/syfon/client/common"
 	syrequest "github.com/calypr/syfon/client/request"
@@ -50,16 +51,7 @@ func newScopedBackend(ctx context.Context, drsCtx *config.GitContext, oid string
 		return nil, fmt.Errorf("DRS client unavailable")
 	}
 
-	records, err := drsCtx.Client.DRS().GetObjectsByHashForResource(ctx, oid, drsCtx.Organization, drsCtx.ProjectId)
-	if err != nil {
-		return nil, err
-	}
-	if len(records) == 0 {
-		return nil, fmt.Errorf("no matching DRS record found for oid %s", oid)
-	}
-	match := &records[0]
-
-	accessURL, err := drsCtx.Client.DRS().ResolveResourceAccessURL(ctx, oid, drsCtx.Organization, drsCtx.ProjectId)
+	accessURL, match, err := drslookup.AccessURLForHashScope(ctx, drsCtx, oid)
 	if err != nil {
 		return nil, err
 	}

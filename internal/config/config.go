@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -24,6 +25,8 @@ const (
 	configSection          = "drs"
 	remoteSubsectionPrefix = "remote."
 )
+
+var ErrNoDefaultRemote = errors.New("no default remote configured")
 
 func AllRemoteTypes() []RemoteType {
 	return []RemoteType{Gen3ServerType, LocalServerType}
@@ -87,10 +90,11 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 func (c Config) GetDefaultRemote() (Remote, error) {
 	if c.DefaultRemote == "" {
 		return "", fmt.Errorf(
-			"no default remote configured.\n"+
+			"%w.\n"+
 				"Set one with: git drs remote set <name>\n"+
 				"Available remotes: %v\n"+
 				"Config: %v\n",
+			ErrNoDefaultRemote,
 			c.listRemoteNames(),
 			c,
 		)

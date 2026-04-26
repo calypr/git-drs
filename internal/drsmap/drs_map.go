@@ -15,6 +15,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -47,17 +48,19 @@ func SyncObjectsWithServer(drsClient *config.GitContext, drsObjects map[string]*
 	for h := range drsObjects {
 		hashes = append(hashes, h)
 	}
-	bulkPage, bulkErr := drsClient.Client.DRS().BatchGetObjectsByHash(context.Background(), hashes)
-	if bulkErr != nil {
-		return fmt.Errorf("bulk hash lookup failed: %w", bulkErr)
-	}
-	bulkByHash := make(map[string][]drsapi.DrsObject, len(bulkPage.DrsObjects))
-	for _, obj := range bulkPage.DrsObjects {
-		hInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
-		if hInfo.SHA256 == "" {
-			continue
+	bulkByHash := make(map[string][]drsapi.DrsObject, len(hashes))
+	for _, h := range hashes {
+		objects, err := drslookup.ObjectsByHash(context.Background(), drsClient, h)
+		if err != nil {
+			return fmt.Errorf("hash lookup failed for %s: %w", h, err)
 		}
-		bulkByHash[hInfo.SHA256] = append(bulkByHash[hInfo.SHA256], obj)
+		for _, obj := range objects {
+			hInfo := hash.ConvertDrsChecksumsToHashInfo(obj.Checksums)
+			if hInfo.SHA256 == "" {
+				continue
+			}
+			bulkByHash[hInfo.SHA256] = append(bulkByHash[hInfo.SHA256], obj)
+		}
 	}
 
 	// 2. Identify missing records by hash.

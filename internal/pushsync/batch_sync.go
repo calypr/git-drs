@@ -9,6 +9,7 @@ import (
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -84,17 +85,19 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 }
 
 func (s *batchSyncSession) lookupMetadata() error {
-	page, err := s.rt.API.Client.DRS().BatchGetObjectsByHash(s.ctx, s.oids)
-	if err != nil {
-		return fmt.Errorf("bulk hash lookup failed: %w", err)
-	}
-	s.existingByHash = make(map[string][]drsapi.DrsObject, len(page.DrsObjects))
-	for _, obj := range page.DrsObjects {
-		oid := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
-		if oid == "" {
-			continue
+	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
+	for _, oid := range s.oids {
+		objects, err := drslookup.ObjectsByHash(s.ctx, s.rt.API, oid)
+		if err != nil {
+			return fmt.Errorf("hash lookup failed for oid %s: %w", oid, err)
 		}
-		s.existingByHash[oid] = append(s.existingByHash[oid], obj)
+		for _, obj := range objects {
+			objOID := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+			if objOID == "" {
+				continue
+			}
+			s.existingByHash[objOID] = append(s.existingByHash[objOID], obj)
+		}
 	}
 	return nil
 }
@@ -143,18 +146,67 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 }
 
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
-	if localObj, err := drsmap.DrsInfoFromOid(oid); err == nil && localObj != nil {
-		return localObj, nil
-	}
 	file := s.filesByOID[oid]
+	if localObj, err := drsmap.DrsInfoFromOid(oid); err == nil && localObj != nil {
+		return scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
+	}
 	stat, err := os.Stat(file.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, err)
 	}
-	did := drsmap.DrsUUID(s.rt.Scope.Project, oid)
-	obj, err := localcommon.BuildDrsObjWithPrefix(filepath.Base(file.Name), oid, stat.Size(), did, s.rt.Scope.Bucket, s.rt.Scope.Organization, s.rt.Scope.Project, s.rt.Scope.StoragePref)
+	obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, stat.Size(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build drs object for oid %s: %w", oid, err)
+	}
+	return obj, nil
+}
+
+func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64, existing *drsapi.DrsObject) (*drsapi.DrsObject, error) {
+	if rt == nil {
+		return existing, nil
+	}
+	if existing != nil && size <= 0 {
+		size = existing.Size
+	}
+	if size <= 0 {
+		if stat, err := os.Stat(path); err == nil {
+			size = stat.Size()
+		}
+	}
+
+	name := filepath.Base(path)
+	if existing != nil && existing.Name != nil && *existing.Name != "" {
+		name = *existing.Name
+	}
+	if name == "" || name == "." {
+		name = oid
+	}
+
+	did := drsmap.DrsUUID(rt.Scope.Project, oid)
+	if existing != nil && existing.Id != "" {
+		did = existing.Id
+	}
+
+	obj, err := localcommon.BuildDrsObjWithPrefix(name, oid, size, did, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.Project, rt.Scope.StoragePref)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return obj, nil
+	}
+
+	obj.Aliases = existing.Aliases
+	obj.Contents = existing.Contents
+	obj.Description = existing.Description
+	obj.MimeType = existing.MimeType
+	if existing.Version != nil {
+		obj.Version = existing.Version
+	}
+	if !existing.CreatedTime.IsZero() {
+		obj.CreatedTime = existing.CreatedTime
+	}
+	if existing.UpdatedTime != nil {
+		obj.UpdatedTime = existing.UpdatedTime
 	}
 	return obj, nil
 }

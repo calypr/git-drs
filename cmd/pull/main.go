@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -67,18 +69,24 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("git pull failed for remote %q: %s", remote, msg)
 		}
 
-		out, err := runCommand("git", "lfs", "ls-files", "--json")
-		if err != nil {
-			msg := strings.TrimSpace(string(out))
-			if msg == "" {
-				msg = err.Error()
-			}
-			return fmt.Errorf("git lfs ls-files failed: %s", msg)
-		}
 		var parsed struct {
 			Files []lfs.LfsFileInfo `json:"files"`
 		}
-		if err := lfsjsonUnmarshal(out, &parsed); err != nil {
+		out, err := runCommand("git", "lfs", "ls-files", "--json")
+		if err != nil {
+			msg := commandMessage(out, err)
+			if !isMissingGitLFS(msg) {
+				return fmt.Errorf("git lfs ls-files failed: %s", msg)
+			}
+			lfsFiles, inventoryErr := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, logg)
+			if inventoryErr != nil {
+				return fmt.Errorf("git lfs ls-files failed: %s; fallback inventory failed: %w", msg, inventoryErr)
+			}
+			parsed.Files = make([]lfs.LfsFileInfo, 0, len(lfsFiles))
+			for _, f := range lfsFiles {
+				parsed.Files = append(parsed.Files, f)
+			}
+		} else if err := lfsjsonUnmarshal(out, &parsed); err != nil {
 			return fmt.Errorf("failed to parse git lfs ls-files output: %w", err)
 		}
 
@@ -97,22 +105,18 @@ var Cmd = &cobra.Command{
 		}
 
 		if len(missingOIDs) > 0 {
-			if byHash, err := drsCtx.Client.DRS().BatchGetObjectsByHash(ctx, missingOIDs); err == nil {
-				prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
-				for _, oid := range missingOIDs {
-					recs := byHash.DrsObjects
-					if len(recs) == 0 {
-						continue
-					}
-					match, matchErr := drsmap.FindMatchingRecord(recs, drsCtx.Organization, drsCtx.ProjectId)
-					if matchErr != nil || match == nil {
-						continue
-					}
-					prefetched[oid] = *match
+			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
+			for _, oid := range missingOIDs {
+				recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
+				if err != nil || len(recs) == 0 {
+					continue
 				}
+				prefetched[oid] = recs[0]
+			}
+			if len(prefetched) > 0 {
 				logg.Debug(fmt.Sprintf("prefetched %d objects for pull", len(prefetched)))
 			} else {
-				logg.Debug(fmt.Sprintf("bulk prefetch failed; continuing per-object: %v", err))
+				logg.Debug("bulk prefetch found no scoped objects; continuing per-object")
 			}
 		}
 
@@ -131,15 +135,49 @@ var Cmd = &cobra.Command{
 		}
 
 		if out, err := runCommand("git", "lfs", "checkout"); err != nil {
-			msg := strings.TrimSpace(string(out))
-			if msg == "" {
-				msg = err.Error()
+			msg := commandMessage(out, err)
+			if !isMissingGitLFS(msg) {
+				return fmt.Errorf("git lfs checkout failed: %s", msg)
 			}
-			return fmt.Errorf("git lfs checkout failed: %s", msg)
+		}
+		if err := checkoutDownloadedFiles(parsed.Files); err != nil {
+			return err
 		}
 
 		return nil
 	},
+}
+
+func commandMessage(out []byte, err error) string {
+	msg := strings.TrimSpace(string(out))
+	if msg == "" && err != nil {
+		msg = err.Error()
+	}
+	return msg
+}
+
+func isMissingGitLFS(msg string) bool {
+	return strings.Contains(msg, "git: 'lfs' is not a git command")
+}
+
+func checkoutDownloadedFiles(files []lfs.LfsFileInfo) error {
+	for _, f := range files {
+		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
+			continue
+		}
+		srcPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, f.Oid)
+		if err != nil {
+			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
+		}
+		payload, err := os.ReadFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
+		}
+		if err := os.WriteFile(f.Name, payload, 0o644); err != nil {
+			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
+		}
+	}
+	return nil
 }
 
 var lfsjsonUnmarshal = func(data []byte, v any) error {
@@ -147,7 +185,7 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContext, oid string) string {
-	recs, err := drsCtx.Client.DRS().GetObjectsByHashForResource(ctx, oid, drsCtx.Organization, drsCtx.ProjectId)
+	recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}
@@ -155,13 +193,7 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContex
 		return fmt.Sprintf("oid=%s records=0", oid)
 	}
 
-	match, matchErr := drsmap.FindMatchingRecord(recs, drsCtx.Organization, drsCtx.ProjectId)
-	if matchErr != nil {
-		return fmt.Sprintf("oid=%s records=%d match_error=%v", oid, len(recs), matchErr)
-	}
-	if match == nil {
-		return fmt.Sprintf("oid=%s records=%d no_project_match org=%s project=%s", oid, len(recs), drsCtx.Organization, drsCtx.ProjectId)
-	}
+	match := &recs[0]
 
 	methods := make([]string, 0)
 	if match.AccessMethods != nil {

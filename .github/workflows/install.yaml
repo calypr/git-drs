@@ -2,6 +2,8 @@ name: Install Script Test
 
 on:
   push:
+    branches: [ main, master, develop ]
+    tags: [ "v*" ]
   release:
   workflow_dispatch:
 
@@ -36,4 +38,3 @@ jobs:
           # In this single-step test, we check if it works by calling it directly if not in PATH yet
           export PATH="$PATH:$HOME/.local/bin"
           git-drs --help
-

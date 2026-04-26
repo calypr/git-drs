@@ -41,7 +41,12 @@ jobs:
           fi
           ref="$version"
           if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
-            ref="${BASH_REMATCH[1]}"
+            short_ref="${BASH_REMATCH[1]}"
+            ref="$(git ls-remote https://github.com/calypr/syfon.git "refs/heads/*" "refs/tags/*" | awk -v short="$short_ref" 'index($1, short) == 1 { print $1; exit }')"
+            if [[ -z "$ref" ]]; then
+              echo "Could not resolve Syfon pseudo-version commit $short_ref to a full Git SHA" >&2
+              exit 1
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"

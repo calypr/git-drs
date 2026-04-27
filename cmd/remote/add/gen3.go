@@ -6,12 +6,11 @@ import (
 	"log/slog"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/auth"
-	"github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/syfon/client/conf"
 	"github.com/spf13/cobra"
 )
@@ -57,25 +56,19 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 	resolvedBucket := strings.TrimSpace(bucket)
 	resolvedStoragePrefix := ""
 	if strings.TrimSpace(organization) != "" {
-		m, ok, err := gitrepo.GetBucketMapping(organization, project)
+		scope, err := gitrepo.ResolveBucketScope(organization, project, resolvedBucket, "")
 		if err != nil {
 			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
 		}
-		if ok {
-			if resolvedBucket == "" {
-				resolvedBucket = strings.TrimSpace(m.Bucket)
-			} else if strings.TrimSpace(m.Bucket) != "" && !strings.EqualFold(strings.TrimSpace(m.Bucket), resolvedBucket) {
-				return fmt.Errorf("bucket %q conflicts with mapping bucket %q for organization=%q project=%q", resolvedBucket, m.Bucket, organization, project)
-			}
-			resolvedStoragePrefix = strings.TrimSpace(m.Prefix)
-		}
+		resolvedBucket = strings.TrimSpace(scope.Bucket)
+		resolvedStoragePrefix = strings.TrimSpace(scope.Prefix)
 	}
 	if resolvedBucket == "" {
 		if strings.TrimSpace(organization) == "" {
 			return fmt.Errorf("bucket is required when organization is empty")
 		}
 		if strings.TrimSpace(resolvedBucket) == "" {
-			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add --organization %s --project %s --bucket <name> [--path ...]`)", organization, project)
+			return fmt.Errorf("bucket is required (or configure mapping first with `git drs bucket add-project --organization %s --project %s --path <scheme>://<bucket>/<prefix>`)", organization, project)
 		}
 	}
 
@@ -121,7 +114,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 	}
 
 	remoteGen3 := config.RemoteSelect{
-		Gen3: &drs.Gen3Remote{
+		Gen3: &config.Gen3Remote{
 			Endpoint:      apiEndpoint,
 			ProjectID:     project,
 			Organization:  organization,

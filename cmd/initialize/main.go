@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/gitrepo"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +96,10 @@ func initGitConfig() error {
 	configs := map[string]string{
 		"lfs.allowincompletepush": "false",
 		"lfs.concurrenttransfers": strconv.Itoa(transfers),
+		// Use git-drs as the long-running filter-process handler.
+		// This replaces the default git-lfs smudge/clean per-invocation commands
+		// with a single persistent process that calls the DRS transfer stack directly.
+		"filter.drs.process": "git-drs filter",
 		// Canonical git-drs config keys consumed by clients.
 		"drs.upsert":                  strconv.FormatBool(upsert),
 		"drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),
@@ -139,8 +143,8 @@ cat > "$TMPFILE"
 # Run DRS preparation
 git drs pre-push-prepare "$remote" "$url" < "$TMPFILE" || exit 1
 
-# Run LFS push
-exec git lfs pre-push "$remote" "$url" < "$TMPFILE"
+# The managed git-drs push command handles upload/register directly.
+# The hook only stages metadata before the Git push proceeds.
 `
 	hookScript := "#!/bin/sh\n" + hookBody
 

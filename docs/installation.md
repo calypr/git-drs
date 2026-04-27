@@ -43,7 +43,14 @@ git lfs install --skip-smudge
    git-drs --help
    ```
 
-4. **Get Credentials**
+4. **Install Global Git Filters for git-drs**
+   ```bash
+   git drs install
+   ```
+
+   This writes the `filter.drs` settings to your `~/.gitconfig`.
+
+5. **Get Credentials**
    - Log in to your data commons (e.g., https://calypr-public.ohsu.edu/)
    - Click your email → Profile → Create API Key → Download JSON
    - Note the download path for later configuration
@@ -99,6 +106,7 @@ git lfs install --skip-smudge
 4. **Verify Installation**
    ```bash
    git-drs version
+   git drs install
    ```
 
 ## Build from Source
@@ -130,6 +138,9 @@ git lfs version
 
 # View configured remotes (after setup)
 git drs remote list
+
+# Verify git-drs global filter configuration
+git config --global --get filter.drs.process
 ```
 
 ## Next Steps

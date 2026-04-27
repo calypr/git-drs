@@ -17,13 +17,12 @@ Git DRS integrates with Git through several mechanisms:
 
 **Pre-push Hook**: `git drs pre-push-prepare` (internal)
 - Triggered automatically before each push
-- Stages pending metadata for new/changed LFS files
-- Hook then runs standard `git lfs pre-push`
+- Stages pending metadata for new/changed files
+- The hook prepares the repo for `git drs push` to complete upload and registration
 
-**Managed Push/Pull + LFS Batch Compatibility**
-- `git drs push` performs register/upload workflow directly via git-drs clients
-- `git drs pull` performs download workflow directly via git-drs clients
-- Standard Git LFS compatibility is provided through `/info/lfs` batch endpoints
+**Managed Push/Pull**
+- `git drs push` performs the register/upload workflow directly through the syfon client stack
+- `git drs pull` performs the download workflow directly through the syfon client stack
 
 ### File Processing Flow
 
@@ -36,20 +35,17 @@ Git DRS integrates with Git through several mechanisms:
 4. Developer: git push
 5. Git Hook: git drs pre-push-prepare
    - Stages pending metadata for LFS verify
-6. Git Hook: git lfs pre-push
-   - Executes standard LFS push flow
-7. Git DRS:
-   - `git drs push` can run register/upload directly
-   - `git drs pull` can run download directly
+6. Git DRS:
+   - `git drs push` runs register/upload directly
+   - `git drs pull` runs download directly
 ```
 
 ## Current Data Path
 
-Git DRS no longer uses a Git LFS custom transfer agent.
+Git DRS no longer uses a custom transfer agent.
 
 - Upload path (primary): `git drs push` discovers local LFS pointers, bulk-registers missing objects, checks validity, and uploads missing bits.
 - Download path (primary): `git drs pull` resolves object records and downloads into local LFS object storage.
-- Compatibility path: stock `git-lfs` can use server `/info/lfs` endpoints (`objects/batch`, verify, metadata staging) for interoperability.
 
 ## Repository Structure
 

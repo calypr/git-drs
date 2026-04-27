@@ -1,0 +1,86 @@
+name: Syfon Backend E2E
+
+on:
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Syfon Docker E2E (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: full
+            run_regex: "TestGitDrsDocker(MinIOE2E|BucketScopePathsE2E)"
+          - name: add-url
+            run_regex: "TestGitDrsDockerAddURLE2E"
+    steps:
+      - name: Check out git-drs
+        uses: actions/checkout@v4
+        with:
+          path: git-drs
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: git-drs/go.mod
+
+      - name: Resolve Syfon ref from go.mod
+        id: syfon-ref
+        working-directory: git-drs
+        shell: bash
+        run: |
+          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
+          if [[ -z "$version" || "$version" == "<nil>" ]]; then
+            version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon/client)"
+          fi
+          ref="$version"
+          if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
+            short_ref="${BASH_REMATCH[1]}"
+            ref="$(git ls-remote https://github.com/calypr/syfon.git "refs/heads/*" "refs/tags/*" | awk -v short="$short_ref" 'index($1, short) == 1 { print $1; exit }')"
+            if [[ -z "$ref" ]]; then
+              echo "Could not resolve Syfon pseudo-version commit $short_ref to a full Git SHA" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
+
+      - name: Check out Syfon
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/syfon
+          ref: ${{ steps.syfon-ref.outputs.ref }}
+          path: syfon
+          fetch-depth: 1
+
+      - name: Check out data-client
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/data-client
+          path: data-client
+          fetch-depth: 1
+
+      - name: Install test prerequisites
+        working-directory: git-drs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs
+          git lfs install --local
+
+      - name: Run Docker-backed git-drs integration tests
+        working-directory: git-drs
+        env:
+          SYFON_E2E_DOCKER: "1"
+          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
+        run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

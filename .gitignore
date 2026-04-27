@@ -6,6 +6,8 @@
 git-drs
 venv*
 .gocache/
+.gomodcache/
+.gopath/
 tests/venv/
 tests/monorepos/TEST/
 coverage/*.out

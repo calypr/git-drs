@@ -6,6 +6,38 @@ Complete reference for Git DRS and related Git LFS commands.
 
 ## Git DRS Commands
 
+### `git drs install`
+
+Install global Git filter configuration for git-drs. This is equivalent in purpose to running `git-lfs install` for the git-drs filter.
+
+**Usage:**
+
+```bash
+git drs install
+```
+
+**What it does:**
+
+- Sets global Git config for `filter.drs.clean`
+- Sets global Git config for `filter.drs.smudge`
+- Sets global Git config for `filter.drs.process`
+- Sets global Git config for `filter.drs.required`
+
+**Resulting `~/.gitconfig` entries:**
+
+```ini
+[filter "drs"]
+    clean = git-drs clean -- %f
+    smudge = git-drs smudge -- %f
+    process = git-drs filter
+    required = true
+```
+
+**When to run:**
+
+- **Once per machine/user** after installing `git-drs`
+- Re-run any time you want to reset these global filter values
+
 ### `git drs init`
 
 Initialize Git DRS in a repository. Sets up Git DRS hooks and creates a `.git/drs/` directory that Git ignores automatically.
@@ -60,8 +92,9 @@ Add a Gen3 DRS server configuration.
 git drs remote add gen3 <remote-name> \
     --url <server-url> \
     --cred <credentials-file> \
+    --organization <program> \
     --project <project-id> \
-    --bucket <bucket-name>
+    [--bucket <bucket-name>]
 ```
 
 **Options:**
@@ -69,8 +102,9 @@ git drs remote add gen3 <remote-name> \
 - `--url <url>`: Gen3 server endpoint (required)
 - `--cred <file>`: Path to credentials JSON file (required)
 - `--token <token>`: Token for temporary access (alternative to --cred)
-- `--project <id>`: Project ID in format `<program>-<project>` (required)
-- `--bucket <name>`: S3 bucket name (required)
+- `--organization <name>`: Program/organization scope used for bucket mapping
+- `--project <id>`: Project ID (required)
+- `--bucket <name>`: Bucket name fallback when no org/project mapping is configured
 
 **Examples:**
 
@@ -79,19 +113,19 @@ git drs remote add gen3 <remote-name> \
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
-    --project my-project \
-    --bucket my-bucket
+    --organization my-program \
+    --project my-project
 
 # Add staging remote
 git drs remote add gen3 staging \
     --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
-    --project staging-project \
-    --bucket staging-bucket
+    --organization staging-program \
+    --project staging-project
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
-**Important:** A bucket mapping for the target `organization/project` must already exist (typically created once by a steward/admin via `git drs bucket add ...`). Without that mapping, push/pull operations will fail.
+**Important:** A bucket mapping for the target `organization/project` must already exist, typically created once by a steward/admin with `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path <scheme>://<bucket>/<prefix>`. Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
 
@@ -133,29 +167,6 @@ git drs remote set staging
 git drs remote set production
 
 # Verify change
-git drs remote list
-```
-
-
-#### `git drs remote remove <name>` / `git drs remote rm <name>`
-
-Remove a configured DRS remote. If you remove the current default remote, Git DRS automatically selects another configured remote as the new default.
-
-**Usage:**
-
-```bash
-git drs remote remove <remote-name>
-# alias
-git drs remote rm <remote-name>
-```
-
-**Examples:**
-
-```bash
-# Remove an old staging remote
-git drs remote remove staging
-
-# Confirm remaining remotes and default
 git drs remote list
 ```
 
@@ -291,13 +302,49 @@ Display Git DRS version information.
 git drs version
 ```
 
+### `git drs track [pattern ...]`
+
+Manage Git LFS tracking patterns from Git DRS.
+
+**View tracked patterns:**
+
+```bash
+git drs track
+```
+
+**Track one or more patterns:**
+
+```bash
+git drs track "*.bam"
+git drs track "*.bam" "data/**"
+```
+
+**Options:**
+
+- `--verbose`: Show detailed Git LFS output
+- `--dry-run`: Show what would change without writing `.gitattributes`
+
+### `git drs untrack <pattern> [pattern ...]`
+
+Remove one or more Git LFS tracking patterns.
+
+```bash
+git drs untrack "*.bam"
+git drs untrack "*.bam" "data/**"
+```
+
+**Options:**
+
+- `--verbose`: Show detailed Git LFS output
+- `--dry-run`: Show what would change without writing `.gitattributes`
+
 ### Internal Commands
 
 These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
 - `git drs pre-push-prepare`: Stage DRS metadata before push
-- `git lfs pre-push`: Standard Git LFS push flow (invoked by pre-push hook)
+- `git lfs pre-push`: Optional Git LFS compatibility push flow (invoked by the pre-push hook when enabled)
 
 ## Git LFS Commands
 
@@ -429,7 +476,7 @@ Clone repository. Use with Git DRS initialization:
 git clone <repo-url>
 cd <repo-name>
 git drs init
-git drs remote add gen3 production --cred /path/to/credentials.json --url ... --project ... --bucket ...
+git drs remote add gen3 production --cred /path/to/credentials.json --url ... --organization ... --project ...
 ```
 
 ## Workflow Examples
@@ -482,8 +529,8 @@ git drs init
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
-    --project my-project \
-    --bucket my-bucket
+    --organization my-program \
+    --project my-project
 
 # 4. Set up file tracking
 git lfs track "*.bam"
@@ -506,14 +553,14 @@ git push
 git drs remote add gen3 staging \
     --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
-    --project staging-project \
-    --bucket staging-bucket
+    --organization staging-program \
+    --project staging-project
 
 git drs remote add gen3 production \
     --url https://calypr-public.ohsu.edu \
     --cred /path/to/prod-credentials.json \
-    --project prod-project \
-    --bucket prod-bucket
+    --organization prod-program \
+    --project prod-project
 
 # 2. Fetch metadata from staging
 git drs fetch staging

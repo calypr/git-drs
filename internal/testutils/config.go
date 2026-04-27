@@ -6,8 +6,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/config"
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,7 +84,7 @@ func CreateDefaultTestConfig(t *testing.T, tmpDir string) *config.Config {
 		DefaultRemote: config.Remote(config.ORIGIN),
 		Remotes: map[config.Remote]config.RemoteSelect{
 			config.Remote(config.ORIGIN): {
-				Gen3: &drs.Gen3Remote{
+				Gen3: &config.Gen3Remote{
 					Endpoint:  "https://test.gen3.org",
 					ProjectID: "test-project",
 					Bucket:    "test",

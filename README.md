@@ -41,6 +41,9 @@ git lfs install --skip-smudge
 
 # Install Git DRS
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)" -- $GIT_DRS_VERSION
+
+# Install global Git filter configuration for git-drs
+git drs install
 ```
 
 ### Basic Usage
@@ -58,12 +61,20 @@ git drs remote add gen3 production \
     --bucket my-bucket
 
 # Required prerequisite (usually steward/admin setup):
-# map org/project to bucket + prefix before users run push/pull
+# create bucket credentials, then map org/project to full storage roots before users run push/pull
 git drs bucket add production \
+    --bucket my-bucket \
+    --region us-east-1 \
+    --access-key "$AWS_ACCESS_KEY_ID" \
+    --secret-key "$AWS_SECRET_ACCESS_KEY" \
+    --s3-endpoint https://s3.amazonaws.com
+git drs bucket add-organization production \
+    --organization my-program \
+    --path s3://my-bucket/my-program
+git drs bucket add-project production \
     --organization my-program \
     --project my-project \
-    --bucket my-bucket \
-    --path my-program/my-project
+    --path s3://my-bucket/my-program/my-project
 
 # Track files
 git lfs track "*.bam"
@@ -103,6 +114,7 @@ For detailed setup and usage information:
 
 | Command                | Description                           |
 | ---------------------- | ------------------------------------- |
+| `git drs install`      | Install global git-drs filter config  |
 | `git drs init`         | Initialize repository                 |
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |

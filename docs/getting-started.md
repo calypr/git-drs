@@ -354,7 +354,7 @@ Use this flow when developing against a local `drs-server` instead of hosted Gen
 
    ```bash
    git drs pull
-   # or Git LFS compatibility path
+   # or the Git LFS compatibility path
    git lfs pull
    ```
 

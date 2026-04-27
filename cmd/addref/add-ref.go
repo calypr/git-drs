@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
-	"github.com/calypr/git-drs/lfs"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +42,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.API.GetObject(context.Background(), drsUri)
+		obj, err := client.Client.DRS().GetObject(context.Background(), drsUri)
 		if err != nil {
 			return err
 		}
@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		err = lfs.CreateLfsPointer(obj, dstPath)
+		err = lfs.CreateLfsPointer(&obj, dstPath)
 		return err
 	},
 }

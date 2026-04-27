@@ -98,6 +98,7 @@ INDEXD_BASE="${DRS_URL%/}/index"
 CREATED_TEST_BUCKET=false
 HAS_DRS_API=false
 HAS_DRS_BULK_DELETE=false
+HAS_DRS_BULK_ACCESS=false
 CREATED_GITHUB_REPO=false
 GITHUB_OWNER_REPO=""
 GITHUB_REPO_WEB_URL=""
@@ -793,9 +794,10 @@ detect_api_capabilities() {
   if [[ "$SERVER_MODE" == "local" ]]; then
     HAS_DRS_API=true
     HAS_DRS_BULK_DELETE=true
+    HAS_DRS_BULK_ACCESS=true
     return
   fi
-  local out status delete_out delete_status delete_body
+  local out status delete_out delete_status delete_body access_out access_status access_body
   out="$(mktemp)"
   status="$(curl -sS -o "$out" -w '%{http_code}' \
     -H "Authorization: Bearer $GEN3_TOKEN" \
@@ -809,6 +811,7 @@ detect_api_capabilities() {
   rm -f "$out"
 
   HAS_DRS_BULK_DELETE=false
+  HAS_DRS_BULK_ACCESS=false
   if [[ "$HAS_DRS_API" == "true" ]]; then
     delete_body='{"bulk_object_ids":[],"delete_storage_data":false}'
     delete_out="$(mktemp)"
@@ -824,9 +827,24 @@ detect_api_capabilities() {
       200|204|400|401|403|422) HAS_DRS_BULK_DELETE=true ;;
       *) HAS_DRS_BULK_DELETE=false ;;
     esac
+
+    access_body='{"bulk_object_access_ids":[]}'
+    access_out="$(mktemp)"
+    access_status="$(curl -sS -o "$access_out" -w '%{http_code}' \
+      -X POST \
+      -H "Authorization: Bearer $GEN3_TOKEN" \
+      -H "Accept: application/json" \
+      -H "Content-Type: application/json" \
+      "${API_BASE}/objects/access" \
+      -d "$access_body" || true)"
+    rm -f "$access_out"
+    case "$access_status" in
+      200|400|401|403|422) HAS_DRS_BULK_ACCESS=true ;;
+      *) HAS_DRS_BULK_ACCESS=false ;;
+    esac
   fi
 
-  log "API capability: DRS=$HAS_DRS_API bulk_delete=$HAS_DRS_BULK_DELETE"
+  log "API capability: DRS=$HAS_DRS_API bulk_delete=$HAS_DRS_BULK_DELETE bulk_access=$HAS_DRS_BULK_ACCESS"
 }
 
 auth_preflight() {
@@ -1298,10 +1316,12 @@ lfs_batch_diag() {
 main() {
   phase "validation"
   require_cmd git
-  require_cmd git-lfs
   require_cmd git-drs
   require_cmd curl
   require_cmd jq
+  if [[ "$LFS_PULL_COMPAT" == "true" ]]; then
+    require_cmd git-lfs
+  fi
   validate_required_config
   phase "auth-setup"
   resolve_auth_from_profile_if_needed
@@ -1445,8 +1465,8 @@ main() {
     ALL_FILES+=("$f")
   done
 
-  log "Tracking and committing LFS files"
-  git lfs track "*.bin"
+  log "Tracking and committing DRS files"
+  git drs track "*.bin"
   git add .gitattributes data/*.bin
   git commit -m "e2e(remote): add expanded dataset (single, multipart, extras)" >/dev/null
 
@@ -1646,10 +1666,10 @@ main() {
   echo "$single_obj" | jq -e --arg did "$single_drs_id" '.id == $did' >/dev/null
   echo "$multi_obj" | jq -e --arg did "$multi_drs_id" '.id == $did' >/dev/null
   echo "$single_obj" | jq -e --arg bucket "$active_bucket" --arg org "$ORGANIZATION" --arg proj "$PROJECT_ID" '
-    any(.access_methods[]?; (.access_url.url // "") | startswith("s3://" + $bucket + "/" + $org + "/" + $proj + "/"))
+    any(.auth[$org][$proj][]?; startswith("s3://" + $bucket + "/"))
   ' >/dev/null
   echo "$multi_obj" | jq -e --arg bucket "$active_bucket" --arg org "$ORGANIZATION" --arg proj "$PROJECT_ID" '
-    any(.access_methods[]?; (.access_url.url // "") | startswith("s3://" + $bucket + "/" + $org + "/" + $proj + "/"))
+    any(.auth[$org][$proj][]?; startswith("s3://" + $bucket + "/"))
   ' >/dev/null
 
   api_json OPTIONS "$API_BASE/objects/$single_drs_id" "" "200,204" >/dev/null
@@ -1674,7 +1694,7 @@ main() {
     log "Skipping single-object /access check (no access_id present)"
   fi
 
-  if [[ -n "$single_access_id" && -n "$multi_access_id" ]]; then
+  if [[ "$HAS_DRS_BULK_ACCESS" == "true" && -n "$single_access_id" && -n "$multi_access_id" ]]; then
     local bulk_access_body bulk_access_resp
     bulk_access_body="$(jq -n \
       --arg s "$single_drs_id" --arg sid "$single_access_id" \
@@ -1682,6 +1702,8 @@ main() {
       '{bulk_object_access_ids: [{bulk_object_id:$s, bulk_access_ids:[$sid]}, {bulk_object_id:$m, bulk_access_ids:[$mid]}]}')"
     bulk_access_resp="$(api_json POST "$API_BASE/objects/access" "$bulk_access_body" "200")"
     echo "$bulk_access_resp" | jq -e '.summary.requested >= 2 and .summary.resolved >= 2' >/dev/null
+  elif [[ "$HAS_DRS_BULK_ACCESS" != "true" ]]; then
+    log "Skipping bulk /objects/access check: endpoint not available"
   else
     log "Skipping bulk /objects/access check (missing access_id on at least one object)"
   fi
@@ -1718,7 +1740,7 @@ main() {
   validity_body="$(jq -n --arg s "$single_oid" --arg m "$multi_oid" '{sha256: [$s, $m]}')"
   if [[ "$RUN_INTERNAL_API_CHECKS" == "true" ]]; then
     log "Running internal API checks"
-    validity_resp="$(api_json POST "${DRS_URL%/}/index/v1/sha256/validity" "$validity_body" "200")"
+    validity_resp="$(api_json POST "${INDEXD_BASE}/bulk/sha256/validity" "$validity_body" "200")"
     echo "$validity_resp" | jq -e --arg s "$single_oid" --arg m "$multi_oid" '.[$s] == true and .[$m] == true' >/dev/null
 
     api_json GET "${DRS_URL%/}/index/v1/metrics/files/$single_oid" "" "200,404" >/dev/null

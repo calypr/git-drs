@@ -15,11 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/cloud"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drsmap"
-	"github.com/calypr/git-drs/lfs"
-	"github.com/calypr/git-drs/precommit_cache"
+	"github.com/calypr/git-drs/internal/cloud"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
@@ -33,11 +33,9 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("git init failed: %v: %s", err, out)
 	}
 
-	// Setup config for test
-	origDir, _ := os.Getwd()
 	exec.Command("git", "init", tempDir).Run()
-	os.Chdir(tempDir)
-	defer os.Chdir(origDir)
+	oldwd := mustChdir(t, tempDir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
 	// Mock config
 	// Create dummy config using git config
@@ -54,6 +52,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		{"config", "drs.default-remote", "calypr-dev"},
 		{"config", "drs.remote.calypr-dev.type", "gen3"},
 		{"config", "drs.remote.calypr-dev.project", "calypr-dev"},
+		{"config", "drs.remote.calypr-dev.organization", "calypr"},
 		{"config", "drs.remote.calypr-dev.endpoint", "https://calypr-dev.ohsu.edu"},
 		{"config", "drs.remote.calypr-dev.bucket", "cbds"},
 	}
@@ -95,9 +94,6 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	oldwd := mustChdir(t, tempDir)
-	t.Cleanup(func() { _ = os.Chdir(oldwd) })
-
 	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
 		t.Fatalf("service.Run error: %v", err)
 	}
@@ -137,10 +133,10 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
-	if len(drsObject.AccessMethods) == 0 {
+	if drsObject.AccessMethods == nil || len(*drsObject.AccessMethods) == 0 {
 		t.Fatalf("expected access methods in drs object")
 	}
-	if got := drsObject.AccessMethods[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
+	if got := (*drsObject.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
 	}
 }

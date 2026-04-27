@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/cloud"
+	"github.com/calypr/git-drs/internal/cloud"
 	"github.com/spf13/cobra"
 )
 

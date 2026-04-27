@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	gitdrsdrs "github.com/calypr/git-drs/client/drs"
-	"github.com/calypr/git-drs/common"
-	"github.com/calypr/git-drs/config"
-	"github.com/calypr/git-drs/drslog"
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsClient.API.GetObjectByHash(context.Background(), &hash.Checksum{Type: string(hash.ChecksumTypeSHA256), Checksum: oid})
+		records, err := drslookup.ObjectsByHashForScope(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -87,7 +87,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Delete the matching record
-		err = gitdrsdrs.DeleteRecordsByOID(context.Background(), drsClient.API, oid)
+		err = drsClient.Client.DRS().DeleteRecordsByHash(context.Background(), oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}

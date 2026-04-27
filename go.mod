@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/calypr/data-client v0.0.0-20260424203623-881fd8c4768e
-	github.com/calypr/syfon/apigen v0.2.5-0.20260426195814-ed39b302aaf6
+	github.com/calypr/syfon/apigen v0.2.5
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -61,7 +61,7 @@ require (
 	github.com/aws/smithy-go v1.24.3 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
-	github.com/calypr/syfon v0.2.5-0.20260426195814-ed39b302aaf6 // indirect
+	github.com/calypr/syfon v0.2.5 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
@@ -160,7 +160,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
-	github.com/calypr/syfon/client v0.2.5-0.20260426195814-ed39b302aaf6
+	github.com/calypr/syfon/client v0.2.5
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

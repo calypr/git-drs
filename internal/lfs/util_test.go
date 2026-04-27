@@ -54,10 +54,6 @@ func TestObjectWalk(t *testing.T) {
 	}
 }
 
-func TestIsLFSTrackedFile(t *testing.T) {
-	t.Skip("temporarily disabled TODO - fix git attributes handling in tests")
-}
-
 func TestDrsTopLevel(t *testing.T) {
 	tmp := t.TempDir()
 	drsDir := filepath.Join(tmp, ".git", "drs")

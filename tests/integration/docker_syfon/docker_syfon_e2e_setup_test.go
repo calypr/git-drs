@@ -29,6 +29,7 @@ const (
 	dockerE2ELocalPassword     = "drs-pass"
 	dockerE2EOrganization      = "syfon"
 	dockerE2EProjectID         = "e2e"
+	dockerE2EProviderLogPrefix = ".syfon/provider-transfer-events"
 	dockerE2EMultipartMB       = 1
 	dockerE2EResumeAfter       = 2 * 1024 * 1024
 	dockerE2EGogsImage         = "gogs/gogs"

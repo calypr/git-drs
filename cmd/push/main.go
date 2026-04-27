@@ -62,15 +62,7 @@ var Cmd = &cobra.Command{
 
 		ctx := context.Background()
 		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
-			if err.Error() == "not implemented" {
-				for _, file := range lfsFiles {
-					if _, err := pushsync.RegisterFile(drsClient, ctx, file.Oid, file.Name); err != nil {
-						return fmt.Errorf("failed to register/upload %s (%s): %w", file.Name, file.Oid, err)
-					}
-				}
-			} else {
-				return fmt.Errorf("failed batch register/upload workflow: %w", err)
-			}
+			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
 
 		pushArgs := []string{"push"}

@@ -150,6 +150,10 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	if !bytes.Equal(gotLarge, largeData) {
 		t.Fatalf("pulled multipart bytes mismatch: got %d bytes want %d bytes", len(gotLarge), len(largeData))
 	}
+	verifyProviderTransferMetrics(t, server.url, minioEnv, []providerTransferLogEvent{
+		newProviderDownloadEvent("docker-minio-download-small-"+smallDid, minioEnv, smallDid, int64(len(smallData))),
+		newProviderDownloadEvent("docker-minio-download-large-"+largeDid, minioEnv, largeDid, int64(len(largeData))),
+	}, int64(len(smallData)+len(largeData)))
 
 	smallSum := sha256.Sum256(smallData)
 	smallSumHex := hex.EncodeToString(smallSum[:])

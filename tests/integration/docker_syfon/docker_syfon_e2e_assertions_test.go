@@ -6,13 +6,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -88,15 +91,17 @@ func normalizeDockerBucketMapKeyPart(v string) string {
 func upsertSyfonBucketScope(t *testing.T, serverURL string, minioEnv *minioContainer, org, project, path string) {
 	t.Helper()
 	body, err := json.Marshal(map[string]string{
-		"bucket":       minioEnv.bucket,
-		"provider":     "s3",
-		"region":       minioEnv.region,
-		"access_key":   minioEnv.accessKey,
-		"secret_key":   minioEnv.secretKey,
-		"endpoint":     minioEnv.endpoint,
-		"organization": org,
-		"project_id":   project,
-		"path":         path,
+		"bucket":             minioEnv.bucket,
+		"provider":           "s3",
+		"region":             minioEnv.region,
+		"access_key":         minioEnv.accessKey,
+		"secret_key":         minioEnv.secretKey,
+		"endpoint":           minioEnv.endpoint,
+		"billing_log_bucket": minioEnv.bucket,
+		"billing_log_prefix": dockerE2EProviderLogPrefix,
+		"organization":       org,
+		"project_id":         project,
+		"path":               path,
 	})
 	if err != nil {
 		t.Fatalf("marshal bucket scope request: %v", err)
@@ -116,6 +121,137 @@ func upsertSyfonBucketScope(t *testing.T, serverURL string, minioEnv *minioConta
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		t.Fatalf("put bucket scope org=%s project=%s path=%s status=%d body=%s", org, project, path, resp.StatusCode, string(respBody))
 	}
+}
+
+func verifyProviderTransferMetrics(t *testing.T, serverURL string, minioEnv *minioContainer, events []providerTransferLogEvent, wantBytes int64) {
+	t.Helper()
+	if len(events) == 0 {
+		t.Fatalf("provider transfer metrics verification requires at least one event")
+	}
+	body, err := json.Marshal(map[string]any{"events": events})
+	if err != nil {
+		t.Fatalf("marshal provider transfer events: %v", err)
+	}
+	logKey := fmt.Sprintf("%s/docker-e2e-%d.json", strings.Trim(dockerE2EProviderLogPrefix, "/"), time.Now().UnixNano())
+	seedMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, logKey, body)
+
+	from := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339Nano)
+	to := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339Nano)
+	syncBody, err := json.Marshal(map[string]any{
+		"provider":     "s3",
+		"bucket":       minioEnv.bucket,
+		"organization": dockerE2EOrganization,
+		"project":      dockerE2EProjectID,
+		"from":         from,
+		"to":           to,
+	})
+	if err != nil {
+		t.Fatalf("marshal provider sync request: %v", err)
+	}
+	postJSONBasic(t, strings.TrimRight(serverURL, "/")+"/index/v1/metrics/provider-transfer-sync", syncBody, http.StatusCreated)
+
+	summaryURL := fmt.Sprintf("%s/index/v1/metrics/transfers/summary?organization=%s&project=%s&provider=s3&bucket=%s&direction=download&from=%s&to=%s",
+		strings.TrimRight(serverURL, "/"),
+		dockerE2EOrganization,
+		dockerE2EProjectID,
+		minioEnv.bucket,
+		urlQueryEscape(from),
+		urlQueryEscape(to),
+	)
+	respBody := getBasic(t, summaryURL, http.StatusOK)
+	var summary struct {
+		EventCount      int64 `json:"event_count"`
+		BytesDownloaded int64 `json:"bytes_downloaded"`
+		Freshness       struct {
+			IsStale             bool       `json:"is_stale"`
+			LatestCompletedSync *time.Time `json:"latest_completed_sync"`
+			MissingBuckets      []string   `json:"missing_buckets"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(respBody, &summary); err != nil {
+		t.Fatalf("decode transfer summary: %v body=%s", err, string(respBody))
+	}
+	if summary.EventCount < int64(len(events)) || summary.BytesDownloaded < wantBytes {
+		t.Fatalf("expected provider transfer metrics events=%d bytes>=%d, got %+v body=%s", len(events), wantBytes, summary, string(respBody))
+	}
+	if summary.Freshness.IsStale || summary.Freshness.LatestCompletedSync == nil || len(summary.Freshness.MissingBuckets) != 0 {
+		t.Fatalf("expected fresh provider transfer metrics after sync, got %+v body=%s", summary.Freshness, string(respBody))
+	}
+}
+
+type providerTransferLogEvent struct {
+	ProviderEventID   string `json:"provider_event_id"`
+	Direction         string `json:"direction"`
+	EventTime         string `json:"event_time"`
+	ProviderRequestID string `json:"provider_request_id"`
+	Provider          string `json:"provider"`
+	Bucket            string `json:"bucket"`
+	ObjectKey         string `json:"object_key"`
+	StorageURL        string `json:"storage_url"`
+	BytesTransferred  int64  `json:"bytes_transferred"`
+	HTTPMethod        string `json:"http_method"`
+	HTTPStatus        int    `json:"http_status"`
+	UserAgent         string `json:"user_agent"`
+}
+
+func newProviderDownloadEvent(eventID string, minioEnv *minioContainer, key string, bytesTransferred int64) providerTransferLogEvent {
+	return providerTransferLogEvent{
+		ProviderEventID:   eventID,
+		Direction:         "download",
+		EventTime:         time.Now().UTC().Format(time.RFC3339Nano),
+		ProviderRequestID: eventID + "-request",
+		Provider:          "s3",
+		Bucket:            minioEnv.bucket,
+		ObjectKey:         strings.TrimLeft(key, "/"),
+		StorageURL:        "s3://" + minioEnv.bucket + "/" + strings.TrimLeft(key, "/"),
+		BytesTransferred:  bytesTransferred,
+		HTTPMethod:        "GET",
+		HTTPStatus:        http.StatusOK,
+		UserAgent:         "git-drs-docker-e2e",
+	}
+}
+
+func postJSONBasic(t *testing.T, target string, body []byte, wantStatus int) []byte {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("build POST %s: %v", target, err)
+	}
+	req.SetBasicAuth(dockerE2ELocalUser, dockerE2ELocalPassword)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("POST %s status=%d want=%d body=%s", target, resp.StatusCode, wantStatus, string(respBody))
+	}
+	return respBody
+}
+
+func getBasic(t *testing.T, target string, wantStatus int) []byte {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		t.Fatalf("build GET %s: %v", target, err)
+	}
+	req.SetBasicAuth(dockerE2ELocalUser, dockerE2ELocalPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("GET %s status=%d want=%d body=%s", target, resp.StatusCode, wantStatus, string(body))
+	}
+	return body
+}
+
+func urlQueryEscape(v string) string {
+	return url.QueryEscape(v)
 }
 
 func assertMinIOObjectExists(t *testing.T, client *s3.Client, bucket, key string) {

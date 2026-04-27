@@ -178,6 +178,34 @@ func dockerPortEndpoint(portOutput string) (string, error) {
 	return "http://" + last, nil
 }
 
+func waitForDockerPortEndpoint(ctx context.Context, containerID, privatePort string, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	var lastOutput string
+	var lastErr error
+	for {
+		portCmd := exec.CommandContext(ctx, "docker", "port", containerID, privatePort)
+		portOut, err := portCmd.CombinedOutput()
+		lastOutput = string(portOut)
+		if err != nil {
+			lastErr = err
+		} else if endpoint, parseErr := dockerPortEndpoint(lastOutput); parseErr == nil {
+			return endpoint, nil
+		} else {
+			lastErr = parseErr
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("wait for docker port %s on %s: %w\n%s\nlogs:\n%s", privatePort, containerID, lastErr, lastOutput, dockerContainerLogs(context.Background(), containerID))
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 func logRepoSnapshot(t *testing.T, dir, label string) {
 	t.Helper()
 	t.Logf("REPO SNAPSHOT [%s] dir=%s", label, dir)

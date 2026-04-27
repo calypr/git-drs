@@ -33,11 +33,9 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("git init failed: %v: %s", err, out)
 	}
 
-	// Setup config for test
-	origDir, _ := os.Getwd()
 	exec.Command("git", "init", tempDir).Run()
-	os.Chdir(tempDir)
-	defer os.Chdir(origDir)
+	oldwd := mustChdir(t, tempDir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
 	// Mock config
 	// Create dummy config using git config
@@ -95,9 +93,6 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	cmd := NewCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-
-	oldwd := mustChdir(t, tempDir)
-	t.Cleanup(func() { _ = os.Chdir(oldwd) })
 
 	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin"}); err != nil {
 		t.Fatalf("service.Run error: %v", err)

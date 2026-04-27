@@ -42,13 +42,7 @@ func startMinIOContainer(ctx context.Context) (*minioContainer, error) {
 	}
 	fmt.Fprintf(os.Stderr, "MinIO container id %s\n", containerID)
 
-	portCmd := exec.CommandContext(ctx, "docker", "port", containerID, "9000/tcp")
-	portOut, err := portCmd.CombinedOutput()
-	if err != nil {
-		_ = stopDockerContainer(context.Background(), containerID)
-		return nil, fmt.Errorf("docker port minio: %w\n%s\nlogs:\n%s", err, string(portOut), dockerContainerLogs(context.Background(), containerID))
-	}
-	endpoint, err := dockerPortEndpoint(string(portOut))
+	endpoint, err := waitForDockerPortEndpoint(ctx, containerID, "9000/tcp", 30*time.Second)
 	if err != nil {
 		_ = stopDockerContainer(context.Background(), containerID)
 		return nil, err

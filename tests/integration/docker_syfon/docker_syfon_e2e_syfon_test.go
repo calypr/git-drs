@@ -164,6 +164,7 @@ auth:
 routes:
   ga4gh: true
   internal: true
+  metrics: true
 database:
   sqlite:
     file: %q

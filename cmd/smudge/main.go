@@ -7,8 +7,9 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,7 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, config.ErrNoDefaultRemote) {
 			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
-			return lfs.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+			return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
 		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
@@ -60,8 +61,8 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
 
-	return lfs.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, func(callCtx context.Context, oid, cachePath string) error {
-		return lfs.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+	return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, func(callCtx context.Context, oid, cachePath string) error {
+		return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 	})
 }
 

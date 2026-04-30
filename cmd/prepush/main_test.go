@@ -15,19 +15,11 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
-	"github.com/calypr/git-drs/internal/testutils"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
-
-func TestPrepushCmd(t *testing.T) {
-	testutils.RunCmdMainTest(t, "prepush")
-}
-
-func TestValidateArgs(t *testing.T) {
-	testutils.RunCmdArgsTest(t)
-}
 
 func TestLfsFilesFromCache(t *testing.T) {
 	repo := setupGitRepo(t)
@@ -323,7 +315,7 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 
 	oid := strings.Repeat("b", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
+	if err := drsobject.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
 		Name: ptrString(name),
 		Size: 123,
@@ -392,7 +384,7 @@ func TestSubmitPendingLFSMetaStatusHandling(t *testing.T) {
 
 	oid := strings.Repeat("c", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
+	if err := drsobject.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
 		Name: ptrString(name),
 		Size: 123,
@@ -507,7 +499,7 @@ func TestSubmitPendingLFSMetaRequestWiringBasicAuth(t *testing.T) {
 
 	oid := strings.Repeat("d", 64)
 	name := "obj-name"
-	if err := lfs.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
+	if err := drsobject.WriteObject(".git/drs/lfs/objects", &drsapi.DrsObject{
 		Id:   "drs://local:obj-id",
 		Name: ptrString(name),
 		Size: 123,

@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/calypr/syfon/client/conf"
+	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -72,7 +72,7 @@ var Cmd = &cobra.Command{
 			if token != "" {
 				cred.AccessToken = token
 			}
-			if ensureErr := gitauth.EnsureValidCredential(context.Background(), cred, logg); ensureErr == nil {
+			if ensureErr := credentials.EnsureValidCredential(context.Background(), cred, logg); ensureErr == nil {
 				_ = manager.Save(cred)
 				token = strings.TrimSpace(cred.AccessToken)
 				if token != "" {

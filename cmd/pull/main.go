@@ -12,8 +12,7 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drslookup"
-	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
@@ -107,7 +106,7 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 			for _, oid := range missingOIDs {
-				recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
+				recs, err := drsremote.ObjectsByHashForScope(ctx, drsCtx, oid)
 				if err != nil || len(recs) == 0 {
 					continue
 				}
@@ -125,7 +124,7 @@ var Cmd = &cobra.Command{
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
 				}
-				if resolved, err := drslookup.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
+				if resolved, err := drsremote.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
 				} else {
@@ -136,21 +135,21 @@ var Cmd = &cobra.Command{
 				if f.Downloaded {
 					continue
 				}
-				dstPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, f.Oid)
+				dstPath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
 				if obj, ok := prefetched[f.Oid]; ok {
 					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
 						objCopy := obj
-						if err := lfs.DownloadResolvedToCachePath(ctx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+						if err := drsremote.DownloadResolvedToCachePath(ctx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
 						continue
 					}
 				}
-				if err := lfs.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
+				if err := drsremote.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
@@ -190,7 +189,7 @@ func checkoutDownloadedFiles(files []lfs.LfsFileInfo) error {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
 		}
-		srcPath, err := drsmap.GetObjectPath(common.LFS_OBJS_PATH, f.Oid)
+		srcPath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
@@ -210,7 +209,7 @@ var lfsjsonUnmarshal = func(data []byte, v any) error {
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContext, oid string) string {
-	recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
+	recs, err := drsremote.ObjectsByHashForScope(ctx, drsCtx, oid)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}

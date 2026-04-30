@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/calypr/syfon/client/conf"
+	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -249,7 +249,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		if prof, err := configure.Load(remoteName); err == nil {
 			token = strings.TrimSpace(prof.AccessToken)
 			if token == "" {
-				if ensureErr := gitauth.EnsureValidCredential(context.Background(), prof, drslog.GetLogger()); ensureErr == nil {
+				if ensureErr := credentials.EnsureValidCredential(context.Background(), prof, drslog.GetLogger()); ensureErr == nil {
 					_ = configure.Save(prof)
 					token = strings.TrimSpace(prof.AccessToken)
 				}

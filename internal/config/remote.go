@@ -7,12 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	syclient "github.com/calypr/syfon/client"
-	syconf "github.com/calypr/syfon/client/conf"
-	syrequest "github.com/calypr/syfon/client/request"
-	"github.com/calypr/syfon/client/syfonclient"
+	syconf "github.com/calypr/syfon/client/config"
 )
 
 type DRSRemote interface {
@@ -25,8 +23,7 @@ type DRSRemote interface {
 }
 
 type GitContext struct {
-	Client             syfonclient.SyfonClient
-	Requestor          syrequest.Requester
+	Client             *syclient.Client
 	Organization       string
 	ProjectId          string
 	BucketName         string
@@ -63,7 +60,7 @@ func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (*GitConte
 	if err != nil {
 		return nil, err
 	}
-	if err := gitauth.EnsureValidCredential(context.Background(), cred, logger); err != nil {
+	if err := credentials.EnsureValidCredential(context.Background(), cred, logger); err != nil {
 		return nil, err
 	}
 	return newGitContext(*cred, s, logger)
@@ -119,22 +116,17 @@ func (l LocalRemote) GetClient(remoteName string, logger *slog.Logger) (*GitCont
 		cred.APIKey = l.BasicPassword
 	}
 
-	rawClient, err := syclient.New(l.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
+	raw, err := syclient.New(l.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
 	if err != nil {
 		return nil, err
 	}
-	reqClient, ok := rawClient.(interface{ Requestor() syrequest.Requester })
+	client, ok := raw.(*syclient.Client)
 	if !ok {
-		return nil, fmt.Errorf("syfon client does not expose requestor")
-	}
-	syfonClient, ok := rawClient.(syfonclient.SyfonClient)
-	if !ok {
-		return nil, fmt.Errorf("syfon client does not implement syfonclient.SyfonClient")
+		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	return &GitContext{
-		Client:        syfonClient,
-		Requestor:     reqClient.Requestor(),
+		Client:        client,
 		Organization:  l.GetOrganization(),
 		ProjectId:     projectID,
 		BucketName:    bucketName,
@@ -163,17 +155,13 @@ func newGitContext(profileConfig syconf.Credential, remote Gen3Remote, logger *s
 		return nil, err
 	}
 
-	rawClient, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
+	raw, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
 	if err != nil {
 		return nil, err
 	}
-	reqClient, ok := rawClient.(interface{ Requestor() syrequest.Requester })
+	client, ok := raw.(*syclient.Client)
 	if !ok {
-		return nil, fmt.Errorf("syfon client does not expose requestor")
-	}
-	syfonClient, ok := rawClient.(syfonclient.SyfonClient)
-	if !ok {
-		return nil, fmt.Errorf("syfon client does not implement syfonclient.SyfonClient")
+		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))
@@ -182,8 +170,7 @@ func newGitContext(profileConfig syconf.Credential, remote Gen3Remote, logger *s
 	}
 
 	return &GitContext{
-		Client:             syfonClient,
-		Requestor:          reqClient.Requestor(),
+		Client:             client,
 		ProjectId:          projectID,
 		BucketName:         scope.Bucket,
 		Organization:       remote.GetOrganization(),

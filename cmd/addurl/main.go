@@ -12,11 +12,11 @@ var Cmd = NewCommand()
 // wiring usage, argument validation and the RunE handler.
 func NewCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "add-url <cloud-url> [path]",
-		Short: "Add a file to the Git DRS repo using a cloud object URL",
+		Use:   "add-url <object-url-or-key> [path]",
+		Short: "Add a file from a provider URL or configured bucket object key",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 || len(args) > 2 {
-				return errors.New("usage: add-url <cloud-url> [path]")
+				return errors.New("usage: add-url <object-url-or-key> [path]")
 			}
 			return nil
 		},
@@ -32,6 +32,11 @@ func addFlags(cmd *cobra.Command) {
 		"sha256",
 		"",
 		"Expected SHA256 checksum (optional)",
+	)
+	cmd.Flags().String(
+		"scheme",
+		"",
+		"Storage scheme for object-key mode (for example: s3 or gs)",
 	)
 }
 

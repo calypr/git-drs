@@ -2,6 +2,8 @@
 
 Complete reference for Git DRS and related Git LFS commands.
 
+Git DRS owns Git/DRS orchestration and local metadata. Direct provider access, signed URL behavior, and cloud inspection are client-side responsibilities reached through `syfon/client`.
+
 > **Navigation:** [Getting Started](getting-started.md) → **Commands Reference** → [Troubleshooting](troubleshooting.md)
 
 ## Git DRS Commands
@@ -191,6 +193,32 @@ git drs fetch production
 
 - Identifies remote and project from configuration
 - Transfers all DRS records for a given project from the server to the local `.git/drs/lfs/objects/` directory
+
+### `git drs add-url <object-url-or-key> [path]`
+
+Prepare a pointer plus local DRS metadata for an object that already exists in provider storage.
+
+**Usage:**
+
+```bash
+# Preferred: object key resolved against configured bucket scope
+git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
+
+# Compatibility: explicit provider URL
+git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
+```
+
+**Options:**
+
+- `--scheme <scheme>`: Required for object-key mode because local bucket mappings persist bucket/prefix, not provider scheme
+- `--sha256 <hex>`: Expected SHA256 checksum when known
+
+**What it does:**
+
+- Resolves the effective org/project bucket scope for the current remote
+- Inspects the provider object through client-owned cloud code
+- Writes a Git LFS pointer into the worktree
+- Stores local DRS metadata for later registration during `git drs push`
 
 ### `git drs push [remote-name]`
 

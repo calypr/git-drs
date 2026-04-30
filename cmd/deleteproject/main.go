@@ -8,7 +8,7 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	syfonclient "github.com/calypr/syfon/client/syfonclient"
+	syservices "github.com/calypr/syfon/client/services"
 	"github.com/spf13/cobra"
 )
 
@@ -51,7 +51,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get a sample record to show the user what will be deleted
-		sampleResp, err := drsClient.Client.Index().List(context.Background(), syfonclient.ListRecordsOptions{
+		listResp, err := drsClient.Client.Index().List(context.Background(), syservices.ListRecordsOptions{
 			Organization: organization,
 			ProjectID:    projectId,
 			Limit:        1,
@@ -70,8 +70,8 @@ var Cmd = &cobra.Command{
 			common.DisplayField(os.Stderr, "Remote", string(remoteName))
 			common.DisplayField(os.Stderr, "Project ID", projectId)
 
-			if sampleResp.Records != nil && len(*sampleResp.Records) > 0 {
-				sample := (*sampleResp.Records)[0]
+			if listResp.Records != nil && len(*listResp.Records) > 0 {
+				sample := (*listResp.Records)[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
 				common.DisplayField(os.Stderr, "  DID", sample.Did)
 				if sample.FileName != nil && *sample.FileName != "" {
@@ -94,11 +94,10 @@ var Cmd = &cobra.Command{
 
 		// Delete the matching records
 		logger.Debug(fmt.Sprintf("Deleting all records for project %s...", projectId))
-		_, err = drsClient.Client.Index().DeleteByQuery(context.Background(), syfonclient.DeleteByQueryOptions{
+		if _, err := drsClient.Client.Index().DeleteByQuery(context.Background(), syservices.DeleteByQueryOptions{
 			Organization: organization,
 			ProjectID:    projectId,
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("error deleting project %s: %v", projectId, err)
 		}
 

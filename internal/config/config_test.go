@@ -348,8 +348,8 @@ func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
 	if gitCtx == nil {
 		t.Fatalf("expected *GitContext, got nil")
 	}
-	if gitCtx.Client == nil || gitCtx.Requestor == nil {
-		t.Fatalf("expected client and requestor to be initialized, got nil")
+	if gitCtx.Client == nil {
+		t.Fatalf("expected client to be initialized, got nil")
 	}
 	// Basic auth is baked into the HTTP client during construction;
 	// the test verifies that GetRemoteClient completes without error when

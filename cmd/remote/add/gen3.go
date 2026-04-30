@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"strings"
 
-	gitauth "github.com/calypr/git-drs/internal/auth"
+	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/calypr/syfon/client/conf"
+	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -140,7 +140,7 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 		MinShepherdVersion: "",
 	}
 
-	if err := gitauth.EnsureValidCredential(context.Background(), cred, logg); err != nil {
+	if err := credentials.EnsureValidCredential(context.Background(), cred, logg); err != nil {
 		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", err)
 	}
 

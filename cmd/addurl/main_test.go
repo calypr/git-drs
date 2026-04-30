@@ -15,11 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/internal/cloud"
+	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
+	sycloud "github.com/calypr/syfon/client/cloud"
 )
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
@@ -73,8 +75,8 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	service := NewAddURLService()
 	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, in cloud.ObjectParameters) (*cloud.ObjectInfo, error) {
-			return &cloud.ObjectInfo{
+		func(ctx context.Context, in sycloud.ObjectParameters) (*sycloud.ObjectInfo, error) {
+			return &sycloud.ObjectInfo{
 				Bucket:      "bucket",
 				Key:         "path/to/file.bin",
 				Path:        "file.bin",
@@ -129,7 +131,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("expected add-url sentinel payload, got: %q", string(sentinel))
 	}
 
-	drsObject, err := drsmap.DrsInfoFromOid(oid)
+	drsObject, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid)
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
@@ -147,8 +149,8 @@ func TestParseAddURLInput_DoesNotRequireAWSFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseAddURLInput error: %v", err)
 	}
-	if in.objectURL != "gs://bucket/path/to/file.bin" {
-		t.Fatalf("unexpected source url: %s", in.objectURL)
+	if in.sourceArg != "gs://bucket/path/to/file.bin" {
+		t.Fatalf("unexpected source url: %s", in.sourceArg)
 	}
 	if in.path != "path/to/file.bin" {
 		t.Fatalf("unexpected path: %s", in.path)
@@ -166,17 +168,71 @@ func TestParseAddURLInput_PassesS3EnvHints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseAddURLInput error: %v", err)
 	}
-	if in.objectParams.S3Region != "us-east-1" {
-		t.Fatalf("unexpected S3Region: %s", in.objectParams.S3Region)
+	params := buildObjectParameters("s3://cbds/path/to/file.bin", in.path, in.sha256)
+	if params.S3Region != "us-east-1" {
+		t.Fatalf("unexpected S3Region: %s", params.S3Region)
 	}
-	if in.objectParams.S3Endpoint != "https://aced-storage.ohsu.edu" {
-		t.Fatalf("unexpected S3Endpoint: %s", in.objectParams.S3Endpoint)
+	if params.S3Endpoint != "https://aced-storage.ohsu.edu" {
+		t.Fatalf("unexpected S3Endpoint: %s", params.S3Endpoint)
 	}
-	if in.objectParams.S3AccessKey != "cbds-user" {
-		t.Fatalf("unexpected S3AccessKey: %s", in.objectParams.S3AccessKey)
+	if params.S3AccessKey != "cbds-user" {
+		t.Fatalf("unexpected S3AccessKey: %s", params.S3AccessKey)
 	}
-	if in.objectParams.S3SecretKey != "cbds-secret" {
-		t.Fatalf("unexpected S3SecretKey: %s", in.objectParams.S3SecretKey)
+	if params.S3SecretKey != "cbds-secret" {
+		t.Fatalf("unexpected S3SecretKey: %s", params.S3SecretKey)
+	}
+}
+
+func TestParseAddURLInput_ObjectKeyModeDefaultsPathToKey(t *testing.T) {
+	cmd := NewCommand()
+	if err := cmd.Flags().Set("scheme", "s3"); err != nil {
+		t.Fatalf("set scheme flag: %v", err)
+	}
+
+	in, err := parseAddURLInput(cmd, []string{"nested/path/file.bin"})
+	if err != nil {
+		t.Fatalf("parseAddURLInput error: %v", err)
+	}
+	if in.sourceArg != "nested/path/file.bin" {
+		t.Fatalf("unexpected source arg: %s", in.sourceArg)
+	}
+	if in.path != "nested/path/file.bin" {
+		t.Fatalf("unexpected path: %s", in.path)
+	}
+	if in.scheme != "s3" {
+		t.Fatalf("unexpected scheme: %s", in.scheme)
+	}
+}
+
+func TestResolveObjectURL_UsesConfiguredBucketScopeForObjectKeyMode(t *testing.T) {
+	input := addURLInput{
+		sourceArg: "nested/path/file.bin",
+		scheme:    "s3",
+	}
+	scope := gitrepo.ResolvedBucketScope{
+		Bucket: "mapped-bucket",
+		Prefix: "mapped/prefix",
+	}
+
+	got, err := resolveObjectURL(input, scope)
+	if err != nil {
+		t.Fatalf("resolveObjectURL: %v", err)
+	}
+	if got != "s3://mapped-bucket/mapped/prefix/nested/path/file.bin" {
+		t.Fatalf("unexpected object URL: %s", got)
+	}
+}
+
+func TestResolveObjectURL_RejectsObjectKeyModeWithoutScheme(t *testing.T) {
+	_, err := resolveObjectURL(addURLInput{sourceArg: "nested/path/file.bin"}, gitrepo.ResolvedBucketScope{
+		Bucket: "mapped-bucket",
+		Prefix: "mapped/prefix",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "requires --scheme") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -315,7 +371,7 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 func stubAddURLDeps(
 	t *testing.T,
 	service *AddURLService,
-	inspectFn func(context.Context, cloud.ObjectParameters) (*cloud.ObjectInfo, error),
+	inspectFn func(context.Context, sycloud.ObjectParameters) (*sycloud.ObjectInfo, error),
 	isTrackedFn func(string) (bool, error),
 ) func() {
 	t.Helper()

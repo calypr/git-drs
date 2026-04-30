@@ -9,9 +9,9 @@ git-drs is not yet fully compliant with DRS. It currently works against Gen3 DRS
 
 [![Tests](https://github.com/calypr/git-drs/actions/workflows/test.yaml/badge.svg)](https://github.com/calypr/git-drs/actions/workflows/test.yaml)
 
-**Git-LFS file management for DRS servers**
+**Git/DRS orchestration with optional Git LFS compatibility**
 
-Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Repository Service)](https://ga4gh.github.io/data-repository-service-schemas/) to manage large data files alongside your code in a single Git repository. It provides seamless integration with Gen3-backed workflows while maintaining your familiar Git workflow.
+Git DRS manages Git-facing DRS workflows: local metadata, Git hooks, filter behavior, lookup/register/push/pull orchestration, and optional Git LFS compatibility. Provider-specific transfer, signed URL behavior, and direct cloud inspection live in client code outside this repo.
 
 ## Key Features
 
@@ -23,7 +23,7 @@ Git DRS combines the power of [Git LFS](https://git-lfs.com/) with [DRS (Data Re
 
 ## How It Works
 
-Git DRS extends Git LFS by:
+Git DRS works alongside Git LFS when you want LFS-compatible pointers and storage, while still supporting DRS-centric workflows:
 
 1. **Initialization**: Set up repository and DRS server configuration
 2. **Automatic Commits**: Create DRS objects during pre-commit hooks
@@ -98,7 +98,7 @@ For detailed setup and usage information:
 - **[Installation Guide](docs/installation.md)** - Platform-specific installation
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
 - **[E2E Modes + Local Setup](docs/e2e-modes-and-local-setup.md)** - Local vs remote mode, server config, and end-to-end runbooks
-- **[Cloud URL Integration](docs/adding-s3-files.md)** - Adding files via cloud object URLs
+- **[Cloud/Object Integration](docs/adding-s3-files.md)** - Adding files from provider URLs or configured bucket object keys
 - **[Developer Guide](docs/developer-guide.md)** - Internals and development
 
 ## Supported Servers
@@ -119,7 +119,7 @@ For detailed setup and usage information:
 | `git drs remote add`   | Add a DRS remote server               |
 | `git drs remote list`  | List configured remotes               |
 | `git drs remote set`   | Set default remote                    |
-| `git drs add-url`      | Add files via cloud object URLs       |
+| `git drs add-url`      | Add files via provider URLs or configured bucket object keys |
 | `git lfs track`        | Track file patterns with LFS          |
 | `git lfs ls-files`     | List tracked files                    |
 | `git lfs pull`         | Download tracked files                |

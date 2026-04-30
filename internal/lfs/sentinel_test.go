@@ -39,7 +39,7 @@ func TestWriteAndDetectAddURLSentinelObject(t *testing.T) {
 }
 
 func TestIsAddURLSentinelBytes(t *testing.T) {
-	payload, err := BuildAddURLSentinel("etag", "s3://bucket/key")
+	payload, err := buildAddURLSentinel("etag", "s3://bucket/key")
 	if err != nil {
 		t.Fatalf("build sentinel: %v", err)
 	}

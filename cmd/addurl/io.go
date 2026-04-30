@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/internal/cloud"
+	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +58,7 @@ func maybeTrackLFS(ctx context.Context, gitLFSTrack func(context.Context, string
 
 // printResolvedInfo writes a human-readable summary of resolved Git/LFS and
 // cloud object information to the command's stdout for user confirmation.
-func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, objectInfo *cloud.ObjectInfo, pathArg string, isTracked bool, sha256 string) error {
+func printResolvedInfo(cmd *cobra.Command, gitCommonDir, lfsRoot string, objectInfo *sycloud.ObjectInfo, pathArg string, isTracked bool, sha256 string) error {
 	if _, err := fmt.Fprintf(cmd.OutOrStdout(), `
 Resolved Git LFS Object Info
 ----------------------------

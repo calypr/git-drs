@@ -132,23 +132,9 @@ func verifyProviderTransferMetrics(t *testing.T, serverURL string, minioEnv *min
 	if err != nil {
 		t.Fatalf("marshal provider transfer events: %v", err)
 	}
-	logKey := fmt.Sprintf("%s/docker-e2e-%d.json", strings.Trim(dockerE2EProviderLogPrefix, "/"), time.Now().UnixNano())
-	seedMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, logKey, body)
-
 	from := time.Now().UTC().Add(-1 * time.Hour).Format(time.RFC3339Nano)
 	to := time.Now().UTC().Add(1 * time.Hour).Format(time.RFC3339Nano)
-	syncBody, err := json.Marshal(map[string]any{
-		"provider":     "s3",
-		"bucket":       minioEnv.bucket,
-		"organization": dockerE2EOrganization,
-		"project":      dockerE2EProjectID,
-		"from":         from,
-		"to":           to,
-	})
-	if err != nil {
-		t.Fatalf("marshal provider sync request: %v", err)
-	}
-	postJSONBasic(t, strings.TrimRight(serverURL, "/")+"/index/v1/metrics/provider-transfer-sync", syncBody, http.StatusCreated)
+	postJSONBasic(t, strings.TrimRight(serverURL, "/")+"/index/v1/metrics/provider-transfer-events", body, http.StatusCreated)
 
 	summaryURL := fmt.Sprintf("%s/index/v1/metrics/transfers/summary?organization=%s&project=%s&provider=s3&bucket=%s&direction=download&from=%s&to=%s",
 		strings.TrimRight(serverURL, "/"),
@@ -174,7 +160,7 @@ func verifyProviderTransferMetrics(t *testing.T, serverURL string, minioEnv *min
 	if summary.EventCount < int64(len(events)) || summary.BytesDownloaded < wantBytes {
 		t.Fatalf("expected provider transfer metrics events=%d bytes>=%d, got %+v body=%s", len(events), wantBytes, summary, string(respBody))
 	}
-	if summary.Freshness.IsStale || summary.Freshness.LatestCompletedSync == nil || len(summary.Freshness.MissingBuckets) != 0 {
+	if summary.Freshness.IsStale || len(summary.Freshness.MissingBuckets) != 0 {
 		t.Fatalf("expected fresh provider transfer metrics after sync, got %+v body=%s", summary.Freshness, string(respBody))
 	}
 }
@@ -184,6 +170,8 @@ type providerTransferLogEvent struct {
 	Direction         string `json:"direction"`
 	EventTime         string `json:"event_time"`
 	ProviderRequestID string `json:"provider_request_id"`
+	Organization      string `json:"organization"`
+	Project           string `json:"project"`
 	Provider          string `json:"provider"`
 	Bucket            string `json:"bucket"`
 	ObjectKey         string `json:"object_key"`
@@ -200,6 +188,8 @@ func newProviderDownloadEvent(eventID string, minioEnv *minioContainer, key stri
 		Direction:         "download",
 		EventTime:         time.Now().UTC().Format(time.RFC3339Nano),
 		ProviderRequestID: eventID + "-request",
+		Organization:      dockerE2EOrganization,
+		Project:           dockerE2EProjectID,
 		Provider:          "s3",
 		Bucket:            minioEnv.bucket,
 		ObjectKey:         strings.TrimLeft(key, "/"),

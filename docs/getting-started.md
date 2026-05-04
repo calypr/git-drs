@@ -130,7 +130,7 @@ git drs fetch staging
 
 ## File Tracking
 
-Git DRS uses Git LFS to track files. You must explicitly track file patterns before adding them.
+Git DRS can use Git LFS-compatible pointers and local object storage. You must explicitly track file patterns before adding LFS-managed files.
 
 ### View Current Tracking
 

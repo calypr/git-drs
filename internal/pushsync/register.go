@@ -3,7 +3,6 @@ package pushsync
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -12,15 +11,12 @@ import (
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drslookup"
-	"github.com/calypr/git-drs/internal/drsmap"
+	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	"github.com/calypr/syfon/client/common"
-	"github.com/calypr/syfon/client/conf"
+	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
-	syrequest "github.com/calypr/syfon/client/request"
-	"github.com/calypr/syfon/client/xfer/upload"
+	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
 
 type pushScope struct {
@@ -42,6 +38,7 @@ type pushRuntime struct {
 	Logger     *slog.Logger
 	Scope      pushScope
 	Tuning     pushTuning
+	ProbeURL   func(context.Context, string) error
 }
 
 func newPushRuntime(cl *config.GitContext) *pushRuntime {
@@ -63,25 +60,8 @@ func newPushRuntime(cl *config.GitContext) *pushRuntime {
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},
+		ProbeURL: newDownloadProbe(cl),
 	}
-}
-
-// RegisterFile implements DRSClient.RegisterFile
-// It registers (or reuses) an DRS object for the oid, uploads the object if it
-// is not already available in the bucket, and returns the resulting DRS object.
-func RegisterFile(cl *config.GitContext, ctx context.Context, oid string, path string) (*drsapi.DrsObject, error) {
-	rt := newPushRuntime(cl)
-	oid = localcommon.NormalizeOid(oid)
-	rt.Logger.DebugContext(ctx, fmt.Sprintf("register file started for oid: %s", oid))
-
-	drsObject, err := ensureRecordRegistered(rt, ctx, oid, path)
-	if err != nil {
-		return nil, err
-	}
-	if err := uploadFileForObject(rt, ctx, drsObject, path, true, ""); err != nil {
-		return nil, err
-	}
-	return drsObject, nil
 }
 
 // isFileDownloadable checks if a file is already available for download
@@ -96,8 +76,10 @@ func isFileDownloadable(rt *pushRuntime, ctx context.Context, drsObject *drsapi.
 		// If we can't get a download URL, assume file is not downloadable
 		return false, nil
 	}
-	// Check if the URL is accessible
-	err = common.CanDownloadFile(res.Url)
+	if rt.ProbeURL == nil {
+		rt.ProbeURL = newDownloadProbe(rt.API)
+	}
+	err = rt.ProbeURL(ctx, res.Url)
 	return err == nil, nil
 }
 
@@ -137,7 +119,7 @@ func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix str
 }
 
 func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (string, bool, error) {
-	oid = localcommon.NormalizeOid(oid)
+	oid = localdrsobject.NormalizeOid(oid)
 	if oid == "" {
 		return "", false, fmt.Errorf("empty oid")
 	}
@@ -168,75 +150,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 	return worktreePath, true, nil
 }
 
-func ensureRecordRegistered(rt *pushRuntime, ctx context.Context, oid string, path string) (*drsapi.DrsObject, error) {
-	drsObject, err := drsmap.DrsInfoFromOid(oid)
-	if err != nil {
-		stat, statErr := os.Stat(path)
-		if statErr != nil {
-			return nil, fmt.Errorf("error reading local record for oid %s: %v (also failed to stat file %s: %v)", oid, err, path, statErr)
-		}
-		drsObject, err = scopedDRSObjectForPush(rt, oid, path, stat.Size(), nil)
-		if err != nil {
-			return nil, fmt.Errorf("error building drs info for oid %s: %v", oid, err)
-		}
-	} else {
-		stat, statErr := os.Stat(path)
-		size := int64(0)
-		if statErr == nil {
-			size = stat.Size()
-		}
-		drsObject, err = scopedDRSObjectForPush(rt, oid, path, size, drsObject)
-		if err != nil {
-			return nil, fmt.Errorf("error applying DRS scope for oid %s: %v", oid, err)
-		}
-	}
-	rt.Logger.InfoContext(ctx, fmt.Sprintf("registering record for oid %s in DRS object (did: %s)", oid, drsObject.Id))
-	registeredObjs, err := rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
-		Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
-	})
-	var registeredObj *drsapi.DrsObject
-	if len(registeredObjs.Objects) > 0 {
-		registeredObj = &registeredObjs.Objects[0]
-	}
-	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			if !rt.Tuning.Upsert {
-				rt.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, proceeding for oid %s: did: %s err: %v", oid, drsObject.Id, err))
-				if recs, lookupErr := drslookup.ObjectsByHashForScope(ctx, rt.API, oid); lookupErr == nil && len(recs) > 0 {
-					if match, matchErr := drsmap.FindMatchingRecord(recs, rt.Scope.Organization, rt.Scope.Project); matchErr == nil && match != nil {
-						drsObject = match
-					}
-				}
-			} else {
-				rt.Logger.DebugContext(ctx, fmt.Sprintf("DRS object already exists, deleting and re-adding for oid %s: did: %s", oid, drsObject.Id))
-				err = rt.API.Client.DRS().DeleteRecordsByHash(ctx, oid)
-				if err != nil {
-					return nil, fmt.Errorf("error deleting existing DRS object oid %s: did: %s err: %v", oid, drsObject.Id, err)
-				}
-				registeredObjs, err = rt.API.Client.DRS().RegisterObjects(ctx, drsapi.RegisterObjectsJSONRequestBody{
-					Candidates: []drsapi.DrsObjectCandidate{localcommon.ConvertToCandidate(drsObject)},
-				})
-				if err != nil {
-					return nil, fmt.Errorf("error re-saving DRS object after deletion: oid %s: did: %s err: %v", oid, drsObject.Id, err)
-				}
-				if len(registeredObjs.Objects) > 0 {
-					registeredObj = &registeredObjs.Objects[0]
-				}
-				if registeredObj != nil {
-					drsObject = registeredObj
-				}
-			}
-		} else {
-			return nil, fmt.Errorf("error saving oid %s DRS object: %v", oid, err)
-		}
-	} else if registeredObj != nil {
-		drsObject = registeredObj
-	}
-	rt.Logger.InfoContext(ctx, fmt.Sprintf("DRS object registration complete for oid %s", oid))
-	return drsObject, nil
-}
-
-func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool, presignedURL string) error {
+func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	if skipIfDownloadable {
 		rt.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
@@ -270,28 +184,7 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		)
 	}
 
-	if strings.TrimSpace(presignedURL) != "" {
-		rt.Logger.DebugContext(ctx, "uploading via presigned URL",
-			"did", drsObject.Id,
-			"path", filePath,
-			"size", fileSize,
-		)
-		file, err := os.Open(filePath)
-		if err != nil {
-			return fmt.Errorf("error opening file %s: %v", filePath, err)
-		}
-		defer file.Close()
-		if err := doPresignedUpload(ctx, rt.API.Requestor, presignedURL, file, fileSize); err != nil {
-			return fmt.Errorf("presigned upload failed: %w", err)
-		}
-		return nil
-	}
-
 	objectKey := uploadKeyFromObject(drsObject, rt.Scope.Bucket, rt.Scope.StoragePref)
-	uploader := rt.API.Client.Data()
-	if uploader == nil {
-		return fmt.Errorf("drs API does not expose upload capability")
-	}
 	rt.Logger.DebugContext(ctx, "uploading via data-client orchestrator",
 		"size", fileSize,
 		"path", filePath,
@@ -304,84 +197,37 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	if err := upload.Upload(ctx, uploader, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, common.FileMetadata{}, false, forceMultipart); err != nil {
+	if err := syupload.UploadObjectFile(ctx, rt.API.Client.Data(), filePath, objectKey, drsObject.Id, rt.Scope.Bucket, forceMultipart); err != nil {
 		return fmt.Errorf("upload error: %w", err)
 	}
 	return nil
 }
 
-func doPresignedUpload(ctx context.Context, req syrequest.Requester, urlStr string, body io.Reader, size int64) error {
-	parsed, err := url.Parse(strings.TrimSpace(urlStr))
+func newDownloadProbe(cl *config.GitContext) func(context.Context, string) error {
+	httpClient := http.DefaultClient
+	if cl != nil && cl.Client != nil && cl.Client.HTTPClient() != nil {
+		httpClient = cl.Client.HTTPClient()
+	}
+	return func(ctx context.Context, rawURL string) error {
+		return probeDownloadURL(ctx, httpClient, rawURL)
+	}
+}
+
+func probeDownloadURL(ctx context.Context, httpClient *http.Client, rawURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
-		return fmt.Errorf("parse presigned upload url: %w", err)
+		return err
 	}
-
-	method := http.MethodPut
-	if useGCSJSONMediaUpload(parsed) {
-		method = http.MethodPost
+	if httpClient == nil {
+		httpClient = http.DefaultClient
 	}
-
-	var resp *http.Response
-	var opts []syrequest.RequestOption
-	if size > 0 {
-		opts = append(opts, syrequest.WithPartSize(size))
-	}
-	if common.IsCloudPresignedURL(urlStr) {
-		opts = append(opts, syrequest.WithSkipAuth(true))
-	}
-	if method == http.MethodPut && needsAzureBlobTypeHeader(parsed) {
-		opts = append(opts, syrequest.WithHeader("x-ms-blob-type", "BlockBlob"))
-	}
-
-	if err := req.Do(ctx, method, urlStr, body, &resp, opts...); err != nil {
-		return fmt.Errorf("upload to %s failed: %w", urlStr, err)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return common.ResponseBodyError(resp, fmt.Sprintf("upload to %s failed", urlStr))
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("download probe failed with status %d", resp.StatusCode)
 	}
 	return nil
-}
-
-func needsAzureBlobTypeHeader(parsed *url.URL) bool {
-	if parsed == nil {
-		return false
-	}
-	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
-	if scheme != "http" && scheme != "https" {
-		return false
-	}
-	q := parsed.Query()
-	if strings.TrimSpace(q.Get("comp")) != "" {
-		return false
-	}
-	if !strings.EqualFold(strings.TrimSpace(q.Get("sr")), "b") {
-		return false
-	}
-	return strings.TrimSpace(q.Get("sig")) != "" && strings.TrimSpace(q.Get("sv")) != ""
-}
-
-func useGCSJSONMediaUpload(parsed *url.URL) bool {
-	if parsed == nil {
-		return false
-	}
-	if strings.TrimSpace(parsed.Query().Get("uploadType")) != "media" {
-		return false
-	}
-	if strings.TrimSpace(parsed.Query().Get("name")) == "" {
-		return false
-	}
-	return strings.Contains(parsed.EscapedPath(), "/upload/storage/v1/b/")
-}
-
-func uploadChunkSizeForThreshold(threshold int64) int64 {
-	chunkSize := int64(64 * common.MB)
-	if threshold > 0 && threshold < chunkSize {
-		chunkSize = threshold
-	}
-	if chunkSize < common.MinMultipartChunkSize {
-		chunkSize = common.MinMultipartChunkSize
-	}
-	return chunkSize
 }

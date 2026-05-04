@@ -9,11 +9,12 @@ import (
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drslookup"
-	"github.com/calypr/git-drs/internal/drsmap"
+	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/hash"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -70,7 +71,7 @@ func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[stri
 func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 	s.filesByOID = make(map[string]lfs.LfsFileInfo, len(files))
 	for _, f := range files {
-		oid := localcommon.NormalizeOid(f.Oid)
+		oid := localdrsobject.NormalizeOid(f.Oid)
 		if oid == "" {
 			continue
 		}
@@ -87,12 +88,12 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
 	for _, oid := range s.oids {
-		objects, err := drslookup.ObjectsByHash(s.ctx, s.rt.API, oid)
+		objects, err := drsremote.ObjectsByHash(s.ctx, s.rt.API, oid)
 		if err != nil {
 			return fmt.Errorf("hash lookup failed for oid %s: %w", oid, err)
 		}
 		for _, obj := range objects {
-			objOID := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+			objOID := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 			if objOID == "" {
 				continue
 			}
@@ -114,11 +115,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
-			toRegister = append(toRegister, localcommon.ConvertToCandidate(obj))
+			toRegister = append(toRegister, localdrsobject.ConvertToCandidate(obj))
 			s.registeredOids[oid] = true
 			continue
 		}
-		if match, err := drsmap.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
+		if match, err := drsremote.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
 			s.drsObjByOID[oid] = match
 		}
 	}
@@ -136,7 +137,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 	}
 	for i := range registered.Objects {
 		obj := registered.Objects[i]
-		oid := localcommon.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		oid := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 		if oid != "" {
 			copyObj := obj
 			s.drsObjByOID[oid] = &copyObj
@@ -147,7 +148,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
 	file := s.filesByOID[oid]
-	if localObj, err := drsmap.DrsInfoFromOid(oid); err == nil && localObj != nil {
+	if localObj, err := localdrsobject.ReadObject(localcommon.DRS_OBJS_PATH, oid); err == nil && localObj != nil {
 		return scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
 	}
 	stat, err := os.Stat(file.Name)
@@ -182,12 +183,12 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		name = oid
 	}
 
-	did := drsmap.DrsUUID(rt.Scope.Project, oid)
+	did := uuid.NewSHA1(localdrsobject.UUIDNamespace, []byte(fmt.Sprintf("%s:%s", rt.Scope.Project, localdrsobject.NormalizeOid(oid)))).String()
 	if existing != nil && existing.Id != "" {
 		did = existing.Id
 	}
 
-	obj, err := localcommon.BuildDrsObjWithPrefix(name, oid, size, did, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.Project, rt.Scope.StoragePref)
+	obj, err := localdrsobject.BuildWithPrefix(name, oid, size, did, rt.Scope.Bucket, rt.Scope.Organization, rt.Scope.Project, rt.Scope.StoragePref)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +271,6 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		concurrency = 1
 	}
 
-	presignedURLs := s.resolveBatchUploadURLs(candidates)
 	small, large := splitCandidatesByThreshold(candidates, threshold)
 	s.rt.Logger.InfoContext(s.ctx, "upload plan prepared", "total", len(candidates), "parallel_small", len(small), "sequential_large", len(large))
 
@@ -280,8 +280,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
-				key := uploadKeyFromObject(c.obj, s.rt.Scope.Bucket, s.rt.Scope.StoragePref)
-				return uploadFileForObject(s.rt, egCtx, c.obj, c.src, false, presignedURLs[c.obj.Id+"|"+key])
+				return uploadFileForObject(s.rt, egCtx, c.obj, c.src, false)
 			})
 		}
 		if err := eg.Wait(); err != nil {
@@ -290,18 +289,11 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	}
 
 	for _, c := range large {
-		if err := uploadFileForObject(s.rt, s.ctx, c.obj, c.src, false, ""); err != nil {
+		if err := uploadFileForObject(s.rt, s.ctx, c.obj, c.src, false); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (s *batchSyncSession) resolveBatchUploadURLs(candidates []uploadCandidate) map[string]string {
-	// The current syfon client does not expose a batch upload URL endpoint.
-	// Fall back to direct upload behavior for all uploads.
-	_ = candidates
-	return map[string]string{}
 }
 
 func splitCandidatesByThreshold(candidates []uploadCandidate, threshold int64) (small, large []uploadCandidate) {

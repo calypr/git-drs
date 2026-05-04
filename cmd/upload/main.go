@@ -9,8 +9,9 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drslookup"
-	xferupload "github.com/calypr/syfon/client/xfer/upload"
+	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drsremote"
+	syupload "github.com/calypr/syfon/client/transfer/upload"
 	"github.com/spf13/cobra"
 )
 
@@ -68,15 +69,15 @@ var Cmd = &cobra.Command{
 					return err
 				}
 
-				objs, err := drslookup.ObjectsByHashForScope(cmd.Context(), client, sha256)
+				objs, err := drsremote.ObjectsByHashForScope(cmd.Context(), client, sha256)
 				if err != nil || len(objs) == 0 {
 					did := sha256
 					name := filepath.Base(src)
-					drsObj, err := common.BuildDrsObjWithPrefix(name, sha256, s.Size(), did, bucketName, organization, project, storagePrefix)
+					drsObj, err := drsobject.BuildWithPrefix(name, sha256, s.Size(), did, bucketName, organization, project, storagePrefix)
 					if err != nil {
 						return fmt.Errorf("build DRS object for %s: %w", src, err)
 					}
-					registered, err := xferupload.RegisterFile(cmd.Context(), client.Client.Data(), client.Client.DRS(), drsObj, src, bucketName)
+					registered, err := syupload.RegisterFile(cmd.Context(), client.Client.Data(), client.Client.DRS(), drsObj, src, bucketName)
 					if err != nil {
 						return fmt.Errorf("error uploading %s: %v", src, err)
 					}

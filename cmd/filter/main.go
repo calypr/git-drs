@@ -19,7 +19,10 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/gitfilter"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
@@ -66,7 +69,7 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 	}
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
 	// Build the filter and register handlers.
-	f := lfs.NewGitFilter(os.Stdin, os.Stdout, logger).
+	f := gitfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
 		OnSmudge(makeSmudgeHandler(drsCtx, logger)).
 		OnClean(makeCleanHandler(lfsRoot, logger))
 
@@ -77,16 +80,16 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) lfs.SmudgeFunc {
-	return func(ctx context.Context, req lfs.FilterRequest, ptr io.Reader, dst io.Writer) error {
+func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) gitfilter.SmudgeFunc {
+	return func(ctx context.Context, req gitfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
-		var downloadFn lfs.SmudgeDownloadFunc
+		var downloadFn drsfilter.SmudgeDownloadFunc
 		if drsCtx != nil {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-				return lfs.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+				return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 			}
 		}
-		return lfs.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
+		return drsfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
 	}
 }
 
@@ -94,10 +97,10 @@ func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) lfs.Smudg
 // Clean handler — stage: real file content → LFS pointer
 // --------------------------------------------------------------------------
 
-func makeCleanHandler(lfsRoot string, logger *slog.Logger) lfs.CleanFunc {
-	return func(ctx context.Context, req lfs.FilterRequest, content io.Reader, dst io.Writer) error {
+func makeCleanHandler(lfsRoot string, logger *slog.Logger) gitfilter.CleanFunc {
+	return func(ctx context.Context, req gitfilter.FilterRequest, content io.Reader, dst io.Writer) error {
 		logger.Debug("clean", "pathname", req.Pathname)
-		return lfs.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
+		return drsfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
 	}
 }
 

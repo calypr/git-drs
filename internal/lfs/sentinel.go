@@ -19,7 +19,7 @@ func SyntheticOIDFromETag(etag string) (string, error) {
 	return fmt.Sprintf("%x", sum[:]), nil
 }
 
-func BuildAddURLSentinel(etag string, sourceURL string) ([]byte, error) {
+func buildAddURLSentinel(etag string, sourceURL string) ([]byte, error) {
 	e := strings.TrimSpace(strings.Trim(etag, `"`))
 	if e == "" {
 		return nil, fmt.Errorf("etag is required for sentinel")
@@ -47,11 +47,14 @@ func IsAddURLSentinelObject(path string) (bool, error) {
 }
 
 func WriteAddURLSentinelObject(lfsRoot string, oid string, etag string, sourceURL string) (string, error) {
-	objPath := filepath.Join(lfsRoot, "objects", oid[:2], oid[2:4], oid)
+	objPath, err := ObjectPath(filepath.Join(lfsRoot, "objects"), oid)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(filepath.Dir(objPath), 0o755); err != nil {
 		return "", fmt.Errorf("mkdir %s: %w", filepath.Dir(objPath), err)
 	}
-	payload, err := BuildAddURLSentinel(etag, sourceURL)
+	payload, err := buildAddURLSentinel(etag, sourceURL)
 	if err != nil {
 		return "", err
 	}

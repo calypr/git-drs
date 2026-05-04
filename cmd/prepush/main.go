@@ -20,10 +20,12 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsmap"
+	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -39,18 +41,18 @@ var Cmd = &cobra.Command{
 }
 
 type PrePushService struct {
-	newLogger        func(string, bool) (*slog.Logger, error)
-	loadConfig       func() (*config.Config, error)
-	updateDrsObjects func(common.ObjectBuilder, map[string]lfs.LfsFileInfo, drsmap.UpdateOptions) error
-	createTempFile   func(dir, pattern string) (*os.File, error)
+	newLogger       func(string, bool) (*slog.Logger, error)
+	loadConfig      func() (*config.Config, error)
+	writeDrsObjects func(drsobject.Builder, map[string]lfs.LfsFileInfo, drsmap.WriteOptions) error
+	createTempFile  func(dir, pattern string) (*os.File, error)
 }
 
 func NewPrePushService() *PrePushService {
 	return &PrePushService{
-		newLogger:        drslog.NewLogger,
-		loadConfig:       config.LoadConfig,
-		updateDrsObjects: drsmap.UpdateDrsObjectsWithFiles,
-		createTempFile:   os.CreateTemp,
+		newLogger:       drslog.NewLogger,
+		loadConfig:      config.LoadConfig,
+		writeDrsObjects: drsmap.WriteObjectsForLFSFiles,
+		createTempFile:  os.CreateTemp,
 	}
 }
 
@@ -95,7 +97,7 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		return err
 	}
 
-	builder := common.NewObjectBuilder(scope.Bucket, remoteConfig.GetProjectId())
+	builder := drsobject.NewBuilder(scope.Bucket, remoteConfig.GetProjectId())
 	builder.Organization = remoteConfig.GetOrganization()
 	builder.StoragePrefix = scope.Prefix
 	myLogger.Debug(fmt.Sprintf("Current server project: %s (org: %s)", builder.Project, builder.Organization))
@@ -125,13 +127,13 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	}
 
 	myLogger.Debug(fmt.Sprintf("Preparing DRS objects for push branches: %v (cache=%v)", branches, usedCache))
-	err = s.updateDrsObjects(builder, lfsFiles, drsmap.UpdateOptions{
+	err = s.writeDrsObjects(builder, lfsFiles, drsmap.WriteOptions{
 		Cache:          cache,
 		PreferCacheURL: usedCache,
 		Logger:         myLogger,
 	})
 	if err != nil {
-		myLogger.Error(fmt.Sprintf("UpdateDrsObjects failed: %v", err))
+		myLogger.Error(fmt.Sprintf("WriteObjectsForLFSFiles failed: %v", err))
 		return err
 	}
 
@@ -242,8 +244,8 @@ func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
 					URL: accURL,
 				},
 			}
-			if am.Authorizations != nil && len(*am.Authorizations) > 0 {
-				m.Authorizations = *am.Authorizations
+			if authzMap := syfoncommon.AuthzMapFromAccessMethodAuthorizations(am.Authorizations); len(authzMap) > 0 {
+				m.Authorizations = authzMap
 			}
 			out.AccessMethods = append(out.AccessMethods, m)
 		}
@@ -261,12 +263,12 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 
 	candidates := make([]metadataCandidate, 0, len(lfsFiles))
 	for _, file := range lfsFiles {
-		obj, err := drsmap.DrsInfoFromOid(file.Oid)
+		obj, err := drsobject.ReadObject(common.DRS_OBJS_PATH, file.Oid)
 		if err != nil || obj == nil {
 			logger.Debug(fmt.Sprintf("skipping oid %s: local DRS object not found", file.Oid))
 			continue
 		}
-		candidates = append(candidates, toMetadataCandidate(common.ConvertToCandidate(obj)))
+		candidates = append(candidates, toMetadataCandidate(drsobject.ConvertToCandidate(obj)))
 	}
 	if len(candidates) == 0 {
 		logger.Debug("no metadata candidates to stage")

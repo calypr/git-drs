@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/drstrack"
 	"github.com/spf13/cobra"
 )
 
 var (
-	gitLFSTrackPatterns = lfs.GitLFSTrackPatterns
-	gitLFSListPatterns  = lfs.GitLFSListTrackedPatterns
+	gitLFSTrackPatterns = drstrack.TrackPatterns
+	gitLFSListPatterns  = drstrack.ListTrackedPatterns
 )
 
 var Cmd = NewCommand()

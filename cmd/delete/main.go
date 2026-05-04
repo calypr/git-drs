@@ -8,7 +8,7 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drslookup"
+	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -53,7 +53,7 @@ var Cmd = &cobra.Command{
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drslookup.ObjectsByHashForScope(context.Background(), drsClient, oid)
+		records, err := drsremote.ObjectsByHashForScope(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}

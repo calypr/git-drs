@@ -52,7 +52,10 @@ git drs init [flags]
 
 **Options:**
 
-- `--transfers <n>`: Number of concurrent transfers (default: 4)
+- `--transfers <n>`: Number of concurrent transfers (default: 1)
+- `--upsert`: Enable upsert for DRS objects
+- `--multipart-threshold <mb>`: Multipart threshold in MB (default: 5120)
+- `--enable-data-client-logs`: Enable data-client internal logs
 
 **Example:**
 
@@ -92,20 +95,20 @@ Add a Gen3 DRS server configuration.
 
 ```bash
 git drs remote add gen3 <remote-name> \
-    --url <server-url> \
-    --cred <credentials-file> \
-    --organization <program> \
     --project <project-id> \
-    [--bucket <bucket-name>]
+    [--organization <program>] \
+    [--bucket <bucket-name>] \
+    [--cred <credentials-file> | --token <token>] \
+    [--url <server-url>]
 ```
 
 **Options:**
 
-- `--url <url>`: Gen3 server endpoint (required)
-- `--cred <file>`: Path to credentials JSON file (required)
-- `--token <token>`: Token for temporary access (alternative to --cred)
-- `--organization <name>`: Program/organization scope used for bucket mapping
 - `--project <id>`: Project ID (required)
+- `--cred <file>`: Path to credentials JSON file
+- `--token <token>`: Token for temporary access (alternative to `--cred`)
+- `--url <url>`: Optional Gen3 endpoint override
+- `--organization <name>`: Program/organization scope used for bucket mapping
 - `--bucket <name>`: Bucket name fallback when no org/project mapping is configured
 
 **Examples:**
@@ -113,20 +116,19 @@ git drs remote add gen3 <remote-name> \
 ```bash
 # Add production remote
 git drs remote add gen3 production \
-    --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
     --organization my-program \
     --project my-project
 
 # Add staging remote
 git drs remote add gen3 staging \
-    --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
     --organization staging-program \
     --project staging-project
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
+**Authentication note:** Supply either `--cred` or `--token` when initially configuring a remote (or when no existing profile is available for the remote name).
 **Important:** A bucket mapping for the target `organization/project` must already exist, typically created once by a steward/admin with `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path <scheme>://<bucket>/<prefix>`. Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
@@ -288,39 +290,6 @@ git drs query --checksum 9f2c2db77f0a3e2b47e4b44b8ce8d4c8c3c4c0b5f4c5a2d2f9b1d0b
 git drs query did:example:12345 --remote staging
 ```
 
-### `git drs add-url`
-
-Prepare a file reference via cloud object URL for DRS registration.
-
-**Usage:**
-
-```bash
-# Stage local pointer + DRS metadata
-git drs add-url <cloud-url> [path] [--sha256 <hash>]
-# Register/push prepared records
-git drs push
-```
-
-**Examples:**
-
-```bash
-# Known SHA path
-git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
-
-# Unknown SHA path (experimental sentinel mode)
-git drs add-url s3://bucket/path/file.bin data/file.bin
-```
-
-**Options:**
-
-- `--sha256 <hash>`: Optional SHA256 hash of the source object.  
-  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
-
-**Notes:**
-
-- `add-url` no longer accepts per-command AWS credential flags.
-- S3 connection hints are resolved from environment/runtime config when needed (for example `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
-- Registration happens on `git drs push`, not at `add-url` time.
 
 ### `git drs version`
 

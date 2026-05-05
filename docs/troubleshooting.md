@@ -23,8 +23,8 @@ Common issues and solutions when working with Git DRS.
 
 **What it does:**
 
-- Sets up `.drs/` directory structure
-- Configures Git LFS hooks
+- Sets up `.git/drs/` directory structure
+- Configures Git DRS repository settings and hooks
 - Updates `.gitignore`
 
 These changes persist in your local repository. For subsequent sessions, you only need to refresh credentials if they've expired (every 30 days).
@@ -51,7 +51,8 @@ Running `git drs init` a second time is usually harmless but unnecessary. It may
    - See the "Undo Last Commit" section above for alternatives.
 
 5. Hooks or credentials issues
-   - If hooks were replaced or credentials need refresh, run `git drs init` with the correct `--cred`/`--profile` options, or re-add the remote with `git drs remote add`.
+   - If hooks were replaced, re-run `git drs init`.
+   - If credentials need refresh, re-add the remote with `git drs remote add` using `--cred` or `--token`.
 
 Summary: inspect with `git status`/`git diff`, then either accept, manually edit, or revert the changes using standard `git restore` / `git reset` commands.
 
@@ -286,10 +287,16 @@ git commit -m "Track large file with LFS"
 
 ```bash
 # confirm repo has complete configuration
-git drs list-config
+git drs remote list
 
-# init your git drs project
-git drs init --cred /path/to/cred/file --profile <name>
+# ensure the repo is initialized
+git drs init
+
+# confirm your remote configuration and refresh auth if needed
+git drs remote add gen3 production \
+    --cred /path/to/credentials.json \
+    --project my-project \
+    --organization my-program
 
 # attempt git pull again
 git lfs pull -I path/to/file
@@ -305,7 +312,7 @@ git lfs pull -I path/to/file
 
 ```bash
 # Check repository status
-git drs list-config
+git drs remote list
 
 # Try pulling with verbose output
 git lfs pull -I "problematic-file*" --verbose

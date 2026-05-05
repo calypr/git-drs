@@ -132,7 +132,7 @@ Use `--help` with any command for details. See [Commands Reference](docs/command
 
 - Git LFS installed and configured
 - Access credentials for your DRS server
-- Go 1.24+ (for building from source)
+- Go 1.26.2+ (for building from source)
 
 ## Support
 

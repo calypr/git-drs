@@ -33,9 +33,9 @@ git lfs install --skip-smudge
 
 2. **Update PATH**
    ```bash
-   # Add to ~/.bash_profile or ~/.zshrc
+   # Add to your shell startup file (for example ~/.zshrc, ~/.bashrc, or ~/.profile)
    export PATH="$PATH:$HOME/.local/bin"
-   source ~/.bash_profile  # or source ~/.zshrc
+   source ~/.zshrc  # or source your shell startup file
    ```
 
 3. **Verify Installation**
@@ -77,8 +77,8 @@ git lfs install --skip-smudge
    git lfs install --skip-smudge
    
    # Cleanup
-   rm git-lfs-linux-amd64-v3.7.0.tar.gz
-   rm -r git-lfs-3.7.0/
+   rm git-lfs-linux-amd64-v3.7.1.tar.gz
+   rm -r git-lfs-3.7.1/
    ```
 
 2. **Configure Git/SSH (if needed)**

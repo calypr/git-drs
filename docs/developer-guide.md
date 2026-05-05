@@ -103,7 +103,7 @@ Objects are stored in `.git/drs/lfs/objects/` during pre-commit and referenced d
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26.2+
 - Git LFS installed
 - Access to a DRS server for testing
 

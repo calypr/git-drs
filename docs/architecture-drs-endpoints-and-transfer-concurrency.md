@@ -45,7 +45,7 @@ Notes:
   - bulk access path `/ga4gh/drs/v1/objects/access`
   - access URL path `/ga4gh/drs/v1/objects/{id}/access/{type}`
 - `git drs pre-push-prepare` also calls a non-GA4GH metadata staging endpoint:
-  - `POST {remote}/info/lfs/objects/metadata` (`cmd/prepush/main.go`)
+  - `POST {remote}/info/drs/objects/metadata` (`cmd/prepush/main.go`)
   - This is optional capability and not part of GA4GH DRS.
 
 ## 1.3 Trace from standard Git commands
@@ -54,8 +54,7 @@ Notes:
 
 - `git drs init` installs hooks (`cmd/initialize/main.go`):
   - pre-commit: `git drs precommit`
-  - pre-push: `git drs pre-push-prepare`
-- During a normal `git push`, pre-push metadata can be staged via `/info/lfs/objects/metadata` before transfer.
+- During a normal `git push`, pre-push metadata can be staged via `/info/drs/objects/metadata` before transfer.
 - The explicit `git drs push` command runs the register/upload workflow, then runs `git push --no-verify` by default (`cmd/push/main.go`).
 
 ---
@@ -68,13 +67,13 @@ All transfer concurrency in `git-drs` is **in-process**, implemented with **Go g
 
 - Upload object fan-out uses `golang.org/x/sync/errgroup` — goroutines with a shared context and bounded by `errgroup.SetLimit(n)`.
 - Download chunk parallelism uses the `sydownload` library, which internally uses goroutines to issue concurrent HTTP range requests.
-- Sub-process calls (`exec.Command("git", ...)`, `exec.Command("git", "lfs", ...)`) appear only for Git/LFS metadata operations (e.g. `git pull`, `git lfs checkout`, `git lfs ls-files`), never for data-transfer concurrency.
+- Sub-process calls (`exec.Command("git", ...)`) appear only for Git metadata operations (e.g. `git pull`, `git checkout`, `git drs ls-files`), never for data-transfer concurrency.
 
 ## 2.1 Upload concurrency (`git drs push`)
 
 Upload tuning originates from Git config and is carried in `config.GitContext`:
 
-- `lfs.concurrenttransfers` -> `UploadConcurrency`
+- `lfs.concurrenttransfers` -> `UploadConcurrency` (Git config key)
 - `drs.multipart-threshold` (MB) -> `MultiPartThreshold`
 
 See `internal/config/remote.go` (`newGitContext`) and `cmd/initialize/main.go` (`initGitConfig`).
@@ -131,13 +130,12 @@ The `sydownload` library implements **goroutine-based HTTP range-request concurr
 - So pull concurrency is **intra-object** (goroutine-based chunk/range concurrency), not broad object fan-out.
 - Bulk metadata prefetch (DRS objects + bulk access URLs) is performed **before** the sequential download loop to amortize API round-trips.
 
-## 2.3 Git LFS concurrency lane
+## 2.3 Git DRS fetch lane
 
-Some flows still call Git LFS directly (for example `git drs fetch` runs `git lfs pull` in `cmd/fetch/main.go`).
+Some flows still call Git commands directly (for example `git drs fetch` invokes a subprocess in `cmd/fetch/main.go`).
 
-- These are **subprocess** calls (`exec.Command("git", "lfs", ...)`), not goroutine fan-out.
-- That lane uses Git LFS runtime behavior and respects `lfs.concurrenttransfers` in Git config.
-- Git LFS own transfer concurrency is managed within the `git-lfs` subprocess and is not visible to `git-drs`.
+- These are **subprocess** calls (`exec.Command("git", ...)`), not goroutine fan-out.
+- That lane uses the underlying transfer runtime and respects `lfs.concurrenttransfers` in Git config.
 - This is distinct from the goroutine-based `git drs push` upload fan-out and `sydownload` chunk concurrency.
 
 ---
@@ -154,12 +152,12 @@ Workflow:
 2. Resolve remote scope (org/project/bucket/prefix) (`cmd/addurl/scope.go`).
 3. Resolve source object URL (full URL mode or key+`--scheme` mode).
 4. Inspect object using cloud client (`sycloud.InspectObject`).
-5. Ensure LFS object identity:
+5. Ensure object identity:
    - If `--sha256` provided: trust it as OID.
    - Otherwise: derive synthetic OID from ETag and write sentinel object (`lfs.SyntheticOIDFromETag`, `lfs.WriteAddURLSentinelObject`).
-6. Write LFS pointer file to worktree.
+6. Write pointer file to worktree.
 7. Best-effort update of pre-commit cache (`updatePrecommitCache`).
-8. Ensure file is tracked by LFS if needed.
+8. Ensure file is tracked if needed.
 9. Write/update local DRS metadata object under `.git/drs/lfs/objects` (`writeAddURLDrsObject`).
 
 ### Does `add-url` query DRS server for SHA existence?
@@ -179,13 +177,11 @@ Workflow:
 1. Resolve remote client.
 2. Call `DRS().GetObject(drs_uri)`.
 3. Create parent directory if needed.
-4. Write Git LFS pointer from returned DRS object checksums (`lfs.CreateLfsPointer`).
+4. Write pointer from returned DRS object checksums (`lfs.CreateLfsPointer`).
 
 ### Does `add-ref` query DRS server for SHA existence?
 
-It does not perform a checksum lookup endpoint call. It verifies existence by object ID (`GetObject`) and consumes checksum from that object payload.
-
-## 3.3 Where SHA existence check against DRS actually happens
+It does not perform a checksum lookup endpoint call. It verifies existence by object ID (`GetObject`) and consumes checksum from that object payload.## 3.3 Where SHA existence check against DRS actually happens
 
 Checksum existence checks are performed during `git drs push` in `internal/pushsync/batch_sync.go`:
 
@@ -214,7 +210,7 @@ So for both `add-url` and `add-ref`, the checksum-existence gate is primarily de
 1. `add-ref`: `GetObject(drs_id)` and write pointer.
 2. `pull`: detect unresolved pointers.
 3. For each OID, resolve scoped object by checksum and access URL.
-4. Download to LFS cache; checkout file contents.
+4. Download to local object cache; checkout file contents.
 
 ---
 
@@ -222,9 +218,9 @@ So for both `add-url` and `add-ref`, the checksum-existence gate is primarily de
 
 - If you need immediate server-side checksum validation during `add-url`, that behavior does not exist today; validation happens at push time.
 - All transfer concurrency is in-process (goroutines); no subprocess workers are used for data movement.
-- Upload concurrency is configurable through Git config (`lfs.concurrenttransfers`) and is implemented as a goroutine pool bounded by `errgroup.SetLimit`.
+- Upload concurrency is configurable through Git config (`lfs.concurrenttransfers` key) and is implemented as a goroutine pool bounded by `errgroup.SetLimit`.
 - Download concurrency is fixed (not configurable at runtime): `Concurrency=2` goroutines per object for HTTP range requests, hardcoded in two places (`internal/drsremote/remote.go` and `cmd/download/main.go`).
 - Object-level download iteration in `git drs pull` is sequential; only intra-object chunk downloads are concurrent.
-- `git drs fetch` delegates entirely to the `git lfs pull` subprocess; its concurrency is controlled by Git LFS runtime, not by `git-drs` goroutine management. Tuning and diagnostics differ accordingly.
+- `git drs fetch` delegates to a subprocess; its concurrency is controlled by the underlying runtime, not by `git-drs` goroutine management. Tuning and diagnostics differ accordingly.
 
 ---

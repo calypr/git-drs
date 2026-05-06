@@ -130,12 +130,12 @@ git drs fetch staging
 
 ## File Tracking
 
-Git DRS can use Git LFS-compatible pointers and local object storage. You must explicitly track file patterns before adding LFS-managed files.
+Git DRS uses Git-compatible pointer files. You must explicitly track file patterns before adding managed files.
 
 ### View Current Tracking
 
 ```bash
-git lfs track
+git drs track
 ```
 
 ### Track Files
@@ -143,21 +143,21 @@ git lfs track
 **Single File**
 
 ```bash
-git lfs track path/to/specific-file.txt
+git drs track path/to/specific-file.txt
 git add .gitattributes
 ```
 
 **File Pattern**
 
 ```bash
-git lfs track "*.bam"
+git drs track "*.bam"
 git add .gitattributes
 ```
 
 **Directory**
 
 ```bash
-git lfs track "data/**"
+git drs track "data/**"
 git add .gitattributes
 ```
 
@@ -165,10 +165,10 @@ git add .gitattributes
 
 ```bash
 # View tracked patterns
-git lfs track
+git drs track
 
 # Remove pattern
-git lfs untrack "*.bam"
+git drs untrack "*.bam"
 
 # Stage changes
 git add .gitattributes
@@ -180,14 +180,14 @@ git add .gitattributes
 
 ```bash
 # Track file type (if not already tracked)
-git lfs track "*.bam"
+git drs track "*.bam"
 git add .gitattributes
 
 # Add your file
 git add myfile.bam
 
-# Verify LFS is tracking it
-git lfs ls-files
+# Verify it is tracked
+git drs ls-files
 
 # Commit and push
 git commit -m "Add new data file"
@@ -198,42 +198,17 @@ git push
 
 ### Downloading Files
 
-**Single File**
-
-```bash
-git lfs pull -I path/to/file.bam
-```
-
-**Pattern**
-
-```bash
-git lfs pull -I "*.bam"
-```
-
 **All Files**
 
 ```bash
-git lfs pull
-```
-
-**Directory**
-
-```bash
-git lfs pull -I "data/**"
+git drs pull
 ```
 
 ### Checking File Status
 
 ```bash
-# List all LFS-tracked files
-git lfs ls-files
-
-# Check specific pattern
-git lfs ls-files -I "*.bam"
-
-# View localization status
-# (-) = not localized, (*) = localized
-git lfs ls-files
+# List all tracked files
+git drs ls-files
 ```
 
 ## Working with Cloud Object URLs
@@ -242,7 +217,7 @@ You can add references to existing bucket objects without copying them:
 
 ```bash
 # Track the file pattern first
-git lfs track "myfile.txt"
+git drs track "myfile.txt"
 git add .gitattributes
 
 # Add object reference (known sha256 path)
@@ -293,12 +268,12 @@ git drs remote set staging
 | **Add remote**     | `git drs remote add gen3 <name> --cred...` |
 | **View remotes**   | `git drs remote list`                       |
 | **Set default**    | `git drs remote set <name>`                 |
-| **Track files**    | `git lfs track "pattern"`                   |
-| **Check tracked**  | `git lfs ls-files`                          |
+| **Track files**    | `git drs track "pattern"`                   |
+| **Check tracked**  | `git drs ls-files`                          |
 | **Add files**      | `git add file.ext`                          |
 | **Commit**         | `git commit -m "message"`                   |
 | **Push**           | `git push`                                  |
-| **Download**       | `git lfs pull -I "pattern"`                 |
+| **Download**       | `git drs pull`                              |
 
 ## Session Workflow
 
@@ -344,7 +319,7 @@ Use this flow when developing against a local `drs-server` instead of hosted Gen
 3. **Track and push**
 
    ```bash
-   git lfs track "*.bin"
+   git drs track "*.bin"
    git add .gitattributes data/example.bin
    git commit -m "Add local DRS test file"
    git drs push
@@ -354,8 +329,6 @@ Use this flow when developing against a local `drs-server` instead of hosted Gen
 
    ```bash
    git drs pull
-   # or the Git LFS compatibility path
-   git lfs pull
    ```
 
 For complete local/remote mode behavior and e2e runbooks, see [E2E Modes + Local Setup](e2e-modes-and-local-setup.md).
@@ -363,7 +336,7 @@ For complete local/remote mode behavior and e2e runbooks, see [E2E Modes + Local
 3. **Download files as needed**
 
    ```bash
-   git lfs pull -I "required-files*"
+   git drs pull
    ```
 
 ## Next Steps

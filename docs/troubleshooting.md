@@ -59,16 +59,20 @@ Summary: inspect with `git status`/`git diff`, then either accept, manually edit
 
 ## When to Use Which Tool
 
-Understanding when to use Git, Git LFS, or Git DRS commands:
+Understanding when to use Git or Git DRS commands:
 
 ### Git DRS Commands
 
-**Use for**: Repository and remote configuration
+**Use for**: Repository and remote configuration, file tracking, and data transfer
 
-- `git drs init` - Initialize Git LFS hooks
+- `git drs init` - Initialize Git DRS hooks
 - `git drs remote add` - Configure DRS server connections
 - `git drs remote list` - View configured remotes
 - `git drs add-url` - Add cloud object references
+- `git drs track` - Define which files to track
+- `git drs ls-files` - See tracked files and status
+- `git drs pull` - Download specific files
+- `git drs untrack` - Stop tracking file patterns
 
 **When**:
 
@@ -76,17 +80,6 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 - Adding/managing DRS remotes
 - Refreshing expired credentials
 - Adding external file references
-
-### Git LFS Commands
-
-**Use for**: File tracking and management
-
-- `git lfs track` - Define which files to track
-- `git lfs ls-files` - See tracked files and status
-- `git lfs pull` - Download specific files
-- `git lfs untrack` - Stop tracking file patterns
-
-**When**:
 
 - Managing which files are stored externally
 - Downloading specific files
@@ -108,80 +101,62 @@ Understanding when to use Git, Git LFS, or Git DRS commands:
 
 ## Common Error Messages
 
-## Git LFS-Oriented Troubleshooting Guide (Commit/Push/Clone/Pull)
+## Git DRS Troubleshooting Guide (Commit/Push/Clone/Pull)
 
-The checks below prioritize Git LFS guidance and documentation because Git DRS relies on Git LFS for large-file handling. If you run into issues, start with the Git LFS troubleshooting docs and logs, then move to Git DRS-specific configuration checks. Primary references: the Git LFS troubleshooting guide and the Git LFS documentation for installation, tracking, and environment variables:  
+### Failed Commit (hook or pointer issues)
 
-- Git LFS troubleshooting: https://github.com/git-lfs/git-lfs/wiki/Troubleshooting  
-- Git LFS docs: https://github.com/git-lfs/git-lfs/tree/main/docs  
+1. **Confirm git-drs install ran and hooks are active**
+   - Run: `git drs remote list` to confirm configuration is present.
+   - If hooks are missing, re-run `git drs init`.
 
-### Failed Commit (Git LFS hooks or pointer issues)
+2. **Check whether the file was tracked before the commit**
+   - Run: `git drs track` and confirm the file pattern is listed.
+   - If not tracked, add it (`git drs track "*.bam"`) and stage `.gitattributes`.
 
-1. **Confirm Git LFS is installed and hooks are active**  
-   - Run: `git lfs version` and `git lfs env`  
-   - If `git lfs env` reports `git lfs install` is needed, run `git lfs install` to re-install hooks.  
-   - This is the most common cause of commits failing to convert large files into LFS pointers.  
+3. **Verify the file is staged as a pointer**
+   - Run: `git drs ls-files` to confirm the file is listed.
+   - If a large file was added to Git history directly, remove it from the index and re-add it after tracking.
 
-2. **Check whether the file was tracked before the commit**  
-   - Run: `git lfs track` and confirm the file pattern is listed.  
-   - If not tracked, add it (`git lfs track "*.bam"`) and stage `.gitattributes`.  
+4. **Review logs for hook errors**
+   - Run: `cat .git/drs/*.log` to inspect hook failures.
 
-3. **Verify the file is staged as an LFS pointer**  
-   - Run: `git lfs ls-files` to confirm the file is listed.  
-   - If a large file was added to Git history directly, remove it from the index and re-add it after tracking.  
+### Failed Push (uploads, auth, or bandwidth issues)
 
-4. **Review Git LFS logs for hook errors**  
-   - Run: `git lfs logs last` to inspect hook failures.  
-   - Common errors include missing filters or file locking issues.  
+1. **Check authentication and endpoint configuration**
+   - Run: `git drs remote list` and confirm remote values are correct.
+   - If tokens are expired, refresh credentials with `git drs remote add` using `--cred` or `--token`.
 
-### Failed Push (LFS uploads, auth, or bandwidth issues)
+2. **Retry with verbose logging**
+   - Set `GIT_TRACE=1 GIT_CURL_VERBOSE=1` and re-run the push.
+   - Use this output to identify `403/401` auth issues or proxy errors.
 
-1. **Check Git LFS authentication and endpoint configuration**  
-   - Run: `git lfs env` and confirm `Endpoint` values are correct.  
-   - If tokens are expired, refresh credentials and re-run the push.  
+3. **Confirm the objects exist locally**
+   - Run: `git drs ls-files` and ensure your large files are listed.
 
-2. **Retry with LFS verbose logging**  
-   - Run: `GIT_TRACE=1 GIT_CURL_VERBOSE=1 git lfs push --all`  
-   - Use this output to identify `403/401` auth issues or proxy errors.  
+### Failed Clone (objects missing or blocked)
 
-3. **Confirm the LFS objects exist locally**  
-   - Run: `git lfs ls-files` and ensure your large files are listed.  
-   - Missing objects indicate a tracking or filter issue before the push.  
+1. **Confirm objects were fetched**
+   - After clone, run: `git drs pull` to fetch large files.
+   - If the repo only has pointers, you will see pointer files until you pull.
 
-4. **Validate the remote supports Git LFS**  
-   - Run: `git lfs env` to confirm the remote endpoint.  
-   - Some Git servers require explicit LFS enablement or URL configuration.  
+2. **Validate access and authentication**
+   - Run: `git drs remote list` to confirm the configured endpoint.
+   - 401/403 errors point to invalid credentials; refresh with `git drs remote add`.
 
-### Failed Clone (LFS objects missing or blocked)
+3. **Review logs for download errors**
+   - Run: `cat .git/drs/*.log` for the most recent transfer errors.
 
-1. **Confirm LFS objects were fetched**  
-   - After clone, run: `git lfs pull` to fetch large files.  
-   - If the repo only has LFS pointers, you will see pointer files until you pull.  
+### Failed Pull (fetch/checkout issues)
 
-2. **Check LFS smudge/clean filters**  
-   - Run: `git lfs env` and verify `git-lfs` filters are enabled.  
-   - If not, run `git lfs install` and re-run `git lfs pull`.  
+1. **Run `git drs pull` separately**
+   - This isolates DRS download errors from Git merge errors.
 
-3. **Validate access and authentication**  
-   - `git lfs env` will show which endpoint is used; 401/403 errors point to invalid credentials.  
+2. **Review filters and tracking**
+   - Run: `git drs track` to ensure required patterns are present.
+   - If a file type is newly tracked, re-run `git add .gitattributes` and commit.
 
-4. **Inspect LFS logs for download errors**  
-   - Run: `git lfs logs last` for the most recent transfer errors.  
-
-### Failed Pull (LFS fetch/checkout issues)
-
-1. **Run `git lfs pull` separately**  
-   - This isolates LFS download errors from Git merge errors.  
-
-2. **Check LFS file locking or concurrent transfers**  
-   - If your Git host uses LFS file locking, verify the file is not locked by another user.  
-
-3. **Review filters and tracking**  
-   - Run: `git lfs track` to ensure required patterns are present.  
-   - If a file type is newly tracked, re-run `git add .gitattributes` and commit.  
-
-4. **Check for storage or bandwidth limits**  
-   - Some Git LFS hosts enforce quotas; errors will show in `git lfs logs last`.  
+3. **Check logs**
+   - Run: `cat .git/drs/*.log` for the most recent errors.
 
 ### Authentication Errors
 
@@ -252,27 +227,27 @@ Host github.com
 
 ### File Tracking Issues
 
-**Error**: Files not being tracked by LFS
+**Error**: Files not being tracked
 
 **Symptoms**:
 
 - Large files committed directly to Git
-- `git lfs ls-files` doesn't show your files
+- `git drs ls-files` doesn't show your files
 
 **Solution**:
 
 ```bash
 # Check what's currently tracked
-git lfs track
+git drs track
 
 # Track your file type
-git lfs track "*.bam"
+git drs track "*.bam"
 git add .gitattributes
 
 # Remove from Git and re-add
 git rm --cached large-file.bam
 git add large-file.bam
-git commit -m "Track large file with LFS"
+git commit -m "Track large file with git-drs"
 ```
 
 ---
@@ -299,12 +274,12 @@ git drs remote add gen3 production \
     --organization my-program
 
 # attempt git pull again
-git lfs pull -I path/to/file
+git drs pull
 ```
 
 ---
 
-**Error**: `git lfs ls-files` shows files but they won't download
+**Error**: `git drs ls-files` shows files but they won't download
 
 **Cause**: Files may not have been properly uploaded or DRS records missing
 
@@ -315,7 +290,7 @@ git lfs pull -I path/to/file
 git drs remote list
 
 # Try pulling with verbose output
-git lfs pull -I "problematic-file*" --verbose
+GIT_TRACE=1 git drs pull
 
 # Check logs
 cat .git/drs/*.log
@@ -426,23 +401,23 @@ git drs fetch production
 
 ## Undoing Changes
 
-### Untrack LFS Files
+### Untrack Files
 
 If you accidentally tracked the wrong files:
 
 ```bash
 # See current tracking
-git lfs track
+git drs track
 
 # Remove incorrect pattern
-git lfs untrack "wrong-dir/**"
+git drs untrack "wrong-dir/**"
 
 # Add correct pattern
-git lfs track "correct-dir/**"
+git drs track "correct-dir/**"
 
 # Stage the changes
 git add .gitattributes
-git commit -m "Fix LFS tracking patterns"
+git commit -m "Fix tracking patterns"
 ```
 
 ### Undo Git Add
@@ -475,7 +450,7 @@ git reset HEAD~1
 git reset --hard HEAD~1
 ```
 
-### Remove Files from LFS History
+### Remove Files from History
 
 If you committed large files directly to Git by mistake:
 
@@ -483,11 +458,11 @@ If you committed large files directly to Git by mistake:
 # Remove from Git history (use carefully!)
 git filter-branch --tree-filter 'rm -f large-file.dat' HEAD
 
-# Then track properly with LFS
-git lfs track "*.dat"
+# Then track properly with git-drs
+git drs track "*.dat"
 git add .gitattributes
 git add large-file.dat
-git commit -m "Track large file with LFS"
+git commit -m "Track large file with git-drs"
 ```
 
 ## Diagnostic Commands
@@ -504,7 +479,7 @@ git drs remote list
 
 # Repository status
 git status
-git lfs ls-files
+git drs ls-files
 ```
 
 ### View Logs
@@ -518,8 +493,6 @@ cat .git/drs/*.log
 ### Test Connectivity
 
 ```bash
-# Test basic Git operations
-git lfs pull --dry-run
 
 # Test DRS configuration
 git drs remote list
@@ -534,7 +507,6 @@ When reporting issues, include:
 ```bash
 # System information
 git-drs version
-git lfs version
 git --version
 
 # Configuration
@@ -547,6 +519,6 @@ tail -50 .git/drs/*.log
 ## Prevention Best Practices
 
 1. **Test in small batches** - Don't commit hundreds of files at once
-2. **Verify tracking** - Always check `git lfs ls-files` after adding files
+2. **Verify tracking** - Always check `git drs ls-files` after adding files
 3. **Use .gitignore** - Prevent accidental commits of temporary files
 4. **Monitor repository size** - Keep an eye on `.git` directory size

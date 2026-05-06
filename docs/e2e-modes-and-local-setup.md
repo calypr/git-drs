@@ -81,7 +81,7 @@ TEST_STRICT_CLEANUP=true
   - HTTP basic auth via:
     - `TEST_LOCAL_USERNAME` + `TEST_LOCAL_PASSWORD`, or
     - `TEST_ADMIN_AUTH_HEADER="Authorization: Basic <base64(user:pass)>"`
-- `git drs remote add local ... --username ... --password ...` stores local basic auth in repo config for helper/LFS flows.
+- `git drs remote add local ... --username ... --password ...` stores local basic auth in repo config for credential-helper flows.
 
 ## How wrapper scripts map to the main suites
 
@@ -138,7 +138,7 @@ What it covers:
 
 - `git drs push` metadata register + upload
 - multipart/resume behavior
-- `git drs pull` and `git lfs pull` compatibility checks
+- `git drs pull` download and compatibility checks
 - cleanup by DID resolution
 
 ## Local add-url E2E: runbook

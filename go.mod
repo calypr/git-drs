@@ -148,3 +148,11 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 )
+
+replace github.com/calypr/data-client => ../data-client
+
+replace github.com/calypr/syfon => ../syfon
+
+replace github.com/calypr/syfon/client => ../syfon/client
+
+replace github.com/calypr/syfon/apigen => ../syfon/apigen

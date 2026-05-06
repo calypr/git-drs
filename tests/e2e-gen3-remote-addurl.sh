@@ -652,7 +652,6 @@ main() {
     run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (source repo)" \
       git drs remote add gen3 "$REMOTE_NAME" \
         --token "$GEN3_TOKEN" \
-        --bucket "$TEST_BUCKET_NAME" \
         --organization "$ORGANIZATION" \
         --project "$PROJECT_ID"
   else
@@ -757,7 +756,6 @@ main() {
     run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (clone repo)" \
       git drs remote add gen3 "$REMOTE_NAME" \
         --token "$GEN3_TOKEN" \
-        --bucket "$TEST_BUCKET_NAME" \
         --organization "$ORGANIZATION" \
         --project "$PROJECT_ID"
   else

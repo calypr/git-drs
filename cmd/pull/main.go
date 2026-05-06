@@ -3,30 +3,38 @@ package pull
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
-	"os/exec"
+	"sort"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/pathspec"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
 
-var runCommand = func(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
-	return cmd.CombinedOutput()
-}
+var includePatterns []string
+var dryRun bool
+
+var (
+	loadCfg = config.LoadConfig
+	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) { return cfg.GetRemoteOrDefault(name) }
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
+		return cfg.GetRemoteClient(remote, logger)
+	}
+	loadWorktreeInventory = lfs.GetWorktreeLfsFiles
+)
 
 var Cmd = &cobra.Command{
 	Use:   "pull [remote-name]",
-	Short: "Pull using the standard Git + Git LFS flow",
-	Long:  "Pull using the standard Git + Git LFS flow (git pull, git lfs pull, git lfs checkout).",
+	Short: "Download DRS pointer file content into the current checkout",
+	Long:  "Hydrate DRS/Git-LFS pointer files in the current checkout. By default this mirrors git lfs pull semantics for the worktree rather than running git pull.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -37,7 +45,7 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
 
-		cfg, err := config.LoadConfig()
+		cfg, err := loadCfg()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
 		}
@@ -46,55 +54,50 @@ var Cmd = &cobra.Command{
 		if len(args) > 0 {
 			remote = config.Remote(args[0])
 		} else {
-			remote, err = cfg.GetDefaultRemote()
+			remote, err = resolveRemote(cfg, "")
 			if err != nil {
 				logg.Error(fmt.Sprintf("Error getting remote: %v", err))
 				return err
 			}
 		}
 
-		drsCtx, err := cfg.GetRemoteClient(remote, logg)
+		drsCtx, err := newRemoteClient(cfg, remote, logg)
 		if err != nil {
 			logg.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
-		_ = drsCtx // Remote validation only.
 
-		if out, err := runCommand("git", "pull", string(remote)); err != nil {
-			msg := strings.TrimSpace(string(out))
-			if msg == "" {
-				msg = err.Error()
-			}
-			return fmt.Errorf("git pull failed for remote %q: %s", remote, msg)
-		}
-
-		var parsed struct {
-			Files []lfs.LfsFileInfo `json:"files"`
-		}
-		out, err := runCommand("git", "lfs", "ls-files", "--json")
+		inventory, err := loadWorktreeInventory(logg)
 		if err != nil {
-			msg := commandMessage(out, err)
-			if !isMissingGitLFS(msg) {
-				return fmt.Errorf("git lfs ls-files failed: %s", msg)
+			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
+		}
+		pointers := collectPointerFiles(inventory, includePatterns)
+		if len(pointers) == 0 {
+			logg.Debug("no matching pointer files to hydrate")
+			return nil
+		}
+
+		if dryRun {
+			for _, f := range pointers {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), f.Name); err != nil {
+					return err
+				}
 			}
-			lfsFiles, inventoryErr := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, logg)
-			if inventoryErr != nil {
-				return fmt.Errorf("git lfs ls-files failed: %s; fallback inventory failed: %w", msg, inventoryErr)
-			}
-			parsed.Files = make([]lfs.LfsFileInfo, 0, len(lfsFiles))
-			for _, f := range lfsFiles {
-				parsed.Files = append(parsed.Files, f)
-			}
-		} else if err := lfsjsonUnmarshal(out, &parsed); err != nil {
-			return fmt.Errorf("failed to parse git lfs ls-files output: %w", err)
+			return nil
 		}
 
 		ctx := context.Background()
-		missingOIDs := make([]string, 0, len(parsed.Files))
-		seenMissing := make(map[string]struct{}, len(parsed.Files))
-		for _, f := range parsed.Files {
-			if f.Downloaded {
+		missingOIDs := make([]string, 0, len(pointers))
+		seenMissing := make(map[string]struct{}, len(pointers))
+		for _, f := range pointers {
+			cachePath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
+			if err != nil {
+				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
+			}
+			if _, err := os.Stat(cachePath); err == nil {
 				continue
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to stat cached object for %s: %w", f.Oid, err)
 			}
 			if _, seen := seenMissing[f.Oid]; seen {
 				continue
@@ -131,13 +134,15 @@ var Cmd = &cobra.Command{
 					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
 				}
 			}
-			for _, f := range parsed.Files {
-				if f.Downloaded {
-					continue
-				}
+			for _, f := range pointers {
 				dstPath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
+				}
+				if _, err := os.Stat(dstPath); err == nil {
+					continue
+				} else if !os.IsNotExist(err) {
+					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
 				}
 				if obj, ok := prefetched[f.Oid]; ok {
 					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
@@ -155,16 +160,10 @@ var Cmd = &cobra.Command{
 				}
 			}
 		} else {
-			logg.Debug("no missing LFS objects to download")
+			logg.Debug("no missing pointer objects to download")
 		}
 
-		if out, err := runCommand("git", "lfs", "checkout"); err != nil {
-			msg := commandMessage(out, err)
-			if !isMissingGitLFS(msg) {
-				return fmt.Errorf("git lfs checkout failed: %s", msg)
-			}
-		}
-		if err := checkoutDownloadedFiles(parsed.Files); err != nil {
+		if err := checkoutDownloadedFiles(pointers); err != nil {
 			return err
 		}
 
@@ -172,19 +171,31 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func commandMessage(out []byte, err error) string {
-	msg := strings.TrimSpace(string(out))
-	if msg == "" && err != nil {
-		msg = err.Error()
+type pointerFile struct {
+	Name string
+	Oid  string
+	Size int64
+}
+
+func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
+	keys := make([]string, 0, len(inventory))
+	for path := range inventory {
+		if !pathspec.MatchesAny(path, patterns) {
+			continue
+		}
+		keys = append(keys, path)
 	}
-	return msg
+	sort.Strings(keys)
+
+	files := make([]pointerFile, 0, len(keys))
+	for _, path := range keys {
+		info := inventory[path]
+		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size})
+	}
+	return files
 }
 
-func isMissingGitLFS(msg string) bool {
-	return strings.Contains(msg, "git: 'lfs' is not a git command")
-}
-
-func checkoutDownloadedFiles(files []lfs.LfsFileInfo) error {
+func checkoutDownloadedFiles(files []pointerFile) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
@@ -202,10 +213,6 @@ func checkoutDownloadedFiles(files []lfs.LfsFileInfo) error {
 		}
 	}
 	return nil
-}
-
-var lfsjsonUnmarshal = func(data []byte, v any) error {
-	return sonic.ConfigFastest.Unmarshal(data, v)
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContext, oid string) string {
@@ -241,4 +248,9 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContex
 		}
 	}
 	return fmt.Sprintf("oid=%s did=%s size=%d access_methods=%s", oid, strings.TrimSpace(match.Id), match.Size, strings.Join(methods, ", "))
+}
+
+func init() {
+	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
+	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list matching pointer files without downloading them")
 }

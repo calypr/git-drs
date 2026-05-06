@@ -3,6 +3,7 @@ package lfs
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -80,28 +81,54 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
 	return lfsFileMap, nil
 }
 
-func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
-	out, err := runGitCommand(ctx, repoDir, "ls-tree", "-r", "-z", "--long", ref)
-	if err != nil {
-		return fmt.Errorf("git ls-tree failed for %s: %w", ref, err)
+// GetWorktreeLfsFiles scans the current checkout and returns tracked files whose
+// worktree content is currently a valid Git LFS pointer. This is the fast path
+// for interactive commands like `git-drs ls-files`.
+func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
 	}
-
-	entries := strings.Split(out, "\x00")
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	logger.Debug("Scanning current worktree for LFS pointer files")
+	ctx := context.Background()
+	paths, err := listTrackedWorktreeFiles(ctx, repoDir)
+	if err != nil {
+		return nil, err
+	}
+	files := make(map[string]LfsFileInfo)
+	for _, path := range paths {
+		payload, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(path)))
+		if err != nil {
 			continue
 		}
-
-		oid, path, err := parseLsTreeEntry(entry)
-		if err != nil {
-			logger.Debug(fmt.Sprintf("skipping unparseable ls-tree entry for %s: %q", ref, entry))
+		pointer, ok := parseLFSPointer(string(payload))
+		if !ok {
 			continue
 		}
+		files[path] = LfsFileInfo{
+			Name:      path,
+			Size:      pointer.Size,
+			IsPointer: true,
+			OidType:   pointer.OidType,
+			Oid:       pointer.Oid,
+			Version:   pointer.Version,
+		}
+	}
+	return files, nil
+}
 
-		blob, err := runGitCommand(ctx, repoDir, "cat-file", "-p", oid)
+func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+	paths, err := grepPointerPaths(ctx, repoDir, ref)
+	if err != nil {
+		return fmt.Errorf("git grep failed for %s: %w", ref, err)
+	}
+	for _, path := range paths {
+		blob, err := runGitCommand(ctx, repoDir, "show", fmt.Sprintf("%s:%s", ref, path))
 		if err != nil {
-			logger.Debug(fmt.Sprintf("skipping path %s in %s: unable to read blob %s", path, ref, oid))
+			logger.Debug(fmt.Sprintf("skipping path %s in %s: unable to read blob", path, ref))
 			continue
 		}
 
@@ -123,6 +150,59 @@ func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logg
 	return nil
 }
 
+func listTrackedWorktreeFiles(ctx context.Context, repoDir string) ([]string, error) {
+	out, err := runGitCommand(ctx, repoDir, "ls-files", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+	raw := strings.Split(out, "\x00")
+	paths := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		paths = append(paths, entry)
+	}
+	return paths, nil
+}
+
+func grepPointerPaths(ctx context.Context, repoDir, ref string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "grep", "-z", "-l", "https://git-lfs.github.com/spec/v1", ref, "--")
+	cmd.Dir = repoDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+
+	raw := strings.Split(stdout.String(), "\x00")
+	paths := make([]string, 0, len(raw))
+	prefix := ref + ":"
+	for _, entry := range raw {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		path := entry
+		if strings.HasPrefix(path, prefix) {
+			path = strings.TrimPrefix(path, prefix)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
 func runGitCommand(ctx context.Context, repoDir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoDir
@@ -137,28 +217,6 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 		return "", fmt.Errorf("%s", msg)
 	}
 	return stdout.String(), nil
-}
-
-func parseLsTreeEntry(entry string) (string, string, error) {
-	tab := strings.Index(entry, "\t")
-	if tab < 0 {
-		return "", "", fmt.Errorf("missing tab separator")
-	}
-
-	meta := strings.Fields(entry[:tab])
-	if len(meta) < 3 {
-		return "", "", fmt.Errorf("invalid ls-tree metadata")
-	}
-	if meta[1] != "blob" {
-		return "", "", fmt.Errorf("not a blob entry")
-	}
-
-	oid := strings.TrimSpace(meta[2])
-	path := strings.TrimSpace(entry[tab+1:])
-	if oid == "" || path == "" {
-		return "", "", fmt.Errorf("missing oid or path")
-	}
-	return oid, path, nil
 }
 
 type lfsPointer struct {

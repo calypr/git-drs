@@ -211,7 +211,7 @@ if [ "$CLONE" = "true" ]; then
   fi
   echo "Pulling LFS objects from remote" >&2
   git drs init
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH" --project "$PROGRAM-$PROJECT"
   git lfs pull origin main
   if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
@@ -235,7 +235,7 @@ else
 
   # Initialize drs configuration for this repo
   git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH" --project "$PROGRAM-$PROJECT"
   # Set multipart-threshold to 10 (MB) for testing purposes
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)

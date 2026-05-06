@@ -14,9 +14,10 @@ fi
 
 DRS_URL="${TEST_DRS_URL:-${DRS_URL:-https://caliper-training.ohsu.edu}}"
 SERVER_MODE="${TEST_SERVER_MODE:-${SERVER_MODE:-remote}}"
-GEN3_TOKEN="${TEST_GEN3_TOKEN:-${GEN3_TOKEN:-}}"
-GEN3_TOKEN_SOURCE="${TEST_GEN3_TOKEN:+env:TEST_GEN3_TOKEN}"
+GEN3_TOKEN=""
+GEN3_TOKEN_SOURCE=""
 GEN3_PROFILE="${TEST_GEN3_PROFILE:-${GEN3_PROFILE:-}}"
+USER_SUPPLIED_GEN3_TOKEN="${TEST_GEN3_TOKEN:-${GEN3_TOKEN:-}}"
 GEN3_CONFIG_PATH="${TEST_GEN3_CONFIG_PATH:-${GEN3_CONFIG_PATH:-$HOME/.gen3/gen3_client_config.ini}}"
 ADMIN_AUTH_HEADER="${TEST_ADMIN_AUTH_HEADER:-${ADMIN_AUTH_HEADER:-}}"
 LOCAL_USERNAME="${TEST_LOCAL_USERNAME:-${LOCAL_USERNAME:-${DRS_BASIC_AUTH_USER:-}}}"
@@ -259,14 +260,13 @@ resolve_auth_from_profile_if_needed() {
   if [[ "$SERVER_MODE" == "local" ]]; then
     return
   fi
-  if [[ -n "$GEN3_TOKEN" ]]; then
-    GEN3_TOKEN_SOURCE="${GEN3_TOKEN_SOURCE:-env:TEST_GEN3_TOKEN}"
-    return
-  fi
   require_env GEN3_PROFILE "$GEN3_PROFILE"
   if [[ ! -f "$GEN3_CONFIG_PATH" ]]; then
     echo "error: GEN3 profile config file not found at $GEN3_CONFIG_PATH" >&2
     exit 1
+  fi
+  if [[ -n "$USER_SUPPLIED_GEN3_TOKEN" ]]; then
+    echo "warning: TEST_GEN3_TOKEN/GEN3_TOKEN is ignored by this script; using GEN3_PROFILE='$GEN3_PROFILE' from $GEN3_CONFIG_PATH" >&2
   fi
 
   local profile_token profile_endpoint profile_api_key
@@ -478,8 +478,8 @@ validate_config() {
       ;;
   esac
 
-  if [[ "$SERVER_MODE" == "remote" && -z "$GEN3_TOKEN" && -z "$GEN3_PROFILE" ]]; then
-    echo "error: remote mode requires TEST_GEN3_TOKEN or GEN3_PROFILE/TEST_GEN3_PROFILE" >&2
+  if [[ "$SERVER_MODE" == "remote" && -z "$GEN3_PROFILE" ]]; then
+    echo "error: remote mode requires GEN3_PROFILE/TEST_GEN3_PROFILE" >&2
     exit 1
   fi
   if [[ "$SERVER_MODE" == "local" ]]; then
@@ -651,10 +651,7 @@ setup_repo() {
   configure_local_credential_helper
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$MONO_REMOTE_NAME" \
-      --token "$GEN3_TOKEN" \
-      --bucket "$ACTIVE_BUCKET" \
-      --organization "$TEST_ORGANIZATION" \
-      --project "$TEST_PROJECT_ID"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
     ensure_repo_remote_token "$MONO_REMOTE_NAME"
   else
     local -a local_add_args
@@ -730,10 +727,7 @@ clone_and_verify() {
   configure_local_credential_helper
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$MONO_REMOTE_NAME" \
-      --token "$GEN3_TOKEN" \
-      --bucket "$ACTIVE_BUCKET" \
-      --organization "$TEST_ORGANIZATION" \
-      --project "$TEST_PROJECT_ID"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
     ensure_repo_remote_token "$MONO_REMOTE_NAME"
   else
     local -a local_add_args_clone

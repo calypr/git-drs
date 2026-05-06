@@ -84,46 +84,35 @@ git drs init
 
 Manage DRS remote server configurations. Git DRS supports multiple remotes for working with development, staging, and production servers.
 
-#### `git drs remote add gen3 <name>`
+#### `git drs remote add gen3 [name] <organization/project>`
 
 Add a Gen3 DRS server configuration.
 
 **Usage:**
 
 ```bash
-git drs remote add gen3 <remote-name> \
-    --url <server-url> \
-    --cred <credentials-file> \
-    --organization <program> \
-    --project <project-id> \
-    [--bucket <bucket-name>]
+git drs remote add gen3 [remote-name] <organization/project> \
+    --cred <credentials-file>
 ```
 
 **Options:**
 
-- `--url <url>`: Gen3 server endpoint (required)
 - `--cred <file>`: Path to credentials JSON file (required)
 - `--token <token>`: Token for temporary access (alternative to --cred)
-- `--organization <name>`: Program/organization scope used for bucket mapping
-- `--project <id>`: Project ID (required)
-- `--bucket <name>`: Bucket name fallback when no org/project mapping is configured
+- `<organization/project>`: Required scope argument, for example `HTAN_INT/BForePC`
 
 **Examples:**
 
 ```bash
 # Add production remote
 git drs remote add gen3 production \
-    --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
-    --organization my-program \
-    --project my-project
+    my-program/my-project
 
 # Add staging remote
 git drs remote add gen3 staging \
-    --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
-    --organization staging-program \
-    --project staging-project
+    staging-program/staging-project
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
@@ -258,6 +247,65 @@ This is useful when files are already in the production bucket with matching SHA
 
 **Note:** `fetch` and `push` are commonly used together. `fetch` pulls metadata from one remote, `push` registers it to another.
 
+### `git drs copy-records [source-remote] <target-remote> <organization/project>`
+
+Copy Syfon records for one `organization/project` scope from one configured remote to another.
+
+**Usage:**
+
+```bash
+git drs copy-records \
+  <source-remote> \
+  <target-remote> \
+  <organization/project>
+```
+
+Or, to copy from the configured default remote:
+
+```bash
+git drs copy-records \
+  <target-remote> \
+  <organization/project>
+```
+
+**Options:**
+
+- `<source-remote>`: Source remote. Optional. Defaults to the configured default remote.
+- `<target-remote>`: Target remote. Required.
+- `<organization/project>`: Required scope argument, for example `HTAN_INT/BForePC`.
+- `--batch-size <n>`: Source page size and target bulk write size. Default: `250`.
+
+**What it does:**
+
+- Reads all source records for the requested `organization/project` using Syfon's internal bulk/list APIs
+- Looks up matching DIDs on the target in batches
+- Creates records that do not already exist on the target
+- For existing DIDs, preserves the target record and only merges:
+  - `controlled_access`
+  - `access_methods`
+
+**Merge semantics for existing target records:**
+
+- Existing target metadata is preserved
+- `controlled_access` becomes the union of source and target values
+- `access_methods` becomes the union of source and target values
+- Records with no effective change are skipped
+
+**Example:**
+
+```bash
+git drs copy-records \
+  dev \
+  prod \
+  HTAN_INT/BForePC
+```
+
+**When to use it:**
+
+- Promote DRS metadata between Syfon instances
+- Backfill `controlled_access` and `access_methods` onto an existing target instance
+- Copy project-scoped records without re-uploading object bytes
+
 ### `git drs query`
 
 Query a DRS object by its DRS ID or SHA256 checksum.
@@ -307,14 +355,14 @@ git drs push
 # Known SHA path
 git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
 
-# Unknown SHA path (experimental sentinel mode)
+# Unknown SHA path
 git drs add-url s3://bucket/path/file.bin data/file.bin
 ```
 
 **Options:**
 
 - `--sha256 <hash>`: Optional SHA256 hash of the source object.  
-  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
+  If omitted, add-url uses an ETag+source-derived placeholder OID and registers metadata without a local payload blob.
 
 **Notes:**
 

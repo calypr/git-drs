@@ -249,7 +249,7 @@ git add .gitattributes
 git drs add-url s3://bucket/path/to/file \
   --sha256 <file-hash>
 
-# Or use unknown-sha (experimental sentinel mode)
+# Or use unknown-sha
 git drs add-url s3://bucket/path/to/file
 
 # Commit and push

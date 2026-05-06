@@ -127,11 +127,6 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 	lfsObjPath, err := lfs.ObjectPath(localcommon.LFS_OBJS_PATH, oid)
 	if err == nil {
 		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
-			if isPointer {
-				if sentinel, sentinelErr := lfs.IsAddURLSentinelObject(lfsObjPath); sentinelErr == nil && sentinel {
-					return "", false, nil
-				}
-			}
 			return lfsObjPath, true, nil
 		}
 	}

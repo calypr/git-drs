@@ -1416,7 +1416,7 @@ main() {
   configure_local_credential_helper
   git config --local lfs.basictransfersonly true
   if [[ "$SERVER_MODE" == "remote" ]]; then
-    git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+    git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
   else
     local -a local_add_args
     local_add_args=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
@@ -1544,7 +1544,7 @@ main() {
   configure_local_credential_helper
   git config --local lfs.basictransfersonly true
   if [[ "$SERVER_MODE" == "remote" ]]; then
-    git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+    git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
   else
     local -a local_add_args_clone
     local_add_args_clone=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
@@ -1608,7 +1608,7 @@ main() {
     configure_local_credential_helper
     git config --local lfs.basictransfersonly true
     if [[ "$SERVER_MODE" == "remote" ]]; then
-      git drs remote add gen3 "$REMOTE_NAME" --token "$GEN3_TOKEN" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID"
+      git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
     else
       local -a local_add_args_lfs
       local_add_args_lfs=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")

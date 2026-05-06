@@ -19,7 +19,6 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
@@ -100,9 +99,9 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("service.Run error: %v", err)
 	}
 
-	oid, err := lfs.SyntheticOIDFromETag("abcd1234")
+	oid, err := placeholderOIDForUnknownSHA("abcd1234", "s3://bucket/path/to/file.bin")
 	if err != nil {
-		t.Fatalf("SyntheticOIDFromETag: %v", err)
+		t.Fatalf("placeholderOIDForUnknownSHA: %v", err)
 	}
 
 	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
@@ -120,15 +119,8 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	}
 
 	lfsObject := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4], oid)
-	if _, err := os.Stat(lfsObject); err != nil {
-		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
-	}
-	sentinel, err := os.ReadFile(lfsObject)
-	if err != nil {
-		t.Fatalf("read sentinel: %v", err)
-	}
-	if !lfs.IsAddURLSentinelBytes(sentinel) {
-		t.Fatalf("expected add-url sentinel payload, got: %q", string(sentinel))
+	if _, err := os.Stat(lfsObject); !os.IsNotExist(err) {
+		t.Fatalf("expected no local LFS object payload at %s, got err=%v", lfsObject, err)
 	}
 
 	drsObject, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid)
@@ -140,6 +132,26 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	}
 	if got := (*drsObject.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
+	}
+}
+
+func TestPlaceholderOIDForUnknownSHA(t *testing.T) {
+	oid1, err := placeholderOIDForUnknownSHA("etag-abc", "s3://bucket/key")
+	if err != nil {
+		t.Fatalf("placeholderOIDForUnknownSHA: %v", err)
+	}
+	oid2, err := placeholderOIDForUnknownSHA(`"etag-abc"`, "s3://bucket/key")
+	if err != nil {
+		t.Fatalf("placeholderOIDForUnknownSHA quoted: %v", err)
+	}
+	if oid1 != oid2 {
+		t.Fatalf("expected trimmed etag handling to be stable: %s vs %s", oid1, oid2)
+	}
+	if len(oid1) != 64 {
+		t.Fatalf("expected 64-char oid, got %q", oid1)
+	}
+	if _, err := placeholderOIDForUnknownSHA("", "s3://bucket/key"); err == nil {
+		t.Fatal("expected empty etag error")
 	}
 }
 

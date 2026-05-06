@@ -276,7 +276,7 @@ export AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
 export AWS_ENDPOINT_URL_S3="$ENDPOINT"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 
-# use add-url without --sha256 (experimental sentinel mode)
+# use add-url without --sha256
 git drs add-url s3://$PREFIX$BUCKET/simple_test_file.txt data/simple_test_file.txt
 
 # set the .gitattributes to track the file
@@ -305,7 +305,7 @@ if [ -z "$original_add_url_oid" ]; then
   exit 1
 fi
 if [ "$original_add_url_oid" = "$sha256" ]; then
-  err "expected sentinel/synthetic oid for unknown-sha add-url, but found real sha256"
+  err "expected placeholder oid for unknown-sha add-url, but found real sha256"
   exit 1
 fi
 

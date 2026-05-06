@@ -650,11 +650,8 @@ main() {
   if [[ "$SERVER_MODE" == "remote" ]]; then
     log "Configuring gen3 remote"
     run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (source repo)" \
-      git drs remote add gen3 "$REMOTE_NAME" \
-        --token "$GEN3_TOKEN" \
-        --bucket "$TEST_BUCKET_NAME" \
-        --organization "$ORGANIZATION" \
-        --project "$PROJECT_ID"
+      git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" \
+        --token "$GEN3_TOKEN"
   else
     log "Configuring local remote"
     local -a local_add_args
@@ -717,7 +714,7 @@ main() {
     exit 1
   fi
   if [[ "$unknown_pointer_oid" == "$unknown_real_oid" ]]; then
-    echo "error: unknown-sha add-url unexpectedly used real sha256 (expected synthetic/sentinel oid)" >&2
+    echo "error: unknown-sha add-url unexpectedly used real sha256 (expected placeholder oid)" >&2
     exit 1
   fi
   ALL_OIDS+=("$unknown_pointer_oid")
@@ -755,11 +752,8 @@ main() {
   configure_lfs_endpoint_for_repo "$REMOTE_NAME"
   if [[ "$SERVER_MODE" == "remote" ]]; then
     run_cmd_with_timeout "$TEST_CMD_TIMEOUT_SECONDS" "git drs remote add gen3 (clone repo)" \
-      git drs remote add gen3 "$REMOTE_NAME" \
-        --token "$GEN3_TOKEN" \
-        --bucket "$TEST_BUCKET_NAME" \
-        --organization "$ORGANIZATION" \
-        --project "$PROJECT_ID"
+      git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" \
+        --token "$GEN3_TOKEN"
   else
     local -a local_add_args_clone
     local_add_args_clone=(

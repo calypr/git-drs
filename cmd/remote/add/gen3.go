@@ -99,13 +99,13 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization, bucket st
 
 	default:
 		existing, err := configure.Load(remoteName)
-		if err == nil {
+		if err != nil {
+			return fmt.Errorf("failed to load %s config: %w", remoteName, err)
+		} else {
 			accessToken = existing.AccessToken
 			apiKey = existing.APIKey
 			keyID = existing.KeyID
 			apiEndpoint = existing.APIEndpoint
-		} else {
-			return fmt.Errorf("must provide either --cred or --token (or have existing profile %s)", remoteName)
 		}
 	}
 

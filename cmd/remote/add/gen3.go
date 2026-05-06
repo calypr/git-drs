@@ -20,11 +20,11 @@ import (
 )
 
 var Gen3Cmd = &cobra.Command{
-	Use: "gen3 [remote-name]",
+	Use: "gen3 [remote-name] <organization/project>",
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 1 {
+		if len(args) < 1 || len(args) > 2 {
 			cmd.SilenceUsage = false
-			return fmt.Errorf("error: accepts at most 1 argument (remote name), received %d\n\nUsage: %s\n\nSee 'git drs remote add gen3 --help' for more details", len(args), cmd.UseLine())
+			return fmt.Errorf("error: expected [remote-name] <organization/project>, received %d arguments\n\nUsage: %s\n\nSee 'git drs remote add gen3 --help' for more details", len(args), cmd.UseLine())
 		}
 		return nil
 	},
@@ -32,11 +32,15 @@ var Gen3Cmd = &cobra.Command{
 		logg := drslog.GetLogger()
 
 		remoteName := config.ORIGIN
-		if len(args) > 0 {
+		scopeArg := ""
+		if len(args) == 1 {
+			scopeArg = args[0]
+		} else {
 			remoteName = args[0]
+			scopeArg = args[1]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, project, organization, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, scopeArg, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -44,17 +48,13 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, project, organization string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
-	if project == "" {
-		return fmt.Errorf("project is required for Gen3 remote")
-	}
-
-	organization, project = common.ParseOrgProject(strings.TrimSpace(organization), strings.TrimSpace(project))
-	if organization == "" {
-		return fmt.Errorf("organization is required (or use a project id in <org>-<project> form so it can be inferred)")
+	organization, project, err := parseScopeArg(scopeArg)
+	if err != nil {
+		return err
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
@@ -159,6 +159,18 @@ func gen3Init(remoteName, credFile, fenceToken, project, organization string, lo
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
 	return nil
+}
+
+func parseScopeArg(raw string) (string, string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", "", fmt.Errorf("organization/project scope is required")
+	}
+	organization, project := common.ParseOrgProject("", raw)
+	if organization == "" || project == "" {
+		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
+	}
+	return organization, project, nil
 }
 
 func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project string) (gitrepo.ResolvedBucketScope, error) {

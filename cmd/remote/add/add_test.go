@@ -17,7 +17,7 @@ func TestAddCmd(t *testing.T) {
 }
 
 func TestGen3Cmd(t *testing.T) {
-	assert.Equal(t, "gen3 [remote-name]", Gen3Cmd.Use)
+	assert.Equal(t, "gen3 [remote-name] <organization/project>", Gen3Cmd.Use)
 }
 
 func TestResolveBucketScopeFromServer(t *testing.T) {

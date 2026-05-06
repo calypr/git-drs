@@ -21,8 +21,6 @@ var Cmd = &cobra.Command{
 func init() {
 	Gen3Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Import a Gen3 credential file into this profile")
 	Gen3Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Use a temporary bearer token; the API endpoint is derived from the token issuer")
-	Gen3Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the project ID; when --organization is omitted, org is inferred from <org>-<project>")
-	Gen3Cmd.Flags().StringVar(&organization, "organization", "", "[gen3] Organization/program scope used to resolve the configured bucket mapping")
 
 	Cmd.AddCommand(Gen3Cmd)
 	LocalCmd.Flags().StringVarP(&project, "project", "p", "", "Project ID")

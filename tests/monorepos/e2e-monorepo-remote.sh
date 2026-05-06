@@ -651,8 +651,7 @@ setup_repo() {
   configure_local_credential_helper
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$MONO_REMOTE_NAME" \
-      --organization "$TEST_ORGANIZATION" \
-      --project "$TEST_PROJECT_ID"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
     ensure_repo_remote_token "$MONO_REMOTE_NAME"
   else
     local -a local_add_args
@@ -728,8 +727,7 @@ clone_and_verify() {
   configure_local_credential_helper
   if [[ "$SERVER_MODE" == "remote" ]]; then
     git drs remote add gen3 "$MONO_REMOTE_NAME" \
-      --organization "$TEST_ORGANIZATION" \
-      --project "$TEST_PROJECT_ID"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
     ensure_repo_remote_token "$MONO_REMOTE_NAME"
   else
     local -a local_add_args_clone

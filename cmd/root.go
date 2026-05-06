@@ -5,6 +5,7 @@ import (
 	"github.com/calypr/git-drs/cmd/addurl"
 	"github.com/calypr/git-drs/cmd/bucket"
 	"github.com/calypr/git-drs/cmd/clean"
+	"github.com/calypr/git-drs/cmd/copyrecords"
 	deleteCmd "github.com/calypr/git-drs/cmd/delete"
 	"github.com/calypr/git-drs/cmd/deleteproject"
 	"github.com/calypr/git-drs/cmd/filter"
@@ -41,6 +42,7 @@ func init() {
 	RootCmd.AddCommand(version.Cmd)
 	RootCmd.AddCommand(filter.Cmd)
 	RootCmd.AddCommand(clean.Cmd)
+	RootCmd.AddCommand(copyrecords.Cmd)
 	RootCmd.AddCommand(smudge.Cmd)
 	RootCmd.AddCommand(remote.Cmd)
 	RootCmd.AddCommand(pull.Cmd)

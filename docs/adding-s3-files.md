@@ -66,16 +66,15 @@ git commit -m "add known-sha object"
 git drs push
 ```
 
-## Unknown SHA256 (experimental sentinel mode)
+## Unknown SHA256
 
 If SHA256 is unknown, omit `--sha256`.
 
 Behavior:
 
 1. `add-url` performs object metadata lookup (HEAD/attributes).
-2. Synthetic OID is derived from ETag (`sha256(etag)`).
-3. A local sentinel object is written into `.git/lfs/objects/...`.
-4. `git drs push` performs metadata-only registration.
+2. A deterministic placeholder OID is derived from ETag and source URL.
+3. `git drs push` performs metadata-only registration until real payload bytes exist locally.
 
 ```bash
 git lfs track "data/*.bin"
@@ -84,7 +83,7 @@ git add .gitattributes
 git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
 
 git add data/from-bucket.bin
-git commit -m "add unknown-sha object (sentinel mode)"
+git commit -m "add unknown-sha object"
 git drs push
 ```
 
@@ -118,7 +117,7 @@ Usually region/endpoint mismatch for S3-compatible storage.
 
 ### `no local payload available; skipping upload and keeping metadata-only registration`
 
-Expected for add-url pointer/sentinel flows where local payload bytes are intentionally absent.
+Expected for add-url pointer flows where local payload bytes are intentionally absent.
 
 ### `file is not tracked by LFS`
 

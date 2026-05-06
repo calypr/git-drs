@@ -100,7 +100,7 @@ func TestLfsFilesFromCache(t *testing.T) {
 	}
 }
 
-func TestReadPushedBranches(t *testing.T) {
+func TestReadPushedRefsAndBranchesFromRefs(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -145,12 +145,11 @@ func TestReadPushedBranches(t *testing.T) {
 				t.Fatalf("write temp: %v", err)
 			}
 
-			// readPushedBranches seeks to 0 itself, but we pass the *os.File
-			// which must be valid.
-			branches, err := readPushedBranches(tmp)
+			refs, err := readPushedRefs(tmp)
 			if err != nil {
-				t.Fatalf("readPushedBranches error: %v", err)
+				t.Fatalf("readPushedRefs error: %v", err)
 			}
+			branches := branchesFromRefs(refs)
 
 			if len(branches) != len(tt.expected) {
 				t.Errorf("expected %d branches, got %d: %v", len(tt.expected), len(branches), branches)

@@ -716,7 +716,7 @@ main() {
     exit 1
   fi
   if [[ "$unknown_pointer_oid" == "$unknown_real_oid" ]]; then
-    echo "error: unknown-sha add-url unexpectedly used real sha256 (expected synthetic/sentinel oid)" >&2
+    echo "error: unknown-sha add-url unexpectedly used real sha256 (expected placeholder oid)" >&2
     exit 1
   fi
   ALL_OIDS+=("$unknown_pointer_oid")

@@ -307,14 +307,14 @@ git drs push
 # Known SHA path
 git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
 
-# Unknown SHA path (experimental sentinel mode)
+# Unknown SHA path
 git drs add-url s3://bucket/path/file.bin data/file.bin
 ```
 
 **Options:**
 
 - `--sha256 <hash>`: Optional SHA256 hash of the source object.  
-  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
+  If omitted, add-url uses an ETag+source-derived placeholder OID and registers metadata without a local payload blob.
 
 **Notes:**
 

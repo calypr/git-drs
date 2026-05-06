@@ -2,9 +2,10 @@ package addurl
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
-	"os"
+	"strings"
 
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
@@ -186,26 +187,29 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 	return drsObj, nil
 }
 
-// ensureLFSObject ensures the LFS object identified by objectInfo exists in the
-// repository's LFS storage. If SHA256 is provided, it is trusted and returned.
-// Otherwise we create a sentinel object and synthetic OID derived from ETag,
-// deferring true checksum validation to first real data use.
+// ensureLFSObject returns the LFS pointer OID to use for the add-url target.
+// If SHA256 is provided, it is trusted and returned. Otherwise we derive a
+// deterministic placeholder OID from provider identity without writing any
+// local LFS object payload.
 func (s *AddURLService) ensureLFSObject(ctx context.Context, objectInfo *sycloud.ObjectInfo, input addURLInput, lfsRoot string) (string, error) {
 	_ = ctx
+	_ = lfsRoot
 	if input.sha256 != "" {
 		return input.sha256, nil
 	}
 
-	oid, err := lfs.SyntheticOIDFromETag(objectInfo.ETag)
-	if err != nil {
-		return "", err
+	return placeholderOIDForUnknownSHA(objectInfo.ETag, input.objectURL)
+}
+
+func placeholderOIDForUnknownSHA(etag string, sourceURL string) (string, error) {
+	e := strings.TrimSpace(strings.Trim(etag, `"`))
+	src := strings.TrimSpace(sourceURL)
+	if e == "" {
+		return "", fmt.Errorf("etag is required for placeholder oid")
 	}
-	objPath, err := lfs.WriteAddURLSentinelObject(lfsRoot, oid, objectInfo.ETag, input.objectURL)
-	if err != nil {
-		return "", err
+	if src == "" {
+		return "", fmt.Errorf("source URL is required for placeholder oid")
 	}
-	if _, err := fmt.Fprintf(os.Stderr, "Added add-url sentinel object at %s\n", objPath); err != nil {
-		return "", fmt.Errorf("stderr write: %w", err)
-	}
-	return oid, nil
+	sum := sha256.Sum256([]byte("git-drs-add-url-placeholder:v2\netag=" + e + "\nsource=" + src + "\n"))
+	return fmt.Sprintf("%x", sum[:]), nil
 }

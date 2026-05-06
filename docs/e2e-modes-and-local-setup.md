@@ -152,7 +152,7 @@ bash tests/e2e-local-addurl.sh
 What it covers:
 
 - known-sha add-url path (`--sha256 <real hash>`)
-- unknown-sha add-url path (sentinel pointer OID)
+- unknown-sha add-url path (placeholder pointer OID)
 - push/register + pull hydration checks
 
 ## Monorepo E2E (remote and local)

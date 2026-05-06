@@ -1,6 +1,6 @@
 # Adding Provider Objects with `git drs add-url`
 
-`git drs add-url` prepares a Git LFS pointer plus local DRS metadata for an object that already exists in provider storage.
+`git drs add-url` prepares a Git pointer plus local DRS metadata for an object that already exists in provider storage.
 
 Important behavior:
 
@@ -26,7 +26,7 @@ The inspector also accepts other go-cloud styles (`gs://`, `azblob://`, `file://
 If your remote org/project already has a bucket mapping, pass an object key relative to that configured bucket scope and set `--scheme`.
 
 ```bash
-git lfs track "data/*.bin"
+git drs track "data/*.bin"
 git add .gitattributes
 
 git drs add-url path/to/object.bin data/from-bucket.bin \
@@ -54,7 +54,7 @@ git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin \
 If you know the authoritative SHA256, pass `--sha256`.
 
 ```bash
-git lfs track "data/*.bin"
+git drs track "data/*.bin"
 git add .gitattributes
 
 git drs add-url path/to/object.bin data/from-bucket.bin \
@@ -74,11 +74,11 @@ Behavior:
 
 1. `add-url` performs object metadata lookup (HEAD/attributes).
 2. Synthetic OID is derived from ETag (`sha256(etag)`).
-3. A local sentinel object is written into `.git/lfs/objects/...`.
+3. A local sentinel object is written into `.git/drs/objects/...`.
 4. `git drs push` performs metadata-only registration.
 
 ```bash
-git lfs track "data/*.bin"
+git drs track "data/*.bin"
 git add .gitattributes
 
 git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
@@ -103,7 +103,7 @@ For e2e/dev harnesses, `TEST_BUCKET_*` variables are also supported by command-l
 
 ## Prerequisites
 
-- File path must be LFS-tracked (via `.gitattributes`).
+- File path must be tracked (via `.gitattributes`).
 - Remote configuration must point to the intended org/project scope.
 - The bucket credential and org/project storage scope must exist on drs-server, for example via `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path s3://bucket/prefix`.
 
@@ -120,11 +120,11 @@ Usually region/endpoint mismatch for S3-compatible storage.
 
 Expected for add-url pointer/sentinel flows where local payload bytes are intentionally absent.
 
-### `file is not tracked by LFS`
+### `file is not tracked`
 
 Track the path pattern and re-add:
 
 ```bash
-git lfs track "data/*.bin"
+git drs track "data/*.bin"
 git add .gitattributes
 ```

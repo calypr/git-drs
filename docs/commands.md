@@ -1,6 +1,6 @@
 # Commands Reference
 
-Complete reference for Git DRS and related Git LFS commands.
+Complete reference for Git DRS commands.
 
 Git DRS owns Git/DRS orchestration and local metadata. Direct provider access, signed URL behavior, and cloud inspection are client-side responsibilities reached through `syfon/client`.
 
@@ -10,7 +10,7 @@ Git DRS owns Git/DRS orchestration and local metadata. Direct provider access, s
 
 ### `git drs install`
 
-Install global Git filter configuration for git-drs. This is equivalent in purpose to running `git-lfs install` for the git-drs filter.
+Install global Git filter configuration for git-drs.
 
 **Usage:**
 
@@ -52,7 +52,10 @@ git drs init [flags]
 
 **Options:**
 
-- `--transfers <n>`: Number of concurrent transfers (default: 4)
+- `--transfers <n>`: Number of concurrent transfers (default: 1)
+- `--upsert`: Enable upsert for DRS objects
+- `--multipart-threshold <mb>`: Multipart threshold in MB (default: 5120)
+- `--enable-data-client-logs`: Enable data-client internal logs
 
 **Example:**
 
@@ -63,7 +66,7 @@ git drs init
 **What it does:**
 
 - Creates `.git/drs/` directory structure
-- Configures Git/LFS settings for git-drs managed push/pull
+- Configures Git DRS settings for managed push/pull
 - Installs Git hooks for DRS workflows
 
 **When to run:**
@@ -92,20 +95,20 @@ Add a Gen3 DRS server configuration.
 
 ```bash
 git drs remote add gen3 <remote-name> \
-    --url <server-url> \
-    --cred <credentials-file> \
-    --organization <program> \
     --project <project-id> \
-    [--bucket <bucket-name>]
+    [--organization <program>] \
+    [--bucket <bucket-name>] \
+    [--cred <credentials-file> | --token <token>] \
+    [--url <server-url>]
 ```
 
 **Options:**
 
-- `--url <url>`: Gen3 server endpoint (required)
-- `--cred <file>`: Path to credentials JSON file (required)
-- `--token <token>`: Token for temporary access (alternative to --cred)
-- `--organization <name>`: Program/organization scope used for bucket mapping
 - `--project <id>`: Project ID (required)
+- `--cred <file>`: Path to credentials JSON file
+- `--token <token>`: Token for temporary access (alternative to `--cred`)
+- `--url <url>`: Optional Gen3 endpoint override
+- `--organization <name>`: Program/organization scope used for bucket mapping
 - `--bucket <name>`: Bucket name fallback when no org/project mapping is configured
 
 **Examples:**
@@ -113,20 +116,19 @@ git drs remote add gen3 <remote-name> \
 ```bash
 # Add production remote
 git drs remote add gen3 production \
-    --url https://calypr-public.ohsu.edu \
     --cred /path/to/credentials.json \
     --organization my-program \
     --project my-project
 
 # Add staging remote
 git drs remote add gen3 staging \
-    --url https://staging.calypr.ohsu.edu \
     --cred /path/to/staging-credentials.json \
     --organization staging-program \
     --project staging-project
 ```
 
 **Note:** The first remote you add automatically becomes the default remote.
+**Authentication note:** Supply either `--cred` or `--token` when initially configuring a remote (or when no existing profile is available for the remote name).
 **Important:** A bucket mapping for the target `organization/project` must already exist, typically created once by a steward/admin with `git drs bucket add`, then `git drs bucket add-organization` or `git drs bucket add-project --path <scheme>://<bucket>/<prefix>`. Without that mapping, push/pull operations will fail.
 
 #### `git drs remote list`
@@ -192,7 +194,7 @@ git drs fetch production
 **What it does:**
 
 - Identifies remote and project from configuration
-- Transfers all DRS records for a given project from the server to the local `.git/drs/lfs/objects/` directory
+- Transfers all DRS records for a given project from the server to the local `.git/drs/objects/` directory
 
 ### `git drs add-url <object-url-or-key> [path]`
 
@@ -217,7 +219,7 @@ git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
 
 - Resolves the effective org/project bucket scope for the current remote
 - Inspects the provider object through client-owned cloud code
-- Writes a Git LFS pointer into the worktree
+- Writes a Git pointer into the worktree
 - Stores local DRS metadata for later registration during `git drs push`
 
 ### `git drs push [remote-name]`
@@ -237,7 +239,7 @@ git drs push production
 
 **What it does:**
 
-- Checks local `.git/drs/lfs/objects/` for DRS metadata
+- Checks local `.git/drs/objects/` for DRS metadata
 - For each object, uploads file to bucket if file exists locally
 - If file doesn't exist locally (metadata only), registers metadata without upload
 - This enables cross-remote promotion workflows
@@ -288,39 +290,6 @@ git drs query --checksum 9f2c2db77f0a3e2b47e4b44b8ce8d4c8c3c4c0b5f4c5a2d2f9b1d0b
 git drs query did:example:12345 --remote staging
 ```
 
-### `git drs add-url`
-
-Prepare a file reference via cloud object URL for DRS registration.
-
-**Usage:**
-
-```bash
-# Stage local pointer + DRS metadata
-git drs add-url <cloud-url> [path] [--sha256 <hash>]
-# Register/push prepared records
-git drs push
-```
-
-**Examples:**
-
-```bash
-# Known SHA path
-git drs add-url s3://bucket/path/file.bin data/file.bin --sha256 <sha256>
-
-# Unknown SHA path (experimental sentinel mode)
-git drs add-url s3://bucket/path/file.bin data/file.bin
-```
-
-**Options:**
-
-- `--sha256 <hash>`: Optional SHA256 hash of the source object.  
-  If omitted, add-url uses experimental ETag-derived sentinel mode and registers a synthetic OID.
-
-**Notes:**
-
-- `add-url` no longer accepts per-command AWS credential flags.
-- S3 connection hints are resolved from environment/runtime config when needed (for example `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
-- Registration happens on `git drs push`, not at `add-url` time.
 
 ### `git drs version`
 
@@ -332,7 +301,7 @@ git drs version
 
 ### `git drs track [pattern ...]`
 
-Manage Git LFS tracking patterns from Git DRS.
+Manage tracking patterns.
 
 **View tracked patterns:**
 
@@ -349,12 +318,12 @@ git drs track "*.bam" "data/**"
 
 **Options:**
 
-- `--verbose`: Show detailed Git LFS output
+- `--verbose`: Show detailed output
 - `--dry-run`: Show what would change without writing `.gitattributes`
 
 ### `git drs untrack <pattern> [pattern ...]`
 
-Remove one or more Git LFS tracking patterns.
+Remove one or more tracking patterns.
 
 ```bash
 git drs untrack "*.bam"
@@ -363,7 +332,7 @@ git drs untrack "*.bam" "data/**"
 
 **Options:**
 
-- `--verbose`: Show detailed Git LFS output
+- `--verbose`: Show detailed output
 - `--dry-run`: Show what would change without writing `.gitattributes`
 
 ### Internal Commands
@@ -372,98 +341,19 @@ These commands are called automatically by Git hooks:
 
 - `git drs precommit`: Process staged files during commit
 - `git drs pre-push-prepare`: Stage DRS metadata before push
-- `git lfs pre-push`: Optional Git LFS compatibility push flow (invoked by the pre-push hook when enabled)
 
-## Git LFS Commands
+## `git drs ls-files`
 
-### `git lfs track`
-
-Manage file tracking patterns.
-
-**View Tracked Patterns:**
+List tracked files and their DRS registration status.
 
 ```bash
-git lfs track
+git drs ls-files
 ```
 
-**Track New Pattern:**
+**Options:**
 
-```bash
-git lfs track "*.bam"
-git lfs track "data/**"
-git lfs track "specific-file.txt"
-```
-
-**Untrack Pattern:**
-
-```bash
-git lfs untrack "*.bam"
-```
-
-### `git lfs ls-files`
-
-List LFS-tracked files in the repository.
-
-**All Files:**
-
-```bash
-git lfs ls-files
-```
-
-**Specific Pattern:**
-
-```bash
-git lfs ls-files -I "*.bam"
-git lfs ls-files -I "data/**"
-```
-
-**Output Format:**
-
-- `*` prefix: File is localized (downloaded)
-- `-` prefix: File is not localized
-- No prefix: File status unknown
-
-### `git lfs pull`
-
-Download LFS-tracked files.
-
-**All Files:**
-
-```bash
-git lfs pull
-```
-
-**Specific Files:**
-
-```bash
-git lfs pull -I "*.bam"
-git lfs pull -I "data/important.txt"
-git lfs pull -I "results/**"
-```
-
-**Multiple Patterns:**
-
-```bash
-git lfs pull -I "*.bam" -I "*.vcf"
-```
-
-### `git lfs install`
-
-Configure Git LFS for the system or repository.
-
-**System-wide:**
-
-```bash
-git lfs install --skip-smudge
-```
-
-**Repository-only:**
-
-```bash
-git lfs install --local --skip-smudge
-```
-
-The `--skip-smudge` option prevents automatic downloading of all LFS files during clone/checkout.
+- `-r`, `--git-remote`: Target remote Git server (default: origin)
+- `-d`, `--drs-remote`: Target remote DRS server (default: default remote)
 
 ## Standard Git Commands
 
@@ -471,7 +361,7 @@ Git DRS integrates with standard Git commands:
 
 ### `git add`
 
-Stage files for commit. LFS-tracked files are automatically processed.
+Stage files for commit. Tracked files are automatically processed.
 
 ```bash
 git add myfile.bam
@@ -513,14 +403,14 @@ git drs remote add gen3 production --cred /path/to/credentials.json --url ... --
 
 ```bash
 # 1. Ensure file type is tracked
-git lfs track "*.bam"
+git drs track "*.bam"
 git add .gitattributes
 
 # 2. Add your file
 git add mydata.bam
 
 # 3. Verify tracking
-git lfs ls-files -I "mydata.bam"
+git drs ls-files
 
 # 4. Commit (creates DRS record)
 git commit -m "Add analysis results"
@@ -533,14 +423,13 @@ git push
 
 ```bash
 # Check what's available
-git lfs ls-files
+git drs ls-files
 
-# Download specific files
-git lfs pull -I "results/*.txt"
-git lfs pull -I "important-dataset.bam"
+# Download files
+git drs pull
 
 # Verify download
-git lfs ls-files -I "results/*.txt"
+git drs ls-files
 ```
 
 ### Repository Setup from Scratch
@@ -561,11 +450,11 @@ git drs remote add gen3 production \
     --project my-project
 
 # 4. Set up file tracking
-git lfs track "*.bam"
-git lfs track "*.vcf.gz"
-git lfs track "data/**"
+git drs track "*.bam"
+git drs track "*.vcf.gz"
+git drs track "data/**"
 git add .gitattributes
-git commit -m "Configure LFS tracking"
+git commit -m "Configure tracking"
 git push
 
 # 5. Add data files
@@ -612,6 +501,5 @@ Use `--help` with any command for detailed usage:
 git-drs --help
 git-drs init --help
 git-drs add-url --help
-git lfs --help
-git lfs track --help
+git-drs track --help
 ```

@@ -10,7 +10,7 @@ Git DRS integrates with Git through several mechanisms:
 
 **Pre-commit Hook**: `git drs precommit`
 - Triggered automatically before each commit
-- Processes all staged LFS files
+- Processes all staged files
 - Creates DRS records for new files
 - Only processes files that don't already exist on the DRS server
 - Prepares metadata for later upload during push
@@ -34,7 +34,7 @@ Git DRS integrates with Git through several mechanisms:
    - Stores in .git/drs/ directory
 4. Developer: git push
 5. Git Hook: git drs pre-push-prepare
-   - Stages pending metadata for LFS verify
+   - Stages pending metadata for DRS verify
 6. Git DRS:
    - `git drs push` runs register/upload directly
    - `git drs pull` runs download directly
@@ -44,8 +44,8 @@ Git DRS integrates with Git through several mechanisms:
 
 Git DRS no longer uses a custom transfer agent.
 
-- Upload path (primary): `git drs push` discovers local LFS pointers, bulk-registers missing objects, checks validity, and uploads missing bits.
-- Download path (primary): `git drs pull` resolves object records and downloads into local LFS object storage.
+- Upload path (primary): `git drs push` discovers local pointers, bulk-registers missing objects, checks validity, and uploads missing bits.
+- Download path (primary): `git drs pull` resolves object records and downloads into local object storage.
 
 ## Repository Structure
 
@@ -73,12 +73,12 @@ drs/                   # DRS object utilities
 ├── object.go         # DRS object structures
 └── util.go           # Utility functions
 
-lfs/                   # Git LFS integration
-└── lfs.go            # LFS pointer/discovery helpers
+lfs/                   # Pointer utilities
+└── lfs.go            # Pointer/discovery helpers
 
 utils/                 # Shared utilities
 ├── common.go         # Common functions
-├── lfs-track.go      # LFS tracking utilities
+├── lfs-track.go      # Tracking utilities
 └── util.go           # General utilities
 ```
 
@@ -97,14 +97,13 @@ servers:
 
 ### DRS Object Management
 
-Objects are stored in `.git/drs/lfs/objects/` during pre-commit and referenced during push/pull workflows.
+Objects are stored in `.git/drs/objects/` during pre-commit and referenced during push/pull workflows.
 
 ## Development Setup
 
 ### Prerequisites
 
-- Go 1.24+
-- Git LFS installed
+- Go 1.26.2+
 - Access to a DRS server for testing
 
 ### Building from Source
@@ -152,7 +151,7 @@ export PATH=$PATH:$(pwd)
 
 ```bash
 # Test specific functionality
-go test ./utils -run TestLFSTrack
+go test ./utils -run TestTrack
 ```
 
 ### Integration Tests

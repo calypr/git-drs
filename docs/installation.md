@@ -4,21 +4,7 @@ This guide covers installation of Git DRS across different environments and targ
 
 ## Prerequisites
 
-All installations require [Git LFS](https://git-lfs.com/) to be installed first:
-
-```bash
-# macOS
-brew install git-lfs
-
-# Linux (download binary)
-wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz
-tar -xvf git-lfs-linux-amd64-v3.7.0.tar.gz
-export PREFIX=$HOME
-./git-lfs-v3.7.0/install.sh
-
-# Configure LFS
-git lfs install --skip-smudge
-```
+Git DRS requires Git to be installed. Install Git DRS using the steps below, then run `git drs install` to configure Git filters.
 
 ## Local Installation (Gen3 Server)
 
@@ -33,9 +19,9 @@ git lfs install --skip-smudge
 
 2. **Update PATH**
    ```bash
-   # Add to ~/.bash_profile or ~/.zshrc
+   # Add to your shell startup file (for example ~/.zshrc, ~/.bashrc, or ~/.profile)
    export PATH="$PATH:$HOME/.local/bin"
-   source ~/.bash_profile  # or source ~/.zshrc
+   source ~/.zshrc  # or source your shell startup file
    ```
 
 3. **Verify Installation**
@@ -61,27 +47,7 @@ git lfs install --skip-smudge
 
 ### Steps
 
-1. **Install Git LFS on HPC**
-   ```bash
-   # Download and install Git LFS
-   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/git-lfs-linux-amd64-v3.7.1.tar.gz
-   tar -xvf git-lfs-linux-amd64-v3.7.1.tar.gz
-   export PREFIX=$HOME
-   ./git-lfs-3.7.1/install.sh
-   
-   # Make permanent
-   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile
-   source ~/.bash_profile
-   
-   # Configure
-   git lfs install --skip-smudge
-   
-   # Cleanup
-   rm git-lfs-linux-amd64-v3.7.0.tar.gz
-   rm -r git-lfs-3.7.0/
-   ```
-
-2. **Configure Git/SSH (if needed)**
+1. **Configure Git/SSH (if needed)**
    ```bash
    # Generate SSH key
    ssh-keygen -t ed25519 -C "your_email@example.com"
@@ -94,7 +60,7 @@ git lfs install --skip-smudge
    cat ~/.ssh/id_ed25519.pub
    ```
 
-3. **Install Git DRS**
+2. **Install Git DRS**
    ```bash
    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
    
@@ -103,7 +69,7 @@ git lfs install --skip-smudge
    source ~/.bash_profile
    ```
 
-4. **Verify Installation**
+3. **Verify Installation**
    ```bash
    git-drs version
    git drs install
@@ -133,8 +99,6 @@ After installation, verify your setup:
 # Check Git DRS version
 git-drs version
 
-# Check Git LFS
-git lfs version
 
 # View configured remotes (after setup)
 git drs remote list

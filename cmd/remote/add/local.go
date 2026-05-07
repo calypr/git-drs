@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	syfoncommon "github.com/calypr/syfon/common"
@@ -24,6 +26,9 @@ var LocalCmd = &cobra.Command{
 		url := args[1]
 		scopeArg := args[2]
 
+		if err := initialize.EnsureInitialized(drslog.GetLogger()); err != nil {
+			return fmt.Errorf("failed to initialize repository: %w", err)
+		}
 		if url == "" {
 			return fmt.Errorf("URL cannot be empty")
 		}

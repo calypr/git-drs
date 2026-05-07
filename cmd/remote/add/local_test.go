@@ -4,8 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,4 +46,42 @@ func TestResolveBucketScopeFromLocalServer(t *testing.T) {
 			t.Fatalf("unexpected bucket: %+v", scope)
 		}
 	})
+}
+
+func TestLocalRemoteAddEnsuresInitialization(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	localUsername = ""
+	localPassword = ""
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/data/buckets" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/calypr/project/end_to_end_test"]}}}`))
+	}))
+	defer srv.Close()
+
+	if err := LocalCmd.RunE(LocalCmd, []string{"origin", srv.URL, "calypr/end_to_end_test"}); err != nil {
+		t.Fatalf("LocalCmd.RunE returned error: %v", err)
+	}
+
+	if _, err := os.Stat(common.DRS_DIR); err != nil {
+		t.Fatalf("expected %s to exist: %v", common.DRS_DIR, err)
+	}
+
+	filterProcess, err := gitrepo.GetGitConfigString("filter.drs.process")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.process): %v", err)
+	}
+	if filterProcess != "git-drs filter" {
+		t.Fatalf("unexpected filter.drs.process: %q", filterProcess)
+	}
+
+	preCommit, err := os.ReadFile(filepath.Join(".git", "hooks", "pre-commit"))
+	if err != nil {
+		t.Fatalf("read pre-commit hook: %v", err)
+	}
+	if string(preCommit) == "" {
+		t.Fatalf("expected pre-commit hook to be installed")
+	}
 }

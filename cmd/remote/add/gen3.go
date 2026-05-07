@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/calypr/data-client/credentials"
+	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
@@ -51,6 +52,9 @@ var Gen3Cmd = &cobra.Command{
 func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
+	}
+	if err := initialize.EnsureInitialized(logg); err != nil {
+		return fmt.Errorf("failed to initialize repository: %w", err)
 	}
 	organization, project, err := parseScopeArg(scopeArg)
 	if err != nil {

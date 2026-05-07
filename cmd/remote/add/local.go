@@ -1,33 +1,56 @@
 package add
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
 var LocalCmd = &cobra.Command{
-	Use:   "local <remote-name> <url>",
+	Use:   "local <remote-name> <url> <organization/project>",
 	Short: "Add a local DRS server",
-	Long:  "Add a local DRS server by specifying its base URL, e.g., http://localhost:8000. Optional --username/--password configures basic auth for git-lfs and helper flows.",
-	Args:  cobra.ExactArgs(2),
+	Long:  "Add a local DRS server by specifying its base URL and scope. Optional --username/--password configures basic auth for helper flows.",
+	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		remoteName := args[0]
 		url := args[1]
+		scopeArg := args[2]
 
 		if url == "" {
 			return fmt.Errorf("URL cannot be empty")
+		}
+		organization, project, err := parseScopeArg(scopeArg)
+		if err != nil {
+			return err
+		}
+		scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")
+		if err != nil {
+			scope, err = resolveBucketScopeFromLocalServer(context.Background(), url, strings.TrimSpace(localUsername), strings.TrimSpace(localPassword), organization, project)
+			if err != nil {
+				return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
+			}
+		}
+		resolvedBucket := strings.TrimSpace(scope.Bucket)
+		resolvedStoragePrefix := strings.TrimSpace(scope.Prefix)
+		if resolvedBucket == "" {
+			return fmt.Errorf("no bucket mapping found for organization=%q project=%q", organization, project)
 		}
 
 		remoteSelect := config.RemoteSelect{
 			Local: &config.LocalRemote{
 				BaseURL:      url,
 				ProjectID:    project,
-				Bucket:       bucket,
+				Bucket:       resolvedBucket,
 				Organization: organization,
+				StoragePrefix: resolvedStoragePrefix,
 			},
 		}
 
@@ -53,4 +76,50 @@ var LocalCmd = &cobra.Command{
 		fmt.Printf("Added remote '%s'. Config: %v\n", remoteName, newConfig.GetRemote(config.Remote(remoteName)))
 		return nil
 	},
+}
+
+func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, password, organization, project string) (gitrepo.ResolvedBucketScope, error) {
+	if strings.TrimSpace(endpoint) == "" {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
+	if err != nil {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
+	}
+	if username != "" || password != "" {
+		req.SetBasicAuth(username, password)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
+	}
+
+	var payload bucketapi.BucketsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
+	}
+
+	projectResource, err := syfoncommon.ResourcePath(organization, project)
+	if err != nil {
+		return gitrepo.ResolvedBucketScope{}, err
+	}
+	orgResource, err := syfoncommon.ResourcePath(organization, "")
+	if err != nil {
+		return gitrepo.ResolvedBucketScope{}, err
+	}
+
+	if bucket, ok := findBucketByResource(payload, projectResource); ok {
+		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
+	}
+	if bucket, ok := findBucketByResource(payload, orgResource); ok {
+		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
+	}
+
+	return gitrepo.ResolvedBucketScope{}, fmt.Errorf("no visible server bucket matched organization=%q project=%q", organization, project)
 }

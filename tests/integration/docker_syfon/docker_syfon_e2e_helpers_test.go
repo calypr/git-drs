@@ -150,9 +150,8 @@ func configureGitDrsRemote(t *testing.T, repoDir, serverURL string, minioEnv *mi
 	t.Helper()
 	t.Logf("configuring git-drs remote: repo=%s server=%s bucket=%s org=%s project=%s", repoDir, serverURL, minioEnv.bucket, dockerE2EOrganization, dockerE2EProjectID)
 	runCommand(t, repoDir, nil, "git", "drs", "remote", "add", "local", "origin", serverURL,
+		dockerE2EOrganization+"/"+dockerE2EProjectID,
 		"--bucket", minioEnv.bucket,
-		"--organization", dockerE2EOrganization,
-		"--project", dockerE2EProjectID,
 		"--username", dockerE2ELocalUser,
 		"--password", dockerE2ELocalPassword,
 	)

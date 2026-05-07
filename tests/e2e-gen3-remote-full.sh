@@ -1419,7 +1419,7 @@ main() {
     git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
   else
     local -a local_add_args
-    local_add_args=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+    local_add_args=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" "$ORGANIZATION/$PROJECT_ID")
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
     fi
@@ -1547,7 +1547,7 @@ main() {
     git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
   else
     local -a local_add_args_clone
-    local_add_args_clone=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+    local_add_args_clone=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" "$ORGANIZATION/$PROJECT_ID")
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args_clone+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
     fi
@@ -1611,7 +1611,7 @@ main() {
       git drs remote add gen3 "$REMOTE_NAME" "$ORGANIZATION/$PROJECT_ID" --token "$GEN3_TOKEN"
     else
       local -a local_add_args_lfs
-      local_add_args_lfs=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" --bucket "$active_bucket" --organization "$ORGANIZATION" --project "$PROJECT_ID")
+      local_add_args_lfs=(git drs remote add local "$REMOTE_NAME" "$DRS_URL" "$ORGANIZATION/$PROJECT_ID")
       if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
         local_add_args_lfs+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
       fi

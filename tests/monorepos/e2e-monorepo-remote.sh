@@ -657,9 +657,8 @@ setup_repo() {
     local -a local_add_args
     local_add_args=(
       git drs remote add local "$MONO_REMOTE_NAME" "$DRS_URL"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
       --bucket "$ACTIVE_BUCKET"
-      --organization "$TEST_ORGANIZATION"
-      --project "$TEST_PROJECT_ID"
     )
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
@@ -733,9 +732,8 @@ clone_and_verify() {
     local -a local_add_args_clone
     local_add_args_clone=(
       git drs remote add local "$MONO_REMOTE_NAME" "$DRS_URL"
+      "$TEST_ORGANIZATION/$TEST_PROJECT_ID"
       --bucket "$ACTIVE_BUCKET"
-      --organization "$TEST_ORGANIZATION"
-      --project "$TEST_PROJECT_ID"
     )
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args_clone+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")

@@ -166,7 +166,13 @@ func parseScopeArg(raw string) (string, string, error) {
 	if raw == "" {
 		return "", "", fmt.Errorf("organization/project scope is required")
 	}
-	organization, project := common.ParseOrgProject("", raw)
+
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
+	}
+	organization := strings.TrimSpace(parts[0])
+	project := strings.TrimSpace(parts[1])
 	if organization == "" || project == "" {
 		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
 	}

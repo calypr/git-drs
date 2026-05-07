@@ -20,6 +20,34 @@ func TestGen3Cmd(t *testing.T) {
 	assert.Equal(t, "gen3 [remote-name] <organization/project>", Gen3Cmd.Use)
 }
 
+func TestParseScopeArg(t *testing.T) {
+	t.Run("splits org and project on slash", func(t *testing.T) {
+		org, project, err := parseScopeArg("HTAN_INT/BForePC")
+		if err != nil {
+			t.Fatalf("parseScopeArg returned error: %v", err)
+		}
+		if org != "HTAN_INT" || project != "BForePC" {
+			t.Fatalf("unexpected scope parse result: %q/%q", org, project)
+		}
+	})
+
+	t.Run("rejects legacy single token input", func(t *testing.T) {
+		_, _, err := parseScopeArg("BForePC")
+		if err == nil {
+			t.Fatal("expected invalid scope error")
+		}
+	})
+
+	t.Run("rejects empty org or project", func(t *testing.T) {
+		for _, raw := range []string{"/BForePC", "HTAN_INT/", "HTAN_INT//BForePC"} {
+			_, _, err := parseScopeArg(raw)
+			if err == nil {
+				t.Fatalf("expected invalid scope error for %q", raw)
+			}
+		}
+	})
+}
+
 func TestResolveBucketScopeFromServer(t *testing.T) {
 	t.Run("matches project resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

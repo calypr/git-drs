@@ -338,7 +338,10 @@ Use this flow when developing against a local Syfon/DRS server instead of a host
 2. Add the local remote:
 
    ```bash
-   git drs remote add local origin http://localhost:8080
+   git drs remote add local origin http://localhost:8080 \
+       calypr/end_to_end_test \
+       --username drs-user \
+       --password drs-pass
    ```
 
    If your local server requires basic auth, include the local auth flags supported by that command.

@@ -657,9 +657,8 @@ main() {
     local -a local_add_args
     local_add_args=(
       git drs remote add local "$REMOTE_NAME" "$DRS_URL"
+      "$ORGANIZATION/$PROJECT_ID"
       --bucket "$TEST_BUCKET_NAME"
-      --organization "$ORGANIZATION"
-      --project "$PROJECT_ID"
     )
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")
@@ -758,9 +757,8 @@ main() {
     local -a local_add_args_clone
     local_add_args_clone=(
       git drs remote add local "$REMOTE_NAME" "$DRS_URL"
+      "$ORGANIZATION/$PROJECT_ID"
       --bucket "$TEST_BUCKET_NAME"
-      --organization "$ORGANIZATION"
-      --project "$PROJECT_ID"
     )
     if [[ -n "$LOCAL_USERNAME" && -n "$LOCAL_PASSWORD" ]]; then
       local_add_args_clone+=(--username "$LOCAL_USERNAME" --password "$LOCAL_PASSWORD")

@@ -16,9 +16,8 @@ This document explains three implementation areas in `git-drs`:
 - Relevant command entrypoints:
   - `git drs push` -> `cmd/push/main.go`
   - `git drs pull` -> `cmd/pull/main.go`
-  - `git drs download` -> `cmd/download/main.go`
+  - `git drs ls-files` -> `cmd/lsfiles/main.go`
   - `git drs query` -> `cmd/query/main.go`
-  - `git drs list` -> `cmd/list/main.go`
   - `git drs add-ref` -> `cmd/addref/add-ref.go`
   - `git drs add-url` -> `cmd/addurl/service.go`
 
@@ -32,9 +31,8 @@ The table below maps command behavior to DRS client calls and the corresponding 
 | --- | --- | --- | --- |
 | `git drs query <drs_id>` | `cmd/query/main.go` | `DRS().GetObject(drs_id)` | Get object by DRS ID (`/ga4gh/drs/v1/objects/{id}` style) |
 | `git drs query --checksum <sha256>` | `cmd/query/main.go` -> `drsremote.ObjectsByHashForScope` | `DRS().BatchGetObjectsByHash([]checksum)` | Lookup objects by checksum (`/ga4gh/drs/v1/objects/checksum/{checksum}` style; asserted in tests) |
-| `git drs list` | `cmd/list/main.go` | `DRS().ListObjects(pageSize, page)` | List objects (`/ga4gh/drs/v1/objects` style) |
-| `git drs download <drs_id>` | `cmd/download/main.go` | `DRS().GetObject(id)` then `DRS().GetAccessURL(id, access_type)` | Resolve object metadata and a signed access URL |
-| `git drs pull [remote]` | `cmd/pull/main.go` -> `drsremote.DownloadToCachePath` | `DRS().BatchGetObjectsByHash`, `DRS().GetAccessURL`; optional bulk via `DRSAPI().GetBulkAccessURLWithResponse` | Resolve missing OIDs to DRS records and access URLs, then download content |
+| `git drs ls-files --drs` | `cmd/lsfiles/main.go` | `DRS().BatchGetObjectsByHash([]checksum)` | Check DRS registration status for local tracked files |
+| `git drs pull` | `cmd/pull/main.go` -> `drsremote.DownloadToCachePath` | `DRS().BatchGetObjectsByHash`, `DRS().GetAccessURL`; optional bulk via `DRSAPI().GetBulkAccessURLWithResponse` | Resolve missing OIDs to DRS records and access URLs, then hydrate content into the current checkout |
 | `git drs push [remote]` | `cmd/push/main.go` -> `pushsync.BatchSyncForPush` | `DRS().BatchGetObjectsByHash`, `DRS().RegisterObjects`, `DRS().GetAccessURL` | Check checksum presence, register missing records, probe/downloadability before upload |
 | `git drs add-ref <drs_uri> <path>` | `cmd/addref/add-ref.go` | `DRS().GetObject(drs_uri)` | Resolve existing DRS object and write pointer |
 
@@ -67,7 +65,7 @@ All transfer concurrency in `git-drs` is **in-process**, implemented with **Go g
 
 - Upload object fan-out uses `golang.org/x/sync/errgroup` — goroutines with a shared context and bounded by `errgroup.SetLimit(n)`.
 - Download chunk parallelism uses the `sydownload` library, which internally uses goroutines to issue concurrent HTTP range requests.
-- Sub-process calls (`exec.Command("git", ...)`) appear only for Git metadata operations (e.g. `git pull`, `git checkout`, `git drs ls-files`), never for data-transfer concurrency.
+- Sub-process calls (`exec.Command("git", ...)`) appear only for Git metadata operations (for example `git checkout`, `git ls-files`, `git check-attr`), never for data-transfer concurrency.
 
 ## 2.1 Upload concurrency (`git drs push`)
 
@@ -97,7 +95,7 @@ Key implementation points:
 
 Operationally, this gives bounded goroutine parallelism for many small objects while reducing resource contention for very large uploads.
 
-## 2.2 Download concurrency (`git drs pull` and `git drs download`)
+## 2.2 Download concurrency (`git drs pull`)
 
 Download concurrency is set via `sydownload.DownloadOptions`:
 
@@ -105,15 +103,7 @@ Download concurrency is set via `sydownload.DownloadOptions`:
 - `Concurrency: 2`
 - `ChunkSize: 64 MiB`
 
-These values are hardcoded in two places (see https://github.com/calypr/git-drs/issues/228 section 6.2):
-
-- `internal/drsremote/remote.go` (`downloadResolved`) — used by pull workflow
-- `cmd/download/main.go` — used by the explicit download command
-
-This applies to:
-
-- `DownloadResolvedToPath(...)` (direct download command)
-- `DownloadToCachePath(...)` / `DownloadResolvedToCachePath(...)` (pull workflow)
+These values are currently hardcoded in `internal/drsremote/remote.go` (`downloadResolved`) and apply to the pull/hydration workflow.
 
 ### Intra-object chunk concurrency
 
@@ -130,12 +120,12 @@ The `sydownload` library implements **goroutine-based HTTP range-request concurr
 - So pull concurrency is **intra-object** (goroutine-based chunk/range concurrency), not broad object fan-out.
 - Bulk metadata prefetch (DRS objects + bulk access URLs) is performed **before** the sequential download loop to amortize API round-trips.
 
-## 2.3 Git DRS fetch lane
+## 2.3 Git metadata subprocesses
 
-Some flows still call Git commands directly (for example `git drs fetch` invokes a subprocess in `cmd/fetch/main.go`).
+Some flows still call Git commands directly for repository state inspection.
 
 - These are **subprocess** calls (`exec.Command("git", ...)`), not goroutine fan-out.
-- That lane uses the underlying transfer runtime and respects `lfs.concurrenttransfers` in Git config.
+- Examples include tracked-file discovery and attribute inspection used by `ls-files` and `pull`.
 - This is distinct from the goroutine-based `git drs push` upload fan-out and `sydownload` chunk concurrency.
 
 ---
@@ -154,7 +144,7 @@ Workflow:
 4. Inspect object using cloud client (`sycloud.InspectObject`).
 5. Ensure object identity:
    - If `--sha256` provided: trust it as OID.
-   - Otherwise: derive synthetic OID from ETag and write sentinel object (`lfs.SyntheticOIDFromETag`, `lfs.WriteAddURLSentinelObject`).
+   - Otherwise: derive a deterministic placeholder OID from remote object metadata.
 6. Write pointer file to worktree.
 7. Best-effort update of pre-commit cache (`updatePrecommitCache`).
 8. Ensure file is tracked if needed.
@@ -210,7 +200,7 @@ So for both `add-url` and `add-ref`, the checksum-existence gate is primarily de
 1. `add-ref`: `GetObject(drs_id)` and write pointer.
 2. `pull`: detect unresolved pointers.
 3. For each OID, resolve scoped object by checksum and access URL.
-4. Download to local object cache; checkout file contents.
+4. Download to local object cache and hydrate the tracked file in the worktree.
 
 ---
 
@@ -219,8 +209,8 @@ So for both `add-url` and `add-ref`, the checksum-existence gate is primarily de
 - If you need immediate server-side checksum validation during `add-url`, that behavior does not exist today; validation happens at push time.
 - All transfer concurrency is in-process (goroutines); no subprocess workers are used for data movement.
 - Upload concurrency is configurable through Git config (`lfs.concurrenttransfers` key) and is implemented as a goroutine pool bounded by `errgroup.SetLimit`.
-- Download concurrency is fixed (not configurable at runtime): `Concurrency=2` goroutines per object for HTTP range requests, hardcoded in two places (`internal/drsremote/remote.go` and `cmd/download/main.go`).
+- Download concurrency is fixed (not configurable at runtime): `Concurrency=2` goroutines per object for HTTP range requests, currently hardcoded in `internal/drsremote/remote.go`.
 - Object-level download iteration in `git drs pull` is sequential; only intra-object chunk downloads are concurrent.
-- `git drs fetch` delegates to a subprocess; its concurrency is controlled by the underlying runtime, not by `git-drs` goroutine management. Tuning and diagnostics differ accordingly.
+- Git metadata discovery still uses subprocess calls, but those are repository inspection details, not data-transfer concurrency.
 
 ---

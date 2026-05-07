@@ -16,11 +16,11 @@ This repository uses a **local, non-versioned cache** under:
 .git/drs/pre-commit/
 ```
 
-to support fast, offline-friendly workflows for **Git LFS–tracked files**.
+to support fast, offline-friendly workflows for **Git DRS–tracked files**.
 
 The cache is:
 
-* **LFS-only**
+* **pointer-only**
 * **non-authoritative**
 * **local to a working copy**
 * **never committed to Git**
@@ -44,7 +44,7 @@ Its sole purpose is to bridge the gap between:
 * Updates `.git/drs/pre-commit` cache
 * Never performs network I/O
 * Never queries DRS or DRS
-* Ignores all non-LFS files
+* Ignores all non-tracked files
 
 ### `precommit_cache` (helper library)
 
@@ -61,7 +61,7 @@ Its sole purpose is to bridge the gap between:
 
 ## Cache Scope (Important)
 
-Only files whose **staged content** is a valid Git LFS pointer are in scope:
+Only files whose **staged content** is a valid Git DRS pointer are in scope:
 
 ```
 version https://git-lfs.github.com/spec/v1
@@ -112,7 +112,7 @@ The cache models **three non-authoritative relationships**:
 3. **OID → External URL (hint)**
 
 All are **hints only**.
-The authoritative source of truth lives on the server (DRS / DRS).
+The authoritative source of truth lives on the server (DRS).
 
 ---
 
@@ -122,7 +122,7 @@ The authoritative source of truth lives on the server (DRS / DRS).
 
 `v1/paths/<encoded-path>.json`
 
-Represents the **currently staged** LFS object at a given working-tree path.
+Represents the **currently staged** DRS object at a given working-tree path.
 
 ```json
 {
@@ -135,7 +135,7 @@ Represents the **currently staged** LFS object at a given working-tree path.
 Notes:
 
 * `path` is repo-relative
-* `lfs_oid` comes from the staged LFS pointer
+* `lfs_oid` comes from the staged DRS pointer
 * Updated on:
 
     * add
@@ -149,7 +149,7 @@ Notes:
 
 `v1/oids/<oid-hash>.json`
 
-Represents **advisory information** about an LFS object.
+Represents **advisory information** about a DRS object.
 
 ```json
 {
@@ -187,16 +187,16 @@ Used to record deleted paths for potential GC or debugging.
 
 ## Pre-Commit Behavior (What Happens Automatically)
 
-### Add / Modify LFS File
+### Add / Modify Tracked File
 
-* Extracts LFS OID from staged pointer
+* Extracts OID from staged pointer
 * Updates:
 
     * `paths/<path>.json`
     * `oids/<oid>.json`
 * Preserves any existing `external_url` hint
 
-### Rename / Move LFS File
+### Rename / Move Tracked File
 
 * Moves `paths/<old>.json` → `paths/<new>.json`
 * Updates OID entry paths list
@@ -291,7 +291,7 @@ url, ok, err := cache.LookupExternalURLByOID(oid)
 
 * Hint only
 * May be stale or missing
-* Must be validated against DRS / DRS
+* Must be validated against DRS
 
 ---
 
@@ -322,7 +322,7 @@ Used by pre-push to compare local hints with server truth.
 ## Intended Pre-Push Usage Pattern
 
 1. Determine commit range from pre-push stdin
-2. Enumerate **LFS OIDs** referenced by pushed commits
+2. Enumerate **OIDs** referenced by pushed commits
 3. For each OID:
 
     * Optionally read local hints from `precommit_cache`
@@ -377,9 +377,7 @@ sequenceDiagram
   participant PC as pre-commit hook (cmd/precommit)
   participant Cache as .git/drs/pre-commit (local cache)
   participant PP as pre-push hook
-  participant LFS as git-lfs
   participant IDX as DRS (authoritative)
-  participant DRS as DRS (authoritative)
 
   Dev->>Git: git add <files>
   Dev->>Git: git commit
@@ -387,10 +385,10 @@ sequenceDiagram
   Git->>PC: invoke pre-commit (no stdin)
   PC->>Git: git diff --cached --name-status -M
   PC->>Git: git show :<path> (staged pointer)
-  alt staged file is LFS pointer
+  alt staged file is DRS pointer
     PC->>Cache: write paths/<encoded-path>.json (path -> oid)
     PC->>Cache: upsert oids/<oid-hash>.json (oid -> paths[] + external_url hint)
-  else non-LFS file
+  else non-tracked file
     PC-->>Git: ignore (out of scope)
   end
   PC-->>Git: exit 0 (commit proceeds)
@@ -398,13 +396,10 @@ sequenceDiagram
   Dev->>Git: git push <remote> <ref>
   Git->>PP: invoke pre-push (stdin: ref updates)
   PP->>PP: compute commit ranges from stdin
-  PP->>LFS: enumerate LFS OIDs referenced by pushed commits
+  PP->>IDX: enumerate OIDs referenced by pushed commits
   loop for each required OID
     PP->>Cache: lookup external_url hint (optional)
     PP->>IDX: resolve by sha256 (OID) -> object_id + urls[]
-    opt DRS resolution
-      PP->>DRS: resolve by object_id -> access_methods[]
-    end
     alt OID not resolvable
       PP-->>Git: fail push (exit non-zero)
     else resolvable
@@ -418,7 +413,7 @@ sequenceDiagram
 
 ## Summary
 
-> `.git/drs/pre-commit` is a **local, LFS-only, non-authoritative cache** that tracks
+> `.git/drs/pre-commit` is a **local, pointer-only, non-authoritative cache** that tracks
 > **path ↔ OID ↔ external URL hints** to support rename, undo, and offline workflows.
 >
 > `precommit_cache` provides safe, read-only access to this cache for enforcement at pre-push.
@@ -426,5 +421,5 @@ sequenceDiagram
 If you want, I can also:
 
 * add **inline Go doc comments** suitable for `pkg.go.dev`
-* generate a **sequence diagram** (commit → cache → push → DRS/DRS)
+* generate a **sequence diagram** (commit → cache → push → DRS)
 * or write a **pre-push reference implementation** that uses these helpers end-to-end

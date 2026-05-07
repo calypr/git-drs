@@ -50,7 +50,9 @@ Common flags:
 - `--multipart-threshold <mb>`: multipart threshold in MB
 - `--enable-data-client-logs`: enable lower-level client logging
 
-Run this once per repository.
+Use this when you want to initialize the repo explicitly, or to repair repo-local hooks/config.
+
+For normal onboarding, `git drs remote add ...` now auto-initializes the repository if that setup is missing.
 
 ## Remote Configuration
 
@@ -73,14 +75,12 @@ git drs remote add gen3 [remote-name] <organization/project> \
 
 ```bash
 # Add production remote
-git drs remote add gen3 production \
-    --cred /path/to/credentials.json \
-    my-program/my-project
+git drs remote add gen3 production my-program/my-project \
+    --cred /path/to/credentials.json
 
 # Add staging remote
-git drs remote add gen3 staging \
-    --cred /path/to/staging-credentials.json \
-    staging-program/staging-project
+git drs remote add gen3 staging staging-program/staging-project \
+    --cred /path/to/staging-credentials.json
 ```
 
 Notes:
@@ -89,6 +89,7 @@ Notes:
 - scope is always one positional argument: `organization/project`
 - `--cred` imports a Gen3 credential file
 - `--token` uses a temporary bearer token
+- if the repo has not been initialized yet, this command bootstraps the local `git-drs` hooks/config first
 - bucket resolution is scope-driven; users do not need to provide `--bucket`
 - endpoint resolution comes from the credential/token path; users do not need to provide `--url`
 
@@ -104,6 +105,22 @@ List configured DRS remotes.
 ```bash
 git drs remote list
 ```
+
+### `git drs remote remove <remote-name>`
+
+Remove a configured DRS remote.
+
+```bash
+git drs remote remove <remote-name>
+git drs remote rm <remote-name>
+```
+
+Notes:
+
+- this removes `git-drs` remote config, not normal Git remotes
+- `git remote remove <name>` does not manage `git-drs` remote config
+- if the removed remote was the default and other `git-drs` remotes remain, one remaining remote becomes the new default
+- if the removed remote was the last one, `git-drs` clears the default remote
 
 ### `git drs add-url <object-url-or-key> [path]`
 

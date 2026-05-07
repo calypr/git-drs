@@ -13,6 +13,8 @@ import (
 	syconf "github.com/calypr/syfon/client/config"
 )
 
+const credentialHelpSuffix = "Refresh credentials with `git drs remote add gen3 <remote-name> <organization/project> --cred <path>` or `--token <token>`. See docs/getting-started.md."
+
 type DRSRemote interface {
 	GetProjectId() string
 	GetOrganization() string
@@ -61,7 +63,7 @@ func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (*GitConte
 		return nil, err
 	}
 	if err := credentials.EnsureValidCredential(context.Background(), cred, logger); err != nil {
-		return nil, err
+		return nil, WrapCredentialValidationError(remoteName, err)
 	}
 	return newGitContext(*cred, s, logger)
 }
@@ -193,4 +195,14 @@ func localRemoteFromGen3(gen3 *Gen3Remote, username string, password string) *Lo
 		BasicUsername: strings.TrimSpace(username),
 		BasicPassword: strings.TrimSpace(password),
 	}
+}
+
+func WrapCredentialValidationError(remoteName string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.TrimSpace(remoteName) == "" {
+		return fmt.Errorf("%w. %s", err, credentialHelpSuffix)
+	}
+	return fmt.Errorf("%w. Remote %q requires refreshed credentials. %s", err, remoteName, credentialHelpSuffix)
 }

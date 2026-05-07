@@ -3,9 +3,19 @@ package remote
 import (
 	"fmt"
 
+	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
+)
+
+var (
+	loadConfig            = config.LoadConfig
+	loadProfileCredential = func(profile string) (*syconf.Credential, error) {
+		return syconf.NewConfigure(drslog.GetLogger()).Load(profile)
+	}
+	ensureValidCredential = credentials.EnsureValidCredential
 )
 
 var ListCmd = &cobra.Command{
@@ -20,7 +30,7 @@ var ListCmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
-		cfg, err := config.LoadConfig()
+		cfg, err := loadConfig()
 		if err != nil {
 			logg.Debug(fmt.Sprintf("Error loading config: %s", err))
 			return err
@@ -53,6 +63,16 @@ var ListCmd = &cobra.Command{
 			}
 
 			fmt.Printf("%s %-10s %-8s %s\n", marker, name, remoteType, endpoint)
+			if remoteSelect.Gen3 != nil {
+				cred, err := loadProfileCredential(string(name))
+				if err != nil {
+					logg.Warn(fmt.Sprintf("remote %s credential check skipped: %v", name, err))
+					continue
+				}
+				if err := ensureValidCredential(cmd.Context(), cred, logg); err != nil {
+					logg.Warn(config.WrapCredentialValidationError(string(name), err).Error())
+				}
+			}
 		}
 		return nil
 	},

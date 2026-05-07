@@ -113,7 +113,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	}
 
 	if err := credentials.EnsureValidCredential(context.Background(), cred, logg); err != nil {
-		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", err)
+		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", config.WrapCredentialValidationError(remoteName, err))
 	}
 
 	scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")

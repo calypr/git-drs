@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -61,9 +62,12 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
+		progress := newUploadProgressRenderer(os.Stderr)
+		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
+			progress.Finish()
 			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
+		progress.Finish()
 
 		pushArgs := []string{"push"}
 		if !pushWithHooks {

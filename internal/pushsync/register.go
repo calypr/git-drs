@@ -16,8 +16,17 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
+	"github.com/calypr/syfon/client/transfer"
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
+
+var uploadObjectFile = syupload.UploadObjectFile
+var uploadBackendForRuntime = func(rt *pushRuntime) transfer.MultipartBackend {
+	if rt == nil || rt.API == nil || rt.API.Client == nil {
+		return nil
+	}
+	return rt.API.Client.Data()
+}
 
 type pushScope struct {
 	Organization string
@@ -192,7 +201,7 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	if err := syupload.UploadObjectFile(ctx, rt.API.Client.Data(), filePath, objectKey, drsObject.Id, rt.Scope.Bucket, forceMultipart); err != nil {
+	if err := uploadObjectFile(ctx, uploadBackendForRuntime(rt), filePath, objectKey, drsObject.Id, rt.Scope.Bucket, forceMultipart); err != nil {
 		return fmt.Errorf("upload error: %w", err)
 	}
 	return nil

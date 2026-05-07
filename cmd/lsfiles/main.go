@@ -13,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pathspec"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +37,7 @@ var (
 		}
 		return lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	}
-	lookupScopedObjects = drsremote.ObjectsByHashForScope
+	lookupScopedObjectsBatch = drsremote.ObjectsByHashesForScope
 )
 
 type fileRow struct {
@@ -84,6 +85,27 @@ func collectRows(cmd *cobra.Command, gitRemoteName, drsRemoteName string, patter
 	sort.Strings(keys)
 
 	rows := make([]fileRow, 0, len(keys))
+	var drsResults map[string][]drsapi.DrsObject
+	var drsLookupErr error
+	if resolveDRS {
+		oids := make([]string, 0, len(keys))
+		seenOIDs := make(map[string]struct{}, len(keys))
+		for _, path := range keys {
+			if !pathspec.MatchesAny(path, patterns) {
+				continue
+			}
+			oid := lfsFiles[path].Oid
+			if oid == "" {
+				continue
+			}
+			if _, exists := seenOIDs[oid]; exists {
+				continue
+			}
+			seenOIDs[oid] = struct{}{}
+			oids = append(oids, oid)
+		}
+		drsResults, drsLookupErr = lookupScopedObjectsBatch(cmd.Context(), client, oids)
+	}
 	for _, path := range keys {
 		if !pathspec.MatchesAny(path, patterns) {
 			continue
@@ -101,13 +123,15 @@ func collectRows(cmd *cobra.Command, gitRemoteName, drsRemoteName string, patter
 		}
 
 		if resolveDRS {
-			results, err := lookupScopedObjects(cmd.Context(), client, info.Oid)
 			switch {
-			case err != nil:
-				row.Detail = err.Error()
-			case len(results) == 0:
-				row.Registered = false
+			case drsLookupErr != nil:
+				row.Detail = drsLookupErr.Error()
 			default:
+				results := drsResults[info.Oid]
+				if len(results) == 0 {
+					row.Registered = false
+					break
+				}
 				row.Registered = true
 				row.DRSIDs = make([]string, 0, len(results))
 				for _, res := range results {

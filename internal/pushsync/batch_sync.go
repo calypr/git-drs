@@ -13,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -21,6 +22,7 @@ import (
 type batchSyncSession struct {
 	ctx            context.Context
 	rt             *pushRuntime
+	reporter       UploadProgressReporter
 	filesByOID     map[string]lfs.LfsFileInfo
 	oids           []string
 	drsObjByOID    map[string]*drsapi.DrsObject
@@ -37,10 +39,11 @@ type uploadCandidate struct {
 }
 
 // BatchSyncForPush performs checksum-first push preparation.
-func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo) error {
+func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
 	session := &batchSyncSession{
 		ctx:            ctx,
 		rt:             newPushRuntime(cl),
+		reporter:       reporter,
 		drsObjByOID:    make(map[string]*drsapi.DrsObject),
 		existingByHash: make(map[string][]drsapi.DrsObject),
 		registeredOids: make(map[string]bool),
@@ -273,6 +276,9 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 
 	small, large := splitCandidatesByThreshold(candidates, threshold)
 	s.rt.Logger.InfoContext(s.ctx, "upload plan prepared", "total", len(candidates), "parallel_small", len(small), "sequential_large", len(large))
+	if s.reporter != nil {
+		s.reporter.OnUploadPlan(buildUploadPlanSummary(candidates))
+	}
 
 	if len(small) > 0 {
 		eg, egCtx := errgroup.WithContext(s.ctx)
@@ -280,7 +286,12 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
-				return uploadFileForObject(s.rt, egCtx, c.obj, c.src, false)
+				uploadCtx := s.progressContextForCandidate(egCtx, c)
+				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+					return err
+				}
+				s.reportUploadCompleted(c)
+				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
@@ -289,11 +300,66 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	}
 
 	for _, c := range large {
-		if err := uploadFileForObject(s.rt, s.ctx, c.obj, c.src, false); err != nil {
+		uploadCtx := s.progressContextForCandidate(s.ctx, c)
+		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
 			return err
 		}
+		s.reportUploadCompleted(c)
 	}
 	return nil
+}
+
+func buildUploadPlanSummary(candidates []uploadCandidate) UploadPlanSummary {
+	files := make([]UploadPlanFile, 0, len(candidates))
+	var totalBytes int64
+	for _, c := range candidates {
+		files = append(files, UploadPlanFile{
+			OID:   c.oid,
+			Path:  c.file.Name,
+			Bytes: c.size,
+		})
+		totalBytes += c.size
+	}
+	return UploadPlanSummary{
+		Files:      files,
+		TotalFiles: len(files),
+		TotalBytes: totalBytes,
+	}
+}
+
+func (s *batchSyncSession) progressContextForCandidate(ctx context.Context, c uploadCandidate) context.Context {
+	if s.reporter == nil {
+		return ctx
+	}
+	ctx = sycommon.WithOid(ctx, c.oid)
+	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
+		if ev.Event != "progress" {
+			return nil
+		}
+		s.reporter.OnUploadProgress(UploadProgressEvent{
+			OID:            c.oid,
+			Path:           c.file.Name,
+			BytesSoFar:     ev.BytesSoFar,
+			BytesSinceLast: ev.BytesSinceLast,
+			TotalBytes:     c.size,
+			Phase:          UploadProgressUploading,
+		})
+		return nil
+	})
+}
+
+func (s *batchSyncSession) reportUploadCompleted(c uploadCandidate) {
+	if s.reporter == nil {
+		return
+	}
+	s.reporter.OnUploadProgress(UploadProgressEvent{
+		OID:            c.oid,
+		Path:           c.file.Name,
+		BytesSoFar:     c.size,
+		BytesSinceLast: 0,
+		TotalBytes:     c.size,
+		Phase:          UploadProgressCompleted,
+	})
 }
 
 func splitCandidatesByThreshold(candidates []uploadCandidate, threshold int64) (small, large []uploadCandidate) {

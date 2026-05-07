@@ -7,6 +7,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	syconf "github.com/calypr/syfon/client/config"
 )
 
 func setupTestRepo(t *testing.T) string {
@@ -381,5 +382,34 @@ func TestLocalRemoteGetClientResolvesBucketScopeMappings(t *testing.T) {
 	}
 	if gitCtx.StoragePrefix != "program-root/project-subpath" {
 		t.Fatalf("StoragePrefix = %q, want program-root/project-subpath", gitCtx.StoragePrefix)
+	}
+}
+
+func TestNewGitContextReadsLFSConcurrentTransfers(t *testing.T) {
+	setupTestRepo(t)
+
+	if err := gitrepo.SetGitConfigOptions(map[string]string{
+		"lfs.concurrenttransfers": "7",
+	}); err != nil {
+		t.Fatalf("SetGitConfigOptions failed: %v", err)
+	}
+
+	cred := syconf.Credential{
+		APIEndpoint:  "https://example.test",
+		AccessToken:  "token",
+	}
+	remote := Gen3Remote{
+		Endpoint:     "https://example.test",
+		Organization: "org1",
+		ProjectID:    "proj1",
+		Bucket:       "bucket1",
+	}
+
+	gitCtx, err := newGitContext(cred, remote, drslog.GetLogger())
+	if err != nil {
+		t.Fatalf("newGitContext failed: %v", err)
+	}
+	if gitCtx.UploadConcurrency != 7 {
+		t.Fatalf("UploadConcurrency = %d, want 7", gitCtx.UploadConcurrency)
 	}
 }

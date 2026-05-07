@@ -30,10 +30,10 @@ func TestCollectRowsLocalDefault(t *testing.T) {
 	resetFlagsForTest()
 
 	oldLoadLFSInventory := loadLFSInventory
-	oldLookupScopedObjects := lookupScopedObjects
+	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
 	t.Cleanup(func() {
 		loadLFSInventory = oldLoadLFSInventory
-		lookupScopedObjects = oldLookupScopedObjects
+		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
 	})
 
 	tmpDir := t.TempDir()
@@ -70,8 +70,8 @@ func TestCollectRowsLocalDefault(t *testing.T) {
 			pointerPath:   {Name: pointerPath, Oid: strings.Repeat("b", 64)},
 		}, nil
 	}
-	lookupScopedObjects = func(ctx context.Context, drsCtx *config.GitContext, checksum string) ([]drsapi.DrsObject, error) {
-		t.Fatalf("unexpected remote lookup for checksum %s", checksum)
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+		t.Fatalf("unexpected remote lookup for checksums %v", checksums)
 		return nil, nil
 	}
 
@@ -111,13 +111,13 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 	oldResolveRemote := resolveRemote
 	oldNewRemoteClient := newRemoteClient
 	oldLoadLFSInventory := loadLFSInventory
-	oldLookupScopedObjects := lookupScopedObjects
+	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
 	t.Cleanup(func() {
 		loadConfig = oldLoadConfig
 		resolveRemote = oldResolveRemote
 		newRemoteClient = oldNewRemoteClient
 		loadLFSInventory = oldLoadLFSInventory
-		lookupScopedObjects = oldLookupScopedObjects
+		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
 	})
 
 	loadConfig = func() (*config.Config, error) {
@@ -137,15 +137,17 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 			"data/file3.txt": {Name: "data/file3.txt", Oid: strings.Repeat("c", 64)},
 		}, nil
 	}
-	lookupScopedObjects = func(ctx context.Context, drsCtx *config.GitContext, checksum string) ([]drsapi.DrsObject, error) {
-		switch checksum {
-		case strings.Repeat("b", 64):
-			return []drsapi.DrsObject{{Id: "did-1"}}, nil
-		case strings.Repeat("c", 64):
-			return nil, errors.New("lookup failed")
-		default:
-			return nil, nil
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+		got := map[string][]drsapi.DrsObject{}
+		for _, checksum := range checksums {
+			switch checksum {
+			case strings.Repeat("b", 64):
+				got[checksum] = []drsapi.DrsObject{{Id: "did-1"}}
+			default:
+				got[checksum] = nil
+			}
 		}
+		return got, nil
 	}
 
 	cmd := &cobra.Command{}
@@ -159,8 +161,8 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 	if rows[0].Path != "data/file2.bam" || !rows[0].Registered || rows[0].Detail != "drs://did-1" {
 		t.Fatalf("unexpected registered row: %+v", rows[0])
 	}
-	if rows[1].Path != "data/file3.txt" || rows[1].Registered || rows[1].Detail != "lookup failed" {
-		t.Fatalf("unexpected error row: %+v", rows[1])
+	if rows[1].Path != "data/file3.txt" || rows[1].Registered || rows[1].Detail != "" {
+		t.Fatalf("unexpected unregistered row: %+v", rows[1])
 	}
 
 	drsStatus = true
@@ -174,8 +176,56 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 	if !strings.Contains(got, rows[0].OID+" - data/file2.bam\tdrs://did-1\n") {
 		t.Fatalf("missing registered row: %q", got)
 	}
-	if !strings.Contains(got, rows[1].OID+" - data/file3.txt\tlookup failed\n") {
-		t.Fatalf("missing error row: %q", got)
+	if !strings.Contains(got, rows[1].OID+" - data/file3.txt\t-\n") {
+		t.Fatalf("missing unregistered row: %q", got)
+	}
+}
+
+func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
+	resetFlagsForTest()
+
+	oldLoadConfig := loadConfig
+	oldResolveRemote := resolveRemote
+	oldNewRemoteClient := newRemoteClient
+	oldLoadLFSInventory := loadLFSInventory
+	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
+	t.Cleanup(func() {
+		loadConfig = oldLoadConfig
+		resolveRemote = oldResolveRemote
+		newRemoteClient = oldNewRemoteClient
+		loadLFSInventory = oldLoadLFSInventory
+		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
+	})
+
+	loadConfig = func() (*config.Config, error) { return &config.Config{}, nil }
+	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) {
+		return config.Remote("origin"), nil
+	}
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
+		return &config.GitContext{}, nil
+	}
+	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{
+			"data/file2.bam": {Name: "data/file2.bam", Oid: strings.Repeat("b", 64)},
+			"data/file3.txt": {Name: "data/file3.txt", Oid: strings.Repeat("c", 64)},
+		}, nil
+	}
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+		return nil, errors.New("lookup failed")
+	}
+
+	cmd := &cobra.Command{}
+	rows, err := collectRows(cmd, "", "", []string{"data/**"}, true)
+	if err != nil {
+		t.Fatalf("collectRows returned error: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	for _, row := range rows {
+		if row.Detail != "lookup failed" {
+			t.Fatalf("expected shared batch lookup error, got row=%+v", row)
+		}
 	}
 }
 

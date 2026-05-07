@@ -504,7 +504,7 @@ validate_config() {
 configure_remote_auth() {
   MONO_REMOTE_URL_AUTH="$MONO_REMOTE_URL"
   if [[ -n "$TEST_GITHUB_TOKEN" && "$MONO_REMOTE_URL" =~ ^https://github.com/ ]]; then
-    MONO_REMOTE_URL_AUTH="${MONO_REMOTE_URL/https:\/\/github.com\//https:\/\/x-access-token:${TEST_GITHUB_TOKEN}@github.com/}"
+    MONO_REMOTE_URL_AUTH="${MONO_REMOTE_URL/https:\/\/github.com\//https://x-access-token:${TEST_GITHUB_TOKEN}@github.com/}"
   fi
 }
 
@@ -571,11 +571,12 @@ delete_github_repo_if_requested() {
 
   require_cmd gh
   if GH_TOKEN="$TEST_GITHUB_TOKEN" gh api "/repos/${GITHUB_OWNER_REPO}" >/dev/null 2>&1; then
-    log "Deleting existing GitHub repo ${GITHUB_OWNER_REPO} for clean test run"
-    GH_TOKEN="$TEST_GITHUB_TOKEN" gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null
-    DELETED_REMOTE_REPO_AT_START=true
-    # Small wait to avoid eventual-consistency race with immediate recreation.
-    sleep 2
+    # log "Deleting existing GitHub repo ${GITHUB_OWNER_REPO} for clean test run"
+    # GH_TOKEN="$TEST_GITHUB_TOKEN" gh api -X DELETE "/repos/${GITHUB_OWNER_REPO}" >/dev/null
+    # DELETED_REMOTE_REPO_AT_START=true
+    # # Small wait to avoid eventual-consistency race with immediate recreation.
+    # sleep 2
+    log "Skipping deletion of existing GitHub repo ${GITHUB_OWNER_REPO}; using push -f instead"
   fi
 }
 
@@ -683,7 +684,7 @@ push_dataset() {
   git add .gitattributes
   git commit -m "Initialize LFS tracking" || true
   # Ensure origin/main is established as upstream for subsequent git-drs pushes.
-  git push --set-upstream "$MONO_REMOTE_NAME" "$MONO_GIT_BRANCH"
+  git push -f --set-upstream "$MONO_REMOTE_NAME" "$MONO_GIT_BRANCH"
 
   if [[ "$MONO_RUN_MULTIPART_SMOKE" == "true" ]]; then
     mkdir -p fixtures/multipart-smoke

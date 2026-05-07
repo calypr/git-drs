@@ -14,6 +14,10 @@ func TestGetAllLfsFilesFromGitRefsWithoutLfsCli(t *testing.T) {
 	runGitCmdTest(t, repo, "init")
 	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
 	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "config", "filter.lfs.clean", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.smudge", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.process", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.required", "false")
 	runGitCmdTest(t, repo, "checkout", "-b", "main")
 
 	oidMain := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -144,6 +148,61 @@ func TestGetWorktreeLfsFiles(t *testing.T) {
 	}
 	if info.Oid != oid || info.Size != 789 {
 		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+}
+
+func TestGetTrackedLfsFiles_IncludesHydratedTrackedFileUsingIndexPointer(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "config", "filter.lfs.clean", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.smudge", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.process", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.required", "false")
+
+	attrPath := filepath.Join(repo, ".gitattributes")
+	if err := os.WriteFile(attrPath, []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n"), 0o644); err != nil {
+		t.Fatalf("write .gitattributes: %v", err)
+	}
+
+	oid := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	pointerPath := filepath.Join(repo, "data", "hydrated.dat")
+	writePointerFile(t, pointerPath, oid, "321")
+
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "commit tracked pointer")
+
+	if err := os.WriteFile(pointerPath, []byte("localized payload"), 0o644); err != nil {
+		t.Fatalf("hydrate tracked file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	logger := drslog.NewNoOpLogger()
+	files, err := GetTrackedLfsFiles(logger)
+	if err != nil {
+		t.Fatalf("GetTrackedLfsFiles error: %v", err)
+	}
+
+	info, ok := files["data/hydrated.dat"]
+	if !ok {
+		t.Fatalf("expected hydrated tracked file in inventory")
+	}
+	if info.Oid != oid || info.Size != 321 {
+		t.Fatalf("unexpected hydrated tracked info: %+v", info)
+	}
+	if info.IsPointer {
+		t.Fatalf("expected hydrated tracked file to be marked non-pointer in worktree inventory")
 	}
 }
 

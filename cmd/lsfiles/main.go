@@ -32,7 +32,7 @@ var (
 	}
 	loadLFSInventory    = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		if len(branches) == 0 {
-			return lfs.GetWorktreeLfsFiles(logger)
+			return lfs.GetTrackedLfsFiles(logger)
 		}
 		return lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
 	}

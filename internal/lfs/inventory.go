@@ -120,6 +120,41 @@ func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 	return files, nil
 }
 
+// GetTrackedLfsFiles scans the current checkout and returns files that are LFS
+// tracked according to Git attributes. Pointer metadata is taken from the
+// worktree when still present, or from the index when the worktree has already
+// been hydrated.
+func GetTrackedLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	logger.Debug("Scanning current worktree for LFS-tracked files")
+	ctx := context.Background()
+	paths, err := listTrackedWorktreeFiles(ctx, repoDir)
+	if err != nil {
+		return nil, err
+	}
+	tracked, err := filterLfsTrackedPaths(ctx, repoDir, paths)
+	if err != nil {
+		return nil, err
+	}
+	files := make(map[string]LfsFileInfo, len(tracked))
+	for _, path := range tracked {
+		if info, ok := readWorktreePointerInfo(repoDir, path); ok {
+			files[path] = info
+			continue
+		}
+		if info, ok := readIndexPointerInfo(ctx, repoDir, path); ok {
+			files[path] = info
+		}
+	}
+	return files, nil
+}
+
 func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
 	paths, err := grepPointerPaths(ctx, repoDir, ref)
 	if err != nil {
@@ -165,6 +200,79 @@ func listTrackedWorktreeFiles(ctx context.Context, repoDir string) ([]string, er
 		paths = append(paths, entry)
 	}
 	return paths, nil
+}
+
+func filterLfsTrackedPaths(ctx context.Context, repoDir string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "check-attr", "-z", "--stdin", "filter")
+	cmd.Dir = repoDir
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\x00") + "\x00")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("git check-attr failed: %s", msg)
+	}
+
+	raw := strings.Split(stdout.String(), "\x00")
+	filtered := make([]string, 0, len(paths))
+	for i := 0; i+2 < len(raw); i += 3 {
+		path := strings.TrimSpace(raw[i])
+		attr := strings.TrimSpace(raw[i+1])
+		value := strings.TrimSpace(raw[i+2])
+		if path == "" || attr != "filter" {
+			continue
+		}
+		if value == "lfs" {
+			filtered = append(filtered, path)
+		}
+	}
+	return filtered, nil
+}
+
+func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {
+	payload, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(path)))
+	if err != nil {
+		return LfsFileInfo{}, false
+	}
+	pointer, ok := parseLFSPointer(string(payload))
+	if !ok {
+		return LfsFileInfo{}, false
+	}
+	return LfsFileInfo{
+		Name:      path,
+		Size:      pointer.Size,
+		IsPointer: true,
+		OidType:   pointer.OidType,
+		Oid:       pointer.Oid,
+		Version:   pointer.Version,
+	}, true
+}
+
+func readIndexPointerInfo(ctx context.Context, repoDir, path string) (LfsFileInfo, bool) {
+	blob, err := runGitCommand(ctx, repoDir, "show", ":"+path)
+	if err != nil {
+		return LfsFileInfo{}, false
+	}
+	pointer, ok := parseLFSPointer(blob)
+	if !ok {
+		return LfsFileInfo{}, false
+	}
+	return LfsFileInfo{
+		Name:      path,
+		Size:      pointer.Size,
+		IsPointer: false,
+		OidType:   pointer.OidType,
+		Oid:       pointer.Oid,
+		Version:   pointer.Version,
+	}, true
 }
 
 func grepPointerPaths(ctx context.Context, repoDir, ref string) ([]string, error) {

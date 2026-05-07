@@ -132,7 +132,7 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 
 	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{
-			"a/file1.bin":   {Name: "a/file1.bin", Oid: strings.Repeat("a", 64)},
+			"a/file1.bin":    {Name: "a/file1.bin", Oid: strings.Repeat("a", 64)},
 			"data/file2.bam": {Name: "data/file2.bam", Oid: strings.Repeat("b", 64)},
 			"data/file3.txt": {Name: "data/file3.txt", Oid: strings.Repeat("c", 64)},
 		}, nil

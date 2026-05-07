@@ -23,8 +23,8 @@ var includePatterns []string
 var dryRun bool
 
 var (
-	loadCfg = config.LoadConfig
-	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) { return cfg.GetRemoteOrDefault(name) }
+	loadCfg         = config.LoadConfig
+	resolveRemote   = func(cfg *config.Config, name string) (config.Remote, error) { return cfg.GetRemoteOrDefault(name) }
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
 		return cfg.GetRemoteClient(remote, logger)
 	}

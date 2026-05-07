@@ -9,8 +9,8 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syservices "github.com/calypr/syfon/client/services"
 	"github.com/spf13/cobra"
 )

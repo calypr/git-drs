@@ -30,7 +30,7 @@ var (
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
 		return cfg.GetRemoteClient(remote, logger)
 	}
-	loadLFSInventory    = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		if len(branches) == 0 {
 			return lfs.GetTrackedLfsFiles(logger)
 		}

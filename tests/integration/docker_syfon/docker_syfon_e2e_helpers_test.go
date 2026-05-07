@@ -149,6 +149,7 @@ func configureLocalRepo(t *testing.T, dir, credentialStore string) {
 func configureGitDrsRemote(t *testing.T, repoDir, serverURL string, minioEnv *minioContainer) {
 	t.Helper()
 	t.Logf("configuring git-drs remote: repo=%s server=%s bucket=%s org=%s project=%s", repoDir, serverURL, minioEnv.bucket, dockerE2EOrganization, dockerE2EProjectID)
+	setLocalBucketMapping(t, repoDir, dockerE2EOrganization, dockerE2EProjectID, minioEnv.bucket, "")
 	runCommand(t, repoDir, nil, "git", "drs", "remote", "add", "local", "origin", serverURL,
 		dockerE2EOrganization+"/"+dockerE2EProjectID,
 		"--username", dockerE2ELocalUser,

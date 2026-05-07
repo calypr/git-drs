@@ -10,6 +10,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
@@ -36,13 +37,15 @@ func TestResolveStatusLocalRemote(t *testing.T) {
 					ProjectID:     "end_to_end_test",
 					Bucket:        "cbds",
 					Organization:  "calypr",
-					StoragePrefix: "prefix",
 					BasicUsername: "drs-user",
 					BasicPassword: "drs-pass",
 				},
 			},
 		},
 	})
+	if err := gitrepo.SetBucketMapping("calypr", "end_to_end_test", "cbds", "prefix"); err != nil {
+		t.Fatalf("SetBucketMapping failed: %v", err)
+	}
 
 	status, _, err := resolveStatus(nil, drslog.NewNoOpLogger())
 	if err != nil {
@@ -80,6 +83,9 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 			},
 		},
 	})
+	if err := gitrepo.SetBucketMapping("calypr", "end_to_end_test", "cbds", "prefix"); err != nil {
+		t.Fatalf("SetBucketMapping failed: %v", err)
+	}
 
 	oldHealth := pingHealth
 	pingHealth = func(ctx context.Context, gc *config.GitContext) error {
@@ -116,6 +122,7 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 		"organization: calypr",
 		"project: end_to_end_test",
 		"bucket: cbds",
+		"storage_prefix: prefix",
 		"health: ok",
 	} {
 		if !strings.Contains(got, want) {

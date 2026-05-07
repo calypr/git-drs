@@ -395,8 +395,8 @@ func TestNewGitContextReadsLFSConcurrentTransfers(t *testing.T) {
 	}
 
 	cred := syconf.Credential{
-		APIEndpoint:  "https://example.test",
-		AccessToken:  "token",
+		APIEndpoint: "https://example.test",
+		AccessToken: "token",
 	}
 	remote := Gen3Remote{
 		Endpoint:     "https://example.test",

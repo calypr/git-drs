@@ -34,9 +34,9 @@ import (
 )
 
 const (
-	cacheVersionDir                      = "drs/pre-commit/v1"
-	lfsSpecLine                          = "version https://git-lfs.github.com/spec/v1"
-	defaultDirectCommitWarningThreshold  = int64(10 * 1024 * 1024)
+	cacheVersionDir                     = "drs/pre-commit/v1"
+	lfsSpecLine                         = "version https://git-lfs.github.com/spec/v1"
+	defaultDirectCommitWarningThreshold = int64(10 * 1024 * 1024)
 )
 
 var (

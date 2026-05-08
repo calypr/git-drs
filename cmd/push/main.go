@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pushsync"
@@ -62,6 +63,13 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
+		deleteRefs, err := currentDeleteRefUpdates(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve delete reconciliation base: %w", err)
+		}
+		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, deleteRefs, myLogger); err != nil {
+			return fmt.Errorf("failed to reconcile deletes: %w", err)
+		}
 		progress := newUploadProgressRenderer(os.Stderr)
 		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
 			progress.Finish()
@@ -88,4 +96,28 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
+}
+
+func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
+	head, err := gitOutput(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := gitOutput(ctx, "rev-parse", "--verify", "@{upstream}")
+	if err != nil {
+		return nil, nil
+	}
+	return []drsdelete.RefUpdate{{
+		OldSHA: upstream,
+		NewSHA: head,
+	}}, nil
+}
+
+func gitOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
 }

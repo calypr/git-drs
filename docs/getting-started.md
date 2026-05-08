@@ -225,10 +225,26 @@ git add .gitattributes
 ```bash
 git add sample.bam
 git commit -m "Add sample"
-git push
+git drs push
 ```
 
 `git-drs` handles pointer/object registration behavior around the Git workflow.
+
+## Remove a Tracked File
+
+Use `git drs rm` for tracked DRS/LFS files:
+
+```bash
+git drs rm sample.bam
+git commit -m "Remove sample"
+git drs push
+```
+
+This removes the pointer from Git immediately. The remote DRS mutation happens only when that deletion is committed and pushed:
+
+- if the scoped record has one `controlled_access` entry, the record is deleted
+- if it has multiple `controlled_access` entries, only the current `organization/project` resource is removed
+- underlying object bytes are not deleted by default
 
 ## Inspect Tracked Files
 

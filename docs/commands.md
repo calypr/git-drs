@@ -168,6 +168,7 @@ git drs push production
 - Checks local `.git/drs/lfs/objects/` for DRS metadata
 - For each object, uploads file to bucket if file exists locally
 - If file doesn't exist locally (metadata only), registers metadata without upload
+- Reconciles committed tracked-file deletions against the pushed Git ref delta
 - This enables cross-remote promotion workflows
 
 **Cross-Remote Promotion:**
@@ -185,6 +186,32 @@ git drs push production
 This is useful when files are already in the production bucket with matching SHA256 hashes. It can also be used to reupload files given that the files are pulled to the repo first.
 
 **Note:** `fetch` and `push` are commonly used together. `fetch` pulls metadata from one remote, `push` registers it to another.
+
+### `git drs rm <path>...`
+
+Remove tracked DRS/LFS files from the worktree and index.
+
+**Usage:**
+
+```bash
+git drs rm data/sample.bam
+git drs rm data/sample1.bam data/sample2.bam
+```
+
+**What it does:**
+
+- Validates that each path is tracked as a Git LFS / git-drs file
+- Runs `git rm` for those paths
+- Does not mutate remote DRS state immediately
+
+**Remote behavior on push:**
+
+When the deletion is committed and pushed:
+
+- `git drs push` and the managed `pre-push` hook derive deleted pointers from the pushed Git commit delta
+- if the scoped record has exactly one `controlled_access` entry, the whole DRS record is deleted
+- if the scoped record has multiple `controlled_access` entries, only the current `organization/project` resource is removed
+- underlying object bytes are not deleted by default
 
 ### `git drs copy-records [source-remote] <target-remote> <organization/project>`
 
@@ -396,6 +423,13 @@ What it does:
 - resolves local pointer/object metadata
 - uploads local bytes when needed
 - registers object metadata with the target Syfon instance
+- reconciles committed deletes derived from the pushed ref delta
+
+Notes:
+
+- delete reconciliation is Git-history-derived; there is no local delete-intent sidecar state
+- `git drs push` uses the current branch upstream as the delete diff base when one exists
+- plain `git push` uses the managed `pre-push` hook, which receives authoritative old/new SHAs from Git
 
 ### `git drs add-url <object-url-or-key> [path]`
 

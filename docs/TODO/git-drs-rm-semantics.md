@@ -1,7 +1,7 @@
 # ADR 0004: `git drs rm` as scoped Git-plus-remote delete workflow
 
 ## Status
-Proposed
+Implemented
 
 ## Context
 
@@ -36,8 +36,8 @@ Adopt `git drs rm` as the user-facing delete workflow, with three distinct layer
 The canonical behavior is:
 
 - `git drs rm <path>` removes the tracked file from the worktree and index
-- it records deletion intent for the tracked object in repo-local git-drs state
-- `git drs push` applies that deletion intent against the configured remote
+- it does not write sidecar delete state
+- `git drs push` and the managed `pre-push` hook derive deletions from pushed Git ref deltas
 - default remote action is **record deletion only**, scoped to the configured organization/project
 - bucket object deletion is **not** the default behavior
 
@@ -54,6 +54,8 @@ It also avoids the worst failure mode:
 
 Separating record deletion from object-byte deletion keeps the default behavior aligned with least surprise and least destruction.
 
+It also avoids extra small-file local I/O under `.git/...`, which is a poor fit for HPC-style environments.
+
 ## Detailed semantics
 
 ### Local command behavior
@@ -62,14 +64,16 @@ Separating record deletion from object-byte deletion keeps the default behavior 
 
 - validate that each path is tracked as a git-drs/LFS pointer
 - remove the file from the index and worktree
-- record repo-local deletion intent keyed by tracked object identity and path
-- fail clearly for plain Git files unless explicitly told to delegate to normal `git rm`
+- fail clearly for plain Git files
 
 ### Push behavior
 
-When `git drs push` sees recorded deletion intent, it should:
+When `git drs push` or the managed `pre-push` hook reconciles deletes, it should:
 
 - resolve the current remote and configured organization/project scope
+- compute deleted paths from the pushed Git ref delta
+- read the deleted pointer blob from the old tree
+- parse the tracked object identity from that pointer
 - resolve the tracked object identity to matching remote DRS records in that scope
 - delete matching record state when the result is unambiguous
 - warn and require explicit follow-up when the result is ambiguous
@@ -85,7 +89,8 @@ Examples of ambiguity:
 Default policy for `git drs rm` + `git drs push`:
 
 - remove the Git pointer locally
-- delete matching DRS record(s) in current scope only
+- if the scoped record has one `controlled_access` entry, delete the whole record
+- if the scoped record has multiple `controlled_access` entries, remove only the current scope resource
 - do not delete bucket bytes automatically
 
 ### Optional stronger policy
@@ -120,7 +125,7 @@ Add `git drs rm` as a first-class command:
 
 Teach `git drs push` to:
 
-- read pending deletion intent
+- derive deleted tracked pointers from pushed refs
 - apply scoped record deletion
 - print a concise summary of deleted records, skipped records, and ambiguous cases
 
@@ -138,13 +143,13 @@ Add a stricter opt-in mode for underlying object-byte deletion with strong safeg
 
 ### Negative
 
-- push flow becomes more stateful
+- push flow must inspect Git history carefully
 - delete semantics require server-side and client-side ambiguity handling
-- repo-local deletion intent must be durable and recoverable across interrupted workflows
+- `git drs push` needs an explicit compare base when it is not running under the `pre-push` hook
 
-## Open questions
+## Current notes
 
-- What exact repo-local format should store pending deletion intent?
-- Should `git drs rm` wrap `git rm` directly, or should it stage deletion through a git-drs-managed preflight path?
-- Should ambiguous delete cases block `git drs push`, or warn and continue with non-delete uploads?
-- What server contract is required to safely support future object-byte purge semantics?
+- `git drs rm` wraps `git rm` directly after validating tracked LFS/git-drs paths.
+- Plain `git push` uses the managed `pre-push` hook, which receives authoritative old/new SHAs from Git.
+- `git drs push` derives deletes from `HEAD` vs `@{upstream}` when an upstream exists.
+- Ambiguous remote matches warn and remain untouched.

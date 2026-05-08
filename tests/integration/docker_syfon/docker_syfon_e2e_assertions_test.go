@@ -246,3 +246,33 @@ func assertMinIOObjectExists(t *testing.T, client *s3.Client, bucket, key string
 		t.Fatalf("expected MinIO object %s/%s to exist: %v", bucket, key, err)
 	}
 }
+
+func assertMinIOObjectMissing(t *testing.T, client *s3.Client, bucket, key string) {
+	t.Helper()
+	_, err := client.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err == nil {
+		t.Fatalf("expected MinIO object %s/%s to be deleted", bucket, key)
+	}
+}
+
+func assertDRSRecordMissing(t *testing.T, serverURL, did string) {
+	t.Helper()
+	target := strings.TrimRight(serverURL, "/") + "/ga4gh/drs/v1/objects/" + did
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		t.Fatalf("build GET %s: %v", target, err)
+	}
+	req.SetBasicAuth(dockerE2ELocalUser, dockerE2ELocalPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected DRS record %s to be deleted, got status=%d body=%s", did, resp.StatusCode, string(body))
+	}
+}

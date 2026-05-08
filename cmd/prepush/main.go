@@ -18,6 +18,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/drsobject"
@@ -86,6 +87,10 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		myLogger.Debug("Warning. Skipping DRS preparation. Error getting remote configuration.")
 		return nil
 	}
+	drsClient, err := cfg.GetRemoteClient(remote, myLogger)
+	if err != nil {
+		return err
+	}
 
 	scope, err := gitrepo.ResolveBucketScope(
 		remoteConfig.GetOrganization(),
@@ -115,6 +120,10 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	refs, err := readPushedRefs(tmp)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("error reading pushed refs: %v", err))
+		return err
+	}
+	if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, drsDeleteRefs(refs), myLogger); err != nil {
+		myLogger.Error(fmt.Sprintf("delete reconciliation failed: %v", err))
 		return err
 	}
 	branches := branchesFromRefs(refs)
@@ -429,6 +438,17 @@ func branchesFromRefs(refs []pushedRef) []string {
 	}
 	sort.Strings(branches)
 	return branches
+}
+
+func drsDeleteRefs(refs []pushedRef) []drsdelete.RefUpdate {
+	out := make([]drsdelete.RefUpdate, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, drsdelete.RefUpdate{
+			OldSHA: strings.TrimSpace(ref.RemoteSHA),
+			NewSHA: strings.TrimSpace(ref.LocalSHA),
+		})
+	}
+	return out
 }
 
 func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache, bool) {

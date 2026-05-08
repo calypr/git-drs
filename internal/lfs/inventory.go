@@ -81,6 +81,36 @@ func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, 
 	return lfsFileMap, nil
 }
 
+// GetLfsFilesForRefs scans arbitrary refs or SHAs and returns the LFS pointer
+// files present in those trees.
+func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	ctx := context.Background()
+	lfsFileMap := make(map[string]LfsFileInfo)
+	seen := make(map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		if err := addFilesFromRef(ctx, repoDir, ref, logger, lfsFileMap); err != nil {
+			return nil, err
+		}
+	}
+	return lfsFileMap, nil
+}
+
 // GetWorktreeLfsFiles scans the current checkout and returns tracked files whose
 // worktree content is currently a valid Git LFS pointer. This is the fast path
 // for interactive commands like `git-drs ls-files`.

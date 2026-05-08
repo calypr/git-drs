@@ -91,22 +91,14 @@ func normalizeDockerBucketMapKeyPart(v string) string {
 func upsertSyfonBucketScope(t *testing.T, serverURL string, minioEnv *minioContainer, org, project, path string) {
 	t.Helper()
 	body, err := json.Marshal(map[string]string{
-		"bucket":             minioEnv.bucket,
-		"provider":           "s3",
-		"region":             minioEnv.region,
-		"access_key":         minioEnv.accessKey,
-		"secret_key":         minioEnv.secretKey,
-		"endpoint":           minioEnv.endpoint,
-		"billing_log_bucket": minioEnv.bucket,
-		"billing_log_prefix": dockerE2EProviderLogPrefix,
-		"organization":       org,
-		"project_id":         project,
-		"path":               path,
+		"organization": org,
+		"project_id":   project,
+		"path":         path,
 	})
 	if err != nil {
 		t.Fatalf("marshal bucket scope request: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPut, strings.TrimRight(serverURL, "/")+"/data/buckets", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(serverURL, "/")+"/data/buckets/"+minioEnv.bucket+"/scopes", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("build bucket scope request: %v", err)
 	}

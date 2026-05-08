@@ -362,8 +362,8 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 	if gotAuth != "Bearer test-token" {
 		t.Fatalf("expected auth header, got %q", gotAuth)
 	}
-	if gotContentType != "application/json" {
-		t.Fatalf("expected content-type application/json, got %q", gotContentType)
+	if gotContentType != "application/vnd.git-lfs+json" {
+		t.Fatalf("expected content-type application/vnd.git-lfs+json, got %q", gotContentType)
 	}
 	if gotAccept != "application/vnd.git-lfs+json" {
 		t.Fatalf("expected accept header application/vnd.git-lfs+json, got %q", gotAccept)

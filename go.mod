@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/calypr/data-client v0.0.0-20260506231822-6a4689d4201f
-	github.com/calypr/syfon v0.2.9-0.20260508163220-9f5f68442d7e
+	github.com/calypr/syfon v0.2.9-0.20260508182717-a7470254cf42
 	github.com/calypr/syfon/apigen v0.2.7-0.20260508163220-9f5f68442d7e
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.13.0

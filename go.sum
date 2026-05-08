@@ -125,6 +125,8 @@ github.com/calypr/syfon v0.2.9-0.20260507230041-dac76eb00800 h1:TZnQplhkiAYWZK9v
 github.com/calypr/syfon v0.2.9-0.20260507230041-dac76eb00800/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
 github.com/calypr/syfon v0.2.9-0.20260508163220-9f5f68442d7e h1:l7Km9yZW/9do10lYx9keHng4s0a4fQ6XeOwdXjE/dw0=
 github.com/calypr/syfon v0.2.9-0.20260508163220-9f5f68442d7e/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
+github.com/calypr/syfon v0.2.9-0.20260508182717-a7470254cf42 h1:N7zFOqAG12b9PJSxBOgVwQSjwhOyWmUEAmclHKf6P6I=
+github.com/calypr/syfon v0.2.9-0.20260508182717-a7470254cf42/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
 github.com/calypr/syfon/apigen v0.2.6 h1:Yr7e9Wmo1dVbmh0KYjB0KWOEtIU24MQZ3O73hY6W6z4=
 github.com/calypr/syfon/apigen v0.2.6/go.mod h1:9JNwTgR57yKJlWqZpdqP+/l4zCNzH1EIFrW+e20PyMQ=
 github.com/calypr/syfon/apigen v0.2.7-0.20260507230041-dac76eb00800 h1:H03/pXWGrWmFFyf+tKV1ILBcHVoA8zappanIjfhC8yc=

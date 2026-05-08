@@ -288,7 +288,7 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	if err != nil {
 		return fmt.Errorf("failed to create pending metadata request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
 	if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
 		httpReq.Header.Set("Authorization", authHeader)

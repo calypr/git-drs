@@ -157,7 +157,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	if skipIfDownloadable {
-		rt.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
+		rt.Logger.DebugContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
 		downloadable, err := isFileDownloadable(rt, ctx, drsObject)
 		if err != nil {
 			return fmt.Errorf("error checking if file is downloadable: oid %s %v", hInfo.SHA256, err)
@@ -168,7 +168,7 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		}
 	}
 
-	rt.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
+	rt.Logger.DebugContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
 	multiPartThreshold := int64(5 * 1024 * 1024 * 1024)
 	if rt.Tuning.MultiPartThreshold > 0 {
 		multiPartThreshold = rt.Tuning.MultiPartThreshold

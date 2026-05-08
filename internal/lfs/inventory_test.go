@@ -156,13 +156,13 @@ func TestGetTrackedLfsFiles_IncludesHydratedTrackedFileUsingIndexPointer(t *test
 	runGitCmdTest(t, repo, "init")
 	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
 	runGitCmdTest(t, repo, "config", "user.name", "Test User")
-	runGitCmdTest(t, repo, "config", "filter.lfs.clean", "cat")
-	runGitCmdTest(t, repo, "config", "filter.lfs.smudge", "cat")
-	runGitCmdTest(t, repo, "config", "filter.lfs.process", "cat")
-	runGitCmdTest(t, repo, "config", "filter.lfs.required", "false")
+	runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.smudge", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.process", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.required", "false")
 
 	attrPath := filepath.Join(repo, ".gitattributes")
-	if err := os.WriteFile(attrPath, []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n"), 0o644); err != nil {
+	if err := os.WriteFile(attrPath, []byte("*.dat filter=drs diff=drs merge=drs -text\n"), 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}
 
@@ -236,7 +236,7 @@ func TestIsLFSTracked(t *testing.T) {
 	repo := t.TempDir()
 	mustRun(t, repo, "git", "init")
 
-	attr := []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n")
+	attr := []byte("*.dat filter=drs diff=drs merge=drs -text\n")
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), attr, 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}

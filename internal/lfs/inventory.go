@@ -46,7 +46,7 @@ func IsLFSTracked(path string) (bool, error) {
 	if len(fields) < 3 {
 		return false, nil
 	}
-	return strings.TrimSpace(fields[2]) == "lfs", nil
+	return isTrackedFilter(strings.TrimSpace(fields[2])), nil
 }
 
 func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
@@ -260,11 +260,20 @@ func filterLfsTrackedPaths(ctx context.Context, repoDir string, paths []string) 
 		if path == "" || attr != "filter" {
 			continue
 		}
-		if value == "lfs" {
+		if isTrackedFilter(value) {
 			filtered = append(filtered, path)
 		}
 	}
 	return filtered, nil
+}
+
+func isTrackedFilter(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "lfs", "drs":
+		return true
+	default:
+		return false
+	}
 }
 
 func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {

@@ -1,7 +1,6 @@
 package prepush
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -357,98 +356,6 @@ func parseRemoteArgs(args []string) (string, string) {
 		gitRemoteName = "origin"
 	}
 	return gitRemoteName, gitRemoteLocation
-}
-
-type pushedRef struct {
-	LocalRef  string
-	LocalSHA  string
-	RemoteRef string
-	RemoteSHA string
-}
-
-func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.File, error)) (*os.File, error) {
-	tmp, err := createTempFile("", "prepush-stdin-*")
-	if err != nil {
-		return nil, fmt.Errorf("error creating temp file for stdin: %w", err)
-	}
-
-	if _, err := io.Copy(tmp, stdin); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("error buffering stdin: %w", err)
-	}
-
-	if _, err := tmp.Seek(0, 0); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("error seeking temp stdin: %w", err)
-	}
-	return tmp, nil
-}
-
-// readPushedBranches reads git push lines from the provided temp file,
-// extracts unique local branch names for refs under `refs/heads/` and
-// returns them sorted. The file is rewound to the start before returning.
-func readPushedRefs(f io.ReadSeeker) ([]pushedRef, error) {
-	// Ensure we read from start
-	// example:
-	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	scanner := bufio.NewScanner(f)
-	refs := make([]pushedRef, 0)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 4 {
-			continue
-		}
-		refs = append(refs, pushedRef{
-			LocalRef:  fields[0],
-			LocalSHA:  fields[1],
-			RemoteRef: fields[2],
-			RemoteSHA: fields[3],
-		})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	// Rewind so caller can reuse the file
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	return refs, nil
-}
-
-func branchesFromRefs(refs []pushedRef) []string {
-	const prefix = "refs/heads/"
-	set := make(map[string]struct{})
-	for _, ref := range refs {
-		if strings.HasPrefix(ref.LocalRef, prefix) {
-			branch := strings.TrimPrefix(ref.LocalRef, prefix)
-			if branch != "" {
-				set[branch] = struct{}{}
-			}
-		}
-	}
-	branches := make([]string, 0, len(set))
-	for b := range set {
-		branches = append(branches, b)
-	}
-	sort.Strings(branches)
-	return branches
-}
-
-func drsDeleteRefs(refs []pushedRef) []drsdelete.RefUpdate {
-	out := make([]drsdelete.RefUpdate, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, drsdelete.RefUpdate{
-			OldSHA: strings.TrimSpace(ref.RemoteSHA),
-			NewSHA: strings.TrimSpace(ref.LocalSHA),
-		})
-	}
-	return out
 }
 
 func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache, bool) {

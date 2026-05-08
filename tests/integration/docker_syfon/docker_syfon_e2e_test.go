@@ -105,6 +105,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 		t.Fatalf("restore git credential store: %v", err)
 	}
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
+	runCommand(t, repoDir, nil, "git", "branch", "--set-upstream-to=origin/main", "main")
 	logRepoSnapshot(t, repoDir, "post-push")
 	querySmall := runCommand(t, repoDir, nil, "git", "drs", "query", "--remote", "origin", "--pretty", smallDid)
 	if !strings.Contains(querySmall, smallDid) {

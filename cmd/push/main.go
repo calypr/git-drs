@@ -22,6 +22,8 @@ var runCommand = func(name string, args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
+var gitOutputFn = gitOutput
+
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "Upload/register DRS objects and push Git refs",
@@ -99,11 +101,11 @@ func init() {
 }
 
 func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
-	head, err := gitOutput(ctx, "rev-parse", "HEAD")
+	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, err
 	}
-	upstream, err := gitOutput(ctx, "rev-parse", "--verify", "@{upstream}")
+	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
 	if err != nil {
 		return nil, nil
 	}

@@ -91,12 +91,12 @@ func TestReconcileCommittedDeletes_DeletesWholeRecord(t *testing.T) {
 			}
 			records := []drsapi.DrsObject{obj}
 			writeJSON(t, w, http.StatusOK, drsapi.N200OkDrsObjects{ResolvedDrsObject: &records})
-		case r.Method == http.MethodDelete && r.URL.Path == "/ga4gh/drs/v1/objects/did-2":
+		case r.Method == http.MethodPut && r.URL.Path == "/ga4gh/drs/v1/objects/did-2/delete":
 			if err := json.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
 				t.Fatalf("decode delete request: %v", err)
 			}
 			deleted = true
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}

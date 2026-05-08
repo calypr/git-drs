@@ -86,11 +86,7 @@ func ReconcileCommittedDeletes(ctx context.Context, drsCtx *config.GitContext, r
 			controlled = sycommon.NormalizeAccessResources(*record.ControlledAccess)
 		}
 		if len(controlled) <= 1 {
-			var out map[string]any
-			if err := drsCtx.Client.Requestor().Do(ctx, "DELETE", "/ga4gh/drs/v1/objects/"+record.Id, map[string]bool{
-				"delete_object_metadata": true,
-				"delete_storage_data":    true,
-			}, &out); err != nil {
+			if err := drsCtx.Client.DRS().DeleteObject(ctx, record.Id, true); err != nil {
 				return summary, err
 			}
 			summary.DeletedRecords++

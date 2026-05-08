@@ -13,12 +13,12 @@ func TestRunRemovesTrackedFile(t *testing.T) {
 	runGitCmd(t, repo, "init")
 	runGitCmd(t, repo, "config", "user.email", "test@example.com")
 	runGitCmd(t, repo, "config", "user.name", "Test User")
-	runGitCmd(t, repo, "config", "filter.lfs.clean", "cat")
-	runGitCmd(t, repo, "config", "filter.lfs.smudge", "cat")
-	runGitCmd(t, repo, "config", "filter.lfs.process", "cat")
-	runGitCmd(t, repo, "config", "filter.lfs.required", "false")
+	runGitCmd(t, repo, "config", "filter.drs.clean", "cat")
+	runGitCmd(t, repo, "config", "filter.drs.smudge", "cat")
+	runGitCmd(t, repo, "config", "filter.drs.process", "cat")
+	runGitCmd(t, repo, "config", "filter.drs.required", "false")
 
-	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.dat filter=drs diff=drs merge=drs -text\n"), 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}
 	path := filepath.Join(repo, "data.dat")

@@ -48,7 +48,7 @@ Notes:
 
 ## 1.3 Trace from standard Git commands
 
-`git-drs` participates in both explicit `git drs ...` commands and standard Git workflows after `git drs init`:
+`git-drs` participates in both explicit `git drs ...` commands and standard Git workflows after repository-local setup is installed. That setup can happen either through explicit `git drs init` or automatically during `git drs remote add ...`:
 
 - `git drs init` installs hooks (`cmd/initialize/main.go`):
   - pre-commit: `git drs precommit`

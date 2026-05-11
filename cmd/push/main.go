@@ -3,10 +3,12 @@ package push
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pushsync"
@@ -19,6 +21,8 @@ var runCommand = func(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	return cmd.CombinedOutput()
 }
+
+var gitOutputFn = gitOutput
 
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
@@ -61,9 +65,19 @@ var Cmd = &cobra.Command{
 		}
 
 		ctx := context.Background()
-		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles); err != nil {
+		deleteRefs, err := currentDeleteRefUpdates(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve delete reconciliation base: %w", err)
+		}
+		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, deleteRefs, myLogger); err != nil {
+			return fmt.Errorf("failed to reconcile deletes: %w", err)
+		}
+		progress := newUploadProgressRenderer(os.Stderr)
+		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
+			progress.Finish()
 			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
+		progress.Finish()
 
 		pushArgs := []string{"push"}
 		if !pushWithHooks {
@@ -84,4 +98,28 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
+}
+
+func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
+	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
+	if err != nil {
+		return nil, nil
+	}
+	return []drsdelete.RefUpdate{{
+		OldSHA: upstream,
+		NewSHA: head,
+	}}, nil
+}
+
+func gitOutput(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out)), nil
 }

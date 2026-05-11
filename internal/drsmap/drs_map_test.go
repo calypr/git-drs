@@ -17,7 +17,6 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	syfoncommon "github.com/calypr/syfon/common"
 )
 
 func setupTestRepo(t *testing.T) {
@@ -37,7 +36,7 @@ func setupTestRepo(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 }
 
-func TestWriteObjectsForLFSFilesBackfillsMissingAuthzWithoutOverwritingURL(t *testing.T) {
+func TestWriteObjectsForLFSFilesBackfillsMissingControlledAccessWithoutOverwritingURL(t *testing.T) {
 	setupTestRepo(t)
 
 	oid := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
@@ -73,23 +72,24 @@ func TestWriteObjectsForLFSFilesBackfillsMissingAuthzWithoutOverwritingURL(t *te
 	if method.AccessUrl == nil || method.AccessUrl.Url != explicitURL {
 		t.Fatalf("access url overwritten: %+v", method.AccessUrl)
 	}
-	authz := syfoncommon.AuthzMapFromAccessMethodAuthorizations(method.Authorizations)
-	want := map[string][]string{"org": {"proj"}}
-	if !equalAuthzMaps(authz, want) {
-		t.Fatalf("unexpected authz: got=%v want=%v", authz, want)
+	if method.Authorizations != nil {
+		t.Fatalf("did not expect access method authorizations: %+v", method.Authorizations)
+	}
+	if !equalStringSlices(derefStringSlice(got.ControlledAccess), []string{"/organization/org/project/proj"}) {
+		t.Fatalf("unexpected controlled_access: %+v", derefStringSlice(got.ControlledAccess))
 	}
 }
 
-func TestWriteObjectsForLFSFilesPreservesExistingAuthz(t *testing.T) {
+func TestWriteObjectsForLFSFilesUnionsExistingControlledAccess(t *testing.T) {
 	setupTestRepo(t)
 
 	oid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-	existingAuthz := syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"keep": {"me"}})
+	existingControlled := []string{"/organization/keep/project/me"}
 	if err := drsobject.WriteObject(common.DRS_OBJS_PATH, &drsapi.DrsObject{
-		Id: "did-2",
+		Id:               "did-2",
+		ControlledAccess: &existingControlled,
 		AccessMethods: &[]drsapi.AccessMethod{{
-			Type:           drsapi.AccessMethodTypeS3,
-			Authorizations: existingAuthz,
+			Type: drsapi.AccessMethodTypeS3,
 		}},
 		Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
 	}, oid); err != nil {
@@ -109,14 +109,16 @@ func TestWriteObjectsForLFSFilesPreservesExistingAuthz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadObject error: %v", err)
 	}
-	authz := syfoncommon.AuthzMapFromAccessMethodAuthorizations((*got.AccessMethods)[0].Authorizations)
-	want := map[string][]string{"keep": {"me"}}
-	if !equalAuthzMaps(authz, want) {
-		t.Fatalf("existing authz overwritten: got=%v want=%v", authz, want)
+	if (*got.AccessMethods)[0].Authorizations != nil {
+		t.Fatalf("did not expect access method authorizations: %+v", (*got.AccessMethods)[0].Authorizations)
+	}
+	want := []string{"/organization/keep/project/me", "/organization/org/project/proj"}
+	if !equalStringSlices(derefStringSlice(got.ControlledAccess), want) {
+		t.Fatalf("unexpected controlled_access: got=%v want=%v", derefStringSlice(got.ControlledAccess), want)
 	}
 }
 
-func TestWriteObjectsForLFSFilesPreferCacheURLPreservesAuthz(t *testing.T) {
+func TestWriteObjectsForLFSFilesPreferCacheURLSetsControlledAccess(t *testing.T) {
 	setupTestRepo(t)
 
 	oid := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -143,10 +145,11 @@ func TestWriteObjectsForLFSFilesPreferCacheURLPreservesAuthz(t *testing.T) {
 	if method.AccessUrl == nil || method.AccessUrl.Url != "s3://cache/object" {
 		t.Fatalf("expected cache URL, got %+v", method.AccessUrl)
 	}
-	authz := syfoncommon.AuthzMapFromAccessMethodAuthorizations(method.Authorizations)
-	want := map[string][]string{"org": {"proj"}}
-	if !equalAuthzMaps(authz, want) {
-		t.Fatalf("unexpected authz after cache URL preference: got=%v want=%v", authz, want)
+	if method.Authorizations != nil {
+		t.Fatalf("did not expect access method authorizations: %+v", method.Authorizations)
+	}
+	if !equalStringSlices(derefStringSlice(got.ControlledAccess), []string{"/organization/org/project/proj"}) {
+		t.Fatalf("unexpected controlled_access after cache URL preference: %+v", derefStringSlice(got.ControlledAccess))
 	}
 }
 
@@ -157,22 +160,13 @@ func testLogger(t *testing.T) *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func equalAuthzMaps(got, want map[string][]string) bool {
+func equalStringSlices(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
 	}
-	for org, wantProjects := range want {
-		gotProjects, ok := got[org]
-		if !ok {
+	for i := range want {
+		if got[i] != want[i] {
 			return false
-		}
-		if len(gotProjects) != len(wantProjects) {
-			return false
-		}
-		for i := range wantProjects {
-			if gotProjects[i] != wantProjects[i] {
-				return false
-			}
 		}
 	}
 	return true

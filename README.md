@@ -30,23 +30,23 @@
 
 At a high level:
 
-1. initialize the repository with `git drs init`
-2. configure a remote for one `organization/project`
+1. configure a remote for one `organization/project`
+2. let `remote add` bootstrap repo-local `git-drs` state if needed
 3. track file patterns with `git drs track`
 4. add/commit/push normally
+5. remove tracked pointers with `git drs rm` when you want repository deletion to reconcile with remote DRS state
 5. hydrate pointer files later with `git drs pull`
 
 ## Quick Start
 
 ```bash
 git drs install
-git drs init
 git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
 git drs track "*.bam"
 git add .gitattributes
 git add sample.bam
 git commit -m "Add sample"
-git push
+git drs push
 git drs ls-files
 git drs pull -I "*.bam"
 ```
@@ -81,15 +81,17 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | Command | Description |
 | --- | --- |
 | `git drs install` | Install global `git-drs` filter config |
-| `git drs init` | Initialize repository-local `git-drs` state |
+| `git drs init` | Explicitly initialize or repair repository-local `git-drs` state |
 | `git drs remote add gen3 [remote] <org/project>` | Add or refresh a Gen3/Syfon remote |
 | `git drs remote list` | List configured remotes |
+| `git drs remote remove <name>` | Remove a configured DRS remote |
 | `git drs remote set <name>` | Set the default remote |
 | `git drs track <pattern>` | Track files or globs |
 | `git drs untrack <pattern>` | Stop tracking files or globs |
+| `git drs rm <path>...` | Remove tracked DRS/LFS files from Git |
 | `git drs ls-files` | List tracked files and localization state |
 | `git drs pull` | Hydrate pointer files in the current checkout |
-| `git drs push` | Register/upload objects and push metadata workflow |
+| `git drs push` | Register/upload objects, reconcile committed deletes, and push refs |
 | `git drs add-url` | Add an existing provider object by URL or scoped key |
 | `git drs add-ref` | Add a local reference to an existing DRS object |
 | `git drs query` | Query a DRS object by ID |

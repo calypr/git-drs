@@ -39,57 +39,123 @@ var Cmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logg := drslog.GetLogger()
-
-		// check if .git dir exists to ensure you're in a git repository
-		_, err := gitrepo.GitTopLevel()
-		if err != nil {
-			return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
+		if err := InitializeRepo(logg); err != nil {
+			return err
 		}
-
-		// create config file if it doesn't exist
-		err = config.CreateEmptyConfig()
-		if err != nil {
-			return fmt.Errorf("error: unable to create config file: %v", err)
-		}
-
-		// load the config
-		_, err = config.LoadConfig()
-		if err != nil {
-			logg.Debug(fmt.Sprintf("We should probably fix this: %v", err))
-			return fmt.Errorf("error: unable to load config file: %v", err)
-		}
-
-		// create drs directories
-		drsDir := common.DRS_DIR
-		drsLfsObjsDir := common.DRS_OBJS_PATH
-		if err := os.MkdirAll(drsDir, 0755); err != nil {
-			return fmt.Errorf("error: unable to create drs directory: %v", err)
-		}
-		if err := os.MkdirAll(drsLfsObjsDir, 0755); err != nil {
-			return fmt.Errorf("error: unable to create drs lfs objects directory: %v", err)
-		}
-
-		err = initGitConfig()
-		if err != nil {
-			return fmt.Errorf("error initializing git-drs repository config: %v", err)
-		}
-
-		// install pre-push hook
-		err = installPrePushHook(logg)
-		if err != nil {
-			return fmt.Errorf("error installing pre-push hook: %v", err)
-		}
-		// install pre-commit hook
-		err = installPreCommitHook(logg)
-		if err != nil {
-			return fmt.Errorf("error installing pre-commit hook: %v", err)
-		}
-
-		// final logs
-		logg.Debug("Git DRS initialized")
 		logg.Debug(fmt.Sprintf("Using %d concurrent transfers", transfers))
 		return nil
 	},
+}
+
+// InitializeRepo applies git-drs repository-local setup to the current git repository.
+// It is safe to call repeatedly.
+func InitializeRepo(logg *slog.Logger) error {
+	// check if .git dir exists to ensure you're in a git repository
+	_, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
+	}
+
+	// create config file if it doesn't exist
+	err = config.CreateEmptyConfig()
+	if err != nil {
+		return fmt.Errorf("error: unable to create config file: %v", err)
+	}
+
+	// load the config
+	_, err = config.LoadConfig()
+	if err != nil {
+		logg.Debug(fmt.Sprintf("We should probably fix this: %v", err))
+		return fmt.Errorf("error: unable to load config file: %v", err)
+	}
+
+	// create drs directories
+	drsDir := common.DRS_DIR
+	drsLfsObjsDir := common.DRS_OBJS_PATH
+	if err := os.MkdirAll(drsDir, 0755); err != nil {
+		return fmt.Errorf("error: unable to create drs directory: %v", err)
+	}
+	if err := os.MkdirAll(drsLfsObjsDir, 0755); err != nil {
+		return fmt.Errorf("error: unable to create drs lfs objects directory: %v", err)
+	}
+
+	err = initGitConfig()
+	if err != nil {
+		return fmt.Errorf("error initializing git-drs repository config: %v", err)
+	}
+
+	// install pre-push hook
+	err = installPrePushHook(logg)
+	if err != nil {
+		return fmt.Errorf("error installing pre-push hook: %v", err)
+	}
+	// install pre-commit hook
+	err = installPreCommitHook(logg)
+	if err != nil {
+		return fmt.Errorf("error installing pre-commit hook: %v", err)
+	}
+
+	logg.Debug("Git DRS initialized")
+	return nil
+}
+
+// EnsureInitialized applies initialization only when the repository does not
+// already appear to have git-drs local setup installed.
+func EnsureInitialized(logg *slog.Logger) error {
+	initialized, err := isInitialized()
+	if err != nil {
+		return err
+	}
+	if initialized {
+		return nil
+	}
+	return InitializeRepo(logg)
+}
+
+func isInitialized() (bool, error) {
+	if _, err := gitrepo.GitTopLevel(); err != nil {
+		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
+	}
+
+	if _, err := os.Stat(common.DRS_DIR); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error checking git-drs directory: %v", err)
+	}
+
+	if val, err := gitrepo.GetGitConfigString("filter.drs.process"); err != nil || strings.TrimSpace(val) != "git-drs filter" {
+		return false, err
+	}
+
+	preCommitInstalled, err := hookContains("pre-commit", "git drs precommit")
+	if err != nil {
+		return false, err
+	}
+	if !preCommitInstalled {
+		return false, nil
+	}
+
+	prePushInstalled, err := hookContains("pre-push", "git drs pre-push-prepare")
+	if err != nil {
+		return false, err
+	}
+	return prePushInstalled, nil
+}
+
+func hookContains(name, marker string) (bool, error) {
+	hooksDir, err := gitrepo.GetGitHooksDir()
+	if err != nil {
+		return false, fmt.Errorf("unable to get hooks directory: %w", err)
+	}
+	content, err := os.ReadFile(filepath.Join(hooksDir, name))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return strings.Contains(string(content), marker), nil
 }
 
 func initGitConfig() error {

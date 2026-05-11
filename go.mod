@@ -1,16 +1,17 @@
 module github.com/calypr/git-drs
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/calypr/data-client v0.0.0-20260504172902-8e9b714aa299
-	github.com/calypr/syfon v0.2.8-0.20260503003649-cda722e27216
-	github.com/calypr/syfon/apigen v0.2.6-0.20260503003649-cda722e27216
+	github.com/calypr/data-client v0.0.0-20260506231822-6a4689d4201f
+	github.com/calypr/syfon v0.2.9-0.20260511213931-ff4d5a467b3e
+	github.com/calypr/syfon/apigen v0.2.7-0.20260511213931-ff4d5a467b3e
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/mattn/go-isatty v0.0.21
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.20.0
@@ -92,7 +93,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/oapi-codegen/runtime v1.4.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
@@ -141,7 +141,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
-	github.com/calypr/syfon/client v0.2.7-0.20260503003649-cda722e27216
+	github.com/calypr/syfon/client v0.2.8-0.20260511213931-ff4d5a467b3e
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

@@ -10,12 +10,12 @@ Common issues and solutions for the cleaned `git-drs` CLI.
 
 No.
 
-`git drs init` is repository setup. Run it once per local clone unless you are deliberately reinitializing the repo.
+`git drs init` is repository setup. In most cases you do not need to run it manually at all, because `git drs remote add ...` now bootstraps that setup automatically when it is missing.
 
 Run it when:
 
-- you first clone a repository and need local `git-drs` setup
-- you create a new repository and want to enable `git-drs`
+- you want to initialize repo-local `git-drs` state before adding any remote
+- you want to repair hooks/config wiring explicitly
 
 Do not run it every session:
 
@@ -72,8 +72,9 @@ Those changes persist in the clone. They are not something you redo per session.
 
 Examples:
 
-- `git drs init`
 - `git drs remote add gen3 ...`
+- `git drs remote remove ...`
+- `git drs init`
 - `git drs track`
 - `git drs ls-files`
 - `git drs pull`
@@ -154,9 +155,11 @@ That usually just means hydration has not happened yet.
 Run:
 
 ```bash
-git drs init
+git drs remote list
 git drs pull
 ```
+
+If the repo has never had a `git-drs` remote configured, run `git drs remote add ...` first. That command will also install the repo-local hooks/config.
 
 ### Network timeout during push or download
 
@@ -209,6 +212,25 @@ git ls-files -- path/to/file
 
 ```bash
 git drs ls-files -l
+```
+
+### `git remote remove` did not remove my `git-drs` remote
+
+That is expected.
+
+Git remotes and `git-drs` remotes live in different config domains.
+
+Use:
+
+```bash
+git drs remote list
+git drs remote remove <name>
+```
+
+or:
+
+```bash
+git drs remote rm <name>
 ```
 
 ### `git drs pull` does nothing
@@ -269,6 +291,32 @@ Refresh by re-adding the remote with a new credential file or token:
 git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
 ```
 
+You do not need to run `git drs init` again.
+
+What `git-drs` does automatically:
+
+- if the stored access token is expired but the stored API key is still valid, `git-drs` will attempt to refresh the access token
+- if the API key itself is expired, revoked, or replaced, you need to re-run `git drs remote add gen3 ...`
+
+How to think about recovery:
+
+- token expired, key still valid:
+  - often automatic
+- key expired or replaced:
+  - rerun `git drs remote add gen3 ... --cred ...` or `--token ...`
+
+How to check what is in use:
+
+```bash
+git drs remote list
+```
+
+And for the underlying Gen3 profile data:
+
+- inspect `~/.gen3/gen3_client_config.ini`
+
+If you want the least surprising fix, just re-run `git drs remote add gen3 ...` with the current credential file. That updates the stored profile and repo token plumbing in one step.
+
 ### `git push` fails with upload or register errors
 
 Check:
@@ -309,7 +357,6 @@ That is normal.
 After cloning:
 
 ```bash
-git drs init
 git drs pull
 ```
 

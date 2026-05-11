@@ -17,7 +17,7 @@ Primary support today is S3-style URLs:
 - `https://bucket.s3.amazonaws.com/key`
 - Path-style S3-compatible HTTPS URLs
 
-The inspector also accepts other go-cloud styles (`gs://`, `azblob://`, `file://`), but the main production path in current e2e coverage is S3/Gen3 bucket-backed workflows.
+The inspector also accepts other cloud styles (`gs://`, `azblob://`), but the main production path in current e2e coverage is S3/Gen3 bucket-backed workflows.
 
 ## Two Add-URL Input Modes
 

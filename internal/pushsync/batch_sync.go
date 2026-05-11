@@ -3,9 +3,11 @@ package pushsync
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
@@ -13,6 +15,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
@@ -21,6 +24,7 @@ import (
 type batchSyncSession struct {
 	ctx            context.Context
 	rt             *pushRuntime
+	reporter       UploadProgressReporter
 	filesByOID     map[string]lfs.LfsFileInfo
 	oids           []string
 	drsObjByOID    map[string]*drsapi.DrsObject
@@ -37,10 +41,11 @@ type uploadCandidate struct {
 }
 
 // BatchSyncForPush performs checksum-first push preparation.
-func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo) error {
+func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
 	session := &batchSyncSession{
 		ctx:            ctx,
 		rt:             newPushRuntime(cl),
+		reporter:       reporter,
 		drsObjByOID:    make(map[string]*drsapi.DrsObject),
 		existingByHash: make(map[string][]drsapi.DrsObject),
 		registeredOids: make(map[string]bool),
@@ -196,9 +201,10 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		return obj, nil
 	}
 
-	if existing.AccessMethods != nil && len(*existing.AccessMethods) > 0 {
+	if shouldPreserveExistingAccessMethodsForPush(existing, obj, oid) {
 		obj.AccessMethods = existing.AccessMethods
 	}
+
 	obj.Aliases = existing.Aliases
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description
@@ -215,10 +221,69 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 	return obj, nil
 }
 
+func shouldPreserveExistingAccessMethodsForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject, oid string) bool {
+	existingURL := firstAccessURL(existing)
+	if existingURL == "" {
+		return false
+	}
+	generatedURL := firstAccessURL(generated)
+	if existingURL == generatedURL {
+		return true
+	}
+	existingBucket, existingKey, existingOK := parseStorageURL(existingURL)
+	if !existingOK {
+		return true
+	}
+	generatedBucket, generatedKey, generatedOK := parseStorageURL(generatedURL)
+	normalizedOID := strings.Trim(strings.TrimPrefix(strings.TrimSpace(oid), "sha256:"), "/")
+	existingKey = strings.Trim(existingKey, "/")
+	if strings.EqualFold(existingBucket, "objects") {
+		return false
+	}
+	if generatedOK && existingKey == "" {
+		return false
+	}
+	if generatedOK && !strings.EqualFold(existingBucket, generatedBucket) && existingKey == normalizedOID {
+		return false
+	}
+	if generatedOK && existingKey == generatedKey && strings.EqualFold(existingBucket, generatedBucket) {
+		return true
+	}
+	return true
+}
+
+func firstAccessURL(obj *drsapi.DrsObject) string {
+	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
+		return ""
+	}
+	am := (*obj.AccessMethods)[0]
+	if am.AccessUrl == nil {
+		return ""
+	}
+	return strings.TrimSpace(am.AccessUrl.Url)
+}
+
+func parseStorageURL(raw string) (bucket string, key string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", "", false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "s3", "gs", "azblob":
+		return u.Host, strings.Trim(u.Path, "/"), true
+	default:
+		return "", "", false
+	}
+}
+
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
 	candidates := make([]uploadCandidate, 0)
 	for _, oid := range s.oids {
-		if !s.needsUpload(oid) {
+		needsUpload, err := s.needsUpload(oid)
+		if err != nil {
+			return nil, err
+		}
+		if !needsUpload {
 			continue
 		}
 
@@ -248,17 +313,22 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 	return candidates, nil
 }
 
-func (s *batchSyncSession) needsUpload(oid string) bool {
+func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
 	if s.registeredOids[oid] {
-		return true
+		return true, nil
 	}
 	if len(s.existingByHash[oid]) == 0 {
-		return true
+		return true, nil
 	}
-	if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {
-		return true
+	obj := s.drsObjByOID[oid]
+	if obj == nil {
+		return false, nil
 	}
-	return false
+	downloadable, err := isFileDownloadable(s.rt, s.ctx, obj)
+	if err != nil {
+		return false, fmt.Errorf("failed to check remote object availability for oid %s: %w", oid, err)
+	}
+	return !downloadable, nil
 }
 
 func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error {
@@ -273,6 +343,9 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 
 	small, large := splitCandidatesByThreshold(candidates, threshold)
 	s.rt.Logger.InfoContext(s.ctx, "upload plan prepared", "total", len(candidates), "parallel_small", len(small), "sequential_large", len(large))
+	if s.reporter != nil {
+		s.reporter.OnUploadPlan(buildUploadPlanSummary(candidates))
+	}
 
 	if len(small) > 0 {
 		eg, egCtx := errgroup.WithContext(s.ctx)
@@ -280,7 +353,12 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
-				return uploadFileForObject(s.rt, egCtx, c.obj, c.src, false)
+				uploadCtx := s.progressContextForCandidate(egCtx, c)
+				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+					return err
+				}
+				s.reportUploadCompleted(c)
+				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
@@ -289,11 +367,66 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	}
 
 	for _, c := range large {
-		if err := uploadFileForObject(s.rt, s.ctx, c.obj, c.src, false); err != nil {
+		uploadCtx := s.progressContextForCandidate(s.ctx, c)
+		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
 			return err
 		}
+		s.reportUploadCompleted(c)
 	}
 	return nil
+}
+
+func buildUploadPlanSummary(candidates []uploadCandidate) UploadPlanSummary {
+	files := make([]UploadPlanFile, 0, len(candidates))
+	var totalBytes int64
+	for _, c := range candidates {
+		files = append(files, UploadPlanFile{
+			OID:   c.oid,
+			Path:  c.file.Name,
+			Bytes: c.size,
+		})
+		totalBytes += c.size
+	}
+	return UploadPlanSummary{
+		Files:      files,
+		TotalFiles: len(files),
+		TotalBytes: totalBytes,
+	}
+}
+
+func (s *batchSyncSession) progressContextForCandidate(ctx context.Context, c uploadCandidate) context.Context {
+	if s.reporter == nil {
+		return ctx
+	}
+	ctx = sycommon.WithOid(ctx, c.oid)
+	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
+		if ev.Event != "progress" {
+			return nil
+		}
+		s.reporter.OnUploadProgress(UploadProgressEvent{
+			OID:            c.oid,
+			Path:           c.file.Name,
+			BytesSoFar:     ev.BytesSoFar,
+			BytesSinceLast: ev.BytesSinceLast,
+			TotalBytes:     c.size,
+			Phase:          UploadProgressUploading,
+		})
+		return nil
+	})
+}
+
+func (s *batchSyncSession) reportUploadCompleted(c uploadCandidate) {
+	if s.reporter == nil {
+		return
+	}
+	s.reporter.OnUploadProgress(UploadProgressEvent{
+		OID:            c.oid,
+		Path:           c.file.Name,
+		BytesSoFar:     c.size,
+		BytesSinceLast: 0,
+		TotalBytes:     c.size,
+		Phase:          UploadProgressCompleted,
+	})
 }
 
 func splitCandidatesByThreshold(candidates []uploadCandidate, threshold int64) (small, large []uploadCandidate) {

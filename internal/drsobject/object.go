@@ -58,15 +58,16 @@ func ConvertToCandidate(obj *drsapi.DrsObject) drsapi.DrsObjectCandidate {
 		return drsapi.DrsObjectCandidate{}
 	}
 	return drsapi.DrsObjectCandidate{
-		AccessMethods: obj.AccessMethods,
-		Aliases:       obj.Aliases,
-		Checksums:     obj.Checksums,
-		Contents:      obj.Contents,
-		Description:   obj.Description,
-		MimeType:      obj.MimeType,
-		Name:          obj.Name,
-		Size:          obj.Size,
-		Version:       obj.Version,
+		AccessMethods:    obj.AccessMethods,
+		Aliases:          obj.Aliases,
+		Checksums:        obj.Checksums,
+		Contents:         obj.Contents,
+		ControlledAccess: obj.ControlledAccess,
+		Description:      obj.Description,
+		MimeType:         obj.MimeType,
+		Name:             obj.Name,
+		Size:             obj.Size,
+		Version:          obj.Version,
 	}
 }
 
@@ -113,11 +114,12 @@ func BuildWithOptions(fileName string, checksum string, size int64, drsID string
 			Url     string    `json:"url"`
 		}{Url: accessURL},
 	}
-	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
-		am.Authorizations = syfoncommon.AccessMethodAuthorizationsFromAuthzMap(authzMap)
-	}
 	ams := []drsapi.AccessMethod{am}
 	obj.AccessMethods = &ams
+	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
+		controlled := syfoncommon.AuthzMapToControlledAccess(authzMap)
+		obj.ControlledAccess = &controlled
+	}
 	return obj, nil
 }
 

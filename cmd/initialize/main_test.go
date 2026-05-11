@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/testutils"
@@ -105,4 +106,27 @@ func TestInitConfigValues(t *testing.T) {
 
 	check("lfs.concurrenttransfers", "8")
 	check("lfs.allowincompletepush", "false")
+}
+
+func TestEnsureInitialized(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	logger := drslog.NewNoOpLogger()
+
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized error: %v", err)
+	}
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized second call error: %v", err)
+	}
+
+	if _, err := os.Stat(common.DRS_DIR); err != nil {
+		t.Fatalf("expected %s to exist: %v", common.DRS_DIR, err)
+	}
+	filterProcess, err := gitrepo.GetGitConfigString("filter.drs.process")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.process): %v", err)
+	}
+	if filterProcess != "git-drs filter" {
+		t.Fatalf("unexpected filter.drs.process: %q", filterProcess)
+	}
 }

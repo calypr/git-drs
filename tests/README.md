@@ -66,7 +66,7 @@ TEST_STRICT_CLEANUP=true
   - multipart/resume checks
   - LFS compatibility path
 - `tests/e2e-gen3-remote-addurl.sh`
-  - add-url with known SHA and unknown SHA sentinel path
+  - add-url with known SHA and unknown SHA placeholder path
 - `tests/e2e-local-full.sh`
   - wrapper for full suite in `local` server mode
 - `tests/e2e-local-addurl.sh`

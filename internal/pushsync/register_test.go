@@ -1,33 +1,40 @@
 package pushsync
 
 import (
-	"context"
-	"io"
-	"net/http"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
+
+	localcommon "github.com/calypr/git-drs/internal/common"
 )
 
-func TestProbeDownloadURLUsesProvidedHTTPClient(t *testing.T) {
-	t.Parallel()
+func TestResolveUploadSourcePath_NoSentinelObjectForPointer(t *testing.T) {
+	repo := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
 
-	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Method != http.MethodHead {
-			t.Fatalf("expected HEAD request, got %s", r.Method)
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader("")),
-			Header:     make(http.Header),
-			Request:    r,
-		}, nil
-	})}
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	worktreePath := filepath.Join(repo, "data.bin")
+	if err := os.WriteFile(worktreePath, []byte("version https://git-lfs.github.com/spec/v1\noid sha256:"+oid+"\nsize 1\n"), 0o644); err != nil {
+		t.Fatalf("write pointer: %v", err)
+	}
 
-	if err := probeDownloadURL(context.Background(), client, "https://signed.example/object.bin"); err != nil {
-		t.Fatalf("probeDownloadURL returned error: %v", err)
+	// Ensure the implicit cache root matches command behavior under the cwd.
+	if _, err := os.Stat(localcommon.LFS_OBJS_PATH); err == nil {
+		t.Fatalf("expected no local object cache at %s", localcommon.LFS_OBJS_PATH)
+	}
+
+	src, ok, err := resolveUploadSourcePath(oid, worktreePath, true)
+	if err != nil {
+		t.Fatalf("resolveUploadSourcePath: %v", err)
+	}
+	if ok || src != "" {
+		t.Fatalf("expected pointer without local payload to skip upload source, got src=%q ok=%v", src, ok)
 	}
 }
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

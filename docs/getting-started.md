@@ -34,11 +34,7 @@ It no longer tries to be a mixed bag of Git, Git LFS, and DRS transport wrappers
        ServerAliveInterval 30
    ```
 
-3. Initialize `git-drs` in the repo:
-
-   ```bash
-   git drs init
-   ```
+3. If the repo does not yet have a `git-drs` remote configured, add one now. `remote add` will bootstrap the repo-local hooks/config automatically if needed.
 
 4. Hydrate tracked files if needed:
 
@@ -58,13 +54,15 @@ git drs install
 
 ## One-Time Repository Setup
 
-After cloning or creating a repository:
+After cloning or creating a repository, the normal first step is adding a remote:
 
 ```bash
-git drs init
+git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
 ```
 
-That sets up repository-local `git-drs` state and hooks.
+That command now sets up repository-local `git-drs` state and hooks automatically if they are missing.
+
+You can still run `git drs init` directly when you want to initialize the repo explicitly before configuring any remote, or when you want to repair the hook/config wiring.
 
 ## Add a Gen3 Remote
 
@@ -83,6 +81,7 @@ git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.
 Notes:
 
 - scope is one positional argument: `organization/project`
+- if repo-local `git-drs` setup is missing, this command initializes it first
 - users do not provide `--bucket`
 - users do not provide `--url`
 - bucket resolution is scope-based and server-backed
@@ -100,16 +99,12 @@ For a new repository or a repository that has not yet been configured with `git-
 1. Initialize the repository:
 
    ```bash
-   git drs init
-   ```
-
-2. Add the target remote:
-
-   ```bash
    git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
    ```
 
-3. Verify the configuration:
+   This bootstraps the repo-local `git-drs` hooks/config if needed.
+
+2. Verify the configuration:
 
    ```bash
    git drs remote list
@@ -154,6 +149,30 @@ Example:
 ```bash
 git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
 ```
+
+### When a key expires or is replaced
+
+The supported recovery path is:
+
+```bash
+git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
+```
+
+Practical answers to the common questions:
+
+- do you need to run `git drs init` again?
+  - no
+- do you need to run `git drs remote add gen3` again?
+  - yes, if the API key itself was replaced or you want to import a new credential file/token
+- does `git-drs` detect token expiry automatically?
+  - partially
+  - if the stored access token is expired but the stored API key is still valid, `git-drs` will try to refresh the access token automatically
+  - if the API key itself is expired, revoked, or replaced, rerun `git drs remote add gen3 ...`
+- how do you check what remote/profile is in use?
+  - `git drs remote list` shows the configured remotes
+  - the Gen3 profile data lives in `~/.gen3/gen3_client_config.ini`
+
+As a rule, if credentials changed and you want a predictable fix, re-run `git drs remote add gen3 ...` for that remote. That updates the stored profile and repo token plumbing without requiring repo re-initialization.
 
 ## Managing Additional Remotes
 
@@ -206,10 +225,26 @@ git add .gitattributes
 ```bash
 git add sample.bam
 git commit -m "Add sample"
-git push
+git drs push
 ```
 
 `git-drs` handles pointer/object registration behavior around the Git workflow.
+
+## Remove a Tracked File
+
+Use `git drs rm` for tracked DRS/LFS files:
+
+```bash
+git drs rm sample.bam
+git commit -m "Remove sample"
+git drs push
+```
+
+This removes the pointer from Git immediately. The remote DRS mutation happens only when that deletion is committed and pushed:
+
+- if the scoped record has one `controlled_access` entry, the record is deleted
+- if it has multiple `controlled_access` entries, only the current `organization/project` resource is removed
+- underlying object bytes are not deleted by default
 
 ## Inspect Tracked Files
 
@@ -281,7 +316,7 @@ git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
 
 ## Session Workflow
 
-> **Note:** You do not need to run `git drs init` again. Initialization is a one-time setup per local repository clone.
+> **Note:** You do not need to run `git drs init` again. Remote configuration bootstraps repo-local setup when needed, and explicit `git drs init` is mainly for manual setup or repair.
 
 For a normal work session:
 
@@ -290,6 +325,8 @@ For a normal work session:
    ```bash
    git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
    ```
+
+   You do not need to run `git drs init` again for this. Refreshing credentials is a `remote add` operation, not a repo reinitialization step.
 
 2. Update Git history if needed
 
@@ -329,21 +366,20 @@ git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credenti
 
 Use this flow when developing against a local Syfon/DRS server instead of a hosted Gen3 deployment.
 
-1. Initialize the repo:
+1. Add the local remote:
 
    ```bash
-   git drs init
+   git drs remote add local origin http://localhost:8080 \
+       calypr/end_to_end_test \
+       --username drs-user \
+       --password drs-pass
    ```
 
-2. Add the local remote:
-
-   ```bash
-   git drs remote add local origin http://localhost:8080
-   ```
+   This bootstraps the repo-local `git-drs` hooks/config if needed.
 
    If your local server requires basic auth, include the local auth flags supported by that command.
 
-3. Track and push:
+2. Track and push:
 
    ```bash
    git drs track "*.bin"
@@ -352,7 +388,7 @@ Use this flow when developing against a local Syfon/DRS server instead of a host
    git drs push
    ```
 
-4. Verify hydration:
+3. Verify hydration:
 
    ```bash
    git drs pull
@@ -380,7 +416,6 @@ This copies metadata only. It does not copy object bytes between buckets.
 
 ```bash
 git drs install
-git drs init
 git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
 git drs track "*.bam"
 git add .gitattributes

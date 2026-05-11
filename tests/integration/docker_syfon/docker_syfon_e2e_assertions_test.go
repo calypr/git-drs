@@ -91,22 +91,14 @@ func normalizeDockerBucketMapKeyPart(v string) string {
 func upsertSyfonBucketScope(t *testing.T, serverURL string, minioEnv *minioContainer, org, project, path string) {
 	t.Helper()
 	body, err := json.Marshal(map[string]string{
-		"bucket":             minioEnv.bucket,
-		"provider":           "s3",
-		"region":             minioEnv.region,
-		"access_key":         minioEnv.accessKey,
-		"secret_key":         minioEnv.secretKey,
-		"endpoint":           minioEnv.endpoint,
-		"billing_log_bucket": minioEnv.bucket,
-		"billing_log_prefix": dockerE2EProviderLogPrefix,
-		"organization":       org,
-		"project_id":         project,
-		"path":               path,
+		"organization": org,
+		"project_id":   project,
+		"path":         path,
 	})
 	if err != nil {
 		t.Fatalf("marshal bucket scope request: %v", err)
 	}
-	req, err := http.NewRequest(http.MethodPut, strings.TrimRight(serverURL, "/")+"/data/buckets", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(serverURL, "/")+"/data/buckets/"+minioEnv.bucket+"/scopes", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("build bucket scope request: %v", err)
 	}
@@ -252,5 +244,35 @@ func assertMinIOObjectExists(t *testing.T, client *s3.Client, bucket, key string
 	})
 	if err != nil {
 		t.Fatalf("expected MinIO object %s/%s to exist: %v", bucket, key, err)
+	}
+}
+
+func assertMinIOObjectMissing(t *testing.T, client *s3.Client, bucket, key string) {
+	t.Helper()
+	_, err := client.HeadObject(context.Background(), &s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err == nil {
+		t.Fatalf("expected MinIO object %s/%s to be deleted", bucket, key)
+	}
+}
+
+func assertDRSRecordMissing(t *testing.T, serverURL, did string) {
+	t.Helper()
+	target := strings.TrimRight(serverURL, "/") + "/ga4gh/drs/v1/objects/" + did
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		t.Fatalf("build GET %s: %v", target, err)
+	}
+	req.SetBasicAuth(dockerE2ELocalUser, dockerE2ELocalPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected DRS record %s to be deleted, got status=%d body=%s", did, resp.StatusCode, string(body))
 	}
 }

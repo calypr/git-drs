@@ -2,8 +2,10 @@ package pushsync
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -29,6 +31,71 @@ func (r *recordingReporter) OnUploadProgress(ev UploadProgressEvent) {
 	r.events = append(r.events, ev)
 }
 
+type pushUploadBackendStub struct {
+	resolveFunc func(context.Context, string, string, sycommon.FileMetadata, string) (string, error)
+	uploadFunc  func(context.Context, string, io.Reader, int64) error
+
+	lastResolve struct {
+		guid     string
+		filename string
+		metadata sycommon.FileMetadata
+		bucket   string
+	}
+	lastUpload struct {
+		url  string
+		size int64
+		body string
+	}
+}
+
+func setTestPushScope(rt *pushRuntime) {
+	rt.Scope = pushScope{
+		Organization: "syfon",
+		Project:      "e2e",
+		Bucket:       "syfon-e2e-bucket",
+	}
+}
+
+func (b *pushUploadBackendStub) Name() string { return "push-upload-backend-stub" }
+
+func (b *pushUploadBackendStub) Logger() transfer.TransferLogger { return transfer.NoOpLogger{} }
+
+func (b *pushUploadBackendStub) Upload(ctx context.Context, url string, body io.Reader, size int64) error {
+	b.lastUpload.url = url
+	b.lastUpload.size = size
+	if body != nil {
+		data, _ := io.ReadAll(body)
+		b.lastUpload.body = string(data)
+	}
+	if b.uploadFunc != nil {
+		return b.uploadFunc(ctx, url, strings.NewReader(b.lastUpload.body), size)
+	}
+	return nil
+}
+
+func (b *pushUploadBackendStub) ResolveUploadURL(ctx context.Context, guid string, filename string, metadata sycommon.FileMetadata, bucket string) (string, error) {
+	b.lastResolve.guid = guid
+	b.lastResolve.filename = filename
+	b.lastResolve.metadata = metadata
+	b.lastResolve.bucket = bucket
+	if b.resolveFunc != nil {
+		return b.resolveFunc(ctx, guid, filename, metadata, bucket)
+	}
+	return "https://upload.example/" + filename, nil
+}
+
+func (b *pushUploadBackendStub) MultipartInit(context.Context, string) (string, error) {
+	return "upload-id", nil
+}
+
+func (b *pushUploadBackendStub) MultipartPart(context.Context, string, string, int, io.Reader) (string, error) {
+	return "etag", nil
+}
+
+func (b *pushUploadBackendStub) MultipartComplete(context.Context, string, string, []transfer.MultipartPart) error {
+	return nil
+}
+
 func TestExecuteUploadPlanReportsProgress(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "a.bin")
@@ -38,21 +105,25 @@ func TestExecuteUploadPlanReportsProgress(t *testing.T) {
 
 	reporter := &recordingReporter{}
 	rt := newPushRuntime(nil)
+	setTestPushScope(rt)
 	rt.Logger = drslog.NewNoOpLogger()
 	rt.Tuning.MultiPartThreshold = 1024
 	rt.Tuning.UploadConcurrency = 2
 
-	oldUpload := uploadObjectFile
-	uploadObjectFile = func(ctx context.Context, _ transfer.MultipartBackend, _ string, _ string, _ string, _ string, _ bool) error {
-		cb := sycommon.GetProgress(ctx)
-		if cb == nil {
-			t.Fatal("expected progress callback in upload context")
-		}
-		_ = cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: 5, BytesSinceLast: 5})
-		_ = cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: 11, BytesSinceLast: 6})
-		return nil
+	backend := &pushUploadBackendStub{
+		uploadFunc: func(ctx context.Context, _ string, _ io.Reader, _ int64) error {
+			cb := sycommon.GetProgress(ctx)
+			if cb == nil {
+				t.Fatal("expected progress callback in upload context")
+			}
+			_ = cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: 5, BytesSinceLast: 5})
+			_ = cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: 11, BytesSinceLast: 6})
+			return nil
+		},
 	}
-	t.Cleanup(func() { uploadObjectFile = oldUpload })
+	oldBackend := uploadBackendForRuntime
+	uploadBackendForRuntime = func(*pushRuntime) transfer.MultipartBackend { return backend }
+	t.Cleanup(func() { uploadBackendForRuntime = oldBackend })
 
 	session := &batchSyncSession{
 		ctx:      context.Background(),
@@ -85,6 +156,7 @@ func TestExecuteUploadPlanReportsProgress(t *testing.T) {
 func TestExecuteUploadPlanHonorsUploadConcurrency(t *testing.T) {
 	tmp := t.TempDir()
 	rt := newPushRuntime(nil)
+	setTestPushScope(rt)
 	rt.Logger = drslog.NewNoOpLogger()
 	rt.Tuning.MultiPartThreshold = 1024
 	rt.Tuning.UploadConcurrency = 2
@@ -94,26 +166,29 @@ func TestExecuteUploadPlanHonorsUploadConcurrency(t *testing.T) {
 	var mu sync.Mutex
 	releaseChans := make([]chan struct{}, 0, 3)
 
-	oldUpload := uploadObjectFile
-	uploadObjectFile = func(ctx context.Context, _ transfer.MultipartBackend, _ string, _ string, _ string, _ string, _ bool) error {
-		cur := atomic.AddInt32(&active, 1)
-		for {
-			max := atomic.LoadInt32(&maxActive)
-			if cur <= max || atomic.CompareAndSwapInt32(&maxActive, max, cur) {
-				break
+	backend := &pushUploadBackendStub{
+		uploadFunc: func(context.Context, string, io.Reader, int64) error {
+			cur := atomic.AddInt32(&active, 1)
+			for {
+				max := atomic.LoadInt32(&maxActive)
+				if cur <= max || atomic.CompareAndSwapInt32(&maxActive, max, cur) {
+					break
+				}
 			}
-		}
 
-		release := make(chan struct{})
-		mu.Lock()
-		releaseChans = append(releaseChans, release)
-		mu.Unlock()
+			release := make(chan struct{})
+			mu.Lock()
+			releaseChans = append(releaseChans, release)
+			mu.Unlock()
 
-		<-release
-		atomic.AddInt32(&active, -1)
-		return nil
+			<-release
+			atomic.AddInt32(&active, -1)
+			return nil
+		},
 	}
-	t.Cleanup(func() { uploadObjectFile = oldUpload })
+	oldBackend := uploadBackendForRuntime
+	uploadBackendForRuntime = func(*pushRuntime) transfer.MultipartBackend { return backend }
+	t.Cleanup(func() { uploadBackendForRuntime = oldBackend })
 
 	makeCandidate := func(name string) uploadCandidate {
 		path := filepath.Join(tmp, name)
@@ -189,6 +264,72 @@ func TestExecuteUploadPlanHonorsUploadConcurrency(t *testing.T) {
 func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.T) {
 	assertScopedDRSObjectForPushRebuildsAccessMethod(t, "s3://objects/existing-did")
 	assertScopedDRSObjectForPushRebuildsAccessMethod(t, "s3://7b9de5b9-19b2-536f-abcc-fe2a146c4eb5")
+}
+
+func TestUploadFileForObjectUsesScopedKeyForMalformedRegisteredAccessURL(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "project-subpath.bin")
+	if err := os.WriteFile(filePath, []byte("project subpath payload"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	rt := &pushRuntime{
+		Logger: drslog.NewNoOpLogger(),
+		Scope: pushScope{
+			Organization: "syfon",
+			Project:      "e2e",
+			Bucket:       "syfon-e2e-bucket",
+			StoragePref:  "program-root/project-subpath",
+		},
+		Tuning: pushTuning{MultiPartThreshold: 1024},
+	}
+
+	oid := "412f8568bfb0e62937ee40c6fcdeaa1cf55910c558c0152250340356c8829a47"
+	obj := &drsapi.DrsObject{
+		Id:   "f781273b-52eb-5ac2-a484-775235eef303",
+		Name: ptrString("project-subpath.bin"),
+		Size: 23,
+		Checksums: []drsapi.Checksum{{
+			Type:     "sha256",
+			Checksum: oid,
+		}},
+		ControlledAccess: &[]string{"/organization/syfon/project/e2e"},
+		AccessMethods: &[]drsapi.AccessMethod{{
+			Type: drsapi.AccessMethodTypeS3,
+			AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: "s3://f781273b-52eb-5ac2-a484-775235eef303"},
+		}},
+	}
+
+	backend := &pushUploadBackendStub{}
+	oldBackend := uploadBackendForRuntime
+	uploadBackendForRuntime = func(*pushRuntime) transfer.MultipartBackend { return backend }
+	t.Cleanup(func() { uploadBackendForRuntime = oldBackend })
+
+	if err := uploadFileForObject(rt, context.Background(), obj, filePath, false); err != nil {
+		t.Fatalf("uploadFileForObject returned error: %v", err)
+	}
+	if backend.lastUpload.body != "project subpath payload" {
+		t.Fatalf("uploaded body = %q, want project subpath payload", backend.lastUpload.body)
+	}
+	if backend.lastResolve.guid != obj.Id {
+		t.Fatalf("upload guid = %q, want DID %q", backend.lastResolve.guid, obj.Id)
+	}
+	if backend.lastResolve.bucket != "" {
+		t.Fatalf("upload bucket hint = %q, want empty scoped upload hint", backend.lastResolve.bucket)
+	}
+	if got := backend.lastResolve.metadata.Authorizations["syfon"]; len(got) != 1 || got[0] != "e2e" {
+		t.Fatalf("upload scope metadata = %+v, want syfon/e2e", backend.lastResolve.metadata.Authorizations)
+	}
+	wantKey := "program-root/project-subpath/" + oid
+	if backend.lastResolve.filename != wantKey {
+		t.Fatalf("upload object key = %q, want %q", backend.lastResolve.filename, wantKey)
+	}
+	if backend.lastUpload.url != "https://upload.example/"+wantKey {
+		t.Fatalf("upload URL = %q, want signed URL for %q", backend.lastUpload.url, wantKey)
+	}
 }
 
 func assertScopedDRSObjectForPushRebuildsAccessMethod(t *testing.T, existingURL string) {

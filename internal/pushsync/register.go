@@ -14,13 +14,13 @@ import (
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	sycommon "github.com/calypr/syfon/client/common"
 	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/calypr/syfon/client/transfer"
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
 
-var uploadObjectFile = syupload.UploadObjectFile
 var uploadBackendForRuntime = func(rt *pushRuntime) transfer.MultipartBackend {
 	if rt == nil || rt.API == nil || rt.API.Client == nil {
 		return nil
@@ -201,8 +201,50 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	if err := uploadObjectFile(ctx, uploadBackendForRuntime(rt), filePath, objectKey, drsObject.Id, rt.Scope.Bucket, forceMultipart); err != nil {
+	backend := uploadBackendForRuntime(rt)
+	if backend == nil {
+		return fmt.Errorf("upload backend is required")
+	}
+	if forceMultipart {
+		if err := syupload.UploadObjectFile(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, true); err != nil {
+			return fmt.Errorf("upload error: %w", err)
+		}
+		return nil
+	}
+
+	resolver, ok := backend.(interface {
+		ResolveUploadURL(context.Context, string, string, sycommon.FileMetadata, string) (string, error)
+	})
+	if !ok {
+		return fmt.Errorf("upload backend cannot resolve upload URLs")
+	}
+	organization := strings.TrimSpace(rt.Scope.Organization)
+	project := strings.TrimSpace(rt.Scope.Project)
+	if organization == "" || project == "" {
+		return fmt.Errorf("upload scope organization/project is required")
+	}
+	metadata := sycommon.FileMetadata{
+		Authorizations: map[string][]string{
+			organization: {project},
+		},
+	}
+	signedURL, err := resolver.ResolveUploadURL(ctx, drsObject.Id, objectKey, metadata, "")
+	if err != nil {
+		return fmt.Errorf("upload error: failed to get upload URL: %w", err)
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("upload error: open source: %w", err)
+	}
+	defer file.Close()
+	if err := backend.Upload(ctx, signedURL, file, fileSize); err != nil {
 		return fmt.Errorf("upload error: %w", err)
+	}
+	if cb := sycommon.GetProgress(ctx); cb != nil {
+		if err := cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: fileSize, BytesSinceLast: fileSize}); err != nil {
+			return fmt.Errorf("upload progress callback failed: %w", err)
+		}
 	}
 	return nil
 }

@@ -364,6 +364,7 @@ func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {
 	runCommand(t, repoDir, nil, "git", "drs", "track", "*.bin")
 
 	t.Logf("STEP 5: Adding managed uploads for each bucket scope path case...")
+	upsertSyfonBucketScope(t, server.url, minioEnv, dockerE2EOrganization, dockerE2EProjectID, "s3://"+minioEnv.bucket)
 	defaultOID := addTrackedPayloadCommit(t, repoDir, "data/default-root.bin", []byte("default bucket root payload"), ".gitattributes")
 	defaultKey := defaultOID
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")

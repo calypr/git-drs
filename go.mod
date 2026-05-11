@@ -5,8 +5,8 @@ go 1.26.3
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/calypr/data-client v0.0.0-20260506231822-6a4689d4201f
-	github.com/calypr/syfon v0.2.9-0.20260508215927-7b28332599be
-	github.com/calypr/syfon/apigen v0.2.7-0.20260508215927-7b28332599be
+	github.com/calypr/syfon v0.2.9-0.20260511162656-cee7fc0e614c
+	github.com/calypr/syfon/apigen v0.2.7-0.20260511162656-cee7fc0e614c
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -160,7 +160,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
-	github.com/calypr/syfon/client v0.2.8-0.20260508215927-7b28332599be
+	github.com/calypr/syfon/client v0.2.8-0.20260511162656-cee7fc0e614c
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

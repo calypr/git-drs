@@ -199,9 +199,6 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		return obj, nil
 	}
 
-	if existing.AccessMethods != nil && len(*existing.AccessMethods) > 0 {
-		obj.AccessMethods = existing.AccessMethods
-	}
 	obj.Aliases = existing.Aliases
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description

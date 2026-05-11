@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -184,3 +185,57 @@ func TestExecuteUploadPlanHonorsUploadConcurrency(t *testing.T) {
 		t.Fatalf("max active uploads after completion = %d, want 2", got)
 	}
 }
+
+func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "program-root.bin")
+	if err := os.WriteFile(filePath, []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	rt := &pushRuntime{
+		API: &config.GitContext{
+			Organization: "syfon",
+			ProjectId:    "e2e",
+			BucketName:   "syfon-e2e-bucket",
+			StoragePrefix:"program-root",
+		},
+		Scope: pushScope{
+			Organization: "syfon",
+			Project:      "e2e",
+			Bucket:       "syfon-e2e-bucket",
+			StoragePref:  "program-root",
+		},
+	}
+
+	existing := &drsapi.DrsObject{
+		Id:   "existing-did",
+		Name: ptrString("program-root.bin"),
+		Checksums: []drsapi.Checksum{{
+			Type:     "sha256",
+			Checksum: "3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7",
+		}},
+		AccessMethods: &[]drsapi.AccessMethod{{
+			Type: drsapi.AccessMethodTypeS3,
+			AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: "s3://objects/3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7"},
+		}},
+	}
+
+	obj, err := scopedDRSObjectForPush(rt, "3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7", filePath, 7, existing)
+	if err != nil {
+		t.Fatalf("scopedDRSObjectForPush returned error: %v", err)
+	}
+	if obj.AccessMethods == nil || len(*obj.AccessMethods) != 1 {
+		t.Fatalf("expected rebuilt access method, got %+v", obj.AccessMethods)
+	}
+	got := (*obj.AccessMethods)[0].AccessUrl.Url
+	want := "s3://syfon-e2e-bucket/program-root/3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7"
+	if got != want {
+		t.Fatalf("access url = %q, want %q", got, want)
+	}
+}
+
+func ptrString(s string) *string { return &s }

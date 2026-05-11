@@ -32,6 +32,8 @@ func (r *recordingReporter) OnUploadProgress(ev UploadProgressEvent) {
 }
 
 type pushUploadBackendStub struct {
+	mu sync.Mutex
+
 	resolveFunc func(context.Context, string, string, sycommon.FileMetadata, string) (string, error)
 	uploadFunc  func(context.Context, string, io.Reader, int64) error
 
@@ -61,23 +63,32 @@ func (b *pushUploadBackendStub) Name() string { return "push-upload-backend-stub
 func (b *pushUploadBackendStub) Logger() transfer.TransferLogger { return transfer.NoOpLogger{} }
 
 func (b *pushUploadBackendStub) Upload(ctx context.Context, url string, body io.Reader, size int64) error {
-	b.lastUpload.url = url
-	b.lastUpload.size = size
+	var bodyText string
 	if body != nil {
 		data, _ := io.ReadAll(body)
-		b.lastUpload.body = string(data)
+		bodyText = string(data)
 	}
+
+	b.mu.Lock()
+	b.lastUpload.url = url
+	b.lastUpload.size = size
+	b.lastUpload.body = bodyText
+	b.mu.Unlock()
+
 	if b.uploadFunc != nil {
-		return b.uploadFunc(ctx, url, strings.NewReader(b.lastUpload.body), size)
+		return b.uploadFunc(ctx, url, strings.NewReader(bodyText), size)
 	}
 	return nil
 }
 
 func (b *pushUploadBackendStub) ResolveUploadURL(ctx context.Context, guid string, filename string, metadata sycommon.FileMetadata, bucket string) (string, error) {
+	b.mu.Lock()
 	b.lastResolve.guid = guid
 	b.lastResolve.filename = filename
 	b.lastResolve.metadata = metadata
 	b.lastResolve.bucket = bucket
+	b.mu.Unlock()
+
 	if b.resolveFunc != nil {
 		return b.resolveFunc(ctx, guid, filename, metadata, bucket)
 	}

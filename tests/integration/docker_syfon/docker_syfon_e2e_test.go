@@ -65,6 +65,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	runCommand(t, repoDir, nil, "git", "remote", "add", "origin", gogsEnv.repoCloneURL)
 	runCommand(t, repoDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, repoDir, server.url, minioEnv)
+	upsertSyfonBucketScope(t, server.url, minioEnv, dockerE2EOrganization, dockerE2EProjectID, "s3://"+minioEnv.bucket)
 	logRepoSnapshot(t, repoDir, "post-init")
 
 	t.Logf("STEP 5: Uploading tracked files through git-drs push...")

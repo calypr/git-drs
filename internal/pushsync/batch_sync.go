@@ -279,7 +279,11 @@ func parseStorageURL(raw string) (bucket string, key string, ok bool) {
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
 	candidates := make([]uploadCandidate, 0)
 	for _, oid := range s.oids {
-		if !s.needsUpload(oid) {
+		needsUpload, err := s.needsUpload(oid)
+		if err != nil {
+			return nil, err
+		}
+		if !needsUpload {
 			continue
 		}
 
@@ -309,11 +313,22 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 	return candidates, nil
 }
 
-func (s *batchSyncSession) needsUpload(oid string) bool {
+func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
 	if s.registeredOids[oid] {
-		return true
+		return true, nil
 	}
-	return len(s.existingByHash[oid]) == 0
+	if len(s.existingByHash[oid]) == 0 {
+		return true, nil
+	}
+	obj := s.drsObjByOID[oid]
+	if obj == nil {
+		return false, nil
+	}
+	downloadable, err := isFileDownloadable(s.rt, s.ctx, obj)
+	if err != nil {
+		return false, fmt.Errorf("failed to check remote object availability for oid %s: %w", oid, err)
+	}
+	return !downloadable, nil
 }
 
 func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error {

@@ -187,6 +187,12 @@ func TestExecuteUploadPlanHonorsUploadConcurrency(t *testing.T) {
 }
 
 func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.T) {
+	assertScopedDRSObjectForPushRebuildsAccessMethod(t, "s3://objects/existing-did")
+	assertScopedDRSObjectForPushRebuildsAccessMethod(t, "s3://7b9de5b9-19b2-536f-abcc-fe2a146c4eb5")
+}
+
+func assertScopedDRSObjectForPushRebuildsAccessMethod(t *testing.T, existingURL string) {
+	t.Helper()
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "program-root.bin")
 	if err := os.WriteFile(filePath, []byte("payload"), 0o644); err != nil {
@@ -195,10 +201,10 @@ func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.
 
 	rt := &pushRuntime{
 		API: &config.GitContext{
-			Organization: "syfon",
-			ProjectId:    "e2e",
-			BucketName:   "syfon-e2e-bucket",
-			StoragePrefix:"program-root",
+			Organization:  "syfon",
+			ProjectId:     "e2e",
+			BucketName:    "syfon-e2e-bucket",
+			StoragePrefix: "program-root",
 		},
 		Scope: pushScope{
 			Organization: "syfon",
@@ -220,7 +226,7 @@ func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.
 			AccessUrl: &struct {
 				Headers *[]string `json:"headers,omitempty"`
 				Url     string    `json:"url"`
-			}{Url: "s3://objects/3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7"},
+			}{Url: existingURL},
 		}},
 	}
 
@@ -235,6 +241,56 @@ func TestScopedDRSObjectForPushRebuildsAccessMethodsFromCurrentScope(t *testing.
 	want := "s3://syfon-e2e-bucket/program-root/3d71f043937a09b77826109db4f2b47c46f19923ef823f6a777a15fde0b2c9c7"
 	if got != want {
 		t.Fatalf("access url = %q, want %q", got, want)
+	}
+}
+
+func TestScopedDRSObjectForPushPreservesExplicitAddURLAccessMethod(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "from-bucket.bin")
+	if err := os.WriteFile(filePath, []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	rt := &pushRuntime{
+		API: &config.GitContext{
+			Organization: "syfon",
+			ProjectId:    "e2e",
+			BucketName:   "syfon-e2e-bucket",
+		},
+		Scope: pushScope{
+			Organization: "syfon",
+			Project:      "e2e",
+			Bucket:       "syfon-e2e-bucket",
+		},
+	}
+
+	oid := "95d536cc8df0a8e265832c6bd0422d69593f564d5ff0518e77535c45bc10bfde"
+	explicitURL := "s3://syfon-e2e-bucket/syfon/e2e/addurl/" + oid
+	existing := &drsapi.DrsObject{
+		Id:   "existing-did",
+		Name: ptrString("from-bucket.bin"),
+		Checksums: []drsapi.Checksum{{
+			Type:     "sha256",
+			Checksum: oid,
+		}},
+		AccessMethods: &[]drsapi.AccessMethod{{
+			Type: drsapi.AccessMethodTypeS3,
+			AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: explicitURL},
+		}},
+	}
+
+	obj, err := scopedDRSObjectForPush(rt, oid, filePath, 7, existing)
+	if err != nil {
+		t.Fatalf("scopedDRSObjectForPush returned error: %v", err)
+	}
+	if obj.AccessMethods == nil || len(*obj.AccessMethods) != 1 || (*obj.AccessMethods)[0].AccessUrl == nil {
+		t.Fatalf("expected access method, got %+v", obj.AccessMethods)
+	}
+	if got := (*obj.AccessMethods)[0].AccessUrl.Url; got != explicitURL {
+		t.Fatalf("access url = %q, want explicit add-url %q", got, explicitURL)
 	}
 }
 

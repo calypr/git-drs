@@ -25,7 +25,6 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -251,9 +250,6 @@ func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
 				AccessURL: metadataAccessURL{
 					URL: accURL,
 				},
-			}
-			if authzMap := syfoncommon.AuthzMapFromAccessMethodAuthorizations(am.Authorizations); len(authzMap) > 0 {
-				m.Authorizations = authzMap
 			}
 			out.AccessMethods = append(out.AccessMethods, m)
 		}

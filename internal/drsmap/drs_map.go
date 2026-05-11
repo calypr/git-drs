@@ -40,9 +40,7 @@ func WriteObjectsForLFSFiles(builder drsobject.Builder, lfsFiles map[string]lfs.
 			name := file.Name
 			authoritativeObj.Name = &name
 			authoritativeObj.Size = file.Size
-
-			authzMap := syfoncommon.AuthzMapFromScope(builder.Organization, builder.Project)
-			authoritativeObj, _ = syfoncommon.EnsureAccessMethodAuthorizations(authoritativeObj, authzMap)
+			ensureControlledAccess(authoritativeObj, builder.Organization, builder.Project)
 		} else {
 			drsID := uuid.NewSHA1(drsobject.UUIDNamespace, []byte(fmt.Sprintf("%s:%s", builder.Project, drsobject.NormalizeOid(file.Oid)))).String()
 			authoritativeObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
@@ -74,16 +72,12 @@ func WriteObjectsForLFSFiles(builder drsobject.Builder, lfsFiles map[string]lfs.
 		}
 
 		if opts.PreferCacheURL && hint != "" {
-			cacheAuthzMap := syfoncommon.AuthzMapFromScope(builder.Organization, builder.Project)
 			if authoritativeObj.AccessMethods != nil && len(*authoritativeObj.AccessMethods) > 0 {
 				am := &(*authoritativeObj.AccessMethods)[0]
 				am.AccessUrl = &struct {
 					Headers *[]string `json:"headers,omitempty"`
 					Url     string    `json:"url"`
 				}{Url: hint}
-				if cacheAuthzMap != nil {
-					am.Authorizations = syfoncommon.AccessMethodAuthorizationsFromAuthzMap(cacheAuthzMap)
-				}
 			} else {
 				newAm := drsapi.AccessMethod{
 					Type: drsapi.AccessMethodTypeS3,
@@ -92,11 +86,9 @@ func WriteObjectsForLFSFiles(builder drsobject.Builder, lfsFiles map[string]lfs.
 						Url     string    `json:"url"`
 					}{Url: hint},
 				}
-				if cacheAuthzMap != nil {
-					newAm.Authorizations = syfoncommon.AccessMethodAuthorizationsFromAuthzMap(cacheAuthzMap)
-				}
 				authoritativeObj.AccessMethods = &[]drsapi.AccessMethod{newAm}
 			}
+			ensureControlledAccess(authoritativeObj, builder.Organization, builder.Project)
 		}
 
 		if err := drsobject.WriteObject(common.DRS_OBJS_PATH, authoritativeObj, file.Oid); err != nil {
@@ -107,4 +99,28 @@ func WriteObjectsForLFSFiles(builder drsobject.Builder, lfsFiles map[string]lfs.
 	}
 
 	return nil
+}
+
+func ensureControlledAccess(obj *drsapi.DrsObject, org, project string) {
+	if obj == nil {
+		return
+	}
+	authzMap := syfoncommon.AuthzMapFromScope(org, project)
+	if len(authzMap) == 0 {
+		return
+	}
+	next := append([]string(nil), derefStringSlice(obj.ControlledAccess)...)
+	next = append(next, syfoncommon.AuthzMapToControlledAccess(authzMap)...)
+	normalized := syfoncommon.NormalizeAccessResources(next)
+	if len(normalized) == 0 {
+		return
+	}
+	obj.ControlledAccess = &normalized
+}
+
+func derefStringSlice(ptr *[]string) []string {
+	if ptr == nil {
+		return nil
+	}
+	return append([]string(nil), (*ptr)...)
 }

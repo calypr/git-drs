@@ -24,17 +24,8 @@ func FindMatchingRecord(records []drsapi.DrsObject, organization, projectID stri
 	}
 
 	for _, record := range records {
-		if record.AccessMethods == nil {
-			continue
-		}
-		for _, access := range *record.AccessMethods {
-			authzMap := syfoncommon.AuthzMapFromAccessMethodAuthorizations(access.Authorizations)
-			if len(authzMap) == 0 {
-				continue
-			}
-			if syfoncommon.AuthzMapMatchesScope(authzMap, org, project) {
-				return &record, nil
-			}
+		if MatchesScope(&record, org, project) {
+			return &record, nil
 		}
 	}
 	return nil, nil

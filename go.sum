@@ -135,6 +135,10 @@ github.com/calypr/syfon v0.2.9-0.20260511161356-343cc1b47fa8 h1:MlXA3rI/TWdQsxia
 github.com/calypr/syfon v0.2.9-0.20260511161356-343cc1b47fa8/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
 github.com/calypr/syfon v0.2.9-0.20260511162656-cee7fc0e614c h1:I+4MliB7onHZJFAhvm21P8Eo0ktlt/DkQTRYNnv4oqs=
 github.com/calypr/syfon v0.2.9-0.20260511162656-cee7fc0e614c/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
+github.com/calypr/syfon v0.2.9-0.20260511181841-895695e61256 h1:Z61b4plt7BKBC6NEnws8jj4524+a+AC7oRTheshJhtc=
+github.com/calypr/syfon v0.2.9-0.20260511181841-895695e61256/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
+github.com/calypr/syfon v0.2.9-0.20260511184828-466e50a3be02 h1:tVVzTyYwazzXTXpovJEv6WcAmFK+WpsA8qPFrmKV10c=
+github.com/calypr/syfon v0.2.9-0.20260511184828-466e50a3be02/go.mod h1:FMYmSy6rbUGbFcuNTlKtxIhWSlIRPbZfpauKMO0k1V4=
 github.com/calypr/syfon/apigen v0.2.6 h1:Yr7e9Wmo1dVbmh0KYjB0KWOEtIU24MQZ3O73hY6W6z4=
 github.com/calypr/syfon/apigen v0.2.6/go.mod h1:9JNwTgR57yKJlWqZpdqP+/l4zCNzH1EIFrW+e20PyMQ=
 github.com/calypr/syfon/apigen v0.2.7-0.20260507230041-dac76eb00800 h1:H03/pXWGrWmFFyf+tKV1ILBcHVoA8zappanIjfhC8yc=
@@ -149,6 +153,8 @@ github.com/calypr/syfon/apigen v0.2.7-0.20260511161356-343cc1b47fa8 h1:VS66JqVv8
 github.com/calypr/syfon/apigen v0.2.7-0.20260511161356-343cc1b47fa8/go.mod h1:VrRZ2A17YV91Zsm7CF/u1/Z+DfcZAk8Q4Pk1xklb5xU=
 github.com/calypr/syfon/apigen v0.2.7-0.20260511162656-cee7fc0e614c h1:sQM9z9tNy6maDfoppSEkMkEMfo3TZsGBTptqpRwCe6s=
 github.com/calypr/syfon/apigen v0.2.7-0.20260511162656-cee7fc0e614c/go.mod h1:VrRZ2A17YV91Zsm7CF/u1/Z+DfcZAk8Q4Pk1xklb5xU=
+github.com/calypr/syfon/apigen v0.2.7-0.20260511184828-466e50a3be02 h1:7oTeDYGReOLZfNYwJQNsHPtq9EFgHaHNINZloKx+gfI=
+github.com/calypr/syfon/apigen v0.2.7-0.20260511184828-466e50a3be02/go.mod h1:VrRZ2A17YV91Zsm7CF/u1/Z+DfcZAk8Q4Pk1xklb5xU=
 github.com/calypr/syfon/client v0.2.7 h1:qxMZTaLR57cxotiZRzXwUIfkXRLQDmFFUQ1wXLwucMI=
 github.com/calypr/syfon/client v0.2.7/go.mod h1:DQSqNkxl9V3w08BiMconcJh3xtc+/Je7Xeo7qRH7wto=
 github.com/calypr/syfon/client v0.2.8-0.20260507230041-dac76eb00800 h1:eU9EwHtLw3LbQMoUVJEuS2dwwNYSJ45QLQcJcglvfpM=
@@ -163,6 +169,8 @@ github.com/calypr/syfon/client v0.2.8-0.20260511161356-343cc1b47fa8 h1:rPZ4Le03H
 github.com/calypr/syfon/client v0.2.8-0.20260511161356-343cc1b47fa8/go.mod h1:9MTLDQ5clwDHcDuKCEuVaV7bebsCIUtUQxTegW3RDVo=
 github.com/calypr/syfon/client v0.2.8-0.20260511162656-cee7fc0e614c h1:QCbcO5YSeU6alJDXgmuaGlCQIksD1SvOnSJC4EjpLbM=
 github.com/calypr/syfon/client v0.2.8-0.20260511162656-cee7fc0e614c/go.mod h1:9MTLDQ5clwDHcDuKCEuVaV7bebsCIUtUQxTegW3RDVo=
+github.com/calypr/syfon/client v0.2.8-0.20260511184828-466e50a3be02 h1:zZ/tmD9XbY8ywkgiR2r+c7g7er3Gnfk3JNsHbIPK2Zg=
+github.com/calypr/syfon/client v0.2.8-0.20260511184828-466e50a3be02/go.mod h1:9MTLDQ5clwDHcDuKCEuVaV7bebsCIUtUQxTegW3RDVo=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJv2v7Vk=

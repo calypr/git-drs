@@ -3,9 +3,11 @@ package pushsync
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	localcommon "github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
@@ -199,6 +201,10 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		return obj, nil
 	}
 
+	if shouldPreserveExistingAccessMethodsForPush(existing, obj, oid) {
+		obj.AccessMethods = existing.AccessMethods
+	}
+
 	obj.Aliases = existing.Aliases
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description
@@ -213,6 +219,61 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		obj.UpdatedTime = existing.UpdatedTime
 	}
 	return obj, nil
+}
+
+func shouldPreserveExistingAccessMethodsForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject, oid string) bool {
+	existingURL := firstAccessURL(existing)
+	if existingURL == "" {
+		return false
+	}
+	generatedURL := firstAccessURL(generated)
+	if existingURL == generatedURL {
+		return true
+	}
+	existingBucket, existingKey, existingOK := parseStorageURL(existingURL)
+	if !existingOK {
+		return true
+	}
+	generatedBucket, generatedKey, generatedOK := parseStorageURL(generatedURL)
+	normalizedOID := strings.Trim(strings.TrimPrefix(strings.TrimSpace(oid), "sha256:"), "/")
+	existingKey = strings.Trim(existingKey, "/")
+	if strings.EqualFold(existingBucket, "objects") {
+		return false
+	}
+	if generatedOK && existingKey == "" {
+		return false
+	}
+	if generatedOK && !strings.EqualFold(existingBucket, generatedBucket) && existingKey == normalizedOID {
+		return false
+	}
+	if generatedOK && existingKey == generatedKey && strings.EqualFold(existingBucket, generatedBucket) {
+		return true
+	}
+	return true
+}
+
+func firstAccessURL(obj *drsapi.DrsObject) string {
+	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
+		return ""
+	}
+	am := (*obj.AccessMethods)[0]
+	if am.AccessUrl == nil {
+		return ""
+	}
+	return strings.TrimSpace(am.AccessUrl.Url)
+}
+
+func parseStorageURL(raw string) (bucket string, key string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", "", false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "s3", "gs", "azblob":
+		return u.Host, strings.Trim(u.Path, "/"), true
+	default:
+		return "", "", false
+	}
 }
 
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
@@ -252,13 +313,7 @@ func (s *batchSyncSession) needsUpload(oid string) bool {
 	if s.registeredOids[oid] {
 		return true
 	}
-	if len(s.existingByHash[oid]) == 0 {
-		return true
-	}
-	if downloadable, err := isFileDownloadable(s.rt, s.ctx, s.drsObjByOID[oid]); err != nil || !downloadable {
-		return true
-	}
-	return false
+	return len(s.existingByHash[oid]) == 0
 }
 
 func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error {

@@ -14,7 +14,6 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	syclient "github.com/calypr/syfon/client"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
-	syfoncommon "github.com/calypr/syfon/common"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -76,23 +75,19 @@ func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	}
 }
 
-func makeAuthzRecord(id, org, project string) drsapi.DrsObject {
-	authzMap := map[string][]string{org: {project}}
-	accessMethods := []drsapi.AccessMethod{{
-		Type:           "s3",
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(authzMap),
-	}}
+func makeScopedRecord(id, resource string) drsapi.DrsObject {
+	controlledAccess := []string{resource}
 	return drsapi.DrsObject{
-		Id:            id,
-		AccessMethods: &accessMethods,
-		Checksums:     []drsapi.Checksum{{Type: "sha256", Checksum: "sha256"}},
+		Id:               id,
+		ControlledAccess: &controlledAccess,
+		Checksums:        []drsapi.Checksum{{Type: "sha256", Checksum: "sha256"}},
 	}
 }
 
 func TestFindMatchingRecord_MatchFound(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "OTHER", "resource"),
-		makeAuthzRecord("match", "PROG", "PROJ"),
+		makeScopedRecord("no-match", "/organization/OTHER/project/resource"),
+		makeScopedRecord("match", "/organization/PROG/project/PROJ"),
 	}
 
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
@@ -100,20 +95,20 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result == nil || result.Id != "match" {
-		t.Fatalf("expected record id match, got %#v", result)
+		t.Fatalf("expected controlled_access record match, got %#v", result)
 	}
 }
 
-func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
+func TestFindMatchingRecord_NoControlledAccessMatchReturnsNil(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "OTHER", "resource"),
+		makeScopedRecord("no-match", "/organization/OTHER/project/resource"),
 	}
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result != nil {
-		t.Fatalf("expected nil when no authz matches, got id=%q", result.Id)
+		t.Fatalf("expected nil when no controlled_access matches, got id=%q", result.Id)
 	}
 }
 
@@ -129,18 +124,18 @@ func TestAccessURLForHashScope_FiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &projectAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {"proj1"}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &projectAccessID,
 	}}
 	orgMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &orgAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &orgAccessID,
 	}}
+	projectControlled := []string{"/organization/org1/project/proj1"}
+	orgControlled := []string{"/organization/org1"}
 	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
-		{Id: "obj-project", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
-		{Id: "obj-org", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
+		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
+		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
 	}}
 	checksumBody, err := json.Marshal(checksumResponse)
 	if err != nil {
@@ -201,23 +196,23 @@ func TestObjectsByHashesForScope_FiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &projectAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {"proj1"}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &projectAccessID,
 	}}
 	orgMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &orgAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &orgAccessID,
 	}}
 	otherMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"other": {"proj"}}),
+		Type: drsapi.AccessMethodTypeS3,
 	}}
+	projectControlled := []string{"/organization/org1/project/proj1"}
+	orgControlled := []string{"/organization/org1"}
+	otherControlled := []string{"/organization/other/project/proj"}
 	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
-		{Id: "obj-project", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
-		{Id: "obj-org", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
-		{Id: "obj-other", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "def"}}, AccessMethods: &otherMethods},
+		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
+		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
+		{Id: "obj-other", ControlledAccess: &otherControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "def"}}, AccessMethods: &otherMethods},
 	}}
 	checksumBody, err := json.Marshal(checksumResponse)
 	if err != nil {

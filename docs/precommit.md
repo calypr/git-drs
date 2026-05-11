@@ -1,9 +1,3 @@
-Below is **developer-facing documentation** you can drop into your repo (e.g. `docs/precommit-cache.md` or `README-precommit.md`).
-It assumes:
-
-* `cmd/precommit` installs the **pre-commit hook**
-* `precommit_cache` is the **read-only helper library** used by pre-push (and other tooling)
-
 ---
 
 # Developer Documentation: `.git/drs/pre-commit` Cache & Helpers

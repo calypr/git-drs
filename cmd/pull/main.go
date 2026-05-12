@@ -3,9 +3,11 @@ package pull
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pathspec"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
 )
 
@@ -76,6 +79,10 @@ var Cmd = &cobra.Command{
 			logg.Debug("no matching pointer files to hydrate")
 			return nil
 		}
+
+		progress := newPullProgressRenderer(os.Stderr)
+		progress.OnPlan(pointers)
+		defer progress.Finish()
 
 		if dryRun {
 			for _, f := range pointers {
@@ -144,17 +151,19 @@ var Cmd = &cobra.Command{
 				} else if !os.IsNotExist(err) {
 					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
 				}
+				progress.OnDownloadStart(f)
+				downloadCtx := progressContextForPointer(ctx, progress, f)
 				if obj, ok := prefetched[f.Oid]; ok {
 					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
 						objCopy := obj
-						if err := drsremote.DownloadResolvedToCachePath(ctx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+						if err := drsremote.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
 						continue
 					}
 				}
-				if err := drsremote.DownloadToCachePath(ctx, drsCtx, logg, f.Oid, dstPath); err != nil {
+				if err := drsremote.DownloadToCachePath(downloadCtx, drsCtx, logg, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
@@ -163,7 +172,7 @@ var Cmd = &cobra.Command{
 			logg.Debug("no missing pointer objects to download")
 		}
 
-		if err := checkoutDownloadedFiles(pointers); err != nil {
+		if err := checkoutDownloadedFiles(pointers, progress); err != nil {
 			return err
 		}
 
@@ -195,7 +204,18 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	return files
 }
 
-func checkoutDownloadedFiles(files []pointerFile) error {
+func progressContextForPointer(ctx context.Context, progress *pullProgressRenderer, file pointerFile) context.Context {
+	ctx = sycommon.WithOid(ctx, file.Name)
+	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
+		if ev.Event != "progress" {
+			return nil
+		}
+		progress.OnDownloadProgress(file.Name, ev.BytesSoFar, file.Size)
+		return nil
+	})
+}
+
+func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
@@ -204,13 +224,35 @@ func checkoutDownloadedFiles(files []pointerFile) error {
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
-		payload, err := os.ReadFile(srcPath)
+		src, err := os.Open(srcPath)
 		if err != nil {
 			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
 		}
-		if err := os.WriteFile(f.Name, payload, 0o644); err != nil {
+		progress.OnCheckoutStart(f)
+		if dir := filepath.Dir(f.Name); dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				src.Close()
+				return fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
+			}
+		}
+		dst, err := os.OpenFile(f.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			src.Close()
 			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
 		}
+		if _, err := io.Copy(dst, src); err != nil {
+			dst.Close()
+			src.Close()
+			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
+		}
+		if err := dst.Close(); err != nil {
+			src.Close()
+			return fmt.Errorf("failed to finalize checkout for %s: %w", f.Name, err)
+		}
+		if err := src.Close(); err != nil {
+			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
+		}
+		progress.OnCompleted(f)
 	}
 	return nil
 }

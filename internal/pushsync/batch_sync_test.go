@@ -2,7 +2,9 @@ package pushsync
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	syclient "github.com/calypr/syfon/client"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/transfer"
 )
@@ -22,6 +25,10 @@ type recordingReporter struct {
 	plan   UploadPlanSummary
 	events []UploadProgressEvent
 }
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func (r *recordingReporter) OnUploadPlan(plan UploadPlanSummary) {
 	r.plan = plan
@@ -161,6 +168,161 @@ func TestExecuteUploadPlanReportsProgress(t *testing.T) {
 	last := reporter.events[len(reporter.events)-1]
 	if last.Phase != UploadProgressCompleted || last.BytesSoFar != 11 {
 		t.Fatalf("unexpected final progress event: %+v", last)
+	}
+}
+
+func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t *testing.T) {
+	tmp := t.TempDir()
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	filePath := filepath.Join(tmp, "sample.bin")
+	if err := os.WriteFile(filePath, []byte("hello world"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	reusableURL := "s3://existing-bucket/cas/" + oid
+	var registerReq drsapi.RegisterObjectsJSONRequestBody
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/existing-id/access/s3":
+			fallthrough
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/scoped-id/access/s3":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/existing-id"}`)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		case r.Method == http.MethodPost && r.URL.Path == "/ga4gh/drs/v1/objects/register":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read register request body: %v", err)
+			}
+			if err := json.Unmarshal(body, &registerReq); err != nil {
+				t.Fatalf("unmarshal register request: %v", err)
+			}
+			if len(registerReq.Candidates) != 1 {
+				t.Fatalf("expected one registration candidate, got %+v", registerReq)
+			}
+			candidate := registerReq.Candidates[0]
+			respBody, err := json.Marshal(drsapi.N201ObjectsCreated{
+				Objects: []drsapi.DrsObject{{
+					Id:               "scoped-id",
+					Name:             candidate.Name,
+					Size:             candidate.Size,
+					Checksums:        candidate.Checksums,
+					ControlledAccess: candidate.ControlledAccess,
+					AccessMethods:    candidate.AccessMethods,
+				}},
+			})
+			if err != nil {
+				t.Fatalf("marshal register response: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(string(respBody))),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+
+	rt := newPushRuntime(&config.GitContext{
+		Client:       client,
+		Organization: "syfon",
+		ProjectId:    "e2e",
+		BucketName:   "syfon-e2e-bucket",
+		Logger:       drslog.NewNoOpLogger(),
+	})
+	setTestPushScope(rt)
+	rt.ProbeURL = func(context.Context, string) error { return nil }
+
+	existing := drsapi.DrsObject{
+		Id:   "existing-id",
+		Name: ptrString("sample.bin"),
+		Size: 11,
+		Checksums: []drsapi.Checksum{{
+			Type:     "sha256",
+			Checksum: oid,
+		}},
+		ControlledAccess: &[]string{"/organization/other/project/other"},
+		AccessMethods: &[]drsapi.AccessMethod{{
+			Type: drsapi.AccessMethodTypeS3,
+			AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: reusableURL},
+		}},
+	}
+
+	session := &batchSyncSession{
+		ctx: context.Background(),
+		rt:  rt,
+		filesByOID: map[string]lfs.LfsFileInfo{
+			oid: {Oid: oid, Name: filePath, Size: 11},
+		},
+		oids:           []string{oid},
+		drsObjByOID:    map[string]*drsapi.DrsObject{},
+		existingByHash: map[string][]drsapi.DrsObject{oid: {existing}},
+		uploadRequired: map[string]bool{},
+	}
+
+	if err := session.ensureMetadataRegistered(); err != nil {
+		t.Fatalf("ensureMetadataRegistered returned error: %v", err)
+	}
+	if session.uploadRequired[oid] {
+		t.Fatalf("expected metadata-only scoped registration, but upload was marked required")
+	}
+	if len(registerReq.Candidates) != 1 {
+		t.Fatalf("expected a scoped registration request, got %+v", registerReq)
+	}
+	if registerReq.Candidates[0].AccessMethods == nil || len(*registerReq.Candidates[0].AccessMethods) != 1 {
+		t.Fatalf("expected preserved access methods in scoped registration: %+v", registerReq.Candidates[0])
+	}
+	if got := (*registerReq.Candidates[0].AccessMethods)[0].AccessUrl.Url; got != reusableURL {
+		t.Fatalf("scoped registration access url = %q, want reused %q", got, reusableURL)
+	}
+	if session.drsObjByOID[oid] == nil {
+		t.Fatalf("expected resolved scoped object after registration")
+	}
+	needsUpload, err := session.needsUpload(oid)
+	if err != nil {
+		t.Fatalf("needsUpload returned error: %v", err)
+	}
+	if needsUpload {
+		t.Fatalf("expected reusable downloadable record to skip upload")
+	}
+}
+
+func TestNeedsUploadHonorsForceUpload(t *testing.T) {
+	oid := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	session := &batchSyncSession{
+		ctx: context.Background(),
+		rt: &pushRuntime{
+			Tuning: pushTuning{ForceUpload: true},
+		},
+		drsObjByOID: map[string]*drsapi.DrsObject{
+			oid: {},
+		},
+		existingByHash: map[string][]drsapi.DrsObject{
+			oid: {{}},
+		},
+		uploadRequired: map[string]bool{},
+	}
+
+	needsUpload, err := session.needsUpload(oid)
+	if err != nil {
+		t.Fatalf("needsUpload returned error: %v", err)
+	}
+	if !needsUpload {
+		t.Fatalf("expected force upload to require upload even with existing records")
 	}
 }
 

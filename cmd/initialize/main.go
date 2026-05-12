@@ -127,6 +127,15 @@ func isInitialized() (bool, error) {
 	if val, err := gitrepo.GetGitConfigString("filter.drs.process"); err != nil || strings.TrimSpace(val) != "git-drs filter" {
 		return false, err
 	}
+	if val, err := gitrepo.GetGitConfigString("filter.drs.clean"); err != nil || strings.TrimSpace(val) != "git-drs clean -- %f" {
+		return false, err
+	}
+	if val, err := gitrepo.GetGitConfigString("filter.drs.smudge"); err != nil || strings.TrimSpace(val) != "git-drs smudge -- %f" {
+		return false, err
+	}
+	if val, err := gitrepo.GetGitConfigString("filter.drs.required"); err != nil || strings.TrimSpace(val) != "true" {
+		return false, err
+	}
 
 	preCommitInstalled, err := hookContains("pre-commit", "git drs precommit")
 	if err != nil {
@@ -165,7 +174,10 @@ func initGitConfig() error {
 		// Use git-drs as the long-running filter-process handler.
 		// This replaces the default git-lfs smudge/clean per-invocation commands
 		// with a single persistent process that calls the DRS transfer stack directly.
-		"filter.drs.process": "git-drs filter",
+		"filter.drs.clean":    "git-drs clean -- %f",
+		"filter.drs.smudge":   "git-drs smudge -- %f",
+		"filter.drs.process":  "git-drs filter",
+		"filter.drs.required": "true",
 		// Canonical git-drs config keys consumed by clients.
 		"drs.upsert":                  strconv.FormatBool(upsert),
 		"drs.multipart-threshold":     strconv.Itoa(multiPartThreshold),

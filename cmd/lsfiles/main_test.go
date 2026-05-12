@@ -31,9 +31,11 @@ func TestCollectRowsLocalDefault(t *testing.T) {
 
 	oldLoadLFSInventory := loadLFSInventory
 	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
+	oldResolveDefaultRemote := resolveDefaultRemote
 	t.Cleanup(func() {
 		loadLFSInventory = oldLoadLFSInventory
 		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
+		resolveDefaultRemote = oldResolveDefaultRemote
 	})
 
 	tmpDir := t.TempDir()
@@ -74,6 +76,7 @@ func TestCollectRowsLocalDefault(t *testing.T) {
 		t.Fatalf("unexpected remote lookup for checksums %v", checksums)
 		return nil, nil
 	}
+	resolveDefaultRemote = func() string { return "" }
 
 	cmd := &cobra.Command{}
 	rows, err := collectRows(cmd, "", "", nil, false)
@@ -111,13 +114,17 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 	oldResolveRemote := resolveRemote
 	oldNewRemoteClient := newRemoteClient
 	oldLoadLFSInventory := loadLFSInventory
+	oldListRemoteRefs := listRemoteRefs
 	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
+	oldResolveDefaultRemote := resolveDefaultRemote
 	t.Cleanup(func() {
 		loadConfig = oldLoadConfig
 		resolveRemote = oldResolveRemote
 		newRemoteClient = oldNewRemoteClient
 		loadLFSInventory = oldLoadLFSInventory
+		listRemoteRefs = oldListRemoteRefs
 		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
+		resolveDefaultRemote = oldResolveDefaultRemote
 	})
 
 	loadConfig = func() (*config.Config, error) {
@@ -137,6 +144,12 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 			"data/file3.txt": {Name: "data/file3.txt", Oid: strings.Repeat("c", 64)},
 		}, nil
 	}
+	listRemoteRefs = func(remote string) ([]string, error) {
+		if remote == "" {
+			return nil, nil
+		}
+		return []string{"refs/remotes/dev/main"}, nil
+	}
 	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
 		got := map[string][]drsapi.DrsObject{}
 		for _, checksum := range checksums {
@@ -149,9 +162,10 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 		}
 		return got, nil
 	}
+	resolveDefaultRemote = func() string { return "" }
 
 	cmd := &cobra.Command{}
-	rows, err := collectRows(cmd, "", "", []string{"data/**"}, true)
+	rows, err := collectRows(cmd, "dev", "", []string{"data/**"}, true)
 	if err != nil {
 		t.Fatalf("collectRows returned error: %v", err)
 	}
@@ -188,13 +202,17 @@ func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
 	oldResolveRemote := resolveRemote
 	oldNewRemoteClient := newRemoteClient
 	oldLoadLFSInventory := loadLFSInventory
+	oldListRemoteRefs := listRemoteRefs
 	oldLookupScopedObjectsBatch := lookupScopedObjectsBatch
+	oldResolveDefaultRemote := resolveDefaultRemote
 	t.Cleanup(func() {
 		loadConfig = oldLoadConfig
 		resolveRemote = oldResolveRemote
 		newRemoteClient = oldNewRemoteClient
 		loadLFSInventory = oldLoadLFSInventory
+		listRemoteRefs = oldListRemoteRefs
 		lookupScopedObjectsBatch = oldLookupScopedObjectsBatch
+		resolveDefaultRemote = oldResolveDefaultRemote
 	})
 
 	loadConfig = func() (*config.Config, error) { return &config.Config{}, nil }
@@ -210,12 +228,19 @@ func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
 			"data/file3.txt": {Name: "data/file3.txt", Oid: strings.Repeat("c", 64)},
 		}, nil
 	}
+	listRemoteRefs = func(remote string) ([]string, error) {
+		if remote == "" {
+			return nil, nil
+		}
+		return []string{"refs/remotes/dev/main"}, nil
+	}
 	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
 		return nil, errors.New("lookup failed")
 	}
+	resolveDefaultRemote = func() string { return "" }
 
 	cmd := &cobra.Command{}
-	rows, err := collectRows(cmd, "", "", []string{"data/**"}, true)
+	rows, err := collectRows(cmd, "dev", "", []string{"data/**"}, true)
 	if err != nil {
 		t.Fatalf("collectRows returned error: %v", err)
 	}
@@ -226,6 +251,103 @@ func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
 		if row.Detail != "lookup failed" {
 			t.Fatalf("expected shared batch lookup error, got row=%+v", row)
 		}
+	}
+}
+
+func TestCollectRowsUsesRemoteRefsWhenGitRemoteProvided(t *testing.T) {
+	resetFlagsForTest()
+
+	oldLoadLFSInventory := loadLFSInventory
+	oldListRemoteRefs := listRemoteRefs
+	oldResolveDefaultRemote := resolveDefaultRemote
+	t.Cleanup(func() {
+		loadLFSInventory = oldLoadLFSInventory
+		listRemoteRefs = oldListRemoteRefs
+		resolveDefaultRemote = oldResolveDefaultRemote
+	})
+
+	listRemoteRefs = func(remote string) ([]string, error) {
+		if remote != "dev" {
+			t.Fatalf("unexpected remote %q", remote)
+		}
+		return []string{"refs/remotes/dev/main", "refs/remotes/dev/release"}, nil
+	}
+
+	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		if gitRemoteName != "dev" {
+			t.Fatalf("unexpected git remote name %q", gitRemoteName)
+		}
+		if len(branches) != 2 || branches[0] != "refs/remotes/dev/main" || branches[1] != "refs/remotes/dev/release" {
+			t.Fatalf("unexpected refs %v", branches)
+		}
+		return map[string]lfs.LfsFileInfo{
+			"data/file.bam": {Name: "data/file.bam", Oid: strings.Repeat("a", 64)},
+		}, nil
+	}
+	resolveDefaultRemote = func() string {
+		t.Fatal("default remote fallback should not be used when --git-remote is set")
+		return ""
+	}
+
+	cmd := &cobra.Command{}
+	rows, err := collectRows(cmd, "dev", "", nil, false)
+	if err != nil {
+		t.Fatalf("collectRows returned error: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Path != "data/file.bam" {
+		t.Fatalf("unexpected rows %+v", rows)
+	}
+}
+
+func TestCollectRowsFallsBackToDefaultRemoteWhenLocalInventoryEmpty(t *testing.T) {
+	resetFlagsForTest()
+
+	oldLoadLFSInventory := loadLFSInventory
+	oldListRemoteRefs := listRemoteRefs
+	oldResolveDefaultRemote := resolveDefaultRemote
+	t.Cleanup(func() {
+		loadLFSInventory = oldLoadLFSInventory
+		listRemoteRefs = oldListRemoteRefs
+		resolveDefaultRemote = oldResolveDefaultRemote
+	})
+
+	callCount := 0
+	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		callCount++
+		if callCount == 1 {
+			if gitRemoteName != "" || len(branches) != 0 {
+				t.Fatalf("first inventory call should be local-only, got remote=%q refs=%v", gitRemoteName, branches)
+			}
+			return map[string]lfs.LfsFileInfo{}, nil
+		}
+		if gitRemoteName != "dev" {
+			t.Fatalf("expected fallback remote dev, got %q", gitRemoteName)
+		}
+		if len(branches) != 1 || branches[0] != "refs/remotes/dev/main" {
+			t.Fatalf("unexpected fallback refs: %v", branches)
+		}
+		return map[string]lfs.LfsFileInfo{
+			"data/file2.bam": {Name: "data/file2.bam", Oid: strings.Repeat("b", 64)},
+		}, nil
+	}
+	resolveDefaultRemote = func() string { return "dev" }
+	listRemoteRefs = func(remote string) ([]string, error) {
+		if remote != "dev" {
+			t.Fatalf("expected fallback remote query for dev, got %q", remote)
+		}
+		return []string{"refs/remotes/dev/main"}, nil
+	}
+
+	cmd := &cobra.Command{}
+	rows, err := collectRows(cmd, "", "", nil, false)
+	if err != nil {
+		t.Fatalf("collectRows returned error: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Path != "data/file2.bam" {
+		t.Fatalf("unexpected rows: %+v", rows)
+	}
+	if callCount != 2 {
+		t.Fatalf("expected 2 inventory calls, got %d", callCount)
 	}
 }
 

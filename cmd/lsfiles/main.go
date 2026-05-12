@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -35,8 +36,11 @@ var (
 		if len(branches) == 0 {
 			return lfs.GetTrackedLfsFiles(logger)
 		}
-		return lfs.GetAllLfsFiles(gitRemoteName, gitRemoteLocation, branches, logger)
+		return lfs.GetLfsFilesForRefs(branches, logger)
 	}
+	listRemoteRefs           = defaultListRemoteRefs
+	listGitRemotes           = defaultListGitRemotes
+	resolveDefaultRemote     = defaultResolveDefaultRemote
 	lookupScopedObjectsBatch = drsremote.ObjectsByHashesForScope
 )
 
@@ -49,6 +53,73 @@ type fileRow struct {
 	Registered bool     `json:"registered,omitempty"`
 	DRSIDs     []string `json:"drs_ids,omitempty"`
 	Detail     string   `json:"detail,omitempty"`
+}
+
+func defaultListRemoteRefs(gitRemoteName string) ([]string, error) {
+	if strings.TrimSpace(gitRemoteName) == "" {
+		return nil, nil
+	}
+
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname)", "refs/remotes/"+gitRemoteName)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list refs for remote %s: %w", gitRemoteName, err)
+	}
+
+	lines := strings.Split(string(out), "\n")
+	refs := make([]string, 0, len(lines))
+	for _, line := range lines {
+		ref := strings.TrimSpace(line)
+		if ref == "" || strings.HasSuffix(ref, "/HEAD") {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	return refs, nil
+}
+
+func defaultListGitRemotes() ([]string, error) {
+	cmd := exec.Command("git", "remote")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list git remotes: %w", err)
+	}
+
+	lines := strings.Split(string(out), "\n")
+	remotes := make([]string, 0, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		remotes = append(remotes, name)
+	}
+	sort.Strings(remotes)
+	return remotes, nil
+}
+
+func defaultResolveDefaultRemote() string {
+	cfg, err := loadConfig()
+	if err == nil && cfg != nil {
+		if remote, err := cfg.GetRemoteOrDefault(""); err == nil {
+			return strings.TrimSpace(string(remote))
+		}
+	}
+
+	remotes, err := listGitRemotes()
+	if err != nil || len(remotes) == 0 {
+		return ""
+	}
+	for _, remote := range remotes {
+		if remote == config.ORIGIN {
+			return remote
+		}
+	}
+	if len(remotes) == 1 {
+		return remotes[0]
+	}
+	return ""
 }
 
 func collectRows(cmd *cobra.Command, gitRemoteName, drsRemoteName string, patterns []string, resolveDRS bool) ([]fileRow, error) {
@@ -73,9 +144,35 @@ func collectRows(cmd *cobra.Command, gitRemoteName, drsRemoteName string, patter
 		}
 	}
 
-	lfsFiles, err := loadLFSInventory(gitRemoteName, drsRemoteName, []string{}, logger)
+	var (
+		refs []string
+		err  error
+	)
+	if strings.TrimSpace(gitRemoteName) != "" {
+		refs, err = listRemoteRefs(gitRemoteName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	lfsFiles, err := loadLFSInventory(gitRemoteName, drsRemoteName, refs, logger)
 	if err != nil {
 		return nil, err
+	}
+	if len(lfsFiles) == 0 && strings.TrimSpace(gitRemoteName) == "" {
+		fallbackRemote := resolveDefaultRemote()
+		if fallbackRemote != "" {
+			refs, err = listRemoteRefs(fallbackRemote)
+			if err != nil {
+				return nil, err
+			}
+			if len(refs) > 0 {
+				lfsFiles, err = loadLFSInventory(fallbackRemote, drsRemoteName, refs, logger)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	keys := make([]string, 0, len(lfsFiles))

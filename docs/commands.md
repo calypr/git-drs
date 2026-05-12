@@ -6,23 +6,6 @@ Git DRS owns Git/DRS orchestration and local metadata. Provider access, signed U
 
 > **Navigation:** [Getting Started](getting-started.md) -> **Commands Reference** -> [Troubleshooting](troubleshooting.md)
 
-## Command Model
-
-`git-drs` is intentionally smaller now.
-
-- Removed legacy commands:
-  - `git drs fetch`
-  - `git drs list`
-  - `git drs upload`
-  - `git drs download`
-- `git drs pull` now mirrors `git lfs pull` semantics:
-  - it hydrates tracked pointer files in the current checkout
-  - it does not run `git pull`
-- `git drs ls-files` is the `git lfs ls-files` analog:
-  - local-first inventory
-  - optional DRS registration checks
-- `git drs remote add gen3` now takes scope as a positional `organization/project`
-
 ## Core Setup
 
 ### `git drs install`
@@ -170,6 +153,8 @@ git drs push production
 - If file doesn't exist locally (metadata only), registers metadata without upload
 - Reconciles committed tracked-file deletions against the pushed Git ref delta
 - This enables cross-remote promotion workflows
+
+For tracked data changes, `git drs push` is the normal top-level push command.
 
 **Cross-Remote Promotion:**
 

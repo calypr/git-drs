@@ -39,6 +39,7 @@ type pushScope struct {
 
 type pushTuning struct {
 	Upsert             bool
+	ForceUpload        bool
 	MultiPartThreshold int64
 	UploadConcurrency  int
 }
@@ -68,6 +69,7 @@ func newPushRuntime(cl *config.GitContext) *pushRuntime {
 		},
 		Tuning: pushTuning{
 			Upsert:             cl.Upsert,
+			ForceUpload:        cl.ForceUpload,
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},

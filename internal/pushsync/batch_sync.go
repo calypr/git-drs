@@ -29,7 +29,7 @@ type batchSyncSession struct {
 	oids           []string
 	drsObjByOID    map[string]*drsapi.DrsObject
 	existingByHash map[string][]drsapi.DrsObject
-	registeredOids map[string]bool
+	uploadRequired map[string]bool
 }
 
 type uploadCandidate struct {
@@ -48,7 +48,7 @@ func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[stri
 		reporter:       reporter,
 		drsObjByOID:    make(map[string]*drsapi.DrsObject),
 		existingByHash: make(map[string][]drsapi.DrsObject),
-		registeredOids: make(map[string]bool),
+		uploadRequired: make(map[string]bool),
 	}
 	if len(files) == 0 {
 		return nil
@@ -121,12 +121,30 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
 			toRegister = append(toRegister, localdrsobject.ConvertToCandidate(obj))
-			s.registeredOids[oid] = true
+			s.uploadRequired[oid] = true
 			continue
 		}
 		if match, err := drsremote.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
 			s.drsObjByOID[oid] = match
+			if s.rt.Tuning.ForceUpload {
+				s.uploadRequired[oid] = true
+			}
+			continue
 		}
+
+		reusable := s.findReusableRecord(recs)
+		if reusable != nil && !s.rt.Tuning.ForceUpload {
+			reuseObj, err := s.buildReusableScopedObject(oid, reusable)
+			if err != nil {
+				return err
+			}
+			s.drsObjByOID[oid] = reuseObj
+			toRegister = append(toRegister, localdrsobject.ConvertToCandidate(reuseObj))
+			continue
+		}
+
+		toRegister = append(toRegister, localdrsobject.ConvertToCandidate(obj))
+		s.uploadRequired[oid] = true
 	}
 
 	if len(toRegister) == 0 {
@@ -149,6 +167,28 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		}
 	}
 	return nil
+}
+
+func (s *batchSyncSession) findReusableRecord(records []drsapi.DrsObject) *drsapi.DrsObject {
+	for i := range records {
+		record := records[i]
+		if hasResolvableAccessMethod(&record) {
+			return &record
+		}
+	}
+	return nil
+}
+
+func (s *batchSyncSession) buildReusableScopedObject(oid string, existing *drsapi.DrsObject) (*drsapi.DrsObject, error) {
+	file := s.filesByOID[oid]
+	obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, existing)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build scoped reusable object for oid %s: %w", oid, err)
+	}
+	if existing != nil && existing.AccessMethods != nil {
+		obj.AccessMethods = existing.AccessMethods
+	}
+	return obj, nil
 }
 
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
@@ -314,21 +354,31 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 }
 
 func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
-	if s.registeredOids[oid] {
+	if s.rt.Tuning.ForceUpload {
+		return true, nil
+	}
+	if s.uploadRequired[oid] {
 		return true, nil
 	}
 	if len(s.existingByHash[oid]) == 0 {
 		return true, nil
 	}
-	obj := s.drsObjByOID[oid]
-	if obj == nil {
-		return false, nil
+	return false, nil
+}
+
+func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
+	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
+		return false
 	}
-	downloadable, err := isFileDownloadable(s.rt, s.ctx, obj)
-	if err != nil {
-		return false, fmt.Errorf("failed to check remote object availability for oid %s: %w", oid, err)
+	for _, am := range *obj.AccessMethods {
+		if strings.TrimSpace(string(am.Type)) == "" || am.AccessUrl == nil {
+			continue
+		}
+		if strings.TrimSpace(am.AccessUrl.Url) != "" {
+			return true
+		}
 	}
-	return !downloadable, nil
+	return false
 }
 
 func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error {

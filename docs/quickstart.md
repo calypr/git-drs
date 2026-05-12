@@ -1,12 +1,12 @@
-# Installation Guide
+# Quick Start
 
-This page is only about getting the `git-drs` binary onto a machine. It does not teach the repository workflow.
+This page is intentionally minimal. It gets a new user from zero to a working `git-drs` repository with as little explanation as possible.
 
-If you want the shortest onboarding path, use [Quick Start](quickstart.md). If you want the workflow explained, use [Getting Started](getting-started.md).
+If you want the workflow explained after setup, continue to [Getting Started](getting-started.md).
 
-## Release Install
+## 1. Install `git-drs`
 
-This guide uses release `v0.6.0`.
+This quick start uses release `v0.6.0`.
 
 - [GitHub Releases](https://github.com/calypr/git-drs/releases)
 
@@ -50,44 +50,72 @@ This guide uses release `v0.6.0`.
 
     There is no packaged Windows release in this flow. Build `git-drs` from source instead.
 
-## PATH
-
-If `$HOME/.local/bin` is not already in your shell path, add it in your shell startup file.
-
-Example:
-
-```bash
-export PATH="$PATH:$HOME/.local/bin"
-```
-
-## Verify The Install
+Verify:
 
 ```bash
 git-drs version
-git drs version
 ```
 
-## Build From Source
+## 2. Get Credentials
 
-Use this when you need a local development build or a platform without a packaged release.
+Download your Gen3 API credentials JSON from your commons profile page and save it somewhere stable, for example:
 
 ```bash
-git clone https://github.com/calypr/git-drs.git
-cd git-drs
-go build
+~/.gen3/credentials.json
 ```
 
-Then move or copy the built binary somewhere on your `PATH`.
+Typical flow:
 
-## What Installation Does Not Do
+1. Sign in to the Gen3 portal.
+2. Open your profile page.
+3. Click `Create API Key`.
+4. Download the JSON file.
+5. Save it somewhere stable.
 
-Installing the binary does not configure a repository. Repository-local setup now happens when you run:
+## 3. Connect An Existing Repository
 
 ```bash
-git drs remote add ...
+git clone <repo-url>
+cd <repo-name>
+git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs pull
+```
+
+Use this path when the repository already contains tracked pointers and you want local file contents.
+
+## 4. Start A New Repository
+
+```bash
+mkdir my-data-repo
+cd my-data-repo
+git init
+git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs track "*.bam"
+git add .gitattributes
+git commit -m "Configure tracked files"
+```
+
+## 5. Day-One Commands
+
+Pull Git history:
+
+```bash
+git pull
+```
+
+Hydrate tracked files:
+
+```bash
+git drs pull
+```
+
+Upload/register tracked objects:
+
+```bash
+git drs push
 ```
 
 ## Read Next
 
-- [Quick Start](quickstart.md) for first setup on a real repo
 - [Getting Started](getting-started.md) for the workflow model
+- [Commands Reference](commands.md) for exact command behavior

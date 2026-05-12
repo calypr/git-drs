@@ -353,6 +353,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
+				s.reportUploadStarted(c)
 				uploadCtx := s.progressContextForCandidate(egCtx, c)
 				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
 					return err
@@ -367,6 +368,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	}
 
 	for _, c := range large {
+		s.reportUploadStarted(c)
 		uploadCtx := s.progressContextForCandidate(s.ctx, c)
 		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
 			return err
@@ -412,6 +414,20 @@ func (s *batchSyncSession) progressContextForCandidate(ctx context.Context, c up
 			Phase:          UploadProgressUploading,
 		})
 		return nil
+	})
+}
+
+func (s *batchSyncSession) reportUploadStarted(c uploadCandidate) {
+	if s.reporter == nil {
+		return
+	}
+	s.reporter.OnUploadProgress(UploadProgressEvent{
+		OID:            c.oid,
+		Path:           c.file.Name,
+		BytesSoFar:     0,
+		BytesSinceLast: 0,
+		TotalBytes:     c.size,
+		Phase:          UploadProgressUploading,
 	})
 }
 

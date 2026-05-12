@@ -22,17 +22,22 @@ func TestUploadProgressRendererTTY(t *testing.T) {
 		TotalFiles: 2,
 		TotalBytes: 200,
 	})
+	r.OnUploadProgress(pushsync.UploadProgressEvent{OID: "oid-1", Path: "a.bin", BytesSoFar: 0, TotalBytes: 100, Phase: pushsync.UploadProgressUploading})
 	r.OnUploadProgress(pushsync.UploadProgressEvent{OID: "oid-1", Path: "a.bin", BytesSoFar: 50, BytesSinceLast: 50, TotalBytes: 100, Phase: pushsync.UploadProgressUploading})
 	r.OnUploadProgress(pushsync.UploadProgressEvent{OID: "oid-1", Path: "a.bin", BytesSoFar: 100, TotalBytes: 100, Phase: pushsync.UploadProgressCompleted})
+	r.OnUploadProgress(pushsync.UploadProgressEvent{OID: "oid-2", Path: "b.bin", BytesSoFar: 0, TotalBytes: 100, Phase: pushsync.UploadProgressUploading})
 	r.OnUploadProgress(pushsync.UploadProgressEvent{OID: "oid-2", Path: "b.bin", BytesSoFar: 100, TotalBytes: 100, Phase: pushsync.UploadProgressCompleted})
 	r.Finish()
 
 	got := out.String()
-	if !strings.Contains(got, "Uploading 2/2 files") {
-		t.Fatalf("expected final tty summary, got %q", got)
+	if !strings.Contains(got, "1/2 a.bin (uploading)") {
+		t.Fatalf("expected first file uploading line, got %q", got)
 	}
-	if !strings.Contains(got, "100.0%") {
-		t.Fatalf("expected 100%% completion, got %q", got)
+	if !strings.Contains(got, "[ ] 2/2 b.bin (pending)") {
+		t.Fatalf("expected second file pending line, got %q", got)
+	}
+	if !strings.Contains(got, "[*] 2/2 b.bin (complete)") {
+		t.Fatalf("expected completed second file line, got %q", got)
 	}
 	if !strings.HasSuffix(got, "\n") {
 		t.Fatalf("expected trailing newline, got %q", got)
@@ -67,7 +72,7 @@ func TestUploadProgressRendererNonTTYThrottles(t *testing.T) {
 	if strings.Count(got, "\n") < 2 {
 		t.Fatalf("expected throttled summary updates, got %q", got)
 	}
-	if !strings.Contains(got, "Uploading 1/1 files") {
+	if !strings.Contains(got, "[*] 1/1 a.bin (complete)") {
 		t.Fatalf("expected non-tty progress summary, got %q", got)
 	}
 }

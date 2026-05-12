@@ -208,29 +208,13 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		return fmt.Errorf("upload backend is required")
 	}
 	if forceMultipart {
-		if err := syupload.UploadObjectFile(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, true); err != nil {
+		if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
 			return fmt.Errorf("upload error: %w", err)
 		}
 		return nil
 	}
-
-	signedURL, err := resolveScopedUploadURL(rt, ctx, backend, drsObject.Id, objectKey)
-	if err != nil {
-		return fmt.Errorf("upload error: failed to get upload URL: %w", err)
-	}
-
-	file, err := os.Open(filePath)
-	if err != nil {
-		return fmt.Errorf("upload error: open source: %w", err)
-	}
-	defer file.Close()
-	if err := backend.Upload(ctx, signedURL, file, fileSize); err != nil {
+	if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
 		return fmt.Errorf("upload error: %w", err)
-	}
-	if cb := sycommon.GetProgress(ctx); cb != nil {
-		if err := cb(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: fileSize, BytesSinceLast: fileSize}); err != nil {
-			return fmt.Errorf("upload progress callback failed: %w", err)
-		}
 	}
 	return nil
 }
@@ -269,6 +253,19 @@ func resolveScopedUploadURL(rt *pushRuntime, ctx context.Context, backend transf
 		},
 	}
 	return resolver.ResolveUploadURL(ctx, did, objectKey, metadata, "")
+}
+
+func scopedUploadMetadata(rt *pushRuntime) sycommon.FileMetadata {
+	organization := strings.TrimSpace(rt.Scope.Organization)
+	project := strings.TrimSpace(rt.Scope.Project)
+	if organization == "" || project == "" {
+		return sycommon.FileMetadata{}
+	}
+	return sycommon.FileMetadata{
+		Authorizations: map[string][]string{
+			organization: {project},
+		},
+	}
 }
 
 func newDownloadProbe(cl *config.GitContext) func(context.Context, string) error {

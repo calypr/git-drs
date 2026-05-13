@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/common"
@@ -316,6 +317,64 @@ func SaveConfig(cfg *Config) error {
 	}
 
 	return repo.Storer.SetConfig(conf)
+}
+
+func RemoveRemote(name Remote) (*Config, error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, ok := cfg.Remotes[name]; !ok {
+		return nil, fmt.Errorf("remote '%s' not found", name)
+	}
+
+	delete(cfg.Remotes, name)
+
+	keys := []string{
+		fmt.Sprintf("drs.remote.%s.type", name),
+		fmt.Sprintf("drs.remote.%s.endpoint", name),
+		fmt.Sprintf("drs.remote.%s.project", name),
+		fmt.Sprintf("drs.remote.%s.bucket", name),
+		fmt.Sprintf("drs.remote.%s.organization", name),
+		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
+		fmt.Sprintf("drs.remote.%s.token", name),
+		fmt.Sprintf("drs.remote.%s.username", name),
+		fmt.Sprintf("drs.remote.%s.password", name),
+		fmt.Sprintf("remote.%s.lfsurl", name),
+	}
+	if err := gitrepo.UnsetGitConfigOptions(keys); err != nil {
+		return nil, err
+	}
+
+	if cfg.DefaultRemote == name {
+		cfg.DefaultRemote = firstRemote(cfg)
+	}
+
+	if err := SaveConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	if cfg.DefaultRemote == "" {
+		if err := gitrepo.UnsetGitConfigOptions([]string{"drs.default-remote"}); err != nil {
+			return nil, err
+		}
+	}
+
+	return LoadConfig()
+}
+
+func firstRemote(cfg *Config) Remote {
+	if cfg == nil || len(cfg.Remotes) == 0 {
+		return ""
+	}
+
+	names := make([]string, 0, len(cfg.Remotes))
+	for name := range cfg.Remotes {
+		names = append(names, string(name))
+	}
+	sort.Strings(names)
+	return Remote(names[0])
 }
 
 // GetGitConfigInt reads an integer value from git config

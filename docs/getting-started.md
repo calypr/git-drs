@@ -1,373 +1,139 @@
 # Getting Started
 
-This guide walks you through setting up Git DRS and performing common workflows.
+This page assumes you already completed [Quick Start](quickstart.md).
 
-> **Navigation:** [Installation](installation.md) → **Getting Started** → [Commands Reference](commands.md) → [Troubleshooting](troubleshooting.md)
+Quick Start gets you running. This page explains how to think about `git-drs` once the repo is connected and usable.
 
-## Repository Initialization
+## The Mental Model
 
-Every Git repository using Git DRS requires configuration, whether you're creating a new repo or cloning an existing one.
+Use the tools at the right layer:
 
-### Cloning Existing Repository (Gen3)
+- use `git` for commits, branches, merges, and `git pull`
+- use `git-drs` for remote configuration, tracking rules, object hydration, upload/registration, and tracked-file delete reconciliation
 
-1. **Clone the Repository**
+The most important distinction is:
 
-   ```bash
-   git clone <repo-clone-url>.git
-   cd <name-of-repo>
-   ```
+- `git pull` updates commits and checkout state
+- `git drs pull` hydrates tracked pointer files already present in the checkout
 
-2. **Configure SSH** (if using SSH URLs)
+## The Setup Command
 
-   If using SSH URLs like `git@github.com:user/repo.git`, add to `~/.ssh/config`:
-
-   ```
-   Host github.com
-       TCPKeepAlive yes
-       ServerAliveInterval 30
-   ```
-
-3. **Get Credentials**
-
-   - Log in to your data commons (e.g., https://calypr-public.ohsu.edu/)
-   - Profile → Create API Key → Download JSON
-   - **Note**: Credentials expire after 30 days
-
-4. **Initialize Repository**
-
-   ```bash
-   git drs init
-   ```
-
-5. **Verify Configuration**
-
-   ```bash
-   git drs remote list
-   ```
-
-   Output:
-   ```
-   * production  gen3    https://calypr-public.ohsu.edu/
-   ```
-
-   The `*` indicates this is the default remote.
-
-### New Repository Setup (Gen3)
-
-1. **Create and Clone Repository**
-
-   ```bash
-   git clone <repo-clone-url>.git
-   cd <name-of-repo>
-   ```
-
-2. **Configure SSH** (if needed - same as above)
-
-3. **Get Credentials** (same as above)
-
-4. **Get Project Details**
-
-   Contact your data coordinator for:
-   - DRS server URL
-   - Organization name
-   - Project ID
-   - Bucket name
-   - Confirmation that bucket mapping exists for your organization/project
-
-5. **Initialize Git DRS**
-
-   ```bash
-   git drs init
-   ```
-
-6. **Add Remote Configuration**
-
-   ```bash
-   git drs remote add gen3 production \
-       --cred /path/to/credentials.json \
-       --url https://calypr-public.ohsu.edu \
-       --project my-project \
-       --bucket my-bucket
-   ```
-
-   **Note:** Since this is your first remote, it automatically becomes the default. No need to run `git drs remote set`.
-
-7. **Verify Configuration**
-
-   ```bash
-   git drs remote list
-   ```
-
-   Output:
-   ```
-   * production  gen3    https://calypr-public.ohsu.edu
-   ```
-
-   **Important:** `git drs remote add` alone is not enough. Push/pull requires an existing bucket mapping for your `organization/project` (usually provisioned once by a steward/admin).
-
-**Managing Additional Remotes**
-
-You can add more remotes later for multi-environment workflows (development, staging, production):
+The standard setup command is:
 
 ```bash
-# Add staging remote
-git drs remote add gen3 staging \
-    --cred /path/to/staging-credentials.json \
-    --url https://staging.calypr.ohsu.edu \
-    --project staging-project \
-    --bucket staging-bucket
-
-# View all remotes
-git drs remote list
-
-# Switch default remote
-git drs remote set staging
-
-# Or use specific remote for one command
-git drs push production
-git drs fetch staging
+git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
 ```
 
-## File Tracking
+That command:
 
-Git DRS can use Git LFS-compatible pointers and local object storage. You must explicitly track file patterns before adding LFS-managed files.
+- stores the remote configuration
+- imports or refreshes credentials
+- bootstraps repo-local `git-drs` wiring when it is missing
 
-### View Current Tracking
+## The Two Common Workflows
+
+### Existing Repository
 
 ```bash
-git lfs track
+git clone <repo-url>
+cd <repo-name>
+git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs pull
 ```
 
-### Track Files
-
-**Single File**
+### New Repository
 
 ```bash
-git lfs track path/to/specific-file.txt
+mkdir my-data-repo
+cd my-data-repo
+git init
+git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs track "*.bam"
 git add .gitattributes
+git commit -m "Configure tracked files"
 ```
 
-**File Pattern**
+## Typical Workflow
 
-```bash
-git lfs track "*.bam"
-git add .gitattributes
-```
+Most work reduces to this loop:
 
-**Directory**
-
-```bash
-git lfs track "data/**"
-git add .gitattributes
-```
-
-### Untrack Files
-
-```bash
-# View tracked patterns
-git lfs track
-
-# Remove pattern
-git lfs untrack "*.bam"
-
-# Stage changes
-git add .gitattributes
-```
-
-## Basic Workflows
-
-### Adding and Pushing Files
-
-```bash
-# Track file type (if not already tracked)
-git lfs track "*.bam"
-git add .gitattributes
-
-# Add your file
-git add myfile.bam
-
-# Verify LFS is tracking it
-git lfs ls-files
-
-# Commit and push
-git commit -m "Add new data file"
-git push
-```
-
-> **Note**: Git DRS automatically creates DRS records during commit and uploads files to the default remote during push.
-
-### Downloading Files
-
-**Single File**
-
-```bash
-git lfs pull -I path/to/file.bam
-```
-
-**Pattern**
-
-```bash
-git lfs pull -I "*.bam"
-```
-
-**All Files**
-
-```bash
-git lfs pull
-```
-
-**Directory**
-
-```bash
-git lfs pull -I "data/**"
-```
-
-### Checking File Status
-
-```bash
-# List all LFS-tracked files
-git lfs ls-files
-
-# Check specific pattern
-git lfs ls-files -I "*.bam"
-
-# View localization status
-# (-) = not localized, (*) = localized
-git lfs ls-files
-```
-
-## Working with Cloud Object URLs
-
-You can add references to existing bucket objects without copying them:
-
-```bash
-# Track the file pattern first
-git lfs track "myfile.txt"
-git add .gitattributes
-
-# Add object reference (known sha256 path)
-git drs add-url s3://bucket/path/to/file \
-  --sha256 <file-hash>
-
-# Or use unknown-sha (experimental sentinel mode)
-git drs add-url s3://bucket/path/to/file
-
-# Commit and push
-git commit -m "Add S3 file reference"
-git push
-```
-
-See [Cloud URL Integration Guide](adding-s3-files.md) for detailed examples.
-
-## Configuration Management
-
-### View Configuration
-
-```bash
-git drs remote list
-```
-
-### Update Configuration
-
-```bash
-# Refresh credentials - re-add remote with new credentials
-git drs remote add gen3 production \
-    --cred /path/to/new-credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
-
-# Switch default remote
-git drs remote set staging
-```
-
-### View Logs
-
-- Logs location: `.git/drs/` directory
-
-## Command Summary
-
-| Action             | Commands                                    |
-| ------------------ | ------------------------------------------- |
-| **Initialize**     | `git drs init`                              |
-| **Add remote**     | `git drs remote add gen3 <name> --cred...` |
-| **View remotes**   | `git drs remote list`                       |
-| **Set default**    | `git drs remote set <name>`                 |
-| **Track files**    | `git lfs track "pattern"`                   |
-| **Check tracked**  | `git lfs ls-files`                          |
-| **Add files**      | `git add file.ext`                          |
-| **Commit**         | `git commit -m "message"`                   |
-| **Push**           | `git push`                                  |
-| **Download**       | `git lfs pull -I "pattern"`                 |
-
-## Session Workflow
-
-> **Note**: You do NOT need to run `git drs init` again. Initialization is a one-time setup per Git repository clone.
-
-For each work session:
-
-1. **Refresh credentials** (if expired - credentials expire after 30 days)
+1. update Git history
 
    ```bash
-   git drs remote add gen3 production \
-       --cred /path/to/new-credentials.json \
-       --url https://calypr-public.ohsu.edu \
-       --project my-project \
-       --bucket my-bucket
+   git pull
    ```
 
-2. **Work with files** (track, add, commit, push)
-
-## Local DRS Server Setup
-
-Use this flow when developing against a local `drs-server` instead of hosted Gen3.
-
-1. **Initialize repo**
-
-   ```bash
-   git drs init
-   ```
-
-2. **Add local remote**
-
-   ```bash
-   git drs remote add local origin http://localhost:8080 \
-       --organization calypr \
-       --project end_to_end_test \
-       --bucket cbds \
-       --username drs-user \
-       --password drs-pass
-   ```
-
-   If your local server has no basic auth, omit `--username/--password`.
-
-3. **Track and push**
-
-   ```bash
-   git lfs track "*.bin"
-   git add .gitattributes data/example.bin
-   git commit -m "Add local DRS test file"
-   git drs push
-   ```
-
-4. **Verify pull**
+2. hydrate tracked files when needed
 
    ```bash
    git drs pull
-   # or the Git LFS compatibility path
-   git lfs pull
    ```
 
-For complete local/remote mode behavior and e2e runbooks, see [E2E Modes + Local Setup](e2e-modes-and-local-setup.md).
-
-3. **Download files as needed**
+   To hydrate only part of a repository instead of everything, use include filters:
 
    ```bash
-   git lfs pull -I "required-files*"
+   git drs pull -I "data/sample.bam"
+   git drs pull -I "*.vcf.gz"
    ```
 
-## Next Steps
+3. edit or add files normally
 
-- [Commands Reference](commands.md) - Complete command documentation
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
-- [Developer Guide](developer-guide.md) - Advanced usage and internals
+   ```bash
+   git add ...
+   git commit -m "..."
+   ```
+
+4. push data changes
+
+   ```bash
+   git drs push
+   ```
+
+`git drs push` handles the DRS upload flow and the Git push flow together.
+
+Use plain `git push` when you only want to push Git-only changes and do not want the `git-drs` upload stage.
+
+## The Core Tasks
+
+### Track files
+
+```bash
+git drs track "*.bam"
+git drs track "data/**"
+```
+
+Always review and stage `.gitattributes` after changing tracking rules.
+
+### Inspect local state
+
+```bash
+git drs ls-files
+git drs ls-files -l
+git drs ls-files --drs
+```
+
+Interpretation:
+
+- `*` means the worktree has localized bytes
+- `-` means the worktree still has a pointer
+
+### Remove tracked files
+
+```bash
+git drs rm sample.bam
+git commit -m "Remove sample"
+git drs push
+```
+
+That is the supported delete flow for tracked `git-drs` objects. For the fuller decision tree, see [Removing Files](remove-files.md).
+
+### Refresh credentials
+
+```bash
+git drs remote add gen3 production <organization/project> --cred /path/to/new-credentials.json
+```
+
+## Read Next
+
+- [Commands Reference](commands.md) for exact command syntax
+- [Troubleshooting](troubleshooting.md) when a real workflow breaks

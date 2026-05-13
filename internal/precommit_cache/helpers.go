@@ -169,6 +169,46 @@ func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) {
 	return &oe, true, nil
 }
 
+func (c *Cache) EnsureLayout() error {
+	for _, dir := range []string{c.Root, c.PathsDir, c.OIDsDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Cache) UpsertPathEntry(entry PathEntry) error {
+	if err := c.EnsureLayout(); err != nil {
+		return err
+	}
+	return writeJSONAtomic(c.pathEntryFile(entry.Path), entry)
+}
+
+func (c *Cache) AddOrReplaceOIDPath(oid, oldPath, newPath, now string, contentChanged bool) error {
+	if err := c.EnsureLayout(); err != nil {
+		return err
+	}
+	return oidAddOrReplacePath(c.OIDsDir, oid, oldPath, newPath, now, contentChanged)
+}
+
+func (c *Cache) RemovePathFromOID(oid, path, now string) error {
+	if err := c.EnsureLayout(); err != nil {
+		return err
+	}
+	return oidRemovePath(c.OIDsDir, oid, path, now)
+}
+
+func (c *Cache) DeletePathEntry(path string) error {
+	if err := c.EnsureLayout(); err != nil {
+		return err
+	}
+	if err := os.Remove(c.pathEntryFile(path)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 //
 // Validation helpers (optional)
 //
@@ -275,4 +315,98 @@ func git(ctx context.Context, args ...string) ([]byte, error) {
 		)
 	}
 	return out, nil
+}
+
+func writeJSONAtomic(path string, v any) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	enc := json.NewEncoder(tmp)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChanged bool) error {
+	f := oidEntryFilePath(oidsDir, oid)
+	var oe OIDEntry
+	if b, err := os.ReadFile(f); err == nil {
+		_ = json.Unmarshal(b, &oe)
+	}
+	if oe.LFSOID == "" {
+		oe.LFSOID = oid
+	}
+	pathsSet := make(map[string]struct{}, len(oe.Paths)+1)
+	for _, p := range oe.Paths {
+		p = strings.TrimSpace(p)
+		if p == "" || p == oldPath {
+			continue
+		}
+		pathsSet[p] = struct{}{}
+	}
+	if strings.TrimSpace(newPath) != "" {
+		pathsSet[newPath] = struct{}{}
+	}
+	oe.Paths = oe.Paths[:0]
+	for p := range pathsSet {
+		oe.Paths = append(oe.Paths, p)
+	}
+	sort.Strings(oe.Paths)
+	oe.UpdatedAt = now
+	oe.ContentChange = contentChanged
+	return writeJSONAtomic(f, oe)
+}
+
+func oidRemovePath(oidsDir, oid, path, now string) error {
+	if strings.TrimSpace(oid) == "" || strings.TrimSpace(path) == "" {
+		return nil
+	}
+	f := oidEntryFilePath(oidsDir, oid)
+	b, err := os.ReadFile(f)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var oe OIDEntry
+	if err := json.Unmarshal(b, &oe); err != nil {
+		return err
+	}
+	filtered := oe.Paths[:0]
+	for _, existing := range oe.Paths {
+		if strings.TrimSpace(existing) == "" || existing == path {
+			continue
+		}
+		filtered = append(filtered, existing)
+	}
+	oe.Paths = filtered
+	oe.UpdatedAt = now
+	if len(oe.Paths) == 0 {
+		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	sort.Strings(oe.Paths)
+	return writeJSONAtomic(f, oe)
+}
+
+func oidEntryFilePath(oidsDir, oid string) string {
+	sum := sha256.Sum256([]byte(oid))
+	return filepath.Join(oidsDir, fmt.Sprintf("%x.json", sum[:]))
 }

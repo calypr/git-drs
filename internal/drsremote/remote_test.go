@@ -14,7 +14,6 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	syclient "github.com/calypr/syfon/client"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
-	syfoncommon "github.com/calypr/syfon/common"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -76,23 +75,19 @@ func TestFindMatchingRecord_EmptyList(t *testing.T) {
 	}
 }
 
-func makeAuthzRecord(id, org, project string) drsapi.DrsObject {
-	authzMap := map[string][]string{org: {project}}
-	accessMethods := []drsapi.AccessMethod{{
-		Type:           "s3",
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(authzMap),
-	}}
+func makeScopedRecord(id, resource string) drsapi.DrsObject {
+	controlledAccess := []string{resource}
 	return drsapi.DrsObject{
-		Id:            id,
-		AccessMethods: &accessMethods,
-		Checksums:     []drsapi.Checksum{{Type: "sha256", Checksum: "sha256"}},
+		Id:               id,
+		ControlledAccess: &controlledAccess,
+		Checksums:        []drsapi.Checksum{{Type: "sha256", Checksum: "sha256"}},
 	}
 }
 
 func TestFindMatchingRecord_MatchFound(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "OTHER", "resource"),
-		makeAuthzRecord("match", "PROG", "PROJ"),
+		makeScopedRecord("no-match", "/organization/OTHER/project/resource"),
+		makeScopedRecord("match", "/organization/PROG/project/PROJ"),
 	}
 
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
@@ -100,20 +95,20 @@ func TestFindMatchingRecord_MatchFound(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result == nil || result.Id != "match" {
-		t.Fatalf("expected record id match, got %#v", result)
+		t.Fatalf("expected controlled_access record match, got %#v", result)
 	}
 }
 
-func TestFindMatchingRecord_NoAuthzMatchReturnsNil(t *testing.T) {
+func TestFindMatchingRecord_NoControlledAccessMatchReturnsNil(t *testing.T) {
 	records := []drsapi.DrsObject{
-		makeAuthzRecord("no-match", "OTHER", "resource"),
+		makeScopedRecord("no-match", "/organization/OTHER/project/resource"),
 	}
 	result, err := FindMatchingRecord(records, "", "PROG-PROJ")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result != nil {
-		t.Fatalf("expected nil when no authz matches, got id=%q", result.Id)
+		t.Fatalf("expected nil when no controlled_access matches, got id=%q", result.Id)
 	}
 }
 
@@ -129,18 +124,18 @@ func TestAccessURLForHashScope_FiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &projectAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {"proj1"}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &projectAccessID,
 	}}
 	orgMethods := []drsapi.AccessMethod{{
-		Type:           drsapi.AccessMethodTypeS3,
-		AccessId:       &orgAccessID,
-		Authorizations: syfoncommon.AccessMethodAuthorizationsFromAuthzMap(map[string][]string{"org1": {}}),
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &orgAccessID,
 	}}
+	projectControlled := []string{"/organization/org1/project/proj1"}
+	orgControlled := []string{"/organization/org1"}
 	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
-		{Id: "obj-project", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
-		{Id: "obj-org", Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
+		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
+		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
 	}}
 	checksumBody, err := json.Marshal(checksumResponse)
 	if err != nil {
@@ -192,6 +187,75 @@ func TestAccessURLForHashScope_FiltersByScope(t *testing.T) {
 	}
 	if accessURL == nil || accessURL.Url != "https://signed.example/project" {
 		t.Fatalf("unexpected access URL: %+v", accessURL)
+	}
+}
+
+func TestObjectsByHashesForScope_FiltersByScope(t *testing.T) {
+	t.Parallel()
+
+	projectAccessID := "s3-project"
+	orgAccessID := "s3-org"
+	projectMethods := []drsapi.AccessMethod{{
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &projectAccessID,
+	}}
+	orgMethods := []drsapi.AccessMethod{{
+		Type:     drsapi.AccessMethodTypeS3,
+		AccessId: &orgAccessID,
+	}}
+	otherMethods := []drsapi.AccessMethod{{
+		Type: drsapi.AccessMethodTypeS3,
+	}}
+	projectControlled := []string{"/organization/org1/project/proj1"}
+	orgControlled := []string{"/organization/org1"}
+	otherControlled := []string{"/organization/other/project/proj"}
+	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
+		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
+		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
+		{Id: "obj-other", ControlledAccess: &otherControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "def"}}, AccessMethods: &otherMethods},
+	}}
+	checksumBody, err := json.Marshal(checksumResponse)
+	if err != nil {
+		t.Fatalf("marshal checksum response: %v", err)
+	}
+
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/abc":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(string(checksumBody))),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/def":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"resolved_drs_object":[]}`)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+	ctx := &config.GitContext{Client: client, Organization: "org1", ProjectId: "proj1"}
+
+	got, err := ObjectsByHashesForScope(context.Background(), ctx, []string{"sha256:abc", "sha256:def"})
+	if err != nil {
+		t.Fatalf("ObjectsByHashesForScope returned error: %v", err)
+	}
+	if len(got["sha256:abc"]) != 2 {
+		t.Fatalf("expected project and org-wide matches for abc, got %+v", got["sha256:abc"])
+	}
+	if len(got["sha256:def"]) != 0 {
+		t.Fatalf("expected non-matching scope to be filtered, got %+v", got["sha256:def"])
 	}
 }
 

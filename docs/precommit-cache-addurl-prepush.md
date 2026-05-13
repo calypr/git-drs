@@ -5,10 +5,10 @@ Proposed
 
 ## Context
 `cmd/precommit` now maintains a local cache under `.git/drs/pre-commit/v1` that records:
-- path → LFS OID in `paths/<encoded-path>.json`
+- path → OID in `paths/<encoded-path>.json`
 - OID → paths + URL hint in `oids/<oid-hash>.json`
 
-`precommit_cache` provides read helpers for this cache and is intended to let the pre-push hook validate against authoritative sources while using cached hints to avoid re-scanning worktrees. `cmd/addurl` currently writes the LFS pointer and DRS files but does not update the pre-commit cache. `cmd/prepush` currently computes updates without consulting the cache. This means:
+`precommit_cache` provides read helpers for this cache and is intended to let the pre-push hook validate against authoritative sources while using cached hints to avoid re-scanning worktrees. `cmd/addurl` currently writes the pointer and DRS files but does not update the pre-commit cache. `cmd/prepush` currently computes updates without consulting the cache. This means:
 - `add-url`-created objects are invisible to cache-aware workflows unless a pre-commit hook runs later.
 - `pre-push` cannot leverage cached OID/path/url hints or detect mismatches early.
 
@@ -16,7 +16,7 @@ Proposed
 Update `cmd/addurl` and `cmd/prepush` to integrate with the pre-commit cache, while preserving the current fallback behavior when the cache is missing or stale.
 
 ### Changes required in `cmd/addurl`
-1. **Write cache entries after LFS pointer creation**
+1. **Write cache entries after pointer creation**
    - Create/update the path entry (`paths/<encoded-path>.json`) using the same encoding as `cmd/precommit` (`base64.RawURLEncoding` of the repo-relative path).
    - Create/update the OID entry (`oids/<oid-hash>.json`) using the same OID hashing (`sha256(oid string)`), ensuring the `paths` list includes the new path.
 2. **Persist the external URL hint**
@@ -30,13 +30,13 @@ Update `cmd/addurl` and `cmd/prepush` to integrate with the pre-commit cache, wh
 
 ### Changes required in `cmd/prepush`
 1. **Use `precommit_cache` to seed work**
-   - Open the cache early and, when available, use it to map pushed paths/branches to their LFS OIDs and cached URL hints.
+   - Open the cache early and, when available, use it to map pushed paths/branches to their OIDs and cached URL hints.
    - If the cache is missing or entries are stale, fall back to current discovery/update logic.
 2. **Validate cached URL hints**
    - When `updateDrsObjects` resolves authoritative URLs, compare them to cached hints via `precommit_cache.CheckExternalURLMismatch`.
    - Warn (or fail, depending on policy) on mismatches to surface potentially stale or incorrect metadata before pushing.
 3. **Prefer cache data for DRS updates**
-   - Use cached OIDs/paths to reduce redundant file scans for LFS pointers.
+   - Use cached OIDs/paths to reduce redundant file scans for pointers.
    - Carry cached `external_url` into DRS metadata when authoritative sources are unavailable, while still treating it as non-authoritative.
 
 ## Consequences

@@ -114,6 +114,85 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	}
 }
 
+func TestCollectOversizedPlainGitStagedFiles(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	plainPath := filepath.Join(repo, "data", "large.bin")
+	if err := os.MkdirAll(filepath.Dir(plainPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(plainPath, []byte("plain oversized payload"), 0o644); err != nil {
+		t.Fatalf("write plain file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/large.bin")
+
+	pointerPath := filepath.Join(repo, "data", "pointer.bin")
+	lfsPointer := strings.Join([]string{
+		"version https://git-lfs.github.com/spec/v1",
+		"oid sha256:deadbeef",
+		"size 999",
+		"",
+	}, "\n")
+	if err := os.WriteFile(pointerPath, []byte(lfsPointer), 0o644); err != nil {
+		t.Fatalf("write pointer file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/pointer.bin")
+
+	changes, err := stagedChanges(context.Background())
+	if err != nil {
+		t.Fatalf("stagedChanges: %v", err)
+	}
+	files, err := collectOversizedPlainGitStagedFiles(context.Background(), changes, 1)
+	if err != nil {
+		t.Fatalf("collectOversizedPlainGitStagedFiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 oversized plain file, got %d: %+v", len(files), files)
+	}
+	if files[0].Path != "data/large.bin" {
+		t.Fatalf("unexpected oversized file path: %+v", files[0])
+	}
+}
+
+func TestRunAbortsWhenOversizedPlainGitCommitIsRejected(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := filepath.Join(repo, "data", "large.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("plain oversized payload"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/large.bin")
+
+	oldThreshold := directCommitWarningThresholdBytes
+	oldPrompt := confirmOversizedDirectGitCommit
+	t.Cleanup(func() {
+		directCommitWarningThresholdBytes = oldThreshold
+		confirmOversizedDirectGitCommit = oldPrompt
+	})
+	directCommitWarningThresholdBytes = 1
+	confirmOversizedDirectGitCommit = func(files []OversizedStagedFile) (bool, error) {
+		if len(files) != 1 || files[0].Path != "data/large.bin" {
+			t.Fatalf("unexpected prompt files: %+v", files)
+		}
+		return false, nil
+	}
+
+	err := run(context.Background())
+	if err == nil {
+		t.Fatal("expected run to abort when oversized file warning is rejected")
+	}
+	if !strings.Contains(err.Error(), "commit aborted") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func setupGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

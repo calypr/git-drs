@@ -14,6 +14,10 @@ func TestGetAllLfsFilesFromGitRefsWithoutLfsCli(t *testing.T) {
 	runGitCmdTest(t, repo, "init")
 	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
 	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "config", "filter.lfs.clean", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.smudge", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.process", "cat")
+	runGitCmdTest(t, repo, "config", "filter.lfs.required", "false")
 	runGitCmdTest(t, repo, "checkout", "-b", "main")
 
 	oidMain := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -88,6 +92,120 @@ func TestGetAllLfsFilesFromGitRefsWithoutLfsCli(t *testing.T) {
 	}
 }
 
+func TestGetWorktreeLfsFiles(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+
+	oid := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	pointerPath := filepath.Join(repo, "data", "pointer.dat")
+	writePointerFile(t, pointerPath, oid, "789")
+
+	localizedPath := filepath.Join(repo, "data", "localized.bin")
+	if err := os.WriteFile(localizedPath, []byte("hydrated"), 0o644); err != nil {
+		t.Fatalf("write localized file: %v", err)
+	}
+
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")
+
+	if err := os.WriteFile(pointerPath, []byte("hydrated pointer replacement"), 0o644); err != nil {
+		t.Fatalf("replace pointer with hydrated content: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	logger := drslog.NewNoOpLogger()
+	files, err := GetWorktreeLfsFiles(logger)
+	if err != nil {
+		t.Fatalf("GetWorktreeLfsFiles error: %v", err)
+	}
+	if _, exists := files["data/pointer.dat"]; exists {
+		t.Fatalf("hydrated file should not still appear as a pointer")
+	}
+
+	if err := os.WriteFile(pointerPath, []byte("version https://git-lfs.github.com/spec/v1\noid sha256:"+oid+"\nsize 789\n"), 0o644); err != nil {
+		t.Fatalf("restore pointer file: %v", err)
+	}
+
+	files, err = GetWorktreeLfsFiles(logger)
+	if err != nil {
+		t.Fatalf("GetWorktreeLfsFiles error after restore: %v", err)
+	}
+	info, ok := files["data/pointer.dat"]
+	if !ok {
+		t.Fatalf("expected pointer in worktree inventory")
+	}
+	if info.Oid != oid || info.Size != 789 {
+		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+}
+
+func TestGetTrackedLfsFiles_IncludesHydratedTrackedFileUsingIndexPointer(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.smudge", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.process", "cat")
+	runGitCmdTest(t, repo, "config", "filter.drs.required", "false")
+
+	attrPath := filepath.Join(repo, ".gitattributes")
+	if err := os.WriteFile(attrPath, []byte("*.dat filter=drs diff=drs merge=drs -text\n"), 0o644); err != nil {
+		t.Fatalf("write .gitattributes: %v", err)
+	}
+
+	oid := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	pointerPath := filepath.Join(repo, "data", "hydrated.dat")
+	writePointerFile(t, pointerPath, oid, "321")
+
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "commit tracked pointer")
+
+	if err := os.WriteFile(pointerPath, []byte("localized payload"), 0o644); err != nil {
+		t.Fatalf("hydrate tracked file: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	logger := drslog.NewNoOpLogger()
+	files, err := GetTrackedLfsFiles(logger)
+	if err != nil {
+		t.Fatalf("GetTrackedLfsFiles error: %v", err)
+	}
+
+	info, ok := files["data/hydrated.dat"]
+	if !ok {
+		t.Fatalf("expected hydrated tracked file in inventory")
+	}
+	if info.Oid != oid || info.Size != 321 {
+		t.Fatalf("unexpected hydrated tracked info: %+v", info)
+	}
+	if info.IsPointer {
+		t.Fatalf("expected hydrated tracked file to be marked non-pointer in worktree inventory")
+	}
+}
+
 func writePointerFile(t *testing.T, path, oid, size string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -118,7 +236,7 @@ func TestIsLFSTracked(t *testing.T) {
 	repo := t.TempDir()
 	mustRun(t, repo, "git", "init")
 
-	attr := []byte("*.dat filter=lfs diff=lfs merge=lfs -text\n")
+	attr := []byte("*.dat filter=drs diff=drs merge=drs -text\n")
 	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), attr, 0o644); err != nil {
 		t.Fatalf("write .gitattributes: %v", err)
 	}

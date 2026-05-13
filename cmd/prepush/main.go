@@ -1,7 +1,6 @@
 package prepush
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsmap"
 	"github.com/calypr/git-drs/internal/drsobject"
@@ -25,7 +25,6 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -86,6 +85,10 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 		myLogger.Debug("Warning. Skipping DRS preparation. Error getting remote configuration.")
 		return nil
 	}
+	drsClient, err := cfg.GetRemoteClient(remote, myLogger)
+	if err != nil {
+		return err
+	}
 
 	scope, err := gitrepo.ResolveBucketScope(
 		remoteConfig.GetOrganization(),
@@ -115,6 +118,10 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 	refs, err := readPushedRefs(tmp)
 	if err != nil {
 		myLogger.Error(fmt.Sprintf("error reading pushed refs: %v", err))
+		return err
+	}
+	if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, drsDeleteRefs(refs), myLogger); err != nil {
+		myLogger.Error(fmt.Sprintf("delete reconciliation failed: %v", err))
 		return err
 	}
 	branches := branchesFromRefs(refs)
@@ -244,9 +251,6 @@ func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
 					URL: accURL,
 				},
 			}
-			if authzMap := syfoncommon.AuthzMapFromAccessMethodAuthorizations(am.Authorizations); len(authzMap) > 0 {
-				m.Authorizations = authzMap
-			}
 			out.AccessMethods = append(out.AccessMethods, m)
 		}
 	}
@@ -288,7 +292,7 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	if err != nil {
 		return fmt.Errorf("failed to create pending metadata request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
 	if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
 		httpReq.Header.Set("Authorization", authHeader)
@@ -348,87 +352,6 @@ func parseRemoteArgs(args []string) (string, string) {
 		gitRemoteName = "origin"
 	}
 	return gitRemoteName, gitRemoteLocation
-}
-
-type pushedRef struct {
-	LocalRef  string
-	LocalSHA  string
-	RemoteRef string
-	RemoteSHA string
-}
-
-func bufferStdin(stdin io.Reader, createTempFile func(dir, pattern string) (*os.File, error)) (*os.File, error) {
-	tmp, err := createTempFile("", "prepush-stdin-*")
-	if err != nil {
-		return nil, fmt.Errorf("error creating temp file for stdin: %w", err)
-	}
-
-	if _, err := io.Copy(tmp, stdin); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("error buffering stdin: %w", err)
-	}
-
-	if _, err := tmp.Seek(0, 0); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-		return nil, fmt.Errorf("error seeking temp stdin: %w", err)
-	}
-	return tmp, nil
-}
-
-// readPushedBranches reads git push lines from the provided temp file,
-// extracts unique local branch names for refs under `refs/heads/` and
-// returns them sorted. The file is rewound to the start before returning.
-func readPushedRefs(f io.ReadSeeker) ([]pushedRef, error) {
-	// Ensure we read from start
-	// example:
-	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	scanner := bufio.NewScanner(f)
-	refs := make([]pushedRef, 0)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 4 {
-			continue
-		}
-		refs = append(refs, pushedRef{
-			LocalRef:  fields[0],
-			LocalSHA:  fields[1],
-			RemoteRef: fields[2],
-			RemoteSHA: fields[3],
-		})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	// Rewind so caller can reuse the file
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	return refs, nil
-}
-
-func branchesFromRefs(refs []pushedRef) []string {
-	const prefix = "refs/heads/"
-	set := make(map[string]struct{})
-	for _, ref := range refs {
-		if strings.HasPrefix(ref.LocalRef, prefix) {
-			branch := strings.TrimPrefix(ref.LocalRef, prefix)
-			if branch != "" {
-				set[branch] = struct{}{}
-			}
-		}
-	}
-	branches := make([]string, 0, len(set))
-	for b := range set {
-		branches = append(branches, b)
-	}
-	sort.Strings(branches)
-	return branches
 }
 
 func openCache(ctx context.Context, logger *slog.Logger) (*precommit_cache.Cache, bool) {
@@ -560,46 +483,4 @@ func gitOutput(ctx context.Context, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
-}
-
-// readPushedBranches reads git push lines from the provided temp file,
-// extracts unique local branch names for refs under `refs/heads/` and
-// returns them sorted. The file is rewound to the start before returning.
-func readPushedBranches(f *os.File) ([]string, error) {
-	// Ensure we read from start
-	// example:
-	// refs/heads/main 67890abcdef1234567890abcdef1234567890abcd refs/heads/main 12345abcdef67890abcdef1234567890abcdef12
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	scanner := bufio.NewScanner(f)
-	set := make(map[string]struct{})
-	for scanner.Scan() {
-		line := scanner.Text()
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
-			continue
-		}
-		localRef := fields[0]
-		const prefix = "refs/heads/"
-		if strings.HasPrefix(localRef, prefix) {
-			branch := strings.TrimPrefix(localRef, prefix)
-			if branch != "" {
-				set[branch] = struct{}{}
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	branches := make([]string, 0, len(set))
-	for b := range set {
-		branches = append(branches, b)
-	}
-	sort.Strings(branches)
-	// Rewind so caller can reuse the file
-	if _, err := f.Seek(0, 0); err != nil {
-		return nil, err
-	}
-	return branches, nil
 }

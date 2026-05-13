@@ -1,153 +1,93 @@
 # Installation Guide
 
-This guide covers installation of Git DRS across different environments and target DRS servers.
+This page is only about getting the `git-drs` binary onto a machine. It does not teach the repository workflow.
 
-## Prerequisites
+If you want the shortest onboarding path, use [Quick Start](quickstart.md). If you want the workflow explained, use [Getting Started](getting-started.md).
 
-All installations require [Git LFS](https://git-lfs.com/) to be installed first:
+## Release Install
+
+This guide uses release `v0.6.0`.
+
+- [GitHub Releases](https://github.com/calypr/git-drs/releases)
+
+=== "macOS (Apple Silicon)"
+
+    ```bash
+    curl -L -o git-drs-darwin-arm64-v0.6.0.tar.gz \
+      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-darwin-arm64-v0.6.0.tar.gz
+    tar -xzf git-drs-darwin-arm64-v0.6.0.tar.gz
+    install -m 0755 git-drs "$HOME/.local/bin/git-drs"
+    ```
+
+=== "macOS (Intel)"
+
+    ```bash
+    curl -L -o git-drs-darwin-amd64-v0.6.0.tar.gz \
+      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-darwin-amd64-v0.6.0.tar.gz
+    tar -xzf git-drs-darwin-amd64-v0.6.0.tar.gz
+    install -m 0755 git-drs "$HOME/.local/bin/git-drs"
+    ```
+
+=== "Linux (x86_64)"
+
+    ```bash
+    curl -L -o git-drs-linux-amd64-v0.6.0.tar.gz \
+      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-linux-amd64-v0.6.0.tar.gz
+    tar -xzf git-drs-linux-amd64-v0.6.0.tar.gz
+    install -m 0755 git-drs "$HOME/.local/bin/git-drs"
+    ```
+
+=== "Linux (arm64)"
+
+    ```bash
+    curl -L -o git-drs-linux-arm64-v0.6.0.tar.gz \
+      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-linux-arm64-v0.6.0.tar.gz
+    tar -xzf git-drs-linux-arm64-v0.6.0.tar.gz
+    install -m 0755 git-drs "$HOME/.local/bin/git-drs"
+    ```
+
+=== "Windows"
+
+    There is no packaged Windows release in this flow. Build `git-drs` from source instead.
+
+## PATH
+
+If `$HOME/.local/bin` is not already in your shell path, add it in your shell startup file.
+
+Example:
 
 ```bash
-# macOS
-brew install git-lfs
-
-# Linux (download binary)
-wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.0/git-lfs-linux-amd64-v3.7.0.tar.gz
-tar -xvf git-lfs-linux-amd64-v3.7.0.tar.gz
-export PREFIX=$HOME
-./git-lfs-v3.7.0/install.sh
-
-# Configure LFS
-git lfs install --skip-smudge
+export PATH="$PATH:$HOME/.local/bin"
 ```
 
-## Local Installation (Gen3 Server)
-
-**Target Environment**: Local development machine targeting Gen3 data commons (e.g., CALYPR)
-
-### Steps
-
-1. **Install Git DRS**
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
-   ```
-
-2. **Update PATH**
-   ```bash
-   # Add to ~/.bash_profile or ~/.zshrc
-   export PATH="$PATH:$HOME/.local/bin"
-   source ~/.bash_profile  # or source ~/.zshrc
-   ```
-
-3. **Verify Installation**
-   ```bash
-   git-drs --help
-   ```
-
-4. **Install Global Git Filters for git-drs**
-   ```bash
-   git drs install
-   ```
-
-   This writes the `filter.drs` settings to your `~/.gitconfig`.
-
-5. **Get Credentials**
-   - Log in to your data commons (e.g., https://calypr-public.ohsu.edu/)
-   - Click your email → Profile → Create API Key → Download JSON
-   - Note the download path for later configuration
-
-## HPC Installation (Gen3 Server)
-
-**Target Environment**: High-performance computing systems targeting Gen3 servers
-
-### Steps
-
-1. **Install Git LFS on HPC**
-   ```bash
-   # Download and install Git LFS
-   wget https://github.com/git-lfs/git-lfs/releases/download/v3.7.1/git-lfs-linux-amd64-v3.7.1.tar.gz
-   tar -xvf git-lfs-linux-amd64-v3.7.1.tar.gz
-   export PREFIX=$HOME
-   ./git-lfs-3.7.1/install.sh
-   
-   # Make permanent
-   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bash_profile
-   source ~/.bash_profile
-   
-   # Configure
-   git lfs install --skip-smudge
-   
-   # Cleanup
-   rm git-lfs-linux-amd64-v3.7.0.tar.gz
-   rm -r git-lfs-3.7.0/
-   ```
-
-2. **Configure Git/SSH (if needed)**
-   ```bash
-   # Generate SSH key
-   ssh-keygen -t ed25519 -C "your_email@example.com"
-   
-   # Add to ssh-agent
-   eval "$(ssh-agent -s)"
-   ssh-add ~/.ssh/id_ed25519
-   
-   # Add public key to GitHub/GitLab
-   cat ~/.ssh/id_ed25519.pub
-   ```
-
-3. **Install Git DRS**
-   ```bash
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/calypr/git-drs/refs/heads/main/install.sh)"
-   
-   # Update PATH
-   echo 'export PATH="$PATH:$HOME/.local/bin"' >> ~/.bash_profile
-   source ~/.bash_profile
-   ```
-
-4. **Verify Installation**
-   ```bash
-   git-drs version
-   git drs install
-   ```
-
-## Build from Source
-
-For development or custom builds:
+## Verify The Install
 
 ```bash
-# Clone repository
+git-drs version
+git drs version
+```
+
+## Build From Source
+
+Use this when you need a local development build or a platform without a packaged release.
+
+```bash
 git clone https://github.com/calypr/git-drs.git
 cd git-drs
-
-# Build
 go build
-
-# Make accessible
-export PATH=$PATH:$(pwd)
 ```
 
-## Post-Installation
+Then move or copy the built binary somewhere on your `PATH`.
 
-After installation, verify your setup:
+## What Installation Does Not Do
+
+Installing the binary does not configure a repository. Repository-local setup now happens when you run:
 
 ```bash
-# Check Git DRS version
-git-drs version
-
-# Check Git LFS
-git lfs version
-
-# View configured remotes (after setup)
-git drs remote list
-
-# Verify git-drs global filter configuration
-git config --global --get filter.drs.process
+git drs remote add ...
 ```
 
-## Next Steps
+## Read Next
 
-After installation, see:
-
-> **Navigation:** [Installation](installation.md) → [Getting Started](getting-started.md) → [Commands Reference](commands.md)
-
-- **[Getting Started](getting-started.md)** - Repository setup and basic workflows
-- **[Commands Reference](commands.md)** - Complete command documentation
+- [Quick Start](quickstart.md) for first setup on a real repo
+- [Getting Started](getting-started.md) for the workflow model

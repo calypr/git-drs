@@ -66,7 +66,10 @@ func ResolveBucketScope(organization, project, configuredBucket, configuredPrefi
 	}
 
 	if configuredBucket == "" {
-		return ResolvedBucketScope{}, fmt.Errorf("bucket is required (or configure mapping with `git drs bucket add-organization --organization %s --path <scheme>://<bucket>/<prefix>`)", organization)
+		if project != "" {
+			return ResolvedBucketScope{}, fmt.Errorf("no bucket mapping found for organization=%q project=%q; configure one first with `git drs bucket add-organization --organization %s --path <scheme>://<bucket>/<prefix>` or `git drs bucket add-project --organization %s --project %s --path <scheme>://<bucket>/<prefix>`", organization, project, organization, organization, project)
+		}
+		return ResolvedBucketScope{}, fmt.Errorf("no bucket mapping found for organization=%q; configure one first with `git drs bucket add-organization --organization %s --path <scheme>://<bucket>/<prefix>`", organization, organization)
 	}
 	return ResolvedBucketScope{
 		Bucket: configuredBucket,

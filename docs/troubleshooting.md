@@ -1,247 +1,169 @@
 # Troubleshooting
 
-Common issues and solutions when working with Git DRS.
+Common issues and solutions for the cleaned `git-drs` CLI.
 
-> **Navigation:** [Getting Started](getting-started.md) → [Commands Reference](commands.md) → **Troubleshooting**
+> **Navigation:** [Getting Started](getting-started.md) -> [Commands Reference](commands.md) -> **Troubleshooting**
 
 ## Frequently Asked Questions
 
 ### Do I need to run `git drs init` each time?
 
-**No.** `git drs init` is set up once per Git repo.
+No.
 
-**Run it once when:**
+`git drs init` is repository setup. In most cases you do not need to run it manually at all, because `git drs remote add ...` now bootstraps that setup automatically when it is missing.
 
-- You first clone a repository
-- You create a new repository
+Run it when:
 
-**Don't run it again:**
+- you want to initialize repo-local `git-drs` state before adding any remote
+- you want to repair hooks/config wiring explicitly
 
-- At the start of each work session
-- After refreshing credentials
-- After pulling updates
+Do not run it every session:
 
-**What it does:**
+- not at the start of normal daily work
+- not after refreshing credentials
+- not after `git pull`
 
-- Sets up `.drs/` directory structure
-- Configures Git LFS hooks
-- Updates `.gitignore`
+What it changes:
 
-These changes persist in your local repository. For subsequent sessions, you only need to refresh credentials if they've expired (every 30 days).
+- creates `.git/drs/` repository-local state
+- sets up `git-drs` repository configuration and hooks
+- prepares the repo for managed pointer/register/hydration behavior
 
-### What to do if you run `git drs init` again
+### What if I run `git drs init` again?
 
-Running `git drs init` a second time is usually harmless but unnecessary. It may re-create the `\`.git/drs/\`` directory, re-install hooks, or modify `\`.gitattributes\`` and `\`.gitignore\``. If you ran it accidentally, follow these steps:
+Usually nothing catastrophic, but it is unnecessary.
 
-1. Inspect what changed
-   - `git status`
-   - `git diff` (or `git diff -- <file>` for a specific file, e.g. `\`.gitignore\``)
+If you did it accidentally:
 
-2. If changes are fine
-   - No action required; commit the intended changes or leave them uncommitted.
+1. inspect what changed
 
-3. If you want to discard uncommitted changes
-   - Restore specific files: `git restore --staged \`.gitignore\`` && `git restore \`.gitignore\``
-   - Restore all working-tree changes: `git restore .`
-   - Or (destructive) reset everything: `git reset --hard`  \- use with caution.
+   ```bash
+   git status
+   git diff
+   ```
 
-4. If you already committed the unintended changes
-   - Undo the last commit but keep changes staged: `git reset --soft HEAD~1`
-   - Or remove the commit and working changes: `git reset --hard HEAD~1`  \- use with caution.
-   - See the "Undo Last Commit" section above for alternatives.
+2. if the changes are harmless, leave them alone or commit what you intended
 
-5. Hooks or credentials issues
-   - If hooks were replaced or credentials need refresh, run `git drs init` with the correct `--cred`/`--profile` options, or re-add the remote with `git drs remote add`.
+3. if you want to discard the uncommitted changes, use normal Git restore/reset flow carefully
 
-Summary: inspect with `git status`/`git diff`, then either accept, manually edit, or revert the changes using standard `git restore` / `git reset` commands.
+4. if hooks or repo-local state were repaired intentionally, keep the changes
 
+The right default is: inspect first, then decide whether anything actually needs to be reverted.
+
+### What does `git drs init` actually change?
+
+It prepares repository-local `git-drs` state:
+
+- `.git/drs/` metadata/state
+- hook/config wiring for `git-drs` workflows
+- the repo-local setup needed for pointer/register/hydration behavior
+
+Those changes persist in the clone. They are not something you redo per session.
 
 ## When to Use Which Tool
 
-Understanding when to use Git, Git LFS, or Git DRS commands:
+### Use `git-drs` for
 
-### Git DRS Commands
+- repository-local `git-drs` setup
+- remote configuration
+- tracking rules
+- object hydration
+- DRS/Syfon metadata-oriented workflows
 
-**Use for**: Repository and remote configuration
+Examples:
 
-- `git drs init` - Initialize Git LFS hooks
-- `git drs remote add` - Configure DRS server connections
-- `git drs remote list` - View configured remotes
-- `git drs add-url` - Add cloud object references
+- `git drs remote add gen3 ...`
+- `git drs remote remove ...`
+- `git drs init`
+- `git drs track`
+- `git drs ls-files`
+- `git drs pull`
+- `git drs add-url`
+- `git drs copy-records`
 
-**When**:
+### Use normal Git for
 
-- Setting up a new repository
-- Adding/managing DRS remotes
-- Refreshing expired credentials
-- Adding external file references
+- branch and commit movement
+- staging and committing
+- ordinary ref push/pull operations
 
-### Git LFS Commands
+Examples:
 
-**Use for**: File tracking and management
+- `git add`
+- `git commit`
+- `git push`
+- `git pull`
 
-- `git lfs track` - Define which files to track
-- `git lfs ls-files` - See tracked files and status
-- `git lfs pull` - Download specific files
-- `git lfs untrack` - Stop tracking file patterns
+## First Principles
 
-**When**:
+Before debugging behavior, keep the command split straight:
 
-- Managing which files are stored externally
-- Downloading specific files
-- Checking file localization status
+- `git pull`
+  - updates commits, branches, and checkout state
+- `git drs pull`
+  - hydrates tracked pointer files already present in the current checkout
+- `git drs ls-files`
+  - shows tracked files and localization state
 
-### Standard Git Commands
+If you blur those together, the failure modes get confusing.
 
-**Use for**: Version control operations
+## Common Error Patterns
 
-- `git add` - Stage files for commit
-- `git commit` - Create commits
-- `git push` - Upload commits and trigger file uploads
-- `git pull` - Get latest commits
+### Failed commit or pointer conversion issues
 
-**When**:
+Check these in order:
 
-- Normal development workflow
-- Git DRS runs automatically in the background
+1. confirm the file pattern was tracked before the add/commit flow
 
-## Common Error Messages
+   ```bash
+   git drs track
+   ```
 
-## Git LFS-Oriented Troubleshooting Guide (Commit/Push/Clone/Pull)
+2. confirm `.gitattributes` was staged after changing tracking rules
 
-The checks below prioritize Git LFS guidance and documentation because Git DRS relies on Git LFS for large-file handling. If you run into issues, start with the Git LFS troubleshooting docs and logs, then move to Git DRS-specific configuration checks. Primary references: the Git LFS troubleshooting guide and the Git LFS documentation for installation, tracking, and environment variables:  
+   ```bash
+   git status
+   ```
 
-- Git LFS troubleshooting: https://github.com/git-lfs/git-lfs/wiki/Troubleshooting  
-- Git LFS docs: https://github.com/git-lfs/git-lfs/tree/main/docs  
+3. confirm the file shows up in the tracked inventory
 
-### Failed Commit (Git LFS hooks or pointer issues)
+   ```bash
+   git drs ls-files
+   ```
 
-1. **Confirm Git LFS is installed and hooks are active**  
-   - Run: `git lfs version` and `git lfs env`  
-   - If `git lfs env` reports `git lfs install` is needed, run `git lfs install` to re-install hooks.  
-   - This is the most common cause of commits failing to convert large files into LFS pointers.  
+4. inspect `.git/drs/` logs if the hook path failed
 
-2. **Check whether the file was tracked before the commit**  
-   - Run: `git lfs track` and confirm the file pattern is listed.  
-   - If not tracked, add it (`git lfs track "*.bam"`) and stage `.gitattributes`.  
+### Failed push: upload, register, or auth
 
-3. **Verify the file is staged as an LFS pointer**  
-   - Run: `git lfs ls-files` to confirm the file is listed.  
-   - If a large file was added to Git history directly, remove it from the index and re-add it after tracking.  
-
-4. **Review Git LFS logs for hook errors**  
-   - Run: `git lfs logs last` to inspect hook failures.  
-   - Common errors include missing filters or file locking issues.  
-
-### Failed Push (LFS uploads, auth, or bandwidth issues)
-
-1. **Check Git LFS authentication and endpoint configuration**  
-   - Run: `git lfs env` and confirm `Endpoint` values are correct.  
-   - If tokens are expired, refresh credentials and re-run the push.  
-
-2. **Retry with LFS verbose logging**  
-   - Run: `GIT_TRACE=1 GIT_CURL_VERBOSE=1 git lfs push --all`  
-   - Use this output to identify `403/401` auth issues or proxy errors.  
-
-3. **Confirm the LFS objects exist locally**  
-   - Run: `git lfs ls-files` and ensure your large files are listed.  
-   - Missing objects indicate a tracking or filter issue before the push.  
-
-4. **Validate the remote supports Git LFS**  
-   - Run: `git lfs env` to confirm the remote endpoint.  
-   - Some Git servers require explicit LFS enablement or URL configuration.  
-
-### Failed Clone (LFS objects missing or blocked)
-
-1. **Confirm LFS objects were fetched**  
-   - After clone, run: `git lfs pull` to fetch large files.  
-   - If the repo only has LFS pointers, you will see pointer files until you pull.  
-
-2. **Check LFS smudge/clean filters**  
-   - Run: `git lfs env` and verify `git-lfs` filters are enabled.  
-   - If not, run `git lfs install` and re-run `git lfs pull`.  
-
-3. **Validate access and authentication**  
-   - `git lfs env` will show which endpoint is used; 401/403 errors point to invalid credentials.  
-
-4. **Inspect LFS logs for download errors**  
-   - Run: `git lfs logs last` for the most recent transfer errors.  
-
-### Failed Pull (LFS fetch/checkout issues)
-
-1. **Run `git lfs pull` separately**  
-   - This isolates LFS download errors from Git merge errors.  
-
-2. **Check LFS file locking or concurrent transfers**  
-   - If your Git host uses LFS file locking, verify the file is not locked by another user.  
-
-3. **Review filters and tracking**  
-   - Run: `git lfs track` to ensure required patterns are present.  
-   - If a file type is newly tracked, re-run `git add .gitattributes` and commit.  
-
-4. **Check for storage or bandwidth limits**  
-   - Some Git LFS hosts enforce quotas; errors will show in `git lfs logs last`.  
-
-### Authentication Errors
-
-**Error**: `Upload error: 403 Forbidden` or `401 Unauthorized`
-
-**Cause**: Expired or invalid credentials
-
-**Solution**:
+Check:
 
 ```bash
-# Download new credentials from your data commons
-# Then refresh them by re-adding the remote
-git drs remote add gen3 production \
-    --cred /path/to/new-credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
+git drs remote list
+git drs ls-files --drs
 ```
 
-**Prevention**:
+Then retry with higher Git/HTTP verbosity if needed:
 
-- Credentials expire after 30 days
-- Set a reminder to refresh them regularly
+```bash
+GIT_TRACE=1 GIT_CURL_VERBOSE=1 git push
+```
 
----
+### Failed clone or fresh checkout still has pointer files
 
-**Error**: `Upload error: 503 Service Unavailable`
+That usually just means hydration has not happened yet.
 
-**Cause**: DRS server is temporarily unavailable or credentials expired
+Run:
 
-**Solutions**:
+```bash
+git drs remote list
+git drs pull
+```
 
-1. Wait and retry the operation
-2. Refresh credentials:
-   ```bash
-   git drs remote add gen3 production \
-       --cred /path/to/credentials.json \
-       --url https://calypr-public.ohsu.edu \
-       --project my-project \
-       --bucket my-bucket
-   ```
-3. If persistent, download new credentials from the data commons
+If the repo has never had a `git-drs` remote configured, run `git drs remote add ...` first. That command will also install the repo-local hooks/config.
 
-### Network Errors
+### Network timeout during push or download
 
-**Error**: `net/http: TLS handshake timeout`
-
-**Cause**: Network connectivity issues
-
-**Solution**:
-
-- Simply retry the command
-- These are usually temporary network issues
-
----
-
-**Error**: Git push timeout during large file uploads
-
-**Cause**: Long-running operations timing out
-
-**Solution**: Add to `~/.ssh/config`:
+If you use SSH remotes, keepalives help:
 
 ```
 Host github.com
@@ -249,297 +171,239 @@ Host github.com
     ServerAliveInterval 30
 ```
 
-### File Tracking Issues
+## Common Problems
 
-**Error**: Files not being tracked by LFS
+### `git drs pull` did not update my branch
 
-**Symptoms**:
+That is expected.
 
-- Large files committed directly to Git
-- `git lfs ls-files` doesn't show your files
+`git drs pull` no longer runs `git pull`.
 
-**Solution**:
+Use:
 
 ```bash
-# Check what's currently tracked
-git lfs track
+git pull
+git drs pull
+```
 
-# Track your file type
-git lfs track "*.bam"
+### `git drs ls-files` does not show my file
+
+Check these in order:
+
+1. is the path actually tracked?
+
+```bash
+git drs track
+```
+
+2. did you stage `.gitattributes` after adding the pattern?
+
+```bash
 git add .gitattributes
+```
 
-# Remove from Git and re-add
+3. is the file part of the current checkout?
+
+```bash
+git ls-files -- path/to/file
+```
+
+4. inspect the local view:
+
+```bash
+git drs ls-files -l
+```
+
+### `git remote remove` did not remove my `git-drs` remote
+
+That is expected.
+
+Git remotes and `git-drs` remotes live in different config domains.
+
+Use:
+
+```bash
+git drs remote list
+git drs remote remove <name>
+```
+
+or:
+
+```bash
+git drs remote rm <name>
+```
+
+### `git drs pull` does nothing
+
+That usually means one of these:
+
+- the current checkout already has localized bytes
+- there are no tracked pointer files matching your include filters
+- the file is not tracked by `git-drs`
+
+Check:
+
+```bash
+git drs ls-files
+git drs ls-files -I "*.bam"
+git drs pull --dry-run -I "*.bam"
+```
+
+### `git drs pull` still leaves pointer files
+
+Check DRS registration status:
+
+```bash
+git drs ls-files --drs
+```
+
+If the object is not registered or not resolvable from the configured remote, hydration cannot succeed.
+
+Also confirm the remote configuration:
+
+```bash
+git drs remote list
+```
+
+If needed, inspect the detailed logs:
+
+```bash
+ls -la .git/drs/
+```
+
+### `git drs remote add gen3` fails on bucket mapping
+
+Current shape:
+
+```bash
+git drs remote add gen3 [remote-name] <organization/project> [--cred <file> | --token <token>]
+```
+
+If this fails, the likely cause is missing bucket mapping for that scope.
+
+That mapping is usually steward/admin setup, not something the end user invents ad hoc.
+
+### My credentials expired
+
+Refresh by re-adding the remote with a new credential file or token:
+
+```bash
+git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
+```
+
+You do not need to run `git drs init` again.
+
+What `git-drs` does automatically:
+
+- if the stored access token is expired but the stored API key is still valid, `git-drs` will attempt to refresh the access token
+- if the API key itself is expired, revoked, or replaced, you need to re-run `git drs remote add gen3 ...`
+
+How to think about recovery:
+
+- token expired, key still valid:
+  - often automatic
+- key expired or replaced:
+  - rerun `git drs remote add gen3 ... --cred ...` or `--token ...`
+
+How to check what is in use:
+
+```bash
+git drs remote list
+```
+
+And for the underlying Gen3 profile data:
+
+- inspect `~/.gen3/gen3_client_config.ini`
+
+If you want the least surprising fix, just re-run `git drs remote add gen3 ...` with the current credential file. That updates the stored profile and repo token plumbing in one step.
+
+### `git push` fails with upload or register errors
+
+Check:
+
+```bash
+git drs remote list
+git drs ls-files --drs
+```
+
+Typical root causes:
+
+- expired credentials
+- wrong remote selected
+- missing server-side bucket mapping
+- object registration or upload permissions missing for the target scope
+
+### Files are not being tracked
+
+Symptoms:
+
+- large files were committed directly to Git
+- `git drs ls-files` does not show the file
+
+Recovery:
+
+```bash
+git drs track "*.bam"
+git add .gitattributes
 git rm --cached large-file.bam
 git add large-file.bam
-git commit -m "Track large file with LFS"
+git commit -m "Track large file with git-drs"
 ```
 
----
+### Cloned repo only has pointer files
 
-**Error**: `[404] Object does not exist on the server`
+That is normal.
 
-**Symptoms**:
-
-- After clone, git pull fails
-
-**Solution**:
+After cloning:
 
 ```bash
-# confirm repo has complete configuration
-git drs list-config
-
-# init your git drs project
-git drs init --cred /path/to/cred/file --profile <name>
-
-# attempt git pull again
-git lfs pull -I path/to/file
+git drs pull
 ```
 
----
-
-**Error**: `git lfs ls-files` shows files but they won't download
-
-**Cause**: Files may not have been properly uploaded or DRS records missing
-
-**Solution**:
+Or hydrate only what you need:
 
 ```bash
-# Check repository status
-git drs list-config
-
-# Try pulling with verbose output
-git lfs pull -I "problematic-file*" --verbose
-
-# Check logs
-cat .git/drs/*.log
+git drs pull -I "*.bam"
 ```
 
-### Configuration Issues
+## Debugging Workflow
 
-**Error**: `git drs remote list` shows empty or incomplete configuration
-
-**Cause**: Repository not properly initialized or no remotes configured
-
-**Solution**:
+When behavior is unclear, use this sequence:
 
 ```bash
-# Initialize repository if needed
-git drs init
-
-# Add Gen3 remote
-git drs remote add gen3 production \
-    --cred /path/to/credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
-
-# Verify configuration
 git drs remote list
+git drs track
+git drs ls-files -l
+git drs ls-files --drs
+git drs pull --dry-run
 ```
 
----
+That usually tells you whether the problem is:
 
-**Error**: Configuration exists but commands fail
+- tracking
+- hydration state
+- DRS registration
+- remote configuration
 
-**Cause**: Mismatched configuration between global and local settings, or expired credentials
+## Log and State Inspection
 
-**Solution**:
+Useful checks:
 
 ```bash
-# Check configuration
 git drs remote list
-
-# Refresh credentials by re-adding the remote
-git drs remote add gen3 production \
-    --cred /path/to/new-credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
-```
-
-### Remote Configuration Issues
-
-**Error**: `no default remote configured`
-
-**Cause**: Repository initialized but no remotes added yet
-
-**Solution**:
-
-```bash
-# Add your first remote (automatically becomes default)
-git drs remote add gen3 production \
-    --cred /path/to/credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
-```
-
----
-
-**Error**: `default remote 'X' not found`
-
-**Cause**: Default remote was deleted or configuration is corrupted
-
-**Solution**:
-
-```bash
-# List available remotes
-git drs remote list
-
-# Set a different remote as default
-git drs remote set staging
-
-# Or add a new remote
-git drs remote add gen3 production \
-    --cred /path/to/credentials.json \
-    --url https://calypr-public.ohsu.edu \
-    --project my-project \
-    --bucket my-bucket
-```
-
----
-
-**Error**: Commands using wrong remote
-
-**Cause**: Default remote is not the one you want to use
-
-**Solution**:
-
-```bash
-# Check current default
-git drs remote list
-
-# Option 1: Change default remote
-git drs remote set production
-
-# Option 2: Specify remote for single command
-git drs push staging
-git drs fetch production
-```
-
-## Undoing Changes
-
-### Untrack LFS Files
-
-If you accidentally tracked the wrong files:
-
-```bash
-# See current tracking
-git lfs track
-
-# Remove incorrect pattern
-git lfs untrack "wrong-dir/**"
-
-# Add correct pattern
-git lfs track "correct-dir/**"
-
-# Stage the changes
-git add .gitattributes
-git commit -m "Fix LFS tracking patterns"
-```
-
-### Undo Git Add
-
-Remove files from staging area:
-
-```bash
-# Check what's staged
-git status
-
-# Unstage specific files
-git restore --staged file1.bam file2.bam
-
-# Unstage all files
-git restore --staged .
-```
-
-### Undo Last Commit
-
-To retry a commit with different files:
-
-```bash
-# Undo last commit, keep files in working directory
-git reset --soft HEAD~1
-
-# Or undo and unstage files
-git reset HEAD~1
-
-# Or completely undo commit and changes (BE CAREFUL!)
-git reset --hard HEAD~1
-```
-
-### Remove Files from LFS History
-
-If you committed large files directly to Git by mistake:
-
-```bash
-# Remove from Git history (use carefully!)
-git filter-branch --tree-filter 'rm -f large-file.dat' HEAD
-
-# Then track properly with LFS
-git lfs track "*.dat"
-git add .gitattributes
-git add large-file.dat
-git commit -m "Track large file with LFS"
-```
-
-## Diagnostic Commands
-
-### Check System Status
-
-```bash
-# Git DRS version and help
-git-drs version
-git-drs --help
-
-# Configuration
-git drs remote list
-
-# Repository status
-git status
-git lfs ls-files
-```
-
-### View Logs
-
-```bash
-# Git DRS logs (in repository)
+git drs track
+git drs ls-files -l
+git drs ls-files --drs
 ls -la .git/drs/
-cat .git/drs/*.log
 ```
 
-### Test Connectivity
+## Removed Commands
 
-```bash
-# Test basic Git operations
-git lfs pull --dry-run
+If you see old notes mentioning these, ignore them:
 
-# Test DRS configuration
-git drs remote list
-```
+- `git drs fetch`
+- `git drs list`
+- `git drs upload`
+- `git drs download`
 
-## Getting Help
-
-### Log Analysis
-
-When reporting issues, include:
-
-```bash
-# System information
-git-drs version
-git lfs version
-git --version
-
-# Configuration
-git drs remote list
-
-# Recent logs
-tail -50 .git/drs/*.log
-```
-
-## Prevention Best Practices
-
-1. **Test in small batches** - Don't commit hundreds of files at once
-2. **Verify tracking** - Always check `git lfs ls-files` after adding files
-3. **Use .gitignore** - Prevent accidental commits of temporary files
-4. **Monitor repository size** - Keep an eye on `.git` directory size
+Those were removed from the cleaned CLI surface.

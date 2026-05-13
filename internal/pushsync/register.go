@@ -14,10 +14,30 @@ import (
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	sycommon "github.com/calypr/syfon/client/common"
 	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
+	syrequest "github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/transfer"
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
+
+var uploadBackendForRuntime = func(rt *pushRuntime) transfer.MultipartBackend {
+	if rt == nil || rt.API == nil || rt.API.Client == nil {
+		return nil
+	}
+	return rt.API.Client.Data()
+}
+
+type scopedUploadURLBackend struct {
+	transfer.MultipartBackend
+	rt *pushRuntime
+}
+
+func (b *scopedUploadURLBackend) ResolveUploadURL(ctx context.Context, guid string, filename string, metadata sycommon.FileMetadata, bucket string) (string, error) {
+	return resolveScopedUploadURL(b.rt, ctx, b.MultipartBackend, guid, filename)
+}
 
 type pushScope struct {
 	Organization string
@@ -28,6 +48,7 @@ type pushScope struct {
 
 type pushTuning struct {
 	Upsert             bool
+	ForceUpload        bool
 	MultiPartThreshold int64
 	UploadConcurrency  int
 }
@@ -57,6 +78,7 @@ func newPushRuntime(cl *config.GitContext) *pushRuntime {
 		},
 		Tuning: pushTuning{
 			Upsert:             cl.Upsert,
+			ForceUpload:        cl.ForceUpload,
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},
@@ -127,11 +149,6 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 	lfsObjPath, err := lfs.ObjectPath(localcommon.LFS_OBJS_PATH, oid)
 	if err == nil {
 		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
-			if isPointer {
-				if sentinel, sentinelErr := lfs.IsAddURLSentinelObject(lfsObjPath); sentinelErr == nil && sentinel {
-					return "", false, nil
-				}
-			}
 			return lfsObjPath, true, nil
 		}
 	}
@@ -153,7 +170,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	if skipIfDownloadable {
-		rt.Logger.InfoContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
+		rt.Logger.DebugContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
 		downloadable, err := isFileDownloadable(rt, ctx, drsObject)
 		if err != nil {
 			return fmt.Errorf("error checking if file is downloadable: oid %s %v", hInfo.SHA256, err)
@@ -164,7 +181,7 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		}
 	}
 
-	rt.Logger.InfoContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
+	rt.Logger.DebugContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
 	multiPartThreshold := int64(5 * 1024 * 1024 * 1024)
 	if rt.Tuning.MultiPartThreshold > 0 {
 		multiPartThreshold = rt.Tuning.MultiPartThreshold
@@ -197,10 +214,72 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	if err := syupload.UploadObjectFile(ctx, rt.API.Client.Data(), filePath, objectKey, drsObject.Id, rt.Scope.Bucket, forceMultipart); err != nil {
+	backend := uploadBackendForRuntime(rt)
+	if backend == nil {
+		return fmt.Errorf("upload backend is required")
+	}
+	if strings.TrimSpace(rt.Scope.Organization) != "" && strings.TrimSpace(rt.Scope.Project) != "" {
+		backend = &scopedUploadURLBackend{MultipartBackend: backend, rt: rt}
+	}
+	if forceMultipart {
+		if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
+			return fmt.Errorf("upload error: %w", err)
+		}
+		return nil
+	}
+	if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
 		return fmt.Errorf("upload error: %w", err)
 	}
 	return nil
+}
+
+func resolveScopedUploadURL(rt *pushRuntime, ctx context.Context, backend transfer.MultipartBackend, did, objectKey string) (string, error) {
+	organization := strings.TrimSpace(rt.Scope.Organization)
+	project := strings.TrimSpace(rt.Scope.Project)
+	if organization == "" || project == "" {
+		return "", fmt.Errorf("upload scope organization/project is required")
+	}
+
+	if rt.API != nil && rt.API.Client != nil && rt.API.Client.Requestor() != nil {
+		query := url.Values{}
+		query.Set("organization", organization)
+		query.Set("project", project)
+		query.Set("file_name", objectKey)
+		var out internalapi.InternalSignedURL
+		if err := rt.API.Client.Requestor().Do(ctx, http.MethodGet, "/data/upload/"+url.PathEscape(did), nil, &out, syrequest.WithQueryValues(query)); err != nil {
+			return "", err
+		}
+		if out.Url == nil || strings.TrimSpace(*out.Url) == "" {
+			return "", fmt.Errorf("response missing URL")
+		}
+		return *out.Url, nil
+	}
+
+	resolver, ok := backend.(interface {
+		ResolveUploadURL(context.Context, string, string, sycommon.FileMetadata, string) (string, error)
+	})
+	if !ok {
+		return "", fmt.Errorf("upload backend cannot resolve upload URLs")
+	}
+	metadata := sycommon.FileMetadata{
+		Authorizations: map[string][]string{
+			organization: {project},
+		},
+	}
+	return resolver.ResolveUploadURL(ctx, did, objectKey, metadata, "")
+}
+
+func scopedUploadMetadata(rt *pushRuntime) sycommon.FileMetadata {
+	organization := strings.TrimSpace(rt.Scope.Organization)
+	project := strings.TrimSpace(rt.Scope.Project)
+	if organization == "" || project == "" {
+		return sycommon.FileMetadata{}
+	}
+	return sycommon.FileMetadata{
+		Authorizations: map[string][]string{
+			organization: {project},
+		},
+	}
 }
 
 func newDownloadProbe(cl *config.GitContext) func(context.Context, string) error {
@@ -214,10 +293,11 @@ func newDownloadProbe(cl *config.GitContext) func(context.Context, string) error
 }
 
 func probeDownloadURL(ctx context.Context, httpClient *http.Client, rawURL string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Range", "bytes=0-0")
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}

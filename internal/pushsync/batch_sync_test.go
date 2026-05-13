@@ -490,8 +490,8 @@ func TestUploadFileForObjectUsesScopedKeyForMalformedRegisteredAccessURL(t *test
 	if backend.lastResolve.guid != obj.Id {
 		t.Fatalf("upload guid = %q, want DID %q", backend.lastResolve.guid, obj.Id)
 	}
-	if backend.lastResolve.bucket != "syfon-e2e-bucket" {
-		t.Fatalf("upload bucket hint = %q, want syfon-e2e-bucket", backend.lastResolve.bucket)
+	if backend.lastResolve.bucket != "" {
+		t.Fatalf("upload bucket hint = %q, want empty bucket hint for scoped URL resolution", backend.lastResolve.bucket)
 	}
 	if got := backend.lastResolve.metadata.Authorizations["syfon"]; len(got) != 1 || got[0] != "e2e" {
 		t.Fatalf("upload scope metadata = %+v, want syfon/e2e", backend.lastResolve.metadata.Authorizations)

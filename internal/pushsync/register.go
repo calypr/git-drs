@@ -30,6 +30,15 @@ var uploadBackendForRuntime = func(rt *pushRuntime) transfer.MultipartBackend {
 	return rt.API.Client.Data()
 }
 
+type scopedUploadURLBackend struct {
+	transfer.MultipartBackend
+	rt *pushRuntime
+}
+
+func (b *scopedUploadURLBackend) ResolveUploadURL(ctx context.Context, guid string, filename string, metadata sycommon.FileMetadata, bucket string) (string, error) {
+	return resolveScopedUploadURL(b.rt, ctx, b.MultipartBackend, guid, filename)
+}
+
 type pushScope struct {
 	Organization string
 	Project      string
@@ -208,6 +217,9 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 	backend := uploadBackendForRuntime(rt)
 	if backend == nil {
 		return fmt.Errorf("upload backend is required")
+	}
+	if strings.TrimSpace(rt.Scope.Organization) != "" && strings.TrimSpace(rt.Scope.Project) != "" {
+		backend = &scopedUploadURLBackend{MultipartBackend: backend, rt: rt}
 	}
 	if forceMultipart {
 		if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {

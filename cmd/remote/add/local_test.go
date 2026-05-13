@@ -76,6 +76,20 @@ func TestLocalRemoteAddEnsuresInitialization(t *testing.T) {
 	if filterProcess != "git-drs filter" {
 		t.Fatalf("unexpected filter.drs.process: %q", filterProcess)
 	}
+	filterClean, err := gitrepo.GetGitConfigString("filter.drs.clean")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.clean): %v", err)
+	}
+	if filterClean != "git-drs clean -- %f" {
+		t.Fatalf("unexpected filter.drs.clean: %q", filterClean)
+	}
+	filterSmudge, err := gitrepo.GetGitConfigString("filter.drs.smudge")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.smudge): %v", err)
+	}
+	if filterSmudge != "git-drs smudge -- %f" {
+		t.Fatalf("unexpected filter.drs.smudge: %q", filterSmudge)
+	}
 
 	preCommit, err := os.ReadFile(filepath.Join(".git", "hooks", "pre-commit"))
 	if err != nil {

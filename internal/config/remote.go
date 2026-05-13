@@ -31,6 +31,7 @@ type GitContext struct {
 	BucketName         string
 	StoragePrefix      string
 	Upsert             bool
+	ForceUpload        bool
 	MultiPartThreshold int64
 	UploadConcurrency  int
 	Logger             *slog.Logger

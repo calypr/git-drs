@@ -3,73 +3,62 @@ package push
 import (
 	"fmt"
 	"io"
-	"strings"
 	"sync"
-	"time"
 
+	"github.com/calypr/git-drs/internal/progressui"
 	"github.com/calypr/git-drs/internal/pushsync"
-	"github.com/mattn/go-isatty"
 )
-
-const nonTTYProgressInterval = 2 * time.Second
 
 type uploadFileProgress struct {
 	path      string
 	total     int64
-	uploaded  int64
+	current   int64
+	started   bool
 	completed bool
 }
 
 type uploadProgressRenderer struct {
-	out          io.Writer
-	isTTY        bool
-	now          func() time.Time
-	lastRender   time.Time
-	mu           sync.Mutex
-	planned      bool
-	plan         pushsync.UploadPlanSummary
-	files        map[string]*uploadFileProgress
-	totalBytes   int64
-	doneBytes    int64
-	doneFiles    int
-	currentLabel string
+	mu        sync.Mutex
+	base      *progressui.Renderer
+	planned   bool
+	plan      pushsync.UploadPlanSummary
+	files     map[string]*uploadFileProgress
+	fileOrder []string
 }
 
 func newUploadProgressRenderer(out io.Writer) *uploadProgressRenderer {
 	return &uploadProgressRenderer{
-		out:   out,
-		isTTY: isWriterTTY(out),
-		now:   time.Now,
+		base:  progressui.NewRenderer(out),
 		files: make(map[string]*uploadFileProgress),
 	}
 }
 
-func isWriterTTY(w io.Writer) bool {
-	type fdWriter interface{ Fd() uintptr }
-	f, ok := w.(fdWriter)
-	if !ok {
-		return false
+func (r *uploadProgressRenderer) renderLocked(force bool) {
+	lines := make([]string, 0, len(r.fileOrder))
+	for idx, oid := range r.fileOrder {
+		file := r.files[oid]
+		if file == nil {
+			continue
+		}
+		lines = append(lines, r.renderLine(idx, len(r.fileOrder), file))
 	}
-	fd := f.Fd()
-	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
+	r.base.Render(force, lines)
 }
 
 func (r *uploadProgressRenderer) OnUploadPlan(plan pushsync.UploadPlanSummary) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	r.plan = plan
 	r.planned = plan.TotalFiles > 0
-	r.totalBytes = 0
-	r.doneBytes = 0
-	r.doneFiles = 0
-	r.currentLabel = ""
 	r.files = make(map[string]*uploadFileProgress, len(plan.Files))
+	r.fileOrder = r.fileOrder[:0]
 	for _, file := range plan.Files {
 		r.files[file.OID] = &uploadFileProgress{
 			path:  file.Path,
 			total: file.Bytes,
 		}
-		r.totalBytes += file.Bytes
+		r.fileOrder = append(r.fileOrder, file.OID)
 	}
 	if r.planned {
 		r.renderLocked(true)
@@ -79,6 +68,7 @@ func (r *uploadProgressRenderer) OnUploadPlan(plan pushsync.UploadPlanSummary) {
 func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if !r.planned {
 		return
 	}
@@ -92,24 +82,17 @@ func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEven
 	if ev.TotalBytes > 0 {
 		file.total = ev.TotalBytes
 	}
-	if file.total > 0 && ev.BytesSoFar > file.total {
-		ev.BytesSoFar = file.total
+	if ev.BytesSoFar > file.current {
+		file.current = ev.BytesSoFar
 	}
-	if ev.BytesSoFar > file.uploaded {
-		r.doneBytes += ev.BytesSoFar - file.uploaded
-		file.uploaded = ev.BytesSoFar
-	}
-	if ev.Path != "" {
-		r.currentLabel = ev.Path
-	} else if file.path != "" {
-		r.currentLabel = file.path
+	if ev.Phase == pushsync.UploadProgressUploading {
+		file.started = true
 	}
 	if ev.Phase == pushsync.UploadProgressCompleted && !file.completed {
+		file.started = true
 		file.completed = true
-		r.doneFiles++
-		if file.total > 0 && file.uploaded < file.total {
-			r.doneBytes += file.total - file.uploaded
-			file.uploaded = file.total
+		if file.total > 0 {
+			file.current = file.total
 		}
 	}
 	r.renderLocked(false)
@@ -118,72 +101,55 @@ func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEven
 func (r *uploadProgressRenderer) Finish() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	if !r.planned {
 		return
 	}
-	r.renderLocked(true)
-	if r.isTTY {
-		_, _ = fmt.Fprintln(r.out)
+	lines := make([]string, 0, len(r.fileOrder))
+	for idx, oid := range r.fileOrder {
+		file := r.files[oid]
+		if file == nil {
+			continue
+		}
+		lines = append(lines, r.renderLine(idx, len(r.fileOrder), file))
 	}
+	r.base.Finish(lines)
 	r.planned = false
 }
 
-func (r *uploadProgressRenderer) renderLocked(force bool) {
-	now := r.now()
-	if !force && !r.isTTY && !r.lastRender.IsZero() && now.Sub(r.lastRender) < nonTTYProgressInterval {
-		return
-	}
-	r.lastRender = now
-	totalBytes := r.totalBytes
-	doneBytes := r.doneBytes
-	doneFiles := r.doneFiles
-	totalFiles := r.plan.TotalFiles
-	percent := 0.0
-	if totalBytes > 0 {
-		percent = (float64(doneBytes) / float64(totalBytes)) * 100
-	}
-	current := r.currentLabel
-	if current == "" {
-		current = "preparing uploads"
-	}
-
-	if r.isTTY {
-		barWidth := 28
-		filled := 0
-		if totalBytes > 0 {
-			filled = int((float64(doneBytes) / float64(totalBytes)) * float64(barWidth))
-		}
-		if filled > barWidth {
-			filled = barWidth
-		}
-		bar := strings.Repeat("=", filled) + strings.Repeat(" ", barWidth-filled)
-		line := fmt.Sprintf("\rUploading %d/%d files [%s] %5.1f%% %s/%s current: %s",
-			doneFiles, totalFiles, bar, percent, humanBytes(doneBytes), humanBytes(totalBytes), trimProgressLabel(current, 48))
-		_, _ = fmt.Fprint(r.out, line)
-		return
-	}
-
-	line := fmt.Sprintf("Uploading %d/%d files (%.1f%%) %s/%s current=%s\n",
-		doneFiles, totalFiles, percent, humanBytes(doneBytes), humanBytes(totalBytes), current)
-	_, _ = fmt.Fprint(r.out, line)
+func (r *uploadProgressRenderer) HadUploads() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r != nil && r.planned
 }
 
-func trimProgressLabel(s string, max int) string {
-	if max <= 3 || len(s) <= max {
-		return s
+func (r *uploadProgressRenderer) renderLine(idx int, total int, file *uploadFileProgress) string {
+	label := "preparing upload"
+	if file != nil && file.path != "" {
+		label = progressui.TrimLabel(file.path, 48)
 	}
-	return "..." + s[len(s)-(max-3):]
-}
+	prefix := ""
+	if file != nil {
+		switch {
+		case file.started && !file.completed:
+			prefix = r.base.Spinner() + " "
+		}
+	}
 
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
+	current := int64(0)
+	totalBytes := int64(0)
+	completed := false
+	if file != nil {
+		current = file.current
+		totalBytes = file.total
+		completed = file.completed
 	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+	displayCurrent := progressui.VisibleProgressBytes(current, totalBytes, completed)
+	bar := progressui.RenderProgressBar(displayCurrent, totalBytes, 24)
+	pct := progressui.RenderPercentCapped(displayCurrent, totalBytes, completed)
+	bytesLabel := progressui.RenderByteProgress(displayCurrent, totalBytes, completed)
+
+	_ = idx
+	_ = total
+	return fmt.Sprintf("%s%s %s %s %s", prefix, label, bar, pct, bytesLabel)
 }

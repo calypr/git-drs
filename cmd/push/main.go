@@ -16,6 +16,7 @@ import (
 )
 
 var pushWithHooks bool
+var pushForceUpload bool
 
 var runCommand = func(name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
@@ -59,6 +60,7 @@ var Cmd = &cobra.Command{
 			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))
 			return err
 		}
+		drsClient.ForceUpload = pushForceUpload
 		lfsFiles, err := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, myLogger)
 		if err != nil {
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
@@ -78,6 +80,12 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
 		progress.Finish()
+		switch {
+		case len(lfsFiles) == 0:
+			fmt.Fprintln(os.Stdout, "No git-drs tracked files found; pushing Git refs only.")
+		case !progress.HadUploads():
+			fmt.Fprintln(os.Stdout, "No DRS payload uploads needed; all tracked objects are already available remotely.")
+		}
 
 		pushArgs := []string{"push"}
 		if !pushWithHooks {
@@ -98,6 +106,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
+	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 
 func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {

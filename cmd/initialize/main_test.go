@@ -106,6 +106,10 @@ func TestInitConfigValues(t *testing.T) {
 
 	check("lfs.concurrenttransfers", "8")
 	check("lfs.allowincompletepush", "false")
+	check("filter.drs.clean", "git-drs clean -- %f")
+	check("filter.drs.smudge", "git-drs smudge -- %f")
+	check("filter.drs.process", "git-drs filter")
+	check("filter.drs.required", "true")
 }
 
 func TestEnsureInitialized(t *testing.T) {
@@ -128,5 +132,12 @@ func TestEnsureInitialized(t *testing.T) {
 	}
 	if filterProcess != "git-drs filter" {
 		t.Fatalf("unexpected filter.drs.process: %q", filterProcess)
+	}
+	filterClean, err := gitrepo.GetGitConfigString("filter.drs.clean")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.clean): %v", err)
+	}
+	if filterClean != "git-drs clean -- %f" {
+		t.Fatalf("unexpected filter.drs.clean: %q", filterClean)
 	}
 }

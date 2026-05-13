@@ -3,6 +3,7 @@ package push
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/calypr/git-drs/internal/progressui"
 	"github.com/calypr/git-drs/internal/pushsync"
@@ -17,6 +18,7 @@ type uploadFileProgress struct {
 }
 
 type uploadProgressRenderer struct {
+	mu        sync.Mutex
 	base      *progressui.Renderer
 	planned   bool
 	plan      pushsync.UploadPlanSummary
@@ -31,7 +33,7 @@ func newUploadProgressRenderer(out io.Writer) *uploadProgressRenderer {
 	}
 }
 
-func (r *uploadProgressRenderer) render(force bool) {
+func (r *uploadProgressRenderer) renderLocked(force bool) {
 	lines := make([]string, 0, len(r.fileOrder))
 	for idx, oid := range r.fileOrder {
 		file := r.files[oid]
@@ -44,6 +46,9 @@ func (r *uploadProgressRenderer) render(force bool) {
 }
 
 func (r *uploadProgressRenderer) OnUploadPlan(plan pushsync.UploadPlanSummary) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.plan = plan
 	r.planned = plan.TotalFiles > 0
 	r.files = make(map[string]*uploadFileProgress, len(plan.Files))
@@ -56,11 +61,14 @@ func (r *uploadProgressRenderer) OnUploadPlan(plan pushsync.UploadPlanSummary) {
 		r.fileOrder = append(r.fileOrder, file.OID)
 	}
 	if r.planned {
-		r.render(true)
+		r.renderLocked(true)
 	}
 }
 
 func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if !r.planned {
 		return
 	}
@@ -87,10 +95,13 @@ func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEven
 			file.current = file.total
 		}
 	}
-	r.render(false)
+	r.renderLocked(false)
 }
 
 func (r *uploadProgressRenderer) Finish() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if !r.planned {
 		return
 	}
@@ -107,6 +118,8 @@ func (r *uploadProgressRenderer) Finish() {
 }
 
 func (r *uploadProgressRenderer) HadUploads() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	return r != nil && r.planned
 }
 

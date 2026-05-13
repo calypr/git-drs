@@ -3,6 +3,7 @@ package push
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -133,5 +134,44 @@ func TestUploadProgressRendererHadUploads(t *testing.T) {
 	r.Finish()
 	if r.HadUploads() {
 		t.Fatal("expected renderer to reset after finish")
+	}
+}
+
+func TestUploadProgressRendererConcurrentProgress(t *testing.T) {
+	var out bytes.Buffer
+	r := newUploadProgressRenderer(&out)
+	r.base.SetTTY(false)
+
+	r.OnUploadPlan(pushsync.UploadPlanSummary{
+		Files: []pushsync.UploadPlanFile{
+			{OID: "oid-1", Path: "a.bin", Bytes: 100},
+			{OID: "oid-2", Path: "b.bin", Bytes: 100},
+		},
+		TotalFiles: 2,
+		TotalBytes: 200,
+	})
+
+	events := []pushsync.UploadProgressEvent{
+		{OID: "oid-1", Path: "a.bin", BytesSoFar: 10, BytesSinceLast: 10, TotalBytes: 100, Phase: pushsync.UploadProgressUploading},
+		{OID: "oid-2", Path: "b.bin", BytesSoFar: 20, BytesSinceLast: 20, TotalBytes: 100, Phase: pushsync.UploadProgressUploading},
+		{OID: "oid-1", Path: "a.bin", BytesSoFar: 100, TotalBytes: 100, Phase: pushsync.UploadProgressCompleted},
+		{OID: "oid-2", Path: "b.bin", BytesSoFar: 100, TotalBytes: 100, Phase: pushsync.UploadProgressCompleted},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(events))
+	for _, ev := range events {
+		ev := ev
+		go func() {
+			defer wg.Done()
+			r.OnUploadProgress(ev)
+		}()
+	}
+	wg.Wait()
+	r.Finish()
+
+	got := out.String()
+	if !strings.Contains(got, "a.bin") || !strings.Contains(got, "b.bin") {
+		t.Fatalf("expected both files in concurrent progress output, got %q", got)
 	}
 }

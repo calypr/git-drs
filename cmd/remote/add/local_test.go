@@ -19,9 +19,9 @@ func TestAddLocalRemote(t *testing.T) {
 	assert.Equal(t, "local <remote-name> <url> <organization/project>", LocalCmd.Use)
 	assert.NotNil(t, LocalCmd.Flag("username"))
 	assert.NotNil(t, LocalCmd.Flag("password"))
+	assert.NotNil(t, LocalCmd.Flag("bucket"))
 	assert.Nil(t, LocalCmd.Flag("organization"))
 	assert.Nil(t, LocalCmd.Flag("project"))
-	assert.Nil(t, LocalCmd.Flag("bucket"))
 }
 
 func TestResolveBucketScopeFromLocalServer(t *testing.T) {
@@ -38,7 +38,7 @@ func TestResolveBucketScopeFromLocalServer(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		scope, err := resolveBucketScopeFromLocalServer(context.Background(), srv.URL, "drs-user", "drs-pass", "calypr", "end_to_end_test")
+		scope, err := resolveBucketScopeFromLocalServer(context.Background(), srv.URL, "drs-user", "drs-pass", "calypr", "end_to_end_test", "")
 		if err != nil {
 			t.Fatalf("resolveBucketScopeFromLocalServer returned error: %v", err)
 		}

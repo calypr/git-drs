@@ -16,7 +16,6 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	conf "github.com/calypr/syfon/client/config"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -118,7 +117,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 
 	scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")
 	if err != nil {
-		scope, err = resolveBucketScopeFromServer(context.Background(), apiEndpoint, strings.TrimSpace(cred.AccessToken), organization, project)
+		scope, err = resolveBucketScopeFromServer(context.Background(), apiEndpoint, strings.TrimSpace(cred.AccessToken), organization, project, selectedBucket)
 		if err != nil {
 			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
 		}
@@ -183,7 +182,7 @@ func parseScopeArg(raw string) (string, string, error) {
 	return organization, project, nil
 }
 
-func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project string) (gitrepo.ResolvedBucketScope, error) {
+func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
 	}
@@ -211,48 +210,9 @@ func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organiza
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
-	projectResource, err := syfoncommon.ResourcePath(organization, project)
+	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, err
 	}
-	orgResource, err := syfoncommon.ResourcePath(organization, "")
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, err
-	}
-
-	if bucket, ok := findBucketByResource(payload, projectResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-	if bucket, ok := findBucketByResource(payload, orgResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-
-	return gitrepo.ResolvedBucketScope{}, fmt.Errorf("no visible server bucket matched organization=%q project=%q", organization, project)
-}
-
-func findBucketByResource(payload bucketapi.BucketsResponse, resource string) (string, bool) {
-	resource = syfoncommon.NormalizeAccessResource(resource)
-	if resource == "" {
-		return "", false
-	}
-	var match string
-	for bucket, meta := range payload.S3BUCKETS {
-		if meta.Programs == nil {
-			continue
-		}
-		for _, candidate := range *meta.Programs {
-			if syfoncommon.NormalizeAccessResource(candidate) != resource {
-				continue
-			}
-			if match != "" && match != bucket {
-				return "", false
-			}
-			match = bucket
-			break
-		}
-	}
-	if match == "" {
-		return "", false
-	}
-	return match, true
+	return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
 }

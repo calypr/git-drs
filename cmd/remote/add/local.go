@@ -12,7 +12,6 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +37,7 @@ var LocalCmd = &cobra.Command{
 		}
 		scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")
 		if err != nil {
-			scope, err = resolveBucketScopeFromLocalServer(context.Background(), url, strings.TrimSpace(localUsername), strings.TrimSpace(localPassword), organization, project)
+			scope, err = resolveBucketScopeFromLocalServer(context.Background(), url, strings.TrimSpace(localUsername), strings.TrimSpace(localPassword), organization, project, selectedBucket)
 			if err != nil {
 				return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
 			}
@@ -83,7 +82,7 @@ var LocalCmd = &cobra.Command{
 	},
 }
 
-func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, password, organization, project string) (gitrepo.ResolvedBucketScope, error) {
+func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, password, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
 	}
@@ -110,21 +109,9 @@ func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, 
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
-	projectResource, err := syfoncommon.ResourcePath(organization, project)
+	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, err
 	}
-	orgResource, err := syfoncommon.ResourcePath(organization, "")
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, err
-	}
-
-	if bucket, ok := findBucketByResource(payload, projectResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-	if bucket, ok := findBucketByResource(payload, orgResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-
-	return gitrepo.ResolvedBucketScope{}, fmt.Errorf("no visible server bucket matched organization=%q project=%q", organization, project)
+	return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
 }

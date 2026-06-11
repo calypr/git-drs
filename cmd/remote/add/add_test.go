@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
@@ -61,7 +62,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		scope, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC")
+		scope, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC", "")
 		if err != nil {
 			t.Fatalf("resolveBucketScopeFromServer returned error: %v", err)
 		}
@@ -76,7 +77,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		scope, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC")
+		scope, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC", "")
 		if err != nil {
 			t.Fatalf("resolveBucketScopeFromServer returned error: %v", err)
 		}
@@ -97,9 +98,56 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC")
+		_, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "HTAN_INT", "BForePC", "")
 		if err == nil {
 			t.Fatal("expected error when no matching bucket is visible")
+		}
+	})
+
+	t.Run("reports ambiguity with candidate buckets", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := bucketapi.BucketsResponse{S3BUCKETS: map[string]bucketapi.BucketMetadata{
+				"EllrottLab": {Programs: &[]string{"/organization/Ellrott_Lab/project/hla2vec"}},
+				"cbds":       {Programs: &[]string{"/organization/Ellrott_Lab/project/hla2vec"}},
+			}}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("encode response: %v", err)
+			}
+		}))
+		defer srv.Close()
+
+		_, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "Ellrott_Lab", "hla2vec", "")
+		if err == nil {
+			t.Fatal("expected ambiguity error")
+		}
+		if !strings.Contains(err.Error(), "multiple visible server buckets matched") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(err.Error(), "EllrottLab, cbds") {
+			t.Fatalf("expected candidate list in error, got: %v", err)
+		}
+	})
+
+	t.Run("uses selected bucket when ambiguity exists", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resp := bucketapi.BucketsResponse{S3BUCKETS: map[string]bucketapi.BucketMetadata{
+				"EllrottLab": {Programs: &[]string{"/organization/Ellrott_Lab/project/hla2vec"}},
+				"cbds":       {Programs: &[]string{"/organization/Ellrott_Lab/project/hla2vec"}},
+			}}
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("encode response: %v", err)
+			}
+		}))
+		defer srv.Close()
+
+		scope, err := resolveBucketScopeFromServer(context.Background(), srv.URL, "test-token", "Ellrott_Lab", "hla2vec", "cbds")
+		if err != nil {
+			t.Fatalf("resolveBucketScopeFromServer returned error: %v", err)
+		}
+		if scope.Bucket != "cbds" {
+			t.Fatalf("unexpected bucket: %+v", scope)
 		}
 	})
 }

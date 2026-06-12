@@ -5,19 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/common"
+	"github.com/calypr/syfon/client/request"
 	syservices "github.com/calypr/syfon/client/services"
 	"github.com/spf13/cobra"
 )
 
 var (
-	batchSize int
+	batchSize             int
+	overwriteNameFileName bool
 )
 
 type copyStats struct {
@@ -28,10 +31,87 @@ type copyStats struct {
 	Written    int
 }
 
+type copyHashInfo map[string]string
+
+type copyRecord struct {
+	AccessMethods    *[]drsapi.AccessMethod `json:"access_methods,omitempty"`
+	ControlledAccess *[]string              `json:"controlled_access,omitempty"`
+	CreatedTime      *string                `json:"created_time,omitempty"`
+	Description      *string                `json:"description,omitempty"`
+	Did              string                 `json:"did"`
+	FileName         *string                `json:"file_name,omitempty"`
+	Name             *string                `json:"name,omitempty"`
+	Hashes           *copyHashInfo          `json:"hashes,omitempty"`
+	Organization     *string                `json:"organization,omitempty"`
+	Project          *string                `json:"project,omitempty"`
+	Size             *int64                 `json:"size,omitempty"`
+	UpdatedTime      *string                `json:"updated_time,omitempty"`
+	Version          *string                `json:"version,omitempty"`
+}
+
+type copyListRecordsResponse struct {
+	Records *[]copyRecord `json:"records,omitempty"`
+}
+
+type copyBulkCreateRequest struct {
+	Records []copyRecord `json:"records"`
+}
+
 type indexAPI interface {
-	List(ctx context.Context, opts syservices.ListRecordsOptions) (internalapi.ListRecordsResponse, error)
-	BulkDocuments(ctx context.Context, dids []string) ([]internalapi.InternalRecordResponse, error)
-	CreateBulk(ctx context.Context, req internalapi.BulkCreateRequest) (internalapi.ListRecordsResponse, error)
+	List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error)
+	BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error)
+	CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error)
+}
+
+type rawIndexAPI struct {
+	requestor request.Requester
+}
+
+func newRawIndexAPI(requestor request.Requester) *rawIndexAPI {
+	return &rawIndexAPI{requestor: requestor}
+}
+
+func (r *rawIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error) {
+	params := url.Values{}
+	if opts.Hash != "" {
+		params.Set("hash", opts.Hash)
+	}
+	if opts.URL != "" {
+		params.Set("url", opts.URL)
+	}
+	if opts.Organization != "" {
+		params.Set("organization", opts.Organization)
+	}
+	if opts.ProjectID != "" {
+		params.Set("project", opts.ProjectID)
+	}
+	if opts.Limit != 0 {
+		params.Set("limit", fmt.Sprintf("%d", opts.Limit))
+	}
+	if opts.Page != 0 {
+		params.Set("page", fmt.Sprintf("%d", opts.Page))
+	}
+	var out copyListRecordsResponse
+	if err := r.requestor.Do(ctx, http.MethodGet, "/index", nil, &out, request.WithQueryValues(params)); err != nil {
+		return copyListRecordsResponse{}, err
+	}
+	return out, nil
+}
+
+func (r *rawIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {
+	var out []copyRecord
+	if err := r.requestor.Do(ctx, http.MethodPost, "/index/bulk/documents", dids, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *rawIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error) {
+	var out copyListRecordsResponse
+	if err := r.requestor.Do(ctx, http.MethodPost, "/index/bulk", req, &out); err != nil {
+		return copyListRecordsResponse{}, err
+	}
+	return out, nil
 }
 
 var Cmd = &cobra.Command{
@@ -89,7 +169,16 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error creating target client: %w", err)
 		}
 
-		stats, err := copyProjectRecords(cmd.Context(), logger, srcCtx.Client.Index(), dstCtx.Client.Index(), org, proj, batchSize)
+		stats, err := copyProjectRecords(
+			cmd.Context(),
+			logger,
+			newRawIndexAPI(srcCtx.Client.Requestor()),
+			newRawIndexAPI(dstCtx.Client.Requestor()),
+			org,
+			proj,
+			batchSize,
+			overwriteNameFileName,
+		)
 		if err != nil {
 			return err
 		}
@@ -111,6 +200,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().IntVar(&batchSize, "batch-size", 250, "records per source page and target bulk write")
+	Cmd.Flags().BoolVar(&overwriteNameFileName, "overwrite-name-file-name", false, "for existing target records, replace target name and file_name with the source values")
 }
 
 func parseScopeArg(raw string) (string, string, error) {
@@ -130,7 +220,7 @@ func parseScopeArg(raw string) (string, string, error) {
 	return org, project, nil
 }
 
-func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int) (copyStats, error) {
+func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteNameFileName bool) (copyStats, error) {
 	if batchSize <= 0 {
 		batchSize = 250
 	}
@@ -148,7 +238,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 		if err != nil {
 			return stats, fmt.Errorf("source list failed for %s/%s page %d: %w", org, project, page, err)
 		}
-		records := []internalapi.InternalRecord{}
+		records := []copyRecord{}
 		if listResp.Records != nil {
 			records = *listResp.Records
 		}
@@ -167,7 +257,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 		}
 		stats.SourceSeen += len(records)
 
-		toWrite, batchStats, err := buildMergedBatch(ctx, dst, records)
+		toWrite, batchStats, err := buildMergedBatch(ctx, dst, records, overwriteNameFileName)
 		if err != nil {
 			return stats, err
 		}
@@ -176,7 +266,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 		stats.Unchanged += batchStats.Unchanged
 
 		if len(toWrite) > 0 {
-			resp, err := dst.CreateBulk(ctx, internalapi.BulkCreateRequest{Records: toWrite})
+			resp, err := dst.CreateBulk(ctx, copyBulkCreateRequest{Records: toWrite})
 			if err != nil {
 				return stats, fmt.Errorf("target bulk create failed on page %d: %w", page, err)
 			}
@@ -210,7 +300,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 	return stats, nil
 }
 
-func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org, project string, batchSize int) ([]internalapi.InternalRecord, error) {
+func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org, project string, batchSize int) ([]copyRecord, error) {
 	resource, err := sycommon.ResourcePath(org, project)
 	if err != nil {
 		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
@@ -220,7 +310,7 @@ func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org,
 	}
 
 	page := 1
-	out := make([]internalapi.InternalRecord, 0)
+	out := make([]copyRecord, 0)
 	seen := map[string]struct{}{}
 	for {
 		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
@@ -230,7 +320,7 @@ func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org,
 		if err != nil {
 			return nil, fmt.Errorf("fallback source list failed for %s/%s page %d: %w", org, project, page, err)
 		}
-		records := []internalapi.InternalRecord{}
+		records := []copyRecord{}
 		if listResp.Records != nil {
 			records = *listResp.Records
 		}
@@ -259,7 +349,7 @@ func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org,
 	return out, nil
 }
 
-func recordHasControlledAccess(rec internalapi.InternalRecord, resource string) bool {
+func recordHasControlledAccess(rec copyRecord, resource string) bool {
 	if rec.ControlledAccess == nil {
 		return false
 	}
@@ -271,7 +361,7 @@ func recordHasControlledAccess(rec internalapi.InternalRecord, resource string) 
 	return false
 }
 
-func buildMergedBatch(ctx context.Context, dst indexAPI, source []internalapi.InternalRecord) ([]internalapi.InternalRecord, copyStats, error) {
+func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, overwriteNameFileName bool) ([]copyRecord, copyStats, error) {
 	stats := copyStats{}
 	if len(source) == 0 {
 		return nil, stats, nil
@@ -290,19 +380,19 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []internalapi.In
 	if err != nil {
 		return nil, stats, fmt.Errorf("target bulk documents failed: %w", err)
 	}
-	existingByDID := make(map[string]internalapi.InternalRecord, len(existing))
+	existingByDID := make(map[string]copyRecord, len(existing))
 	for _, rec := range existing {
-		existingByDID[strings.TrimSpace(rec.Did)] = recordResponseToRecord(rec)
+		existingByDID[strings.TrimSpace(rec.Did)] = rec
 	}
 
-	out := make([]internalapi.InternalRecord, 0, len(source))
+	out := make([]copyRecord, 0, len(source))
 	for _, src := range source {
 		did := strings.TrimSpace(src.Did)
 		if did == "" {
 			continue
 		}
 		if dstRec, ok := existingByDID[did]; ok {
-			merged, changed := mergeExistingRecord(dstRec, src)
+			merged, changed := mergeExistingRecord(dstRec, src, overwriteNameFileName)
 			if changed {
 				out = append(out, merged)
 				stats.Updated++
@@ -318,9 +408,20 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []internalapi.In
 	return out, stats, nil
 }
 
-func mergeExistingRecord(dst, src internalapi.InternalRecord) (internalapi.InternalRecord, bool) {
+func mergeExistingRecord(dst, src copyRecord, overwriteNameFileName bool) (copyRecord, bool) {
 	merged := dst
 	changed := false
+
+	if overwriteNameFileName {
+		if !equalStringValuePointers(merged.Name, src.Name) {
+			merged.Name = src.Name
+			changed = true
+		}
+		if !equalStringValuePointers(merged.FileName, src.FileName) {
+			merged.FileName = src.FileName
+			changed = true
+		}
+	}
 
 	controlledAccess := mergeStringLists(dst.ControlledAccess, src.ControlledAccess)
 	if !equalStringPointers(merged.ControlledAccess, controlledAccess) {
@@ -335,23 +436,6 @@ func mergeExistingRecord(dst, src internalapi.InternalRecord) (internalapi.Inter
 	}
 
 	return merged, changed
-}
-
-func recordResponseToRecord(in internalapi.InternalRecordResponse) internalapi.InternalRecord {
-	return internalapi.InternalRecord{
-		Did:              in.Did,
-		AccessMethods:    in.AccessMethods,
-		ControlledAccess: in.ControlledAccess,
-		CreatedTime:      in.CreatedTime,
-		Description:      in.Description,
-		FileName:         in.FileName,
-		Hashes:           in.Hashes,
-		Organization:     in.Organization,
-		Project:          in.Project,
-		Size:             in.Size,
-		UpdatedTime:      in.UpdatedTime,
-		Version:          in.Version,
-	}
 }
 
 func mergeStringLists(left, right *[]string) *[]string {
@@ -410,6 +494,10 @@ func canonicalAccessMethod(method drsapi.AccessMethod) string {
 }
 
 func equalStringPointers(a, b *[]string) bool {
+	return equalJSON(a, b)
+}
+
+func equalStringValuePointers(a, b *string) bool {
 	return equalJSON(a, b)
 }
 

@@ -5,31 +5,30 @@ import (
 	"testing"
 
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syservices "github.com/calypr/syfon/client/services"
 )
 
 type fakeIndexAPI struct {
-	listResp      internalapi.ListRecordsResponse
-	listFn        func(opts syservices.ListRecordsOptions) internalapi.ListRecordsResponse
-	bulkDocsResp  []internalapi.InternalRecordResponse
-	createBulkReq []internalapi.BulkCreateRequest
+	listResp      copyListRecordsResponse
+	listFn        func(opts syservices.ListRecordsOptions) copyListRecordsResponse
+	bulkDocsResp  []copyRecord
+	createBulkReq []copyBulkCreateRequest
 }
 
-func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (internalapi.ListRecordsResponse, error) {
+func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error) {
 	if f.listFn != nil {
 		return f.listFn(opts), nil
 	}
 	return f.listResp, nil
 }
 
-func (f *fakeIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]internalapi.InternalRecordResponse, error) {
+func (f *fakeIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {
 	return f.bulkDocsResp, nil
 }
 
-func (f *fakeIndexAPI) CreateBulk(ctx context.Context, req internalapi.BulkCreateRequest) (internalapi.ListRecordsResponse, error) {
+func (f *fakeIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error) {
 	f.createBulkReq = append(f.createBulkReq, req)
-	return internalapi.ListRecordsResponse{Records: &req.Records}, nil
+	return copyListRecordsResponse{Records: &req.Records}, nil
 }
 
 func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testing.T) {
@@ -57,19 +56,20 @@ func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testi
 	}
 
 	merged, changed := mergeExistingRecord(
-		internalapi.InternalRecord{
+		copyRecord{
 			Did:              "did-1",
 			FileName:         &dstName,
 			Description:      &desc,
 			ControlledAccess: &leftCA,
 			AccessMethods:    &leftMethods,
 		},
-		internalapi.InternalRecord{
+		copyRecord{
 			Did:              "did-1",
 			FileName:         &srcName,
 			ControlledAccess: &rightCA,
 			AccessMethods:    &rightMethods,
 		},
+		false,
 	)
 
 	if !changed {
@@ -86,6 +86,37 @@ func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testi
 	}
 	if merged.AccessMethods == nil || len(*merged.AccessMethods) != 2 {
 		t.Fatalf("expected merged access method union, got %+v", merged.AccessMethods)
+	}
+}
+
+func TestMergeExistingRecord_OverwritesFileNameWhenFlagEnabled(t *testing.T) {
+	dstName := "target.bin"
+	dstDisplayName := "target-display"
+	srcName := "nested/source.bin"
+	srcDisplayName := "source-display"
+
+	merged, changed := mergeExistingRecord(
+		copyRecord{
+			Did:      "did-1",
+			FileName: &dstName,
+			Name:     &dstDisplayName,
+		},
+		copyRecord{
+			Did:      "did-1",
+			FileName: &srcName,
+			Name:     &srcDisplayName,
+		},
+		true,
+	)
+
+	if !changed {
+		t.Fatalf("expected merge to report a change")
+	}
+	if merged.FileName == nil || *merged.FileName != srcName {
+		t.Fatalf("expected source file_name to win, got %+v", merged.FileName)
+	}
+	if merged.Name == nil || *merged.Name != srcDisplayName {
+		t.Fatalf("expected source name to win, got %+v", merged.Name)
 	}
 }
 
@@ -108,7 +139,7 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	}}
 
 	target := &fakeIndexAPI{
-		bulkDocsResp: []internalapi.InternalRecordResponse{
+		bulkDocsResp: []copyRecord{
 			{
 				Did:              "did-existing",
 				ControlledAccess: &srcCA,
@@ -117,7 +148,7 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 		},
 	}
 
-	source := []internalapi.InternalRecord{
+	source := []copyRecord{
 		{
 			Did:              "did-existing",
 			ControlledAccess: &newCA,
@@ -130,7 +161,7 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 		},
 	}
 
-	out, stats, err := buildMergedBatch(context.Background(), target, source)
+	out, stats, err := buildMergedBatch(context.Background(), target, source, false)
 	if err != nil {
 		t.Fatalf("buildMergedBatch error: %v", err)
 	}
@@ -145,22 +176,22 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 func TestCopyProjectRecords_FallsBackToRootListWhenScopedListIsEmpty(t *testing.T) {
 	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
 	source := &fakeIndexAPI{
-		listFn: func(opts syservices.ListRecordsOptions) internalapi.ListRecordsResponse {
+		listFn: func(opts syservices.ListRecordsOptions) copyListRecordsResponse {
 			if opts.Organization == "HTAN_INT" && opts.ProjectID == "BForePC" {
-				return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{}}
+				return copyListRecordsResponse{Records: &[]copyRecord{}}
 			}
 			if opts.Organization == "" && opts.ProjectID == "" && opts.Page == 1 {
-				return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{
+				return copyListRecordsResponse{Records: &[]copyRecord{
 					{Did: "did-in-scope", ControlledAccess: &scopeCA},
 					{Did: "did-out-of-scope", ControlledAccess: &[]string{"/organization/OTHER/project/X"}},
 				}}
 			}
-			return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{}}
+			return copyListRecordsResponse{Records: &[]copyRecord{}}
 		},
 	}
 	target := &fakeIndexAPI{}
 
-	stats, err := copyProjectRecords(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 100)
+	stats, err := copyProjectRecords(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 100, false)
 	if err != nil {
 		t.Fatalf("copyProjectRecords error: %v", err)
 	}

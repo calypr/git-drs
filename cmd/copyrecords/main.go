@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	sycommon "github.com/calypr/syfon/common"
 	syservices "github.com/calypr/syfon/client/services"
 	"github.com/spf13/cobra"
 )
@@ -136,6 +137,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 
 	stats := copyStats{}
 	page := 1
+	fallbackUsed := false
 	for {
 		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
 			Organization: org,
@@ -149,6 +151,16 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 		records := []internalapi.InternalRecord{}
 		if listResp.Records != nil {
 			records = *listResp.Records
+		}
+		if page == 1 && len(records) == 0 {
+			fallbackRecords, fallbackErr := listSourceRecordsByControlledAccess(ctx, src, org, project, batchSize)
+			if fallbackErr != nil {
+				return stats, fallbackErr
+			}
+			if len(fallbackRecords) > 0 {
+				records = fallbackRecords
+				fallbackUsed = true
+			}
 		}
 		if len(records) == 0 {
 			break
@@ -180,6 +192,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 				"organization", org,
 				"project", project,
 				"page", page,
+				"fallback_scope_scan", fallbackUsed,
 				"source_records", len(records),
 				"created", batchStats.Created,
 				"updated", batchStats.Updated,
@@ -188,13 +201,74 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 			)
 		}
 
-		if len(records) < batchSize {
+		if fallbackUsed || len(records) < batchSize {
 			break
 		}
 		page++
 	}
 
 	return stats, nil
+}
+
+func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org, project string, batchSize int) ([]internalapi.InternalRecord, error) {
+	resource, err := sycommon.ResourcePath(org, project)
+	if err != nil {
+		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
+	}
+	if batchSize <= 0 {
+		batchSize = 250
+	}
+
+	page := 1
+	out := make([]internalapi.InternalRecord, 0)
+	seen := map[string]struct{}{}
+	for {
+		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
+			Limit: batchSize,
+			Page:  page,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("fallback source list failed for %s/%s page %d: %w", org, project, page, err)
+		}
+		records := []internalapi.InternalRecord{}
+		if listResp.Records != nil {
+			records = *listResp.Records
+		}
+		if len(records) == 0 {
+			break
+		}
+		for _, rec := range records {
+			if !recordHasControlledAccess(rec, resource) {
+				continue
+			}
+			did := strings.TrimSpace(rec.Did)
+			if did == "" {
+				continue
+			}
+			if _, ok := seen[did]; ok {
+				continue
+			}
+			seen[did] = struct{}{}
+			out = append(out, rec)
+		}
+		if len(records) < batchSize {
+			break
+		}
+		page++
+	}
+	return out, nil
+}
+
+func recordHasControlledAccess(rec internalapi.InternalRecord, resource string) bool {
+	if rec.ControlledAccess == nil {
+		return false
+	}
+	for _, candidate := range *rec.ControlledAccess {
+		if strings.TrimSpace(candidate) == resource {
+			return true
+		}
+	}
+	return false
 }
 
 func buildMergedBatch(ctx context.Context, dst indexAPI, source []internalapi.InternalRecord) ([]internalapi.InternalRecord, copyStats, error) {

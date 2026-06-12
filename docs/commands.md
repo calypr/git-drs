@@ -127,7 +127,7 @@ git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
 **What it does:**
 
 - Resolves the effective org/project bucket scope for the current remote
-- Inspects the provider object through client-owned cloud code
+- Asks the configured Syfon remote to inspect the object using stored bucket credentials and bucket scopes
 - Writes a Git LFS pointer into the worktree
 - Stores local DRS metadata for later registration during `git drs push`
 
@@ -307,7 +307,8 @@ git drs add-url s3://bucket/path/file.bin data/file.bin
 **Notes:**
 
 - `add-url` no longer accepts per-command AWS credential flags.
-- S3 connection hints are resolved from environment/runtime config when needed (for example `AWS_REGION`, `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- In the normal remote-backed path, S3 inspection uses the remote Syfon bucket credential instead of local `AWS_*` env vars.
+- If the remote Syfon instance does not implement the internal inspect route yet, `add-url` fails with an upgrade message.
 - Registration happens on `git drs push`, not at `add-url` time.
 
 ### `git drs version`

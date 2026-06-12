@@ -7,6 +7,23 @@ const (
 	UploadProgressCompleted UploadProgressPhase = "completed"
 )
 
+type MetadataProgressPhase string
+
+const (
+	MetadataProgressRegistering MetadataProgressPhase = "registering"
+	MetadataProgressCompleted   MetadataProgressPhase = "completed"
+)
+
+type MetadataPlanSummary struct {
+	TotalObjects int
+}
+
+type MetadataProgressEvent struct {
+	Completed int
+	Total     int
+	Phase     MetadataProgressPhase
+}
+
 type UploadPlanFile struct {
 	OID   string
 	Path  string
@@ -29,6 +46,8 @@ type UploadProgressEvent struct {
 }
 
 type UploadProgressReporter interface {
+	OnMetadataPlan(MetadataPlanSummary)
+	OnMetadataProgress(MetadataProgressEvent)
 	OnUploadPlan(UploadPlanSummary)
 	OnUploadProgress(UploadProgressEvent)
 }

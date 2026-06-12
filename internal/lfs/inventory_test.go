@@ -92,6 +92,51 @@ func TestGetAllLfsFilesFromGitRefsWithoutLfsCli(t *testing.T) {
 	}
 }
 
+func TestGetLfsFilesForRefPaths(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "checkout", "-b", "main")
+
+	oid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	pointerPath := filepath.Join(repo, "data", "main-pointer.dat")
+	writePointerFile(t, pointerPath, oid, "123")
+	regularPath := filepath.Join(repo, "data", "regular.txt")
+	if err := os.WriteFile(regularPath, []byte("not a pointer"), 0o644); err != nil {
+		t.Fatalf("write regular file: %v", err)
+	}
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "main commit")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+
+	logger := drslog.NewNoOpLogger()
+	files, err := GetLfsFilesForRefPaths("HEAD", []string{"data/main-pointer.dat", "data/regular.txt", "data/missing.bin"}, logger)
+	if err != nil {
+		t.Fatalf("GetLfsFilesForRefPaths error: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected one pointer file, got %+v", files)
+	}
+	info, ok := files["data/main-pointer.dat"]
+	if !ok {
+		t.Fatalf("missing pointer file in result: %+v", files)
+	}
+	if info.Oid != oid || info.Size != 123 || !info.IsPointer {
+		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+}
+
 func TestGetWorktreeLfsFiles(t *testing.T) {
 	repo := t.TempDir()
 	runGitCmdTest(t, repo, "init")

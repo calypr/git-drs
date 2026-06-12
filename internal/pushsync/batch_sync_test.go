@@ -16,19 +16,30 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syclient "github.com/calypr/syfon/client"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/transfer"
 )
 
 type recordingReporter struct {
-	plan   UploadPlanSummary
-	events []UploadProgressEvent
+	metadataPlan   MetadataPlanSummary
+	metadataEvents []MetadataProgressEvent
+	plan           UploadPlanSummary
+	events         []UploadProgressEvent
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func (r *recordingReporter) OnMetadataPlan(plan MetadataPlanSummary) {
+	r.metadataPlan = plan
+}
+
+func (r *recordingReporter) OnMetadataProgress(ev MetadataProgressEvent) {
+	r.metadataEvents = append(r.metadataEvents, ev)
+}
 
 func (r *recordingReporter) OnUploadPlan(plan UploadPlanSummary) {
 	r.plan = plan
@@ -180,7 +191,7 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 	}
 
 	reusableURL := "s3://existing-bucket/cas/" + oid
-	var registerReq drsapi.RegisterObjectsJSONRequestBody
+	var registerReq internalapi.BulkCreateRequest
 	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/existing-id/access/s3":
@@ -192,7 +203,7 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Request:    r,
 			}, nil
-		case r.Method == http.MethodPost && r.URL.Path == "/ga4gh/drs/v1/objects/register":
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk":
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
 				t.Fatalf("read register request body: %v", err)
@@ -200,18 +211,18 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 			if err := json.Unmarshal(body, &registerReq); err != nil {
 				t.Fatalf("unmarshal register request: %v", err)
 			}
-			if len(registerReq.Candidates) != 1 {
+			if len(registerReq.Records) != 1 {
 				t.Fatalf("expected one registration candidate, got %+v", registerReq)
 			}
-			candidate := registerReq.Candidates[0]
-			respBody, err := json.Marshal(drsapi.N201ObjectsCreated{
-				Objects: []drsapi.DrsObject{{
-					Id:               "scoped-id",
-					Name:             candidate.Name,
-					Size:             candidate.Size,
-					Checksums:        candidate.Checksums,
-					ControlledAccess: candidate.ControlledAccess,
-					AccessMethods:    candidate.AccessMethods,
+			record := registerReq.Records[0]
+			respBody, err := json.Marshal(internalapi.ListRecordsResponse{
+				Records: &[]internalapi.InternalRecord{{
+					Did:              "scoped-id",
+					FileName:         record.FileName,
+					Size:             record.Size,
+					Hashes:           record.Hashes,
+					ControlledAccess: record.ControlledAccess,
+					AccessMethods:    record.AccessMethods,
 				}},
 			})
 			if err != nil {
@@ -280,14 +291,17 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 	if session.uploadRequired[oid] {
 		t.Fatalf("expected metadata-only scoped registration, but upload was marked required")
 	}
-	if len(registerReq.Candidates) != 1 {
+	if len(registerReq.Records) != 1 {
 		t.Fatalf("expected a scoped registration request, got %+v", registerReq)
 	}
-	if registerReq.Candidates[0].AccessMethods == nil || len(*registerReq.Candidates[0].AccessMethods) != 1 {
-		t.Fatalf("expected preserved access methods in scoped registration: %+v", registerReq.Candidates[0])
+	if registerReq.Records[0].AccessMethods == nil || len(*registerReq.Records[0].AccessMethods) != 1 {
+		t.Fatalf("expected preserved access methods in scoped registration: %+v", registerReq.Records[0])
 	}
-	if got := (*registerReq.Candidates[0].AccessMethods)[0].AccessUrl.Url; got != reusableURL {
+	if got := (*registerReq.Records[0].AccessMethods)[0].AccessUrl.Url; got != reusableURL {
 		t.Fatalf("scoped registration access url = %q, want reused %q", got, reusableURL)
+	}
+	if registerReq.Records[0].FileName == nil || *registerReq.Records[0].FileName != filepath.ToSlash(filePath) {
+		t.Fatalf("scoped registration file_name = %+v, want %q", registerReq.Records[0].FileName, filepath.ToSlash(filePath))
 	}
 	if session.drsObjByOID[oid] == nil {
 		t.Fatalf("expected resolved scoped object after registration")
@@ -298,6 +312,174 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 	}
 	if needsUpload {
 		t.Fatalf("expected reusable downloadable record to skip upload")
+	}
+}
+
+func TestEnsureMetadataRegisteredReregistersWhenScopedNameDiffers(t *testing.T) {
+	tmp := t.TempDir()
+	oid := "abababababababababababababababababababababababababababababababab"
+	filePath := filepath.Join(tmp, "OHSU", "dir", "sample.bin")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("mkdir temp file dir: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("hello world"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	var registerReq internalapi.BulkCreateRequest
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read register request body: %v", err)
+			}
+			if err := json.Unmarshal(body, &registerReq); err != nil {
+				t.Fatalf("unmarshal register request: %v", err)
+			}
+			respBody, err := json.Marshal(internalapi.ListRecordsResponse{
+				Records: &[]internalapi.InternalRecord{{
+					Did:      "scoped-id",
+					FileName: ptrString("OHSU/dir/sample.bin"),
+					Size:     ptrInt64(11),
+					Hashes:   &internalapi.HashInfo{"sha256": oid},
+				}},
+			})
+			if err != nil {
+				t.Fatalf("marshal register response: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(string(respBody))),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+
+	existing := drsapi.DrsObject{
+		Id:   "scoped-id",
+		Name: ptrString("sample.bin"),
+		Size: 11,
+		Checksums: []drsapi.Checksum{{
+			Type:     "sha256",
+			Checksum: oid,
+		}},
+		ControlledAccess: &[]string{"/organization/syfon/project/e2e"},
+	}
+
+	session := &batchSyncSession{
+		ctx: context.Background(),
+		rt: newPushRuntime(&config.GitContext{
+			Client:       client,
+			Organization: "syfon",
+			ProjectId:    "e2e",
+			BucketName:   "syfon-e2e-bucket",
+			Logger:       drslog.NewNoOpLogger(),
+		}),
+		filesByOID: map[string]lfs.LfsFileInfo{
+			oid: {Oid: oid, Name: filePath, Size: 11},
+		},
+		oids:           []string{oid},
+		drsObjByOID:    map[string]*drsapi.DrsObject{},
+		existingByHash: map[string][]drsapi.DrsObject{oid: {existing}},
+		uploadRequired: map[string]bool{},
+	}
+	setTestPushScope(session.rt)
+
+	if err := session.ensureMetadataRegistered(); err != nil {
+		t.Fatalf("ensureMetadataRegistered returned error: %v", err)
+	}
+	if len(registerReq.Records) != 1 {
+		t.Fatalf("expected one registration candidate, got %+v", registerReq)
+	}
+	if registerReq.Records[0].FileName == nil || *registerReq.Records[0].FileName != filepath.ToSlash(filePath) {
+		t.Fatalf("expected updated file_name in registration record, got %+v", registerReq.Records[0].FileName)
+	}
+}
+
+func TestEnsureMetadataRegisteredReportsMetadataProgress(t *testing.T) {
+	tmp := t.TempDir()
+	oid := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	filePath := filepath.Join(tmp, "sample.bin")
+	if err := os.WriteFile(filePath, []byte("hello world"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	httpClient := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk":
+			respBody, err := json.Marshal(internalapi.ListRecordsResponse{
+				Records: &[]internalapi.InternalRecord{{
+					Did:      "scoped-id",
+					FileName: ptrString("sample.bin"),
+					Size:     ptrInt64(11),
+					Hashes:   &internalapi.HashInfo{"sha256": oid},
+				}},
+			})
+			if err != nil {
+				t.Fatalf("marshal register response: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(string(respBody))),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+	reporter := &recordingReporter{}
+	session := &batchSyncSession{
+		ctx: context.Background(),
+		rt: newPushRuntime(&config.GitContext{
+			Client:       client,
+			Organization: "syfon",
+			ProjectId:    "e2e",
+			BucketName:   "syfon-e2e-bucket",
+			Logger:       drslog.NewNoOpLogger(),
+		}),
+		reporter: reporter,
+		filesByOID: map[string]lfs.LfsFileInfo{
+			oid: {Oid: oid, Name: filePath, Size: 11},
+		},
+		oids:           []string{oid},
+		drsObjByOID:    map[string]*drsapi.DrsObject{},
+		existingByHash: map[string][]drsapi.DrsObject{},
+		uploadRequired: map[string]bool{},
+	}
+	setTestPushScope(session.rt)
+
+	if err := session.ensureMetadataRegistered(); err != nil {
+		t.Fatalf("ensureMetadataRegistered returned error: %v", err)
+	}
+	if reporter.metadataPlan.TotalObjects != 1 {
+		t.Fatalf("unexpected metadata plan: %+v", reporter.metadataPlan)
+	}
+	if len(reporter.metadataEvents) != 2 {
+		t.Fatalf("expected start and complete metadata events, got %+v", reporter.metadataEvents)
+	}
+	if reporter.metadataEvents[0].Phase != MetadataProgressRegistering || reporter.metadataEvents[0].Completed != 0 {
+		t.Fatalf("unexpected initial metadata event: %+v", reporter.metadataEvents[0])
+	}
+	last := reporter.metadataEvents[len(reporter.metadataEvents)-1]
+	if last.Phase != MetadataProgressCompleted || last.Completed != 1 || last.Total != 1 {
+		t.Fatalf("unexpected final metadata event: %+v", last)
 	}
 }
 
@@ -608,4 +790,24 @@ func TestScopedDRSObjectForPushPreservesExplicitAddURLAccessMethod(t *testing.T)
 	}
 }
 
+func TestScopedDRSObjectForPushUsesBaseNameWhenNoExistingObject(t *testing.T) {
+	rt := &pushRuntime{
+		Scope: pushScope{
+			Organization: "syfon",
+			Project:      "e2e",
+			Bucket:       "syfon-e2e-bucket",
+		},
+	}
+
+	obj, err := scopedDRSObjectForPush(rt, "95d536cc8df0a8e265832c6bd0422d69593f564d5ff0518e77535c45bc10bfde", "OHSU/dir/file.bin", 7, nil)
+	if err != nil {
+		t.Fatalf("scopedDRSObjectForPush returned error: %v", err)
+	}
+	if obj.Name == nil || *obj.Name != "file.bin" {
+		t.Fatalf("expected basename as name, got %+v", obj.Name)
+	}
+}
+
 func ptrString(s string) *string { return &s }
+
+func ptrInt64(v int64) *int64 { return &v }

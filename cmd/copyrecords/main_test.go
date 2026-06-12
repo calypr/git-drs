@@ -11,11 +11,15 @@ import (
 
 type fakeIndexAPI struct {
 	listResp      internalapi.ListRecordsResponse
+	listFn        func(opts syservices.ListRecordsOptions) internalapi.ListRecordsResponse
 	bulkDocsResp  []internalapi.InternalRecordResponse
 	createBulkReq []internalapi.BulkCreateRequest
 }
 
 func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (internalapi.ListRecordsResponse, error) {
+	if f.listFn != nil {
+		return f.listFn(opts), nil
+	}
 	return f.listResp, nil
 }
 
@@ -135,5 +139,38 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	}
 	if stats.Created != 1 || stats.Updated != 1 || stats.Unchanged != 0 {
 		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestCopyProjectRecords_FallsBackToRootListWhenScopedListIsEmpty(t *testing.T) {
+	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
+	source := &fakeIndexAPI{
+		listFn: func(opts syservices.ListRecordsOptions) internalapi.ListRecordsResponse {
+			if opts.Organization == "HTAN_INT" && opts.ProjectID == "BForePC" {
+				return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{}}
+			}
+			if opts.Organization == "" && opts.ProjectID == "" && opts.Page == 1 {
+				return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{
+					{Did: "did-in-scope", ControlledAccess: &scopeCA},
+					{Did: "did-out-of-scope", ControlledAccess: &[]string{"/organization/OTHER/project/X"}},
+				}}
+			}
+			return internalapi.ListRecordsResponse{Records: &[]internalapi.InternalRecord{}}
+		},
+	}
+	target := &fakeIndexAPI{}
+
+	stats, err := copyProjectRecords(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 100)
+	if err != nil {
+		t.Fatalf("copyProjectRecords error: %v", err)
+	}
+	if stats.SourceSeen != 1 || stats.Created != 1 || stats.Written != 1 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+	if len(target.createBulkReq) != 1 || len(target.createBulkReq[0].Records) != 1 {
+		t.Fatalf("expected one created record, got %+v", target.createBulkReq)
+	}
+	if target.createBulkReq[0].Records[0].Did != "did-in-scope" {
+		t.Fatalf("unexpected copied did: %+v", target.createBulkReq[0].Records[0])
 	}
 }

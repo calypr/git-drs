@@ -6,8 +6,9 @@ Important behavior:
 
 - `add-url` does not upload object bytes.
 - Registration to drs-server happens when you run `git drs push`.
-- Direct provider inspection is client-owned behavior routed through `syfon/client/cloud`.
-- The resolved source URL (`s3://...`, `gs://...`, `azblob://...`, etc.) is stored as the object access URL.
+- Remote-backed inspection is performed by Syfon through stored bucket credentials and bucket scopes.
+- In the current server-backed path, `add-url` supports S3 and S3-compatible storage.
+- The resolved source URL (`s3://...`) is stored as the object access URL.
 
 ## Supported URL Forms
 
@@ -17,7 +18,7 @@ Primary support today is S3-style URLs:
 - `https://bucket.s3.amazonaws.com/key`
 - Path-style S3-compatible HTTPS URLs
 
-The inspector also accepts other cloud styles (`gs://`, `azblob://`), but the main production path in current e2e coverage is S3/Gen3 bucket-backed workflows.
+The remote-backed inspect path is intentionally narrow in v1: S3 and S3-compatible buckets only.
 
 ## Two Add-URL Input Modes
 
@@ -37,10 +38,10 @@ git drs add-url path/to/object.bin data/from-bucket.bin \
 Notes:
 
 - `path/to/object.bin` is resolved relative to the configured bucket prefix for the current remote org/project.
-- `--scheme` is required in object-key mode because local bucket mappings store bucket/prefix, but not provider scheme.
-- Azure object-key mode is not supported yet; use a full `azblob://...` URL so account metadata stays explicit.
+- `--scheme` is required in object-key mode so Syfon knows which provider path to inspect. Today this must be `s3`.
+- The remote Syfon instance resolves bucket plus prefix from its stored bucket scopes, then performs the object HEAD using its stored bucket credential.
 
-### 2) Raw provider URL (compatibility mode)
+### 2) Raw provider URL
 
 You can still pass a full provider URL directly.
 
@@ -92,14 +93,9 @@ git drs push
 
 `add-url` no longer accepts per-command AWS flags.
 
-S3 connection hints are resolved from runtime environment/config. Common variables:
+For the normal remote-backed flow, `git drs add-url` does not use local `AWS_*` credentials. Syfon loads the bucket credential and endpoint configuration that were already stored through bucket management.
 
-- `AWS_REGION` (or `AWS_DEFAULT_REGION`)
-- `AWS_ENDPOINT_URL_S3` (or `AWS_ENDPOINT_URL`)
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-
-For e2e/dev harnesses, `TEST_BUCKET_*` variables are also supported by command-layer wiring.
+If your remote does not implement the internal inspect route yet, `add-url` fails with an upgrade message instead of falling back to local env-based inspection.
 
 ## Prerequisites
 
@@ -111,10 +107,10 @@ For e2e/dev harnesses, `TEST_BUCKET_*` variables are also supported by command-l
 
 ### `blob attributes failed ... MovedPermanently (301)`
 
-Usually region/endpoint mismatch for S3-compatible storage.
+Usually a stored bucket credential is pointed at the wrong region or endpoint for S3-compatible storage.
 
-- Set `AWS_REGION` correctly.
-- Set `AWS_ENDPOINT_URL_S3` for custom endpoints (MinIO/Ceph/Gen3 object gateway).
+- Check the Syfon bucket credential region.
+- Check the Syfon bucket credential endpoint for custom S3-compatible storage.
 
 ### `no local payload available; skipping upload and keeping metadata-only registration`
 

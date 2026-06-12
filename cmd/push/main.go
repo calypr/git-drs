@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -38,6 +39,7 @@ var Cmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		myLogger := drslog.GetLogger()
+		ctx := context.Background()
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
@@ -61,17 +63,20 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		drsClient.ForceUpload = pushForceUpload
-		lfsFiles, err := lfs.GetAllLfsFiles(string(remote), "", []string{"HEAD"}, myLogger)
+		pushRefs, err := currentPushRefUpdates(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve pushed refs: %w", err)
+		}
+		pushedPaths, err := listRefUpdatePaths(ctx, pushRefs)
+		if err != nil {
+			return fmt.Errorf("failed to resolve pushed paths: %w", err)
+		}
+		lfsFiles, err := lfs.GetLfsFilesForRefPaths("HEAD", pushedPaths, myLogger)
 		if err != nil {
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
 
-		ctx := context.Background()
-		deleteRefs, err := currentDeleteRefUpdates(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to resolve delete reconciliation base: %w", err)
-		}
-		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, deleteRefs, myLogger); err != nil {
+		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
 			return fmt.Errorf("failed to reconcile deletes: %w", err)
 		}
 		progress := newUploadProgressRenderer(os.Stderr)
@@ -122,6 +127,60 @@ func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error)
 		OldSHA: upstream,
 		NewSHA: head,
 	}}, nil
+}
+
+func currentPushRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
+	const zeroSHA = "0000000000000000000000000000000000000000"
+	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
+	if err != nil {
+		return []drsdelete.RefUpdate{{
+			OldSHA: zeroSHA,
+			NewSHA: head,
+		}}, nil
+	}
+	return []drsdelete.RefUpdate{{
+		OldSHA: upstream,
+		NewSHA: head,
+	}}, nil
+}
+
+func listRefUpdatePaths(ctx context.Context, refs []drsdelete.RefUpdate) ([]string, error) {
+	const zeroSHA = "0000000000000000000000000000000000000000"
+	set := make(map[string]struct{})
+	for _, ref := range refs {
+		newSHA := strings.TrimSpace(ref.NewSHA)
+		oldSHA := strings.TrimSpace(ref.OldSHA)
+		if newSHA == "" || newSHA == zeroSHA {
+			continue
+		}
+		var args []string
+		if oldSHA == "" || oldSHA == zeroSHA {
+			args = []string{"ls-tree", "-r", "--name-only", newSHA}
+		} else {
+			args = []string{"diff", "--name-only", oldSHA, newSHA}
+		}
+		out, err := gitOutputFn(ctx, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			set[line] = struct{}{}
+		}
+	}
+	paths := make([]string, 0, len(set))
+	for path := range set {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func gitOutput(ctx context.Context, args ...string) (string, error) {

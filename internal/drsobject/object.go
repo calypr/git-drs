@@ -3,9 +3,11 @@ package drsobject
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/google/uuid"
 )
@@ -69,6 +71,40 @@ func ConvertToCandidate(obj *drsapi.DrsObject) drsapi.DrsObjectCandidate {
 		Size:             obj.Size,
 		Version:          obj.Version,
 	}
+}
+
+func ConvertToInternalRecord(obj *drsapi.DrsObject, fileName string, organization string, project string) internalapi.InternalRecord {
+	if obj == nil {
+		return internalapi.InternalRecord{}
+	}
+	hashes := make(internalapi.HashInfo, len(obj.Checksums))
+	for _, checksum := range obj.Checksums {
+		typ := strings.TrimSpace(checksum.Type)
+		val := strings.TrimSpace(checksum.Checksum)
+		if typ == "" || val == "" {
+			continue
+		}
+		hashes[typ] = val
+	}
+
+	fileName = filepath.ToSlash(strings.TrimSpace(fileName))
+	record := internalapi.InternalRecord{
+		Did:              strings.TrimSpace(obj.Id),
+		AccessMethods:    obj.AccessMethods,
+		ControlledAccess: obj.ControlledAccess,
+		Description:      obj.Description,
+		FileName:         &fileName,
+		Hashes:           &hashes,
+		Size:             &obj.Size,
+		Version:          obj.Version,
+	}
+	if organization = strings.TrimSpace(organization); organization != "" {
+		record.Organization = &organization
+	}
+	if project = strings.TrimSpace(project); project != "" {
+		record.Project = &project
+	}
+	return record
 }
 
 type LocationOptions struct {

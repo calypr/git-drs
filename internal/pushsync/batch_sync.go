@@ -15,6 +15,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
@@ -40,6 +41,8 @@ type uploadCandidate struct {
 	src  string
 }
 
+const metadataLookupBatchSize = 500
+
 // BatchSyncForPush performs checksum-first push preparation.
 func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
 	session := &batchSyncSession{
@@ -54,22 +57,28 @@ func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[stri
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Normalizing files...")
 	session.normalizeFiles(files)
+	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Looking up metadata for %d unique OIDs...\n", len(session.oids))
 	if err := session.lookupMetadata(); err != nil {
 		return err
 	}
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Ensuring metadata registered...")
 	if err := session.ensureMetadataRegistered(); err != nil {
 		return err
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Identifying upload candidates...")
 	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Identified %d upload candidates\n", len(candidates))
 	if len(candidates) == 0 {
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Executing upload plan...")
 	return session.executeUploadPlan(candidates)
 }
 
@@ -92,26 +101,52 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 
 func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
-	for _, oid := range s.oids {
-		objects, err := drsremote.ObjectsByHash(s.ctx, s.rt.API, oid)
+	batches := chunkStrings(s.oids, metadataLookupBatchSize)
+	for idx, batch := range batches {
+		fmt.Fprintf(os.Stderr, "DEBUG:   lookupMetadata batch %d/%d (size: %d)\n", idx+1, len(batches), len(batch))
+		objectsByHash, err := drsremote.ObjectsByHashes(s.ctx, s.rt.API, batch)
 		if err != nil {
-			return fmt.Errorf("hash lookup failed for oid %s: %w", oid, err)
+			return fmt.Errorf("batch hash lookup failed: %w", err)
 		}
-		for _, obj := range objects {
-			objOID := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
-			if objOID == "" {
-				continue
+		for _, oid := range batch {
+			objects := objectsByHash[oid]
+			for _, obj := range objects {
+				objOID := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+				if objOID == "" {
+					continue
+				}
+				s.existingByHash[objOID] = append(s.existingByHash[objOID], obj)
 			}
-			s.existingByHash[objOID] = append(s.existingByHash[objOID], obj)
 		}
 	}
 	return nil
 }
 
-func (s *batchSyncSession) ensureMetadataRegistered() error {
-	toRegister := make([]drsapi.DrsObjectCandidate, 0)
+func chunkStrings(items []string, size int) [][]string {
+	if len(items) == 0 {
+		return nil
+	}
+	if size <= 0 || len(items) <= size {
+		return [][]string{items}
+	}
+	chunks := make([][]string, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
+}
 
-	for _, oid := range s.oids {
+func (s *batchSyncSession) ensureMetadataRegistered() error {
+	toRegister := make([]internalapi.InternalRecord, 0)
+
+	for idx, oid := range s.oids {
+		if idx > 0 && idx%500 == 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG:   ensureMetadataRegistered processing object %d/%d\n", idx, len(s.oids))
+		}
 		obj, err := s.getOrCreateDRSObjectCandidate(oid)
 		if err != nil {
 			return err
@@ -120,15 +155,13 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
-			toRegister = append(toRegister, localdrsobject.ConvertToCandidate(obj))
+			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 			s.uploadRequired[oid] = true
 			continue
 		}
 		if match, err := drsremote.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
-			s.drsObjByOID[oid] = match
-			if s.rt.Tuning.ForceUpload {
-				s.uploadRequired[oid] = true
-			}
+			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
 			continue
 		}
 
@@ -139,11 +172,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 				return err
 			}
 			s.drsObjByOID[oid] = reuseObj
-			toRegister = append(toRegister, localdrsobject.ConvertToCandidate(reuseObj))
+			toRegister = append(toRegister, s.metadataRecordForOID(oid, reuseObj))
 			continue
 		}
 
-		toRegister = append(toRegister, localdrsobject.ConvertToCandidate(obj))
+		toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 		s.uploadRequired[oid] = true
 	}
 
@@ -151,22 +184,54 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		return nil
 	}
 
+	if s.reporter != nil {
+		s.reporter.OnMetadataPlan(MetadataPlanSummary{TotalObjects: len(toRegister)})
+		s.reporter.OnMetadataProgress(MetadataProgressEvent{
+			Completed: 0,
+			Total:     len(toRegister),
+			Phase:     MetadataProgressRegistering,
+		})
+	}
+
 	s.rt.Logger.InfoContext(s.ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
-	registered, err := s.rt.API.Client.DRS().RegisterObjects(s.ctx, drsapi.RegisterObjectsJSONRequestBody{
-		Candidates: toRegister,
-	})
+	registered, err := s.rt.API.Client.InternalAPI().InternalBulkCreateWithResponse(s.ctx, internalapi.InternalBulkCreateJSONRequestBody(
+		internalapi.BulkCreateRequest{Records: toRegister},
+	))
 	if err != nil {
 		return fmt.Errorf("bulk register failed: %w", err)
 	}
-	for i := range registered.Objects {
-		obj := registered.Objects[i]
-		oid := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
-		if oid != "" {
-			copyObj := obj
-			s.drsObjByOID[oid] = &copyObj
+	if registered.JSON201 == nil {
+		return fmt.Errorf("bulk register failed: unexpected response %d", registered.StatusCode())
+	}
+	if registered.JSON201.Records == nil {
+		return fmt.Errorf("bulk register failed: empty record response")
+	}
+	for i := range *registered.JSON201.Records {
+		rec := (*registered.JSON201.Records)[i]
+		oid := ""
+		if rec.Hashes != nil {
+			oid = localdrsobject.NormalizeOid((*rec.Hashes)["sha256"])
+		}
+		if oid == "" {
+			continue
+		}
+		if obj := s.drsObjByOID[oid]; obj != nil && strings.TrimSpace(obj.Id) == "" {
+			obj.Id = strings.TrimSpace(rec.Did)
 		}
 	}
+	if s.reporter != nil {
+		s.reporter.OnMetadataProgress(MetadataProgressEvent{
+			Completed: len(toRegister),
+			Total:     len(toRegister),
+			Phase:     MetadataProgressCompleted,
+		})
+	}
 	return nil
+}
+
+func (s *batchSyncSession) metadataRecordForOID(oid string, obj *drsapi.DrsObject) internalapi.InternalRecord {
+	file := s.filesByOID[oid]
+	return localdrsobject.ConvertToInternalRecord(obj, file.Name, s.rt.Scope.Organization, s.rt.Scope.Project)
 }
 
 func (s *batchSyncSession) findReusableRecord(records []drsapi.DrsObject) *drsapi.DrsObject {
@@ -220,9 +285,11 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		}
 	}
 
-	name := filepath.Base(path)
-	if existing != nil && existing.Name != nil && *existing.Name != "" {
-		name = *existing.Name
+	name := strings.TrimSpace(filepath.Base(path))
+	if name == "" || name == "." {
+		if existing != nil && existing.Name != nil && strings.TrimSpace(*existing.Name) != "" {
+			name = strings.TrimSpace(*existing.Name)
+		}
 	}
 	if name == "" || name == "." {
 		name = oid
@@ -259,6 +326,23 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 		obj.UpdatedTime = existing.UpdatedTime
 	}
 	return obj, nil
+}
+
+func recordsEquivalentForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject) bool {
+	if existing == nil || generated == nil {
+		return false
+	}
+	if strings.TrimSpace(drsName(existing)) != strings.TrimSpace(drsName(generated)) {
+		return false
+	}
+	return firstAccessURL(existing) == firstAccessURL(generated)
+}
+
+func drsName(obj *drsapi.DrsObject) string {
+	if obj == nil || obj.Name == nil {
+		return ""
+	}
+	return strings.TrimSpace(*obj.Name)
 }
 
 func shouldPreserveExistingAccessMethodsForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject, oid string) bool {

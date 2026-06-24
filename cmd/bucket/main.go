@@ -249,7 +249,10 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		if prof, err := configure.Load(remoteName); err == nil {
 			token = strings.TrimSpace(prof.AccessToken)
 			if token == "" {
-				if ensureErr := credentials.EnsureValidCredential(context.Background(), prof, drslog.GetLogger()); ensureErr == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				ensureErr := credentials.EnsureValidCredential(ctx, prof, drslog.GetLogger())
+				cancel()
+				if ensureErr == nil {
 					_ = configure.Save(prof)
 					token = strings.TrimSpace(prof.AccessToken)
 				}

@@ -1,12 +1,12 @@
 module github.com/calypr/git-drs
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/calypr/data-client v0.0.0-20260506231822-6a4689d4201f
-	github.com/calypr/syfon v0.3.1-0.20260513001653-406639e16d27
-	github.com/calypr/syfon/apigen v0.2.8-0.20260513001653-406639e16d27
+	github.com/calypr/syfon v0.3.2-0.20260616212227-547f1e22e1ac
+	github.com/calypr/syfon/apigen v0.2.9-0.20260616212227-547f1e22e1ac
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.19.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -121,7 +121,7 @@ require (
 	gocloud.dev v0.45.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -141,10 +141,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
-	github.com/calypr/syfon/client v0.2.10-0.20260513001653-406639e16d27
+	github.com/calypr/syfon/client v0.3.1-0.20260616212227-547f1e22e1ac
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 )

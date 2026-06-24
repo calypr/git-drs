@@ -3,12 +3,10 @@ package addurl
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
-	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/spf13/cobra"
 )
 
@@ -61,18 +59,6 @@ func resolvePathArg(sourceArg string, args []string) (string, error) {
 		return strings.TrimPrefix(u.Path, "/"), nil
 	}
 	return strings.Trim(strings.TrimSpace(sourceArg), "/"), nil
-}
-
-func buildObjectParameters(objectURL, pathArg, sha256 string) sycloud.ObjectParameters {
-	return sycloud.ObjectParameters{
-		ObjectURL:       objectURL,
-		S3Region:        firstNonEmpty(os.Getenv("AWS_REGION"), os.Getenv("AWS_DEFAULT_REGION"), os.Getenv("TEST_BUCKET_REGION")),
-		S3Endpoint:      firstNonEmpty(os.Getenv("AWS_ENDPOINT_URL_S3"), os.Getenv("AWS_ENDPOINT_URL"), os.Getenv("TEST_BUCKET_ENDPOINT")),
-		S3AccessKey:     firstNonEmpty(os.Getenv("AWS_ACCESS_KEY_ID"), os.Getenv("TEST_BUCKET_ACCESS_KEY")),
-		S3SecretKey:     firstNonEmpty(os.Getenv("AWS_SECRET_ACCESS_KEY"), os.Getenv("TEST_BUCKET_SECRET_KEY")),
-		SHA256:          sha256,
-		DestinationPath: pathArg,
-	}
 }
 
 func looksLikeCloudURL(raw string) bool {

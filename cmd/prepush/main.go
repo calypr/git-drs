@@ -146,7 +146,11 @@ func (s *PrePushService) Run(args []string, stdin io.Reader) error {
 
 	// Stage metadata in one packet; server consumes it at LFS verify-time.
 	myLogger.Info(fmt.Sprintf("Staging %d DRS metadata records for LFS verify", len(lfsFiles)))
-	if err := submitPendingLFSMeta(ctx, remote, remoteConfig.GetEndpoint(), lfsFiles, myLogger); err != nil {
+	var token string
+	if drsClient.Credential != nil {
+		token = strings.TrimSpace(drsClient.Credential.AccessToken)
+	}
+	if err := submitPendingLFSMeta(ctx, remote, remoteConfig.GetEndpoint(), token, lfsFiles, myLogger); err != nil {
 		myLogger.Error(fmt.Sprintf("DRS metadata staging failed: %v", err))
 		return fmt.Errorf("DRS metadata staging failed: %w", err)
 	}
@@ -258,7 +262,7 @@ func toMetadataCandidate(c drsapi.DrsObjectCandidate) metadataCandidate {
 	return out
 }
 
-func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint string, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
+func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint string, token string, lfsFiles map[string]lfs.LfsFileInfo, logger *slog.Logger) error {
 	base := strings.TrimRight(strings.TrimSpace(endpoint), "/")
 	if base == "" {
 		return fmt.Errorf("remote endpoint is empty")
@@ -294,7 +298,9 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	}
 	httpReq.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
-	if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	} else if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
 		httpReq.Header.Set("Authorization", authHeader)
 	}
 

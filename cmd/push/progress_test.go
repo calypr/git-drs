@@ -137,6 +137,28 @@ func TestUploadProgressRendererHadUploads(t *testing.T) {
 	}
 }
 
+func TestUploadProgressRendererMetadataOnly(t *testing.T) {
+	var out bytes.Buffer
+	r := newUploadProgressRenderer(&out)
+	r.base.SetTTY(true)
+
+	r.OnMetadataPlan(pushsync.MetadataPlanSummary{TotalObjects: 3})
+	r.OnMetadataProgress(pushsync.MetadataProgressEvent{Completed: 0, Total: 3, Phase: pushsync.MetadataProgressRegistering})
+	r.OnMetadataProgress(pushsync.MetadataProgressEvent{Completed: 3, Total: 3, Phase: pushsync.MetadataProgressCompleted})
+	r.Finish()
+
+	got := out.String()
+	if !strings.Contains(got, "registering metadata") {
+		t.Fatalf("expected metadata line, got %q", got)
+	}
+	if !strings.Contains(got, "3/3") {
+		t.Fatalf("expected metadata completion count, got %q", got)
+	}
+	if !strings.Contains(got, "100.0%") {
+		t.Fatalf("expected metadata completion percentage, got %q", got)
+	}
+}
+
 func TestUploadProgressRendererConcurrentProgress(t *testing.T) {
 	var out bytes.Buffer
 	r := newUploadProgressRenderer(&out)

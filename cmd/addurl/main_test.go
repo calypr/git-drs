@@ -74,15 +74,26 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	service := NewAddURLService()
 	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, in sycloud.ObjectParameters) (*sycloud.ObjectInfo, error) {
-			return &sycloud.ObjectInfo{
-				Bucket:      "bucket",
-				Key:         "path/to/file.bin",
-				Path:        "file.bin",
-				SizeBytes:   int64(11),
-				MetaSHA256:  "",
-				ETag:        "abcd1234",
-				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		func(ctx context.Context, drsCtx *config.GitContext, in addURLInput) (*inspectedObject, error) {
+			return &inspectedObject{
+				objectURL: "s3://bucket/path/to/file.bin",
+				info: &sycloud.ObjectInfo{
+					Bucket:      "bucket",
+					Key:         "path/to/file.bin",
+					Path:        "file.bin",
+					SizeBytes:   int64(11),
+					MetaSHA256:  "",
+					ETag:        "abcd1234",
+					LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+				},
+			}, nil
+		},
+		func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
+			return &config.GitContext{
+				Organization:  "calypr",
+				ProjectId:     "calypr-dev",
+				BucketName:    "cbds",
+				StoragePrefix: "",
 			}, nil
 		},
 		func(path string) (bool, error) {
@@ -166,32 +177,6 @@ func TestParseAddURLInput_DoesNotRequireAWSFlags(t *testing.T) {
 	}
 	if in.path != "path/to/file.bin" {
 		t.Fatalf("unexpected path: %s", in.path)
-	}
-}
-
-func TestParseAddURLInput_PassesS3EnvHints(t *testing.T) {
-	t.Setenv("TEST_BUCKET_REGION", "us-east-1")
-	t.Setenv("TEST_BUCKET_ENDPOINT", "https://aced-storage.ohsu.edu")
-	t.Setenv("TEST_BUCKET_ACCESS_KEY", "cbds-user")
-	t.Setenv("TEST_BUCKET_SECRET_KEY", "cbds-secret")
-
-	cmd := NewCommand()
-	in, err := parseAddURLInput(cmd, []string{"s3://cbds/path/to/file.bin"})
-	if err != nil {
-		t.Fatalf("parseAddURLInput error: %v", err)
-	}
-	params := buildObjectParameters("s3://cbds/path/to/file.bin", in.path, in.sha256)
-	if params.S3Region != "us-east-1" {
-		t.Fatalf("unexpected S3Region: %s", params.S3Region)
-	}
-	if params.S3Endpoint != "https://aced-storage.ohsu.edu" {
-		t.Fatalf("unexpected S3Endpoint: %s", params.S3Endpoint)
-	}
-	if params.S3AccessKey != "cbds-user" {
-		t.Fatalf("unexpected S3AccessKey: %s", params.S3AccessKey)
-	}
-	if params.S3SecretKey != "cbds-secret" {
-		t.Fatalf("unexpected S3SecretKey: %s", params.S3SecretKey)
 	}
 }
 
@@ -383,18 +368,22 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 func stubAddURLDeps(
 	t *testing.T,
 	service *AddURLService,
-	inspectFn func(context.Context, sycloud.ObjectParameters) (*sycloud.ObjectInfo, error),
+	inspectFn func(context.Context, *config.GitContext, addURLInput) (*inspectedObject, error),
+	getRemoteClientFn func(*config.Config, config.Remote, *slog.Logger) (*config.GitContext, error),
 	isTrackedFn func(string) (bool, error),
 ) func() {
 	t.Helper()
-	origInspect := service.inspectObject
+	origInspect := service.inspectRemoteObject
+	origGetRemoteClient := service.getRemoteClient
 	origIsTracked := service.isLFSTracked
 
-	service.inspectObject = inspectFn
+	service.inspectRemoteObject = inspectFn
+	service.getRemoteClient = getRemoteClientFn
 	service.isLFSTracked = isTrackedFn
 
 	return func() {
-		service.inspectObject = origInspect
+		service.inspectRemoteObject = origInspect
+		service.getRemoteClient = origGetRemoteClient
 		service.isLFSTracked = origIsTracked
 	}
 }

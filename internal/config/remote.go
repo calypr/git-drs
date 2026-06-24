@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -63,9 +64,12 @@ func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (*GitConte
 	if err != nil {
 		return nil, err
 	}
-	if err := credentials.EnsureValidCredential(context.Background(), cred, logger); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := credentials.EnsureValidCredential(ctx, cred, logger); err != nil {
 		return nil, WrapCredentialValidationError(remoteName, err)
 	}
+	_ = manager.Save(cred)
 	return newGitContext(*cred, s, logger)
 }
 

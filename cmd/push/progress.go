@@ -17,11 +17,19 @@ type uploadFileProgress struct {
 	completed bool
 }
 
+type metadataProgress struct {
+	total     int
+	completed int
+	active    bool
+	done      bool
+}
+
 type uploadProgressRenderer struct {
 	mu        sync.Mutex
 	base      *progressui.Renderer
 	planned   bool
 	plan      pushsync.UploadPlanSummary
+	metadata  metadataProgress
 	files     map[string]*uploadFileProgress
 	fileOrder []string
 }
@@ -34,7 +42,10 @@ func newUploadProgressRenderer(out io.Writer) *uploadProgressRenderer {
 }
 
 func (r *uploadProgressRenderer) renderLocked(force bool) {
-	lines := make([]string, 0, len(r.fileOrder))
+	lines := make([]string, 0, len(r.fileOrder)+1)
+	if r.metadata.total > 0 {
+		lines = append(lines, r.renderMetadataLine())
+	}
 	for idx, oid := range r.fileOrder {
 		file := r.files[oid]
 		if file == nil {
@@ -43,6 +54,45 @@ func (r *uploadProgressRenderer) renderLocked(force bool) {
 		lines = append(lines, r.renderLine(idx, len(r.fileOrder), file))
 	}
 	r.base.Render(force, lines)
+}
+
+func (r *uploadProgressRenderer) OnMetadataPlan(plan pushsync.MetadataPlanSummary) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.metadata = metadataProgress{
+		total:  plan.TotalObjects,
+		active: plan.TotalObjects > 0,
+		done:   false,
+	}
+	if plan.TotalObjects > 0 {
+		r.renderLocked(true)
+	}
+}
+
+func (r *uploadProgressRenderer) OnMetadataProgress(ev pushsync.MetadataProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if ev.Total > 0 {
+		r.metadata.total = ev.Total
+	}
+	if ev.Completed > r.metadata.completed {
+		r.metadata.completed = ev.Completed
+	}
+	if ev.Phase == pushsync.MetadataProgressRegistering {
+		r.metadata.active = true
+	}
+	if ev.Phase == pushsync.MetadataProgressCompleted {
+		r.metadata.active = false
+		r.metadata.done = true
+		if r.metadata.total > 0 {
+			r.metadata.completed = r.metadata.total
+		}
+	}
+	if r.metadata.total > 0 {
+		r.renderLocked(false)
+	}
 }
 
 func (r *uploadProgressRenderer) OnUploadPlan(plan pushsync.UploadPlanSummary) {
@@ -102,10 +152,13 @@ func (r *uploadProgressRenderer) Finish() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.planned {
+	if !r.planned && r.metadata.total == 0 {
 		return
 	}
 	lines := make([]string, 0, len(r.fileOrder))
+	if r.metadata.total > 0 {
+		lines = append(lines, r.renderMetadataLine())
+	}
 	for idx, oid := range r.fileOrder {
 		file := r.files[oid]
 		if file == nil {
@@ -115,6 +168,7 @@ func (r *uploadProgressRenderer) Finish() {
 	}
 	r.base.Finish(lines)
 	r.planned = false
+	r.metadata = metadataProgress{}
 }
 
 func (r *uploadProgressRenderer) HadUploads() bool {
@@ -152,4 +206,22 @@ func (r *uploadProgressRenderer) renderLine(idx int, total int, file *uploadFile
 	_ = idx
 	_ = total
 	return fmt.Sprintf("%s%s %s %s %s", prefix, label, bar, pct, bytesLabel)
+}
+
+func (r *uploadProgressRenderer) renderMetadataLine() string {
+	total := r.metadata.total
+	completed := r.metadata.completed
+	if completed < 0 {
+		completed = 0
+	}
+	if total > 0 && completed > total {
+		completed = total
+	}
+	prefix := ""
+	if r.metadata.active && !r.metadata.done {
+		prefix = r.base.Spinner() + " "
+	}
+	bar := progressui.RenderProgressBar(int64(completed), int64(total), 24)
+	pct := progressui.RenderPercent(int64(completed), int64(total))
+	return fmt.Sprintf("%sregistering metadata %s %s %d/%d", prefix, bar, pct, completed, total)
 }

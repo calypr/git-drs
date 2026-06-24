@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
@@ -16,7 +17,6 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	conf "github.com/calypr/syfon/client/config"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -44,6 +44,11 @@ var Gen3Cmd = &cobra.Command{
 		err := gen3Init(remoteName, credFile, fenceToken, scopeArg, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
+		}
+		if noSkipSmudge {
+			if err := gitrepo.SetGitConfigOptions(map[string]string{"drs.skipsmudge": "false"}); err != nil {
+				return fmt.Errorf("failed to configure skipsmudge: %w", err)
+			}
 		}
 		return nil
 	},
@@ -112,13 +117,15 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		MinShepherdVersion: "",
 	}
 
-	if err := credentials.EnsureValidCredential(context.Background(), cred, logg); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := credentials.EnsureValidCredential(ctx, cred, logg); err != nil {
 		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", config.WrapCredentialValidationError(remoteName, err))
 	}
 
 	scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")
 	if err != nil {
-		scope, err = resolveBucketScopeFromServer(context.Background(), apiEndpoint, strings.TrimSpace(cred.AccessToken), organization, project)
+		scope, err = resolveBucketScopeFromServer(context.Background(), apiEndpoint, strings.TrimSpace(cred.AccessToken), organization, project, selectedBucket)
 		if err != nil {
 			return fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", organization, project, err)
 		}
@@ -155,11 +162,6 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	if err := gitrepo.SetRemoteLFSURL(remoteName, apiEndpoint); err != nil {
 		return fmt.Errorf("failed to set lfs url for remote %s: %w", remoteName, err)
 	}
-	if strings.TrimSpace(cred.AccessToken) != "" {
-		if err := gitrepo.SetRemoteToken(remoteName, strings.TrimSpace(cred.AccessToken)); err != nil {
-			return fmt.Errorf("failed to persist repo token for remote %s: %w", remoteName, err)
-		}
-	}
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
 	return nil
@@ -183,7 +185,7 @@ func parseScopeArg(raw string) (string, string, error) {
 	return organization, project, nil
 }
 
-func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project string) (gitrepo.ResolvedBucketScope, error) {
+func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
 	}
@@ -211,48 +213,9 @@ func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organiza
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
-	projectResource, err := syfoncommon.ResourcePath(organization, project)
+	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, err
 	}
-	orgResource, err := syfoncommon.ResourcePath(organization, "")
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, err
-	}
-
-	if bucket, ok := findBucketByResource(payload, projectResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-	if bucket, ok := findBucketByResource(payload, orgResource); ok {
-		return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
-	}
-
-	return gitrepo.ResolvedBucketScope{}, fmt.Errorf("no visible server bucket matched organization=%q project=%q", organization, project)
-}
-
-func findBucketByResource(payload bucketapi.BucketsResponse, resource string) (string, bool) {
-	resource = syfoncommon.NormalizeAccessResource(resource)
-	if resource == "" {
-		return "", false
-	}
-	var match string
-	for bucket, meta := range payload.S3BUCKETS {
-		if meta.Programs == nil {
-			continue
-		}
-		for _, candidate := range *meta.Programs {
-			if syfoncommon.NormalizeAccessResource(candidate) != resource {
-				continue
-			}
-			if match != "" && match != bucket {
-				return "", false
-			}
-			match = bucket
-			break
-		}
-	}
-	if match == "" {
-		return "", false
-	}
-	return match, true
+	return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
 }

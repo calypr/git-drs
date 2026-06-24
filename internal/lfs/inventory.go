@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -111,6 +112,31 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 	return lfsFileMap, nil
 }
 
+// GetLfsFilesForRefPaths scans the given paths in a specific ref/tree and
+// returns only those entries whose blob content is a valid Git LFS pointer.
+func GetLfsFilesForRefPaths(ref string, paths []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+	normalized := uniquePaths(paths)
+	files := make(map[string]LfsFileInfo)
+	if len(normalized) == 0 {
+		return files, nil
+	}
+	if err := addFilesFromPaths(context.Background(), repoDir, ref, normalized, logger, files); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
 // GetWorktreeLfsFiles scans the current checkout and returns tracked files whose
 // worktree content is currently a valid Git LFS pointer. This is the fast path
 // for interactive commands like `git-drs ls-files`.
@@ -190,18 +216,23 @@ func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logg
 	if err != nil {
 		return fmt.Errorf("git grep failed for %s: %w", ref, err)
 	}
-	for _, path := range paths {
-		blob, err := runGitCommand(ctx, repoDir, "show", fmt.Sprintf("%s:%s", ref, path))
-		if err != nil {
-			logger.Debug(fmt.Sprintf("skipping path %s in %s: unable to read blob", path, ref))
-			continue
-		}
+	return addFilesFromPaths(ctx, repoDir, ref, paths, logger, lfsFileMap)
+}
 
+func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string, _ *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	blobs, err := readRefBlobsBatch(ctx, repoDir, ref, paths)
+	if err != nil {
+		return fmt.Errorf("git cat-file batch failed for %s: %w", ref, err)
+	}
+	for path, blob := range blobs {
 		pointer, ok := parseLFSPointer(blob)
 		if !ok {
 			continue
 		}
-
 		lfsFileMap[path] = LfsFileInfo{
 			Name:      path,
 			Size:      pointer.Size,
@@ -212,6 +243,119 @@ func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logg
 		}
 	}
 
+	return nil
+}
+
+func uniquePaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(paths))
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, path)
+	}
+	return out
+}
+
+func readRefBlobsBatch(ctx context.Context, repoDir, ref string, paths []string) (map[string]string, error) {
+	if len(paths) == 0 {
+		return map[string]string{}, nil
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "cat-file", "--batch")
+	cmd.Dir = repoDir
+	cmd.Stdin = strings.NewReader(joinBatchSpecs(ref, paths))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+
+	reader := bytes.NewReader(stdout.Bytes())
+	blobs := make(map[string]string, len(paths))
+	for _, path := range paths {
+		header, err := readBatchHeader(reader)
+		if err != nil {
+			return nil, err
+		}
+		if strings.HasSuffix(header, " missing") {
+			continue
+		}
+		size, err := parseBatchHeaderSize(header)
+		if err != nil {
+			return nil, err
+		}
+		payload := make([]byte, size)
+		if _, err := io.ReadFull(reader, payload); err != nil {
+			return nil, fmt.Errorf("read batch payload for %s:%s: %w", ref, path, err)
+		}
+		if err := consumeBatchSeparator(reader); err != nil {
+			return nil, err
+		}
+		blobs[path] = string(payload)
+	}
+	return blobs, nil
+}
+
+func joinBatchSpecs(ref string, paths []string) string {
+	var b strings.Builder
+	for _, path := range paths {
+		b.WriteString(ref)
+		b.WriteByte(':')
+		b.WriteString(path)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func readBatchHeader(r *bytes.Reader) (string, error) {
+	var line []byte
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		if b == '\n' {
+			return strings.TrimSpace(string(line)), nil
+		}
+		line = append(line, b)
+	}
+}
+
+func parseBatchHeaderSize(header string) (int, error) {
+	fields := strings.Fields(header)
+	if len(fields) < 3 {
+		return 0, fmt.Errorf("unexpected git cat-file batch header %q", header)
+	}
+	size, err := strconv.Atoi(fields[2])
+	if err != nil || size < 0 {
+		return 0, fmt.Errorf("unexpected git cat-file object size in header %q", header)
+	}
+	return size, nil
+}
+
+func consumeBatchSeparator(r *bytes.Reader) error {
+	b, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
+	if b != '\n' {
+		return fmt.Errorf("unexpected git cat-file batch separator %q", string([]byte{b}))
+	}
 	return nil
 }
 

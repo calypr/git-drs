@@ -12,6 +12,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/drstrack"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycloud "github.com/calypr/syfon/client/cloud"
@@ -22,32 +23,35 @@ import (
 // AddURLService groups injectable dependencies used to implement the add-url
 // behavior (logger factory, object inspection, LFS helpers, config loader, etc.).
 type AddURLService struct {
-	newLogger     func(string, bool) (*slog.Logger, error)
-	inspectObject func(ctx context.Context, input sycloud.ObjectParameters) (*sycloud.ObjectInfo, error)
-	isLFSTracked  func(path string) (bool, error)
-	getGitRoots   func(ctx context.Context) (string, string, error)
-	gitLFSTrack   func(ctx context.Context, path string) (bool, error)
-	loadConfig    func() (*config.Config, error)
+	newLogger           func(string, bool) (*slog.Logger, error)
+	inspectRemoteObject func(ctx context.Context, drsCtx *config.GitContext, input addURLInput) (*inspectedObject, error)
+	getRemoteClient     func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error)
+	isLFSTracked        func(path string) (bool, error)
+	getGitRoots         func(ctx context.Context) (string, string, error)
+	gitLFSTrack         func(ctx context.Context, path string) (bool, error)
+	loadConfig          func() (*config.Config, error)
 }
 
 // NewAddURLService constructs an AddURLService populated with production
 // implementations of its dependencies.
 func NewAddURLService() *AddURLService {
 	return &AddURLService{
-		newLogger:     drslog.NewLogger,
-		inspectObject: sycloud.InspectObject,
-		isLFSTracked:  lfs.IsLFSTracked,
-		getGitRoots:   lfs.GetGitRootDirectories,
-		gitLFSTrack:   drstrack.TrackReadOnly,
-		loadConfig:    config.LoadConfig,
+		newLogger:           drslog.NewLogger,
+		inspectRemoteObject: inspectRemoteObjectViaServer,
+		getRemoteClient: func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
+			return cfg.GetRemoteClient(remote, logger)
+		},
+		isLFSTracked: lfs.IsLFSTracked,
+		getGitRoots:  lfs.GetGitRootDirectories,
+		gitLFSTrack:  drstrack.TrackReadOnly,
+		loadConfig:   config.LoadConfig,
 	}
 }
 
-// Run executes the add-url workflow: parse CLI input, resolve the target bucket
-// scope, inspect the provider object through the client-owned cloud package,
-// ensure the LFS object exists in local storage, write a pointer file, update
-// the pre-commit cache (best-effort), optionally add a tracking entry, and
-// record the DRS mapping.
+// Run executes the add-url workflow: parse CLI input, inspect the provider
+// object through the configured Syfon remote, ensure the LFS object exists in
+// local storage, write a pointer file, update the pre-commit cache
+// (best-effort), optionally add a tracking entry, and record the DRS mapping.
 func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -79,20 +83,31 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("error getting remote configuration for %s", remote)
 	}
 
+	drsCtx, err := s.getRemoteClient(cfg, remote, logger)
+	if err != nil {
+		return err
+	}
+
 	org, project, scope, err := resolveTargetScope(remoteConfig)
 	if err != nil {
 		return err
 	}
 
-	input.objectURL, err = resolveObjectURL(input, scope)
-	if err != nil {
-		return err
+	if drsCtx != nil {
+		org = firstNonEmpty(strings.TrimSpace(drsCtx.Organization), org)
+		project = firstNonEmpty(strings.TrimSpace(drsCtx.ProjectId), project)
+		scope = gitrepo.ResolvedBucketScope{
+			Bucket: firstNonEmpty(strings.TrimSpace(drsCtx.BucketName), scope.Bucket),
+			Prefix: firstNonEmpty(strings.TrimSpace(drsCtx.StoragePrefix), scope.Prefix),
+		}
 	}
 
-	objectInfo, err := s.inspectObject(ctx, buildObjectParameters(input.objectURL, input.path, input.sha256))
+	inspected, err := s.inspectRemoteObject(ctx, drsCtx, input)
 	if err != nil {
 		return err
 	}
+	input.objectURL = inspected.objectURL
+	objectInfo := inspected.info
 
 	isTracked, err := s.isLFSTracked(input.path)
 	if err != nil {

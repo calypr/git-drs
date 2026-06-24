@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/internal/drslog"
@@ -72,12 +73,12 @@ var Cmd = &cobra.Command{
 			if token != "" {
 				cred.AccessToken = token
 			}
-			if ensureErr := credentials.EnsureValidCredential(context.Background(), cred, logg); ensureErr == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ensureErr := credentials.EnsureValidCredential(ctx, cred, logg)
+			cancel()
+			if ensureErr == nil {
 				_ = manager.Save(cred)
 				token = strings.TrimSpace(cred.AccessToken)
-				if token != "" {
-					_ = gitrepo.SetRemoteToken(remoteName, token)
-				}
 			}
 		}
 

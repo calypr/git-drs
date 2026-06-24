@@ -57,22 +57,28 @@ func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[stri
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Normalizing files...")
 	session.normalizeFiles(files)
+	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Looking up metadata for %d unique OIDs...\n", len(session.oids))
 	if err := session.lookupMetadata(); err != nil {
 		return err
 	}
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Ensuring metadata registered...")
 	if err := session.ensureMetadataRegistered(); err != nil {
 		return err
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Identifying upload candidates...")
 	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Identified %d upload candidates\n", len(candidates))
 	if len(candidates) == 0 {
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Executing upload plan...")
 	return session.executeUploadPlan(candidates)
 }
 
@@ -95,7 +101,9 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 
 func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
-	for _, batch := range chunkStrings(s.oids, metadataLookupBatchSize) {
+	batches := chunkStrings(s.oids, metadataLookupBatchSize)
+	for idx, batch := range batches {
+		fmt.Fprintf(os.Stderr, "DEBUG:   lookupMetadata batch %d/%d (size: %d)\n", idx+1, len(batches), len(batch))
 		objectsByHash, err := drsremote.ObjectsByHashes(s.ctx, s.rt.API, batch)
 		if err != nil {
 			return fmt.Errorf("batch hash lookup failed: %w", err)
@@ -135,7 +143,10 @@ func chunkStrings(items []string, size int) [][]string {
 func (s *batchSyncSession) ensureMetadataRegistered() error {
 	toRegister := make([]internalapi.InternalRecord, 0)
 
-	for _, oid := range s.oids {
+	for idx, oid := range s.oids {
+		if idx > 0 && idx%500 == 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG:   ensureMetadataRegistered processing object %d/%d\n", idx, len(s.oids))
+		}
 		obj, err := s.getOrCreateDRSObjectCandidate(oid)
 		if err != nil {
 			return err

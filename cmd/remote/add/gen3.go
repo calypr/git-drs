@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/calypr/data-client/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
@@ -43,6 +44,11 @@ var Gen3Cmd = &cobra.Command{
 		err := gen3Init(remoteName, credFile, fenceToken, scopeArg, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
+		}
+		if noSkipSmudge {
+			if err := gitrepo.SetGitConfigOptions(map[string]string{"drs.skipsmudge": "false"}); err != nil {
+				return fmt.Errorf("failed to configure skipsmudge: %w", err)
+			}
 		}
 		return nil
 	},
@@ -111,7 +117,9 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		MinShepherdVersion: "",
 	}
 
-	if err := credentials.EnsureValidCredential(context.Background(), cred, logg); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := credentials.EnsureValidCredential(ctx, cred, logg); err != nil {
 		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", config.WrapCredentialValidationError(remoteName, err))
 	}
 
@@ -153,11 +161,6 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	}
 	if err := gitrepo.SetRemoteLFSURL(remoteName, apiEndpoint); err != nil {
 		return fmt.Errorf("failed to set lfs url for remote %s: %w", remoteName, err)
-	}
-	if strings.TrimSpace(cred.AccessToken) != "" {
-		if err := gitrepo.SetRemoteToken(remoteName, strings.TrimSpace(cred.AccessToken)); err != nil {
-			return fmt.Errorf("failed to persist repo token for remote %s: %w", remoteName, err)
-		}
 	}
 
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))

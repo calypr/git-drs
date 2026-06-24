@@ -78,6 +78,11 @@ var LocalCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Added remote '%s'. Config: %v\n", remoteName, newConfig.GetRemote(config.Remote(remoteName)))
+		if noSkipSmudge {
+			if err := gitrepo.SetGitConfigOptions(map[string]string{"drs.skipsmudge": "false"}); err != nil {
+				return fmt.Errorf("failed to configure skipsmudge: %w", err)
+			}
+		}
 		return nil
 	},
 }

@@ -414,7 +414,7 @@ What it does:
 Notes:
 
 - delete reconciliation is Git-history-derived; there is no local delete-intent sidecar state
-- `git drs push` uses the current branch upstream as the delete diff base when one exists
+- `git drs push` uses the current branch upstream (or falls back to the merge base with the target remote's tracking branches) as the diff base to isolate the push commits. If neither exists, it defaults to a zero-base (scans the entire checkout tree).
 - plain `git push` uses the managed `pre-push` hook, which receives authoritative old/new SHAs from Git
 
 ### `git drs add-url <object-url-or-key> [path]`

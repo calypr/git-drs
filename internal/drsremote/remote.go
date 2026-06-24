@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
@@ -16,6 +17,7 @@ import (
 	"github.com/calypr/syfon/client/request"
 	"github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
+	"golang.org/x/sync/errgroup"
 )
 
 func ObjectsByHash(ctx context.Context, drsCtx *config.GitContext, checksum string) ([]drsapi.DrsObject, error) {
@@ -54,8 +56,35 @@ func ObjectsByHashes(ctx context.Context, drsCtx *config.GitContext, checksums [
 		return map[string][]drsapi.DrsObject{}, nil
 	}
 
-	page, err := drsCtx.Client.DRS().BatchGetObjectsByHash(ctx, queryChecksums)
-	if err != nil {
+	// Fetch checksums in parallel using a concurrency-limited errgroup
+	var mu sync.Mutex
+	drsObjects := make([]drsapi.DrsObject, 0)
+	concurrency := 20
+	sem := make(chan struct{}, concurrency)
+	g, gCtx := errgroup.WithContext(ctx)
+
+	for _, checksum := range queryChecksums {
+		checksum := checksum
+		g.Go(func() error {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			resp, err := drsCtx.Client.DRSAPI().GetObjectsByChecksumWithResponse(gCtx, drsapi.ChecksumParameter(checksum))
+			if err != nil {
+				return fmt.Errorf("get objects by checksum %s: %w", checksum, err)
+			}
+			if resp.JSON200 == nil || resp.JSON200.ResolvedDrsObject == nil {
+				return fmt.Errorf("get objects by checksum %s failed: unexpected response: %d", checksum, resp.StatusCode())
+			}
+
+			mu.Lock()
+			drsObjects = append(drsObjects, *resp.JSON200.ResolvedDrsObject...)
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
@@ -64,7 +93,7 @@ func ObjectsByHashes(ctx context.Context, drsCtx *config.GitContext, checksums [
 		results[original] = nil
 		results[normalized] = nil
 	}
-	for _, obj := range page.DrsObjects {
+	for _, obj := range drsObjects {
 		for _, checksum := range obj.Checksums {
 			if checksum.Type == "" || checksum.Checksum == "" {
 				continue

@@ -350,6 +350,7 @@ func TestSubmitPendingLFSMetaRequestWiring(t *testing.T) {
 		context.Background(),
 		config.Remote("origin"),
 		"https://example.test/  ",
+		"",
 		map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 		logger,
 	)
@@ -427,6 +428,7 @@ func TestSubmitPendingLFSMetaStatusHandling(t *testing.T) {
 				context.Background(),
 				config.Remote("origin"),
 				"https://example.test",
+				"",
 				map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 				logger,
 			)
@@ -526,6 +528,7 @@ func TestSubmitPendingLFSMetaRequestWiringBasicAuth(t *testing.T) {
 		context.Background(),
 		config.Remote("origin"),
 		"https://example.test",
+		"",
 		map[string]lfs.LfsFileInfo{"file.bin": {Oid: oid}},
 		logger,
 	)

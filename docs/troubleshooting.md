@@ -366,6 +366,35 @@ Or hydrate only what you need:
 git drs pull -I "*.bam"
 ```
 
+### `git clone` or `git checkout` downloads too much data
+
+**`git checkout` is fully safe by default.** Git DRS automatically skips downloading file payloads during checkout/clone (to keep checkouts fast). Only the lightweight pointer files are written to the working tree initially.
+
+1. **Hydrate file content explicitly (Standard Workflow)**:
+   When you need the actual content of the files, run:
+   ```bash
+   git drs pull
+   ```
+   Or hydrate only what you need:
+   ```bash
+   git drs pull -I "*.bam"
+   ```
+
+2. **Force download during checkout (Optional)**:
+   If you want Git DRS to always download and hydrate all file payloads automatically during checkouts (reverting to non-skip behavior), you can:
+   - Configure it during remote setup:
+     ```bash
+     git drs remote add gen3 public HTAN_INT/BForePC --no-skip-smudge
+     ```
+   - Or configure it directly in Git settings:
+     ```bash
+     git config drs.skipsmudge false
+     ```
+   - Or run individual commands with the environment variable:
+     ```bash
+     export GIT_LFS_SKIP_SMUDGE=false
+     ```
+
 ## Debugging Workflow
 
 When behavior is unclear, use this sequence:

@@ -167,6 +167,8 @@ func hookContains(name, marker string) (bool, error) {
 	return strings.Contains(string(content), marker), nil
 }
 
+var noSkipSmudge bool
+
 func initGitConfig() error {
 	configs := map[string]string{
 		"lfs.allowincompletepush": "false",
@@ -184,6 +186,10 @@ func initGitConfig() error {
 		"drs.enable-data-client-logs": strconv.FormatBool(enableDataClientLogs),
 	}
 
+	if noSkipSmudge {
+		configs["drs.skipsmudge"] = "false"
+	}
+
 	if err := gitrepo.SetGitConfigOptions(configs); err != nil {
 		return fmt.Errorf("unable to write git config: %w", err)
 	}
@@ -195,6 +201,7 @@ func init() {
 	Cmd.Flags().BoolVarP(&upsert, "upsert", "u", false, "Enable upsert for DRS objects")
 	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 5120, "Multipart threshold in MB")
 	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
+	Cmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
 }
 
 func installPrePushHook(logger *slog.Logger) error {

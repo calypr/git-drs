@@ -17,12 +17,15 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/gitfilter"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
@@ -35,6 +38,26 @@ var Cmd = &cobra.Command{
 	Hidden:  true,
 	Args:    cobra.NoArgs,
 	RunE:    runFilter,
+}
+
+func shouldSkipSmudge() bool {
+	if val := os.Getenv("GIT_LFS_SKIP_SMUDGE"); val != "" {
+		return val == "1" || strings.ToLower(val) == "true"
+	}
+	if val := os.Getenv("GIT_DRS_SKIP_SMUDGE"); val != "" {
+		return val == "1" || strings.ToLower(val) == "true"
+	}
+	if valStr, err := gitrepo.GetGitConfigString("drs.skipsmudge"); err == nil && valStr != "" {
+		if val, err := strconv.ParseBool(valStr); err == nil {
+			return val
+		}
+	}
+	if valStr, err := gitrepo.GetGitConfigString("lfs.skipsmudge"); err == nil && valStr != "" {
+		if val, err := strconv.ParseBool(valStr); err == nil {
+			return val
+		}
+	}
+	return true
 }
 
 func runFilter(cmd *cobra.Command, _ []string) error {
@@ -84,7 +107,7 @@ func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) gitfilter
 	return func(ctx context.Context, req gitfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn drsfilter.SmudgeDownloadFunc
-		if drsCtx != nil {
+		if drsCtx != nil && !shouldSkipSmudge() {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
 				return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 			}

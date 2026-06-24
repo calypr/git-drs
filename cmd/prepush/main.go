@@ -299,7 +299,7 @@ func submitPendingLFSMeta(ctx context.Context, remote config.Remote, endpoint st
 	httpReq.Header.Set("Content-Type", "application/vnd.git-lfs+json")
 	httpReq.Header.Set("Accept", "application/vnd.git-lfs+json")
 	if token != "" {
-		httpReq.Header.Set("Authorization", "Bearer " + token)
+		httpReq.Header.Set("Authorization", "Bearer "+token)
 	} else if authHeader, ok := resolveRemoteAuthHeader(string(remote)); ok {
 		httpReq.Header.Set("Authorization", authHeader)
 	}

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/calypr/git-drs/internal/config"
-	syrequest "github.com/calypr/syfon/client/request"
 	sycloud "github.com/calypr/syfon/client/cloud"
+	syrequest "github.com/calypr/syfon/client/request"
 )
 
 const internalInspectObjectPath = "/data/inspect"

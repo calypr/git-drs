@@ -12,6 +12,7 @@ type fakeIndexAPI struct {
 	listResp      copyListRecordsResponse
 	listFn        func(opts syservices.ListRecordsOptions) copyListRecordsResponse
 	bulkDocsResp  []copyRecord
+	bulkHashResp  copyBulkHashesResponse
 	createBulkReq []copyBulkCreateRequest
 }
 
@@ -24,6 +25,10 @@ func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOpti
 
 func (f *fakeIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {
 	return f.bulkDocsResp, nil
+}
+
+func (f *fakeIndexAPI) BulkHashes(ctx context.Context, hashes []string) (copyBulkHashesResponse, error) {
+	return f.bulkHashResp, nil
 }
 
 func (f *fakeIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error) {
@@ -123,6 +128,8 @@ func TestMergeExistingRecord_OverwritesFileNameWhenFlagEnabled(t *testing.T) {
 func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	srcCA := []string{"/organization/A/project/P1"}
 	newCA := []string{"/organization/A/project/P2"}
+	existingHash := copyHashInfo{"sha256": "sha-existing"}
+	newHash := copyHashInfo{"sha256": "sha-new"}
 	srcMethods := []drsapi.AccessMethod{{
 		Type: drsapi.AccessMethodTypeS3,
 		AccessUrl: &struct {
@@ -142,8 +149,19 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 		bulkDocsResp: []copyRecord{
 			{
 				Did:              "did-existing",
+				Hashes:           &existingHash,
 				ControlledAccess: &srcCA,
 				AccessMethods:    &srcMethods,
+			},
+		},
+		bulkHashResp: copyBulkHashesResponse{
+			Results: map[string][]copyRecord{
+				"sha256:sha-existing": {{
+					Did:              "did-existing",
+					Hashes:           &existingHash,
+					ControlledAccess: &srcCA,
+					AccessMethods:    &srcMethods,
+				}},
 			},
 		},
 	}
@@ -151,11 +169,13 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	source := []copyRecord{
 		{
 			Did:              "did-existing",
+			Hashes:           &existingHash,
 			ControlledAccess: &newCA,
 			AccessMethods:    &newMethods,
 		},
 		{
 			Did:              "did-new",
+			Hashes:           &newHash,
 			ControlledAccess: &srcCA,
 			AccessMethods:    &srcMethods,
 		},
@@ -173,7 +193,67 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	}
 }
 
-func TestCopyProjectRecords_FallsBackToRootListWhenScopedListIsEmpty(t *testing.T) {
+func TestBuildMergedBatch_MergesIntoExistingChecksumSiblingWhenDIDDiffers(t *testing.T) {
+	srcHash := copyHashInfo{"sha256": "same-sha"}
+	dstCA := []string{"/organization/A/project/P1"}
+	srcCA := []string{"/organization/A/project/P2"}
+	dstMethods := []drsapi.AccessMethod{{
+		Type: drsapi.AccessMethodTypeS3,
+		AccessUrl: &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "s3://bucket/existing"},
+	}}
+	srcMethods := []drsapi.AccessMethod{{
+		Type: drsapi.AccessMethodTypeHttps,
+		AccessUrl: &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "https://example.org/copied"},
+	}}
+
+	target := &fakeIndexAPI{
+		bulkDocsResp: nil,
+		bulkHashResp: copyBulkHashesResponse{
+			Results: map[string][]copyRecord{
+				"sha256:same-sha": {{
+					Did:              "did-target",
+					Hashes:           &srcHash,
+					ControlledAccess: &dstCA,
+					AccessMethods:    &dstMethods,
+				}},
+			},
+		},
+	}
+	source := []copyRecord{{
+		Did:              "did-source",
+		Hashes:           &srcHash,
+		ControlledAccess: &srcCA,
+		AccessMethods:    &srcMethods,
+	}}
+
+	out, stats, err := buildMergedBatch(context.Background(), target, source, false)
+	if err != nil {
+		t.Fatalf("buildMergedBatch error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one merged output record, got %d", len(out))
+	}
+	if out[0].Did != "did-target" {
+		t.Fatalf("expected checksum sibling DID to be preserved, got %q", out[0].Did)
+	}
+	if out[0].ControlledAccess == nil || len(*out[0].ControlledAccess) != 2 {
+		t.Fatalf("expected merged controlled access, got %+v", out[0].ControlledAccess)
+	}
+	if out[0].AccessMethods == nil || len(*out[0].AccessMethods) != 2 {
+		t.Fatalf("expected merged access methods, got %+v", out[0].AccessMethods)
+	}
+	if stats.Created != 0 || stats.Updated != 1 || stats.Unchanged != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestCopyProjectRecords_CopiesAllControlledAccessRecordsWhenScopedListIsEmpty(t *testing.T) {
 	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
 	source := &fakeIndexAPI{
 		listFn: func(opts syservices.ListRecordsOptions) copyListRecordsResponse {
@@ -203,5 +283,49 @@ func TestCopyProjectRecords_FallsBackToRootListWhenScopedListIsEmpty(t *testing.
 	}
 	if target.createBulkReq[0].Records[0].Did != "did-in-scope" {
 		t.Fatalf("unexpected copied did: %+v", target.createBulkReq[0].Records[0])
+	}
+}
+
+func TestCopyProjectRecords_IgnoresPartialScopedListAndCopiesAllControlledAccessRecords(t *testing.T) {
+	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
+	otherCA := []string{"/organization/OTHER/project/X"}
+	source := &fakeIndexAPI{
+		listFn: func(opts syservices.ListRecordsOptions) copyListRecordsResponse {
+			if opts.Organization == "HTAN_INT" && opts.ProjectID == "BForePC" {
+				return copyListRecordsResponse{Records: &[]copyRecord{
+					{Did: "did-scoped-partial", ControlledAccess: &scopeCA},
+				}}
+			}
+			if opts.Organization == "" && opts.ProjectID == "" && opts.Page == 1 {
+				return copyListRecordsResponse{Records: &[]copyRecord{
+					{Did: "did-scoped-partial", ControlledAccess: &scopeCA},
+					{Did: "did-missing-from-scoped-list", ControlledAccess: &scopeCA},
+					{Did: "did-out-of-scope", ControlledAccess: &otherCA},
+				}}
+			}
+			return copyListRecordsResponse{Records: &[]copyRecord{}}
+		},
+	}
+	target := &fakeIndexAPI{}
+
+	stats, err := copyProjectRecords(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 100, false)
+	if err != nil {
+		t.Fatalf("copyProjectRecords error: %v", err)
+	}
+	if stats.SourceSeen != 2 || stats.Created != 2 || stats.Written != 2 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+	if len(target.createBulkReq) != 1 || len(target.createBulkReq[0].Records) != 2 {
+		t.Fatalf("expected two created records, got %+v", target.createBulkReq)
+	}
+	found := map[string]bool{}
+	for _, rec := range target.createBulkReq[0].Records {
+		found[rec.Did] = true
+	}
+	if !found["did-scoped-partial"] || !found["did-missing-from-scoped-list"] {
+		t.Fatalf("missing copied records: %+v", target.createBulkReq[0].Records)
+	}
+	if found["did-out-of-scope"] {
+		t.Fatalf("out-of-scope record should not be copied: %+v", target.createBulkReq[0].Records)
 	}
 }

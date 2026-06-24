@@ -7,14 +7,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	sycommon "github.com/calypr/syfon/common"
 	"github.com/calypr/syfon/client/request"
 	syservices "github.com/calypr/syfon/client/services"
+	sycommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -57,9 +58,18 @@ type copyBulkCreateRequest struct {
 	Records []copyRecord `json:"records"`
 }
 
+type copyBulkHashesRequest struct {
+	Hashes []string `json:"hashes"`
+}
+
+type copyBulkHashesResponse struct {
+	Results map[string][]copyRecord `json:"results,omitempty"`
+}
+
 type indexAPI interface {
 	List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error)
 	BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error)
+	BulkHashes(ctx context.Context, hashes []string) (copyBulkHashesResponse, error)
 	CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error)
 }
 
@@ -102,6 +112,14 @@ func (r *rawIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyR
 	var out []copyRecord
 	if err := r.requestor.Do(ctx, http.MethodPost, "/index/bulk/documents", dids, &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+func (r *rawIndexAPI) BulkHashes(ctx context.Context, hashes []string) (copyBulkHashesResponse, error) {
+	var out copyBulkHashesResponse
+	if err := r.requestor.Do(ctx, http.MethodPost, "/index/bulk/hashes", copyBulkHashesRequest{Hashes: hashes}, &out); err != nil {
+		return copyBulkHashesResponse{}, err
 	}
 	return out, nil
 }
@@ -226,38 +244,22 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 	}
 
 	stats := copyStats{}
-	page := 1
-	fallbackUsed := false
-	for {
-		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
-			Organization: org,
-			ProjectID:    project,
-			Limit:        batchSize,
-			Page:         page,
-		})
-		if err != nil {
-			return stats, fmt.Errorf("source list failed for %s/%s page %d: %w", org, project, page, err)
-		}
-		records := []copyRecord{}
-		if listResp.Records != nil {
-			records = *listResp.Records
-		}
-		if page == 1 && len(records) == 0 {
-			fallbackRecords, fallbackErr := listSourceRecordsByControlledAccess(ctx, src, org, project, batchSize)
-			if fallbackErr != nil {
-				return stats, fallbackErr
-			}
-			if len(fallbackRecords) > 0 {
-				records = fallbackRecords
-				fallbackUsed = true
-			}
-		}
-		if len(records) == 0 {
-			break
-		}
-		stats.SourceSeen += len(records)
+	fmt.Fprintf(os.Stderr, "copy-records: scanning source records for %s/%s\n", org, project)
+	records, err := listSourceRecordsByControlledAccess(ctx, src, org, project, batchSize)
+	if err != nil {
+		return stats, err
+	}
+	stats.SourceSeen = len(records)
+	fmt.Fprintf(os.Stderr, "copy-records: source scan complete, %d records in scope\n", stats.SourceSeen)
 
-		toWrite, batchStats, err := buildMergedBatch(ctx, dst, records, overwriteNameFileName)
+	for start := 0; start < len(records); start += batchSize {
+		end := start + batchSize
+		if end > len(records) {
+			end = len(records)
+		}
+		batch := records[start:end]
+		fmt.Fprintf(os.Stderr, "copy-records: reconciling batch %d-%d of %d\n", start+1, end, len(records))
+		toWrite, batchStats, err := buildMergedBatch(ctx, dst, batch, overwriteNameFileName)
 		if err != nil {
 			return stats, err
 		}
@@ -268,7 +270,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 		if len(toWrite) > 0 {
 			resp, err := dst.CreateBulk(ctx, copyBulkCreateRequest{Records: toWrite})
 			if err != nil {
-				return stats, fmt.Errorf("target bulk create failed on page %d: %w", page, err)
+				return stats, fmt.Errorf("target bulk create failed for batch starting at %d: %w", start, err)
 			}
 			if resp.Records != nil {
 				stats.Written += len(*resp.Records)
@@ -276,25 +278,29 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 				stats.Written += len(toWrite)
 			}
 		}
+		fmt.Fprintf(
+			os.Stderr,
+			"copy-records: batch %d-%d complete, created=%d updated=%d unchanged=%d written=%d\n",
+			start+1,
+			end,
+			batchStats.Created,
+			batchStats.Updated,
+			batchStats.Unchanged,
+			len(toWrite),
+		)
 
 		if logger != nil {
 			logger.Info("copy-records batch complete",
 				"organization", org,
 				"project", project,
-				"page", page,
-				"fallback_scope_scan", fallbackUsed,
-				"source_records", len(records),
+				"batch_start", start,
+				"source_records", len(batch),
 				"created", batchStats.Created,
 				"updated", batchStats.Updated,
 				"unchanged", batchStats.Unchanged,
 				"written", len(toWrite),
 			)
 		}
-
-		if fallbackUsed || len(records) < batchSize {
-			break
-		}
-		page++
 	}
 
 	return stats, nil
@@ -313,6 +319,7 @@ func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org,
 	out := make([]copyRecord, 0)
 	seen := map[string]struct{}{}
 	for {
+		fmt.Fprintf(os.Stderr, "copy-records: scanning source index page %d, matched-so-far=%d\n", page, len(out))
 		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
 			Limit: batchSize,
 			Page:  page,
@@ -368,12 +375,21 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 	}
 
 	dids := make([]string, 0, len(source))
+	hashQueries := make([]string, 0, len(source))
+	seenHashQueries := make(map[string]struct{}, len(source))
 	for _, rec := range source {
 		did := strings.TrimSpace(rec.Did)
 		if did == "" {
 			continue
 		}
 		dids = append(dids, did)
+		if sha := copyRecordSHA256(rec); sha != "" {
+			query := "sha256:" + sha
+			if _, ok := seenHashQueries[query]; !ok {
+				seenHashQueries[query] = struct{}{}
+				hashQueries = append(hashQueries, query)
+			}
+		}
 	}
 
 	existing, err := dst.BulkDocuments(ctx, dids)
@@ -385,27 +401,115 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 		existingByDID[strings.TrimSpace(rec.Did)] = rec
 	}
 
-	out := make([]copyRecord, 0, len(source))
+	existingByChecksum := make(map[string][]copyRecord)
+	if len(hashQueries) > 0 {
+		hashResp, err := dst.BulkHashes(ctx, hashQueries)
+		if err != nil {
+			return nil, stats, fmt.Errorf("target bulk hash lookup failed: %w", err)
+		}
+		for _, query := range hashQueries {
+			sha := strings.TrimSpace(strings.TrimPrefix(query, "sha256:"))
+			if sha == "" {
+				continue
+			}
+			existingByChecksum[sha] = dedupeCopyRecordsByDID(hashResp.Results[query])
+		}
+	}
+
+	created := make([]copyRecord, 0, len(source))
+	pendingUpdates := make(map[string]copyRecord, len(source))
+	updateOrder := make([]string, 0, len(source))
 	for _, src := range source {
-		did := strings.TrimSpace(src.Did)
+		match, found, err := targetRecordForSource(src, existingByDID, existingByChecksum)
+		if err != nil {
+			return nil, stats, err
+		}
+		if !found {
+			created = append(created, src)
+			stats.Created++
+			continue
+		}
+
+		base := match
+		targetDID := strings.TrimSpace(match.Did)
+		if pending, ok := pendingUpdates[targetDID]; ok {
+			base = pending
+		}
+		merged, changed := mergeExistingRecord(base, src, overwriteNameFileName)
+		if changed {
+			if _, ok := pendingUpdates[targetDID]; !ok {
+				updateOrder = append(updateOrder, targetDID)
+			}
+			pendingUpdates[targetDID] = merged
+			stats.Updated++
+		} else {
+			stats.Unchanged++
+		}
+	}
+
+	out := make([]copyRecord, 0, len(created)+len(pendingUpdates))
+	for _, did := range updateOrder {
+		out = append(out, pendingUpdates[did])
+	}
+	out = append(out, created...)
+	return out, stats, nil
+}
+
+func targetRecordForSource(src copyRecord, existingByDID map[string]copyRecord, existingByChecksum map[string][]copyRecord) (copyRecord, bool, error) {
+	did := strings.TrimSpace(src.Did)
+	if did == "" {
+		return copyRecord{}, false, nil
+	}
+	if dstRec, ok := existingByDID[did]; ok {
+		return dstRec, true, nil
+	}
+
+	sha := copyRecordSHA256(src)
+	if sha == "" {
+		return copyRecord{}, false, nil
+	}
+	matches := existingByChecksum[sha]
+	switch len(matches) {
+	case 0:
+		return copyRecord{}, false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		dids := make([]string, 0, len(matches))
+		for _, match := range matches {
+			if did := strings.TrimSpace(match.Did); did != "" {
+				dids = append(dids, did)
+			}
+		}
+		return copyRecord{}, false, fmt.Errorf("target already has multiple records for sha256 %q under different DIDs: %s", sha, strings.Join(dids, ", "))
+	}
+}
+
+func copyRecordSHA256(rec copyRecord) string {
+	if rec.Hashes == nil {
+		return ""
+	}
+	return strings.TrimSpace((*rec.Hashes)["sha256"])
+}
+
+func dedupeCopyRecordsByDID(records []copyRecord) []copyRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]copyRecord, 0, len(records))
+	seen := make(map[string]struct{}, len(records))
+	for _, rec := range records {
+		did := strings.TrimSpace(rec.Did)
 		if did == "" {
 			continue
 		}
-		if dstRec, ok := existingByDID[did]; ok {
-			merged, changed := mergeExistingRecord(dstRec, src, overwriteNameFileName)
-			if changed {
-				out = append(out, merged)
-				stats.Updated++
-			} else {
-				stats.Unchanged++
-			}
+		if _, ok := seen[did]; ok {
 			continue
 		}
-		out = append(out, src)
-		stats.Created++
+		seen[did] = struct{}{}
+		out = append(out, rec)
 	}
-
-	return out, stats, nil
+	return out
 }
 
 func mergeExistingRecord(dst, src copyRecord, overwriteNameFileName bool) (copyRecord, bool) {

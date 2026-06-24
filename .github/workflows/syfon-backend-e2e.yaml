@@ -37,6 +37,8 @@ jobs:
         id: syfon-ref
         working-directory: git-drs
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
           if [[ -z "$version" || "$version" == "<nil>" ]]; then
@@ -45,11 +47,9 @@ jobs:
           ref="$version"
           if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
             short_ref="${BASH_REMATCH[1]}"
-            ref="$(git ls-remote https://github.com/calypr/syfon.git "refs/heads/*" "refs/tags/*" |
-              awk -v short="$short_ref" 'index($1, short) == 1 && ref == "" { ref = $1 } END { print ref }')"
+            ref="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/calypr/syfon/commits/$short_ref" | grep -o '"sha": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
             if [[ -z "$ref" ]]; then
-              echo "Could not resolve Syfon pseudo-version commit $short_ref to a full Git SHA" >&2
-              exit 1
+              ref="$short_ref"
             fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"

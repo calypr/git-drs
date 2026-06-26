@@ -84,6 +84,7 @@ func TestInitConfigValues(t *testing.T) {
 
 	check("lfs.concurrenttransfers", "8")
 	check("lfs.allowincompletepush", "false")
+	check("push.autoSetupRemote", "true")
 	check("filter.drs.clean", "git-drs clean -- %f")
 	check("filter.drs.smudge", "git-drs smudge -- %f")
 	check("filter.drs.process", "git-drs filter")

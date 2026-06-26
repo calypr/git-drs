@@ -162,6 +162,7 @@ var noSkipSmudge bool
 
 func initGitConfig() error {
 	configs := map[string]string{
+		"push.autoSetupRemote": "true",
 		"lfs.allowincompletepush": "false",
 		"lfs.concurrenttransfers": strconv.Itoa(transfers),
 		// Use git-drs as the long-running filter-process handler.

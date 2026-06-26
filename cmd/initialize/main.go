@@ -84,11 +84,6 @@ func InitializeRepo(logg *slog.Logger) error {
 		return fmt.Errorf("error initializing git-drs repository config: %v", err)
 	}
 
-	// install pre-push hook
-	err = installPrePushHook(logg)
-	if err != nil {
-		return fmt.Errorf("error installing pre-push hook: %v", err)
-	}
 	// install pre-commit hook
 	err = installPreCommitHook(logg)
 	if err != nil {
@@ -145,11 +140,7 @@ func isInitialized() (bool, error) {
 		return false, nil
 	}
 
-	prePushInstalled, err := hookContains("pre-push", "git drs pre-push-prepare")
-	if err != nil {
-		return false, err
-	}
-	return prePushInstalled, nil
+	return true, nil
 }
 
 func hookContains(name, marker string) (bool, error) {
@@ -202,62 +193,6 @@ func init() {
 	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 5120, "Multipart threshold in MB")
 	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 	Cmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
-}
-
-func installPrePushHook(logger *slog.Logger) error {
-	hooksDir, err := gitrepo.GetGitHooksDir()
-	if err != nil {
-		return fmt.Errorf("unable to get hooks directory: %w", err)
-	}
-
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("unable to create hooks directory: %w", err)
-	}
-
-	hookPath := filepath.Join(hooksDir, "pre-push")
-	hookBody := `
-# . git/hooks/pre-push
-remote="$1"
-url="$2"
-
-# Buffer stdin for both commands
-TMPFILE="${TMPDIR:-/tmp}/git-drs-$$"
-trap "rm -f $TMPFILE" EXIT
-cat > "$TMPFILE"
-
-# Run DRS preparation
-git drs pre-push-prepare "$remote" "$url" < "$TMPFILE" || exit 1
-
-# The managed git-drs push command handles upload/register directly.
-# The hook only stages metadata before the Git push proceeds.
-`
-	hookScript := "#!/bin/sh\n" + hookBody
-
-	existingContent, err := os.ReadFile(hookPath)
-	if err == nil {
-		// there is an existing hook, rename it, and let the user know
-		// Backup existing hook with timestamp
-		timestamp := time.Now().Format("20060102T150405")
-		backupPath := hookPath + "." + timestamp
-		if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
-			return fmt.Errorf("unable to back up existing pre-push hook: %w", err)
-		}
-		if err := os.Remove(hookPath); err != nil {
-			return fmt.Errorf("unable to remove hook after backing up: %w", err)
-		}
-		logger.Debug(fmt.Sprintf("pre-push hook updated; backup written to %s", backupPath))
-	}
-	// If there was an error other than expected not existing, return it
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("unable to read pre-push hook: %w", err)
-	}
-
-	err = os.WriteFile(hookPath, []byte(hookScript), 0755)
-	if err != nil {
-		return fmt.Errorf("unable to write pre-push hook: %w", err)
-	}
-	logger.Debug("pre-push hook installed")
-	return nil
 }
 
 func installPreCommitHook(logger *slog.Logger) error {

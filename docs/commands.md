@@ -193,7 +193,7 @@ git drs rm data/sample1.bam data/sample2.bam
 
 When the deletion is committed and pushed:
 
-- `git drs push` and the managed `pre-push` hook derive deleted pointers from the pushed Git commit delta
+- `git drs push` derives deleted pointers from the pushed Git commit delta
 - if the scoped record has exactly one `controlled_access` entry, the whole DRS record is deleted
 - if the scoped record has multiple `controlled_access` entries, only the current `organization/project` resource is removed
 - underlying object bytes are not deleted by default
@@ -415,7 +415,7 @@ Notes:
 
 - delete reconciliation is Git-history-derived; there is no local delete-intent sidecar state
 - `git drs push` uses the current branch upstream (or falls back to the merge base with the target remote's tracking branches) as the diff base to isolate the push commits. If neither exists, it defaults to a zero-base (scans the entire checkout tree).
-- plain `git push` uses the managed `pre-push` hook, which receives authoritative old/new SHAs from Git
+- plain `git push` does not run any git-drs-managed hook; use `git drs push` for DRS-managed push behavior
 
 ### `git drs add-url <object-url-or-key> [path]`
 

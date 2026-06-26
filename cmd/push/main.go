@@ -30,7 +30,7 @@ var getRemoteMergeBaseFn = getRemoteMergeBase
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "Upload/register DRS objects and push Git refs",
-	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push (without pre-push hooks by default).",
+	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -132,7 +132,7 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
+	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled")
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 

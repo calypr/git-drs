@@ -42,17 +42,12 @@ Notes:
   - checksum lookup path `/ga4gh/drs/v1/objects/checksum/{sha}`
   - bulk access path `/ga4gh/drs/v1/objects/access`
   - access URL path `/ga4gh/drs/v1/objects/{id}/access/{type}`
-- `git drs pre-push-prepare` also calls a non-GA4GH metadata staging endpoint:
-  - `POST {remote}/info/drs/objects/metadata` (`cmd/prepush/main.go`)
-  - This is optional capability and not part of GA4GH DRS.
-
 ## 1.3 Trace from standard Git commands
 
 `git-drs` participates in both explicit `git drs ...` commands and standard Git workflows after repository-local setup is installed. That setup can happen either through explicit `git drs init` or automatically during `git drs remote add ...`:
 
 - `git drs init` installs hooks (`cmd/initialize/main.go`):
   - pre-commit: `git drs precommit`
-- During a normal `git push`, pre-push metadata can be staged via `/info/drs/objects/metadata` before transfer.
 - The explicit `git drs push` command runs the register/upload workflow, then runs `git push --no-verify` by default (`cmd/push/main.go`).
 
 ---

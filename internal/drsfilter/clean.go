@@ -17,7 +17,7 @@ import (
 )
 
 // writeDrsMap records a local DRS object entry in .git/drs/lfs/objects so that
-// the pre-push workflow can discover and upload the file.
+// managed git-drs workflows can discover and upload the file.
 func writeDrsMap(pathname string, oid string, size int64) error {
 	name := filepath.Base(pathname)
 	drsObj := &drsapi.DrsObject{

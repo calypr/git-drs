@@ -22,7 +22,7 @@ The cache is:
 Its sole purpose is to bridge the gap between:
 
 * **pre-commit** (file / path / content–centric, no network)
-* **pre-push** (ref / commit-range–centric, authoritative server resolution)
+* **managed push and local metadata workflows** (OID-centric, may use network or provider hints)
 
 > **Crisp rule:**
 > **Path is never authoritative; OID (sha256) is.**
@@ -43,7 +43,7 @@ Its sole purpose is to bridge the gap between:
 ### `precommit_cache` (helper library)
 
 * Read-only access to `.git/drs/pre-commit`
-* Used primarily by **pre-push**
+* Used by cache-aware local metadata workflows and diagnostics
 * Provides:
 
     * path → OID lookups
@@ -229,7 +229,7 @@ It exists purely to improve developer ergonomics.
 
 `precommit_cache` provides **read-only helpers** for consumers such as:
 
-* `pre-push` hooks
+* managed push helpers
 * diagnostic tools
 * developer utilities
 
@@ -309,13 +309,13 @@ path → oid → external_url
 err := drscache.CheckExternalURLMismatch(localHint, authoritativeURL)
 ```
 
-Used by pre-push to compare local hints with server truth.
+Used by managed push helpers or diagnostics to compare local hints with server truth.
 
 ---
 
-## Intended Pre-Push Usage Pattern
+## Intended Cache-Aware Push Usage Pattern
 
-1. Determine commit range from pre-push stdin
+1. Determine the commit range to evaluate for a managed push
 2. Enumerate **OIDs** referenced by pushed commits
 3. For each OID:
 
@@ -348,7 +348,7 @@ The cache will be rebuilt automatically on the next commit.
     * fast
     * deterministic
     * offline-friendly
-* Pre-push remains:
+* Managed push remains:
 
     * authoritative
     * ref-aware
@@ -370,7 +370,7 @@ sequenceDiagram
   participant Git as git
   participant PC as pre-commit hook (cmd/precommit)
   participant Cache as .git/drs/pre-commit (local cache)
-  participant PP as pre-push hook
+  participant Push as git drs push
   participant IDX as DRS (authoritative)
 
   Dev->>Git: git add <files>
@@ -387,22 +387,21 @@ sequenceDiagram
   end
   PC-->>Git: exit 0 (commit proceeds)
 
-  Dev->>Git: git push <remote> <ref>
-  Git->>PP: invoke pre-push (stdin: ref updates)
-  PP->>PP: compute commit ranges from stdin
-  PP->>IDX: enumerate OIDs referenced by pushed commits
+  Dev->>Push: git drs push <remote>
+  Push->>Push: compute commit ranges locally
+  Push->>IDX: enumerate OIDs referenced by pushed commits
   loop for each required OID
-    PP->>Cache: lookup external_url hint (optional)
-    PP->>IDX: resolve by sha256 (OID) -> object_id + urls[]
+    Push->>Cache: lookup external_url hint (optional)
+    Push->>IDX: resolve by sha256 (OID) -> object_id + urls[]
     alt OID not resolvable
-      PP-->>Git: fail push (exit non-zero)
+      Push-->>Dev: fail push
     else resolvable
       opt local hint present
-        PP->>PP: compare hint vs authoritative URL
+        Push->>Push: compare hint vs authoritative URL
       end
     end
   end
-  PP-->>Git: exit 0 (push proceeds)
+  Push-->>Dev: proceed with upload/register workflow
 ```
 
 ## Summary
@@ -410,10 +409,10 @@ sequenceDiagram
 > `.git/drs/pre-commit` is a **local, pointer-only, non-authoritative cache** that tracks
 > **path ↔ OID ↔ external URL hints** to support rename, undo, and offline workflows.
 >
-> `precommit_cache` provides safe, read-only access to this cache for enforcement at pre-push.
+> `precommit_cache` provides safe, read-only access to this cache for managed push, add-url follow-up, and diagnostics.
 
 If you want, I can also:
 
 * add **inline Go doc comments** suitable for `pkg.go.dev`
 * generate a **sequence diagram** (commit → cache → push → DRS)
-* or write a **pre-push reference implementation** that uses these helpers end-to-end
+* or write a **managed push reference implementation** that uses these helpers end-to-end

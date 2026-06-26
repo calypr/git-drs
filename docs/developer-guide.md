@@ -15,11 +15,6 @@ Git DRS integrates with Git through several mechanisms:
 - Only processes files that don't already exist on the DRS server
 - Prepares metadata for later upload during push
 
-**Pre-push Hook**: `git drs pre-push-prepare` (internal)
-- Triggered automatically before each push
-- Stages pending metadata for new/changed files
-- The hook prepares the repo for `git drs push` to complete upload and registration
-
 **Managed Push/Pull**
 - `git drs push` performs the register/upload workflow directly through the syfon client stack
 - `git drs pull` performs the download workflow directly through the syfon client stack
@@ -32,10 +27,7 @@ Git DRS integrates with Git through several mechanisms:
 3. Git Hook: git drs precommit
    - Creates DRS object metadata
    - Stores in .git/drs/ directory
-4. Developer: git push
-5. Git Hook: git drs pre-push-prepare
-   - Stages pending metadata for DRS verify
-6. Git DRS:
+4. Git DRS:
    - `git drs push` runs register/upload directly
    - `git drs pull` runs download directly
 ```
@@ -56,7 +48,6 @@ cmd/                    # CLI command implementations
 ├── initialize/         # Repository initialization
 ├── push/               # Register/upload workflow
 ├── pull/               # Download workflow
-├── prepush/            # Pre-push metadata staging hook
 ├── precommit/         # Pre-commit hook
 ├── addurl/            # Cloud object URL reference handling
 └── ...

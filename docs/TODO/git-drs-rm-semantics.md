@@ -37,7 +37,7 @@ The canonical behavior is:
 
 - `git drs rm <path>` removes the tracked file from the worktree and index
 - it does not write sidecar delete state
-- `git drs push` and the managed `pre-push` hook derive deletions from pushed Git ref deltas
+- `git drs push` derives deletions from pushed Git ref deltas
 - default remote action is **record deletion only**, scoped to the configured organization/project
 - bucket object deletion is **not** the default behavior
 
@@ -68,7 +68,7 @@ It also avoids extra small-file local I/O under `.git/...`, which is a poor fit 
 
 ### Push behavior
 
-When `git drs push` or the managed `pre-push` hook reconciles deletes, it should:
+When `git drs push` reconciles deletes, it should:
 
 - resolve the current remote and configured organization/project scope
 - compute deleted paths from the pushed Git ref delta
@@ -145,11 +145,11 @@ Add a stricter opt-in mode for underlying object-byte deletion with strong safeg
 
 - push flow must inspect Git history carefully
 - delete semantics require server-side and client-side ambiguity handling
-- `git drs push` needs an explicit compare base when it is not running under the `pre-push` hook
+- `git drs push` needs an explicit compare base because it derives pushed changes locally before invoking `git push`
 
 ## Current notes
 
 - `git drs rm` wraps `git rm` directly after validating tracked LFS/git-drs paths.
-- Plain `git push` uses the managed `pre-push` hook, which receives authoritative old/new SHAs from Git.
+- Plain `git push` does not perform git-drs-managed delete reconciliation.
 - `git drs push` derives deletes from `HEAD` vs `@{upstream}` when an upstream exists.
 - Ambiguous remote matches warn and remain untouched.

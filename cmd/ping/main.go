@@ -8,6 +8,9 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +26,18 @@ type statusInfo struct {
 	AuthMode      string
 }
 
-var pingHealth = func(ctx context.Context, gc *config.GitContext) error {
+var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
 	return gc.Client.Health().Ping(ctx)
+}
+
+var pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
+	return checkScopeAccess(ctx, gc)
+}
+
+type scopeAccessInfo struct {
+	Checked         bool
+	VisibleBucket   string
+	ProjectReadable bool
 }
 
 var Cmd = &cobra.Command{
@@ -49,11 +62,31 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("remote health check failed for %q (%s): %w", status.Remote, status.Endpoint, err)
 		}
 		fmt.Println("health: ok")
+
+		scopeInfo, err := pingScopeAccess(cmd.Context(), gc)
+		if err != nil {
+			return fmt.Errorf("configured scope access check failed for remote %q (organization=%s project=%s bucket=%s): %w",
+				status.Remote,
+				blankIfEmpty(status.Organization),
+				blankIfEmpty(status.Project),
+				blankIfEmpty(status.Bucket),
+				err,
+			)
+		}
+		if scopeInfo.Checked {
+			fmt.Println("scope_access: ok")
+			if strings.TrimSpace(scopeInfo.VisibleBucket) != "" {
+				fmt.Printf("visible_bucket: %s\n", scopeInfo.VisibleBucket)
+			}
+			if scopeInfo.ProjectReadable {
+				fmt.Println("project_access: readable")
+			}
+		}
 		return nil
 	},
 }
 
-func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *config.GitContext, error) {
+func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *remoteruntime.GitContext, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return statusInfo{}, nil, err
@@ -73,7 +106,7 @@ func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *config.GitC
 		return statusInfo{}, nil, fmt.Errorf("no remote configuration found for %q", remoteName)
 	}
 
-	gc, err := cfg.GetRemoteClient(remoteName, logger)
+	gc, err := remoteruntime.New(cfg, remoteName, logger)
 	if err != nil {
 		return statusInfo{}, nil, err
 	}
@@ -115,7 +148,7 @@ func printStatus(status statusInfo) {
 	fmt.Printf("auth: %s\n", status.AuthMode)
 }
 
-func authMode(gc *config.GitContext) string {
+func authMode(gc *remoteruntime.GitContext) string {
 	if gc == nil || gc.Credential == nil {
 		return "none"
 	}
@@ -134,4 +167,82 @@ func blankIfEmpty(v string) string {
 		return "-"
 	}
 	return v
+}
+
+func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
+	if gc == nil || gc.Client == nil {
+		return scopeAccessInfo{}, fmt.Errorf("DRS client unavailable")
+	}
+
+	info := scopeAccessInfo{}
+	organization := strings.TrimSpace(gc.Organization)
+	project := strings.TrimSpace(gc.ProjectId)
+	bucket := strings.TrimSpace(gc.BucketName)
+
+	if organization == "" && project == "" && bucket == "" {
+		return info, nil
+	}
+	info.Checked = true
+
+	if organization != "" && project != "" {
+		visibleBucket, err := visibleBucketForScope(ctx, gc, organization, project)
+		if err != nil {
+			return scopeAccessInfo{}, err
+		}
+		info.VisibleBucket = visibleBucket
+		if bucket != "" && !strings.EqualFold(strings.TrimSpace(visibleBucket), bucket) {
+			return scopeAccessInfo{}, fmt.Errorf("server exposes bucket %q for configured scope, but repo is configured for bucket %q", visibleBucket, bucket)
+		}
+	}
+
+	if project != "" {
+		if _, err := gc.Client.DRS().GetProjectSample(ctx, project, 1); err != nil {
+			return scopeAccessInfo{}, fmt.Errorf("project listing failed: %w", err)
+		}
+		info.ProjectReadable = true
+	}
+
+	return info, nil
+}
+
+func visibleBucketForScope(ctx context.Context, gc *remoteruntime.GitContext, organization, project string) (string, error) {
+	payload, err := gc.Client.Buckets().List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("bucket visibility lookup failed: %w", err)
+	}
+
+	resource, err := syfoncommon.ResourcePath(organization, project)
+	if err != nil {
+		return "", fmt.Errorf("build scope resource path: %w", err)
+	}
+
+	matches := findBucketsByResource(payload, resource)
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no visible server bucket matched configured scope %s", resource)
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple visible server buckets matched configured scope %s: %s", resource, strings.Join(matches, ", "))
+	}
+	return matches[0], nil
+}
+
+func findBucketsByResource(payload bucketapi.BucketsResponse, resource string) []string {
+	resource = syfoncommon.NormalizeAccessResource(resource)
+	if resource == "" {
+		return nil
+	}
+
+	matches := make([]string, 0)
+	for bucket, meta := range payload.S3BUCKETS {
+		if meta.Programs == nil {
+			continue
+		}
+		for _, candidate := range *meta.Programs {
+			if syfoncommon.NormalizeAccessResource(candidate) == resource {
+				matches = append(matches, bucket)
+				break
+			}
+		}
+	}
+	return matches
 }

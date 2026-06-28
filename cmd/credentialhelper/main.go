@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
+	conf "github.com/calypr/calypr-cli/conf"
+	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -55,8 +55,12 @@ var Cmd = &cobra.Command{
 
 		// Local/basic-auth remotes: prefer explicit repo credentials.
 		if username, password, err := gitrepo.GetRemoteBasicAuth(remoteName); err == nil && username != "" && password != "" {
-			fmt.Fprintf(os.Stdout, "username=%s\npassword=%s\n\n", username, password)
-			_ = gitrepo.SetRemoteLFSURL(remoteName, endpoint)
+			if _, err := fmt.Fprintf(os.Stdout, "username=%s\npassword=%s\n\n", username, password); err != nil {
+				return fmt.Errorf("write credential helper response: %w", err)
+			}
+			if err := gitrepo.SetRemoteLFSURL(remoteName, endpoint); err != nil {
+				return fmt.Errorf("sync LFS URL for remote %q: %w", remoteName, err)
+			}
 			return nil
 		}
 
@@ -77,7 +81,9 @@ var Cmd = &cobra.Command{
 			ensureErr := credentials.EnsureValidCredential(ctx, cred, logg)
 			cancel()
 			if ensureErr == nil {
-				_ = manager.Save(cred)
+				if err := manager.Save(cred); err != nil {
+					return fmt.Errorf("save refreshed credential for remote %q: %w", remoteName, err)
+				}
 				token = strings.TrimSpace(cred.AccessToken)
 			}
 		}
@@ -87,10 +93,14 @@ var Cmd = &cobra.Command{
 		}
 
 		// Username can be arbitrary for token-based Basic auth; server reads password token.
-		fmt.Fprintf(os.Stdout, "username=oauth2\npassword=%s\n\n", token)
+		if _, err := fmt.Fprintf(os.Stdout, "username=oauth2\npassword=%s\n\n", token); err != nil {
+			return fmt.Errorf("write credential helper response: %w", err)
+		}
 
 		// Keep lfsurl synced for this remote.
-		_ = gitrepo.SetRemoteLFSURL(remoteName, endpoint)
+		if err := gitrepo.SetRemoteLFSURL(remoteName, endpoint); err != nil {
+			return fmt.Errorf("sync LFS URL for remote %q: %w", remoteName, err)
+		}
 		return nil
 	},
 }

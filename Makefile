@@ -48,19 +48,29 @@ lint:
 	@echo "Running go vet..."
 	@go vet ./...
 	@echo "Running gofmt..."
-	@test -z "$$(gofmt -s -l cmd/ internal/ tests/ scripts/ git-drs.go | tee /dev/stderr)" || (echo "Please run: gofmt -s -w cmd/ internal/ tests/ scripts/ git-drs.go" && exit 1)
+	@files="$$(gofmt -s -l cmd/ internal/ tests/ git-drs.go)"; \
+	if [ -n "$$files" ]; then \
+		printf "%s\n" "$$files"; \
+		echo "Please run: gofmt -s -w cmd/ internal/ tests/ git-drs.go"; \
+		exit 1; \
+	fi
 	@echo "Running goimports..."
-	@test -z "$$(goimports -l cmd/ internal/ tests/ scripts/ git-drs.go | tee /dev/stderr)" || (echo "Please run: goimports -w cmd/ internal/ tests/ scripts/ git-drs.go" && exit 1)
+	@files="$$(goimports -l cmd/ internal/ tests/ git-drs.go)"; \
+	if [ -n "$$files" ]; then \
+		printf "%s\n" "$$files"; \
+		echo "Please run: goimports -w cmd/ internal/ tests/ git-drs.go"; \
+		exit 1; \
+	fi
 	@echo "Running misspell..."
-	@misspell -error cmd/ internal/ tests/ scripts/ docs/ *.go *.md Makefile
+	@misspell -error cmd/ internal/ tests/ docs/ *.go *.md Makefile
 	@echo "✅ All lint checks passed!"
 
 # Auto-fix formatting issues
 fmt:
 	@echo "Formatting with gofmt..."
-	@gofmt -s -w cmd/ internal/ tests/ scripts/ git-drs.go
+	@gofmt -s -w cmd/ internal/ tests/ git-drs.go
 	@echo "Formatting with goimports..."
-	@goimports -w cmd/ internal/ tests/ scripts/ git-drs.go
+	@goimports -w cmd/ internal/ tests/ git-drs.go
 	@echo "✅ Formatting complete!"
 
 # Run all tests

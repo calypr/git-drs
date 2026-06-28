@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
-	"github.com/calypr/git-drs/internal/pushsync"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -30,7 +30,7 @@ var getRemoteMergeBaseFn = getRemoteMergeBase
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
 	Short: "Upload/register DRS objects and push Git refs",
-	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push (without pre-push hooks by default).",
+	Long:  "Performs git-drs managed upload/register flow (multipart for large files) and then runs git push.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 1 {
 			cmd.SilenceUsage = false
@@ -38,7 +38,7 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		fmt.Fprintln(os.Stderr, "DEBUG: ENTERING RunE for push")
 		myLogger := drslog.GetLogger()
 		ctx := context.Background()
@@ -63,7 +63,7 @@ var Cmd = &cobra.Command{
 		}
 
 		fmt.Fprintln(os.Stderr, "DEBUG: Getting remote client for remote:", remote)
-		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
+		drsClient, err := remoteruntime.New(cfg, remote, myLogger)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to get remote client:", err)
 			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))
@@ -91,18 +91,22 @@ var Cmd = &cobra.Command{
 		fmt.Fprintln(os.Stderr, "DEBUG: LFS files to push resolved. Total files:", len(lfsFiles))
 
 		fmt.Fprintln(os.Stderr, "DEBUG: Reconciling committed deletes...")
-		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
+		if _, err := internaltransfer.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to reconcile deletes:", err)
 			return fmt.Errorf("failed to reconcile deletes: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "DEBUG: Deletes reconciled. Starting BatchSyncForPush...")
-		progress := newUploadProgressRenderer(os.Stderr)
-		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
+		progress := internaltransfer.NewUploadProgressRenderer(os.Stderr)
+		if err := internaltransfer.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush failed:", err)
-			progress.Finish()
+			if finishErr := progress.Finish(); finishErr != nil {
+				return fmt.Errorf("failed batch register/upload workflow: %w (progress finalize error: %v)", err, finishErr)
+			}
 			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
-		progress.Finish()
+		if err := progress.Finish(); err != nil {
+			return fmt.Errorf("finalize upload progress: %w", err)
+		}
 		fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush completed successfully")
 		switch {
 		case len(lfsFiles) == 0:
@@ -132,26 +136,11 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled (invokes pre-push)")
+	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled")
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 
-func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
-	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
-	if err != nil {
-		return nil, nil
-	}
-	return []drsdelete.RefUpdate{{
-		OldSHA: upstream,
-		NewSHA: head,
-	}}, nil
-}
-
-func currentPushRefUpdates(ctx context.Context, remote string) ([]drsdelete.RefUpdate, error) {
+func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
 	if err != nil {
@@ -169,7 +158,7 @@ func currentPushRefUpdates(ctx context.Context, remote string) ([]drsdelete.RefU
 			oldSHA = zeroSHA
 		}
 	}
-	return []drsdelete.RefUpdate{{
+	return []internaltransfer.RefUpdate{{
 		OldSHA: oldSHA,
 		NewSHA: head,
 	}}, nil
@@ -201,7 +190,7 @@ func getRemoteMergeBase(ctx context.Context, remote string, head string) (string
 	return strings.TrimSpace(string(outMerge)), nil
 }
 
-func listRefUpdatePaths(ctx context.Context, refs []drsdelete.RefUpdate) ([]string, error) {
+func listRefUpdatePaths(ctx context.Context, refs []internaltransfer.RefUpdate) ([]string, error) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	set := make(map[string]struct{})
 	for _, ref := range refs {

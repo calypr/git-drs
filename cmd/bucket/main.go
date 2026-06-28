@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
-	"github.com/calypr/git-drs/internal/common"
+	conf "github.com/calypr/calypr-cli/conf"
+	"github.com/calypr/calypr-cli/credentials"
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -253,7 +253,9 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 				ensureErr := credentials.EnsureValidCredential(ctx, prof, drslog.GetLogger())
 				cancel()
 				if ensureErr == nil {
-					_ = configure.Save(prof)
+					if err := configure.Save(prof); err != nil {
+						return "", "", fmt.Errorf("failed to save refreshed credential for remote %q: %w", remoteName, err)
+					}
 					token = strings.TrimSpace(prof.AccessToken)
 				}
 			}
@@ -273,7 +275,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		endpoint = strings.TrimSpace(endpoint)
 	}
 	if endpoint == "" {
-		parsed, err := common.ParseAPIEndpointFromToken(token)
+		parsed, err := config.ParseAPIEndpointFromToken(token)
 		if err != nil {
 			return "", "", fmt.Errorf("unable to resolve API endpoint from token: %w", err)
 		}

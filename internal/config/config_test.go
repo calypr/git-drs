@@ -4,10 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"testing"
-
-	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/gitrepo"
-	syconf "github.com/calypr/syfon/client/config"
 )
 
 func setupTestRepo(t *testing.T) string {
@@ -161,30 +157,6 @@ func TestConfig_FindRemote(t *testing.T) {
 	}
 }
 
-func TestRemote_Validation(t *testing.T) {
-	// IsValidRemoteType test
-	tests := []struct {
-		name    string
-		mode    string
-		isValid bool
-	}{
-		{"valid gen3", "gen3", true},
-		{"valid local", "local", true},
-		{"invalid", "foo", false},
-		{"empty", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := IsValidRemoteType(tt.mode)
-			valid := err == nil
-			if valid != tt.isValid {
-				t.Errorf("IsValidRemoteType(%q) = %v, want %v", tt.mode, valid, tt.isValid)
-			}
-		})
-	}
-}
-
 func TestConfig_MultipleRemotes(t *testing.T) {
 	cfg := &Config{
 		Remotes: make(map[Remote]RemoteSelect),
@@ -317,99 +289,5 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 
 	if localRemote.BaseURL != "http://localhost:8080" {
 		t.Errorf("Expected BaseURL http://localhost:8080, got %s", localRemote.BaseURL)
-	}
-}
-
-func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
-	setupTestRepo(t)
-
-	remoteName := Remote("origin")
-	_, err := UpdateRemote(remoteName, RemoteSelect{
-		Local: &LocalRemote{
-			BaseURL: "http://localhost:8080",
-		},
-	})
-	if err != nil {
-		t.Fatalf("UpdateRemote failed: %v", err)
-	}
-
-	if err := gitrepo.SetRemoteBasicAuth("origin", "alice", "secret"); err != nil {
-		t.Fatalf("SetRemoteBasicAuth failed: %v", err)
-	}
-
-	cfg, err := LoadConfig()
-	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
-	}
-	logger := drslog.GetLogger()
-	gitCtx, err := cfg.GetRemoteClient(remoteName, logger)
-	if err != nil {
-		t.Fatalf("GetRemoteClient failed: %v", err)
-	}
-	if gitCtx == nil {
-		t.Fatalf("expected *GitContext, got nil")
-	}
-	if gitCtx.Client == nil {
-		t.Fatalf("expected client to be initialized, got nil")
-	}
-	// Basic auth is baked into the HTTP client during construction;
-	// the test verifies that GetRemoteClient completes without error when
-	// repo credentials are present, and that a usable GitContext is returned.
-}
-
-func TestLocalRemoteGetClientResolvesBucketScopeMappings(t *testing.T) {
-	setupTestRepo(t)
-
-	if err := gitrepo.SetBucketMapping("org-a", "", "mapped-bucket", "program-root"); err != nil {
-		t.Fatalf("SetBucketMapping org: %v", err)
-	}
-	if err := gitrepo.SetBucketMapping("org-a", "proj-1", "mapped-bucket", "project-subpath"); err != nil {
-		t.Fatalf("SetBucketMapping project: %v", err)
-	}
-
-	remote := LocalRemote{
-		BaseURL:      "http://localhost:8080",
-		Organization: "org-a",
-		ProjectID:    "proj-1",
-		Bucket:       "configured-bucket",
-	}
-	gitCtx, err := remote.GetClient("origin", drslog.GetLogger())
-	if err != nil {
-		t.Fatalf("GetClient failed: %v", err)
-	}
-	if gitCtx.BucketName != "mapped-bucket" {
-		t.Fatalf("BucketName = %q, want mapped-bucket", gitCtx.BucketName)
-	}
-	if gitCtx.StoragePrefix != "program-root/project-subpath" {
-		t.Fatalf("StoragePrefix = %q, want program-root/project-subpath", gitCtx.StoragePrefix)
-	}
-}
-
-func TestNewGitContextReadsLFSConcurrentTransfers(t *testing.T) {
-	setupTestRepo(t)
-
-	if err := gitrepo.SetGitConfigOptions(map[string]string{
-		"lfs.concurrenttransfers": "7",
-	}); err != nil {
-		t.Fatalf("SetGitConfigOptions failed: %v", err)
-	}
-
-	cred := syconf.Credential{
-		APIEndpoint: "https://example.test",
-		AccessToken: "token",
-	}
-	remote := Gen3Remote{
-		Endpoint:     "https://example.test",
-		Organization: "org1",
-		ProjectID:    "proj1",
-		Bucket:       "bucket1",
-	}
-
-	gitCtx, err := newGitContext(cred, remote, drslog.GetLogger())
-	if err != nil {
-		t.Fatalf("newGitContext failed: %v", err)
-	}
-	if gitCtx.UploadConcurrency != 7 {
-		t.Fatalf("UploadConcurrency = %d, want 7", gitCtx.UploadConcurrency)
 	}
 }

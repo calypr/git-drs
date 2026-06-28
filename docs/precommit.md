@@ -1,122 +1,71 @@
 ---
 
-# Developer Documentation: `.git/drs/pre-commit` Cache & Helpers
+# Developer Documentation: `.git/drs/pre-commit` Cache
 
 ## Overview
 
-This repository uses a **local, non-versioned cache** under:
+`git-drs` keeps two different kinds of local state under `.git/drs/`:
 
-```
-.git/drs/pre-commit/
+```text
+.git/drs/
+  lfs/objects/    authoritative local DRS metadata objects
+  pre-commit/     rebuildable local cache for path/OID/url hints
 ```
 
-to support fast, offline-friendly workflows for **Git DRS–tracked files**.
+They serve different jobs:
+
+* `.git/drs/lfs/objects` stores the local DRS metadata records that commands such as `git drs push` and `git drs query` use directly.
+* `.git/drs/pre-commit` is a non-authoritative cache used to keep local path/OID bookkeeping coherent for the workflows that still write it today: `git drs precommit` and `git drs add-url`.
+
+Plain `git push` does not read this cache. `git drs push` also does not depend on it for metadata registration.
+
+## Current Ownership
+
+### `cmd/precommit`
+
+* Runs from the repo's `pre-commit` hook.
+* Reads staged Git content only.
+* Updates path and OID cache entries for tracked pointer files.
+* Never performs network I/O.
+
+### `cmd/addurl`
+
+* Writes a pointer file into the worktree.
+* Writes the local DRS metadata object under `.git/drs/lfs/objects`.
+* Updates the pre-commit cache so the new path/OID/object URL hint stay locally coherent.
+
+### `internal/precommit_cache`
+
+* Owns the cache layout definition shared by commands.
+* Provides the cache root/paths discovery logic plus the shared JSON types.
+* Does not own general cache mutation logic.
+
+## Cache Properties
 
 The cache is:
 
-* **pointer-only**
-* **non-authoritative**
-* **local to a working copy**
-* **never committed to Git**
+* local to one checkout
+* never committed to Git
+* safe to delete and rebuild
+* non-authoritative
 
-Its sole purpose is to bridge the gap between:
+The authoritative local metadata store remains `.git/drs/lfs/objects`.
 
-* **pre-commit** (file / path / content–centric, no network)
-* **pre-push** (ref / commit-range–centric, authoritative server resolution)
+## On-Disk Layout
 
-> **Crisp rule:**
-> **Path is never authoritative; OID (sha256) is.**
-
----
-
-## Responsibilities by Component
-
-### `cmd/precommit` (pre-commit hook)
-
-* Runs on every `git commit`
-* Reads **staged content only**
-* Updates `.git/drs/pre-commit` cache
-* Never performs network I/O
-* Never queries DRS or DRS
-* Ignores all non-tracked files
-
-### `precommit_cache` (helper library)
-
-* Read-only access to `.git/drs/pre-commit`
-* Used primarily by **pre-push**
-* Provides:
-
-    * path → OID lookups
-    * OID → paths lookups (advisory)
-    * OID → external URL hints
-* Does **not** modify cache contents
-
----
-
-## Cache Scope (Important)
-
-Only files whose **staged content** is a valid Git DRS pointer are in scope:
-
-```
-version https://git-lfs.github.com/spec/v1
-oid sha256:<hex>
-```
-
-Everything else is ignored.
-
-This is by design.
-
----
-
-## Cache Location & Versioning
-
-All cache data lives under:
-
-```
+```text
 .git/drs/pre-commit/v1/
+  paths/
+    <encoded-path>.json
+  oids/
+    <oid-hash>.json
+  tombstones/     optional, precommit-owned
+  state.json      reserved
 ```
-
-* Versioned by directory (`v1/`) to allow future format evolution
-* Safe to delete at any time (will be rebuilt)
-
----
-
-## Directory Layout
-
-```
-.git/drs/pre-commit/
-  v1/
-    paths/
-      <encoded-path>.json
-    oids/
-      <oid-hash>.json
-    tombstones/
-      <encoded-path>.json   (optional / best-effort)
-    state.json              (reserved for future use)
-```
-
----
-
-## Data Model
-
-The cache models **three non-authoritative relationships**:
-
-1. **Path → OID**
-2. **OID → Path(s)**
-3. **OID → External URL (hint)**
-
-All are **hints only**.
-The authoritative source of truth lives on the server (DRS).
-
----
-
-## File Formats
 
 ### Path Entry
 
-`v1/paths/<encoded-path>.json`
-
-Represents the **currently staged** DRS object at a given working-tree path.
+`paths/<encoded-path>.json`
 
 ```json
 {
@@ -126,31 +75,15 @@ Represents the **currently staged** DRS object at a given working-tree path.
 }
 ```
 
-Notes:
+### OID Entry Written By `add-url`
 
-* `path` is repo-relative
-* `lfs_oid` comes from the staged DRS pointer
-* Updated on:
-
-    * add
-    * modify
-    * rename
-    * undo / restage
-
----
-
-### OID Entry
-
-`v1/oids/<oid-hash>.json`
-
-Represents **advisory information** about a DRS object.
+`oids/<oid-hash>.json`
 
 ```json
 {
   "lfs_oid": "sha256:abc123...",
   "paths": [
-    "data/foo.bam",
-    "data/archive/foo-copy.bam"
+    "data/foo.bam"
   ],
   "external_url": "s3://bucket/key",
   "updated_at": "2026-02-01T12:34:56Z",
@@ -158,262 +91,24 @@ Represents **advisory information** about a DRS object.
 }
 ```
 
-Notes:
+### Legacy Read Compatibility
 
-* `paths[]` is advisory and may contain stale values
-* `external_url` is a **hint**, not authoritative
-* `content_changed` reflects local observation only
-
----
-
-### Tombstones (Optional)
-
-Used to record deleted paths for potential GC or debugging.
+Older cache entries may still contain:
 
 ```json
 {
-  "path": "data/old.bam",
-  "deleted_at": "2026-02-01T12:00:00Z"
+  "s3_url": "s3://bucket/key"
 }
 ```
 
----
+`internal/precommit_cache` still reads that legacy field, but current writers now normalize back to `external_url` on rewrite.
 
-## Pre-Commit Behavior (What Happens Automatically)
+## Rebuild Story
 
-### Add / Modify Tracked File
+If `.git/drs/pre-commit` is deleted:
 
-* Extracts OID from staged pointer
-* Updates:
+* `git drs precommit` will repopulate entries from staged pointer changes.
+* `git drs add-url` will recreate entries for files it writes.
+* `.git/drs/lfs/objects` is unaffected.
 
-    * `paths/<path>.json`
-    * `oids/<oid>.json`
-* Preserves any existing `external_url` hint
-
-### Rename / Move Tracked File
-
-* Moves `paths/<old>.json` → `paths/<new>.json`
-* Updates OID entry paths list
-* OID remains unchanged
-
-### Content Change
-
-* Detects OID change for same path
-* Updates path entry with new OID
-* Marks `content_changed=true` on new OID entry
-* Removes path from old OID entry (best-effort)
-
-### Undo / Reset / Restage
-
-* No special handling
-* Cache always reconciles from the staged index
-* Stale entries are tolerated
-
----
-
-## What the Cache Is *Not*
-
-* ❌ Not authoritative
-* ❌ Not guaranteed to be complete
-* ❌ Not synced across machines
-* ❌ Not committed to Git
-* ❌ Not validated against server state
-
-It exists purely to improve developer ergonomics.
-
----
-
-## `precommit_cache` Helper Library
-
-### Package Purpose
-
-`precommit_cache` provides **read-only helpers** for consumers such as:
-
-* `pre-push` hooks
-* diagnostic tools
-* developer utilities
-
-It never mutates cache state.
-
----
-
-### Opening the Cache
-
-```go
-cache, err := drscache.Open(ctx)
-if err != nil {
-    // handle error
-}
-```
-
-This locates `.git/drs/pre-commit/v1` automatically.
-
----
-
-### Common Lookups
-
-#### Path → OID
-
-```go
-oid, ok, err := cache.LookupOIDByPath("data/foo.bam")
-```
-
-* `ok=false` means no cache entry
-* Does not guarantee the file is still staged
-
----
-
-#### OID → Paths (Advisory)
-
-```go
-paths, ok, err := cache.LookupPathsByOID(oid)
-```
-
-Useful for:
-
-* error messages
-* diagnostics
-* explaining why an OID is required at push time
-
----
-
-#### OID → External URL Hint
-
-```go
-url, ok, err := cache.LookupExternalURLByOID(oid)
-```
-
-* Hint only
-* May be stale or missing
-* Must be validated against DRS
-
----
-
-#### Path → External URL Hint
-
-```go
-url, ok, err := cache.ResolveExternalURLByPath("data/foo.bam")
-```
-
-Convenience helper:
-
-```
-path → oid → external_url
-```
-
----
-
-### Validation Helpers
-
-```go
-err := drscache.CheckExternalURLMismatch(localHint, authoritativeURL)
-```
-
-Used by pre-push to compare local hints with server truth.
-
----
-
-## Intended Pre-Push Usage Pattern
-
-1. Determine commit range from pre-push stdin
-2. Enumerate **OIDs** referenced by pushed commits
-3. For each OID:
-
-    * Optionally read local hints from `precommit_cache`
-    * Resolve authoritative data from DRS / DRS
-4. Enforce policy:
-
-    * unresolved OID → fail push
-    * mismatched external URL → warn or fail
-5. Proceed with push
-
----
-
-## Deleting or Rebuilding the Cache
-
-It is always safe to delete:
-
-```
-rm -rf .git/drs/pre-commit
-```
-
-The cache will be rebuilt automatically on the next commit.
-
----
-
-## Design Guarantees
-
-* Pre-commit remains:
-
-    * fast
-    * deterministic
-    * offline-friendly
-* Pre-push remains:
-
-    * authoritative
-    * ref-aware
-    * network-enabled
-* Git history remains:
-
-    * clean
-    * storage-agnostic
-    * reproducible via server index
-
----
-
-## Sequence Diagram
-
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Dev as Developer
-  participant Git as git
-  participant PC as pre-commit hook (cmd/precommit)
-  participant Cache as .git/drs/pre-commit (local cache)
-  participant PP as pre-push hook
-  participant IDX as DRS (authoritative)
-
-  Dev->>Git: git add <files>
-  Dev->>Git: git commit
-
-  Git->>PC: invoke pre-commit (no stdin)
-  PC->>Git: git diff --cached --name-status -M
-  PC->>Git: git show :<path> (staged pointer)
-  alt staged file is DRS pointer
-    PC->>Cache: write paths/<encoded-path>.json (path -> oid)
-    PC->>Cache: upsert oids/<oid-hash>.json (oid -> paths[] + external_url hint)
-  else non-tracked file
-    PC-->>Git: ignore (out of scope)
-  end
-  PC-->>Git: exit 0 (commit proceeds)
-
-  Dev->>Git: git push <remote> <ref>
-  Git->>PP: invoke pre-push (stdin: ref updates)
-  PP->>PP: compute commit ranges from stdin
-  PP->>IDX: enumerate OIDs referenced by pushed commits
-  loop for each required OID
-    PP->>Cache: lookup external_url hint (optional)
-    PP->>IDX: resolve by sha256 (OID) -> object_id + urls[]
-    alt OID not resolvable
-      PP-->>Git: fail push (exit non-zero)
-    else resolvable
-      opt local hint present
-        PP->>PP: compare hint vs authoritative URL
-      end
-    end
-  end
-  PP-->>Git: exit 0 (push proceeds)
-```
-
-## Summary
-
-> `.git/drs/pre-commit` is a **local, pointer-only, non-authoritative cache** that tracks
-> **path ↔ OID ↔ external URL hints** to support rename, undo, and offline workflows.
->
-> `precommit_cache` provides safe, read-only access to this cache for enforcement at pre-push.
-
-If you want, I can also:
-
-* add **inline Go doc comments** suitable for `pkg.go.dev`
-* generate a **sequence diagram** (commit → cache → push → DRS)
-* or write a **pre-push reference implementation** that uses these helpers end-to-end
+This means cache cleanup is safe as long as commands that own the cache keep their current write paths.

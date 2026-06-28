@@ -33,28 +33,25 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon ref from go.mod
+      - name: Resolve Syfon commit from pinned module version
         id: syfon-ref
         working-directory: git-drs
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
+          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon)"
           if [[ -z "$version" || "$version" == "<nil>" ]]; then
-            version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon/client)"
+            echo "error: could not resolve pinned syfon version" >&2
+            exit 1
           fi
-          ref="$version"
-          if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
-            short_ref="${BASH_REMATCH[1]}"
-            ref="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/calypr/syfon/commits/$short_ref" | grep -o '"sha": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
-            if [[ -z "$ref" ]]; then
-              ref="$short_ref"
-            fi
+          short_ref="${version##*-}"
+          full_ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v short="$short_ref" '$1 ~ "^" short && first == "" { first = $1 } END { if (first != "") print first; else exit 1 }')"
+          if [[ -z "$full_ref" ]]; then
+            echo "error: could not resolve full syfon commit for $short_ref" >&2
+            exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
+          echo "ref=$full_ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out calypr/syfon ref $full_ref"
 
       - name: Check out Syfon
         uses: actions/checkout@v4
@@ -62,13 +59,6 @@ jobs:
           repository: calypr/syfon
           ref: ${{ steps.syfon-ref.outputs.ref }}
           path: syfon
-          fetch-depth: 1
-
-      - name: Check out data-client
-        uses: actions/checkout@v4
-        with:
-          repository: calypr/data-client
-          path: data-client
           fetch-depth: 1
 
       - name: Install test prerequisites

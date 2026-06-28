@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -70,8 +69,8 @@ func InitializeRepo(logg *slog.Logger) error {
 	}
 
 	// create drs directories
-	drsDir := common.DRS_DIR
-	drsLfsObjsDir := common.DRS_OBJS_PATH
+	drsDir := gitrepo.DRSDir
+	drsLfsObjsDir := gitrepo.DRSObjectsPath
 	if err := os.MkdirAll(drsDir, 0755); err != nil {
 		return fmt.Errorf("error: unable to create drs directory: %v", err)
 	}
@@ -84,15 +83,13 @@ func InitializeRepo(logg *slog.Logger) error {
 		return fmt.Errorf("error initializing git-drs repository config: %v", err)
 	}
 
-	// install pre-push hook
-	err = installPrePushHook(logg)
-	if err != nil {
-		return fmt.Errorf("error installing pre-push hook: %v", err)
-	}
 	// install pre-commit hook
 	err = installPreCommitHook(logg)
 	if err != nil {
 		return fmt.Errorf("error installing pre-commit hook: %v", err)
+	}
+	if err := removeLegacyPrePushHook(logg); err != nil {
+		return fmt.Errorf("error repairing legacy pre-push hook: %v", err)
 	}
 
 	logg.Debug("Git DRS initialized")
@@ -107,7 +104,7 @@ func EnsureInitialized(logg *slog.Logger) error {
 		return err
 	}
 	if initialized {
-		return nil
+		return removeLegacyPrePushHook(logg)
 	}
 	return InitializeRepo(logg)
 }
@@ -117,7 +114,7 @@ func isInitialized() (bool, error) {
 		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 	}
 
-	if _, err := os.Stat(common.DRS_DIR); err != nil {
+	if _, err := os.Stat(gitrepo.DRSDir); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
@@ -145,11 +142,7 @@ func isInitialized() (bool, error) {
 		return false, nil
 	}
 
-	prePushInstalled, err := hookContains("pre-push", "git drs pre-push-prepare")
-	if err != nil {
-		return false, err
-	}
-	return prePushInstalled, nil
+	return true, nil
 }
 
 func hookContains(name, marker string) (bool, error) {
@@ -171,6 +164,7 @@ var noSkipSmudge bool
 
 func initGitConfig() error {
 	configs := map[string]string{
+		"push.autoSetupRemote":    "true",
 		"lfs.allowincompletepush": "false",
 		"lfs.concurrenttransfers": strconv.Itoa(transfers),
 		// Use git-drs as the long-running filter-process handler.
@@ -202,62 +196,6 @@ func init() {
 	Cmd.Flags().IntVarP(&multiPartThreshold, "multipart-threshold", "m", 5120, "Multipart threshold in MB")
 	Cmd.Flags().BoolVar(&enableDataClientLogs, "enable-data-client-logs", false, "Enable data-client internal logs")
 	Cmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
-}
-
-func installPrePushHook(logger *slog.Logger) error {
-	hooksDir, err := gitrepo.GetGitHooksDir()
-	if err != nil {
-		return fmt.Errorf("unable to get hooks directory: %w", err)
-	}
-
-	if err := os.MkdirAll(hooksDir, 0755); err != nil {
-		return fmt.Errorf("unable to create hooks directory: %w", err)
-	}
-
-	hookPath := filepath.Join(hooksDir, "pre-push")
-	hookBody := `
-# . git/hooks/pre-push
-remote="$1"
-url="$2"
-
-# Buffer stdin for both commands
-TMPFILE="${TMPDIR:-/tmp}/git-drs-$$"
-trap "rm -f $TMPFILE" EXIT
-cat > "$TMPFILE"
-
-# Run DRS preparation
-git drs pre-push-prepare "$remote" "$url" < "$TMPFILE" || exit 1
-
-# The managed git-drs push command handles upload/register directly.
-# The hook only stages metadata before the Git push proceeds.
-`
-	hookScript := "#!/bin/sh\n" + hookBody
-
-	existingContent, err := os.ReadFile(hookPath)
-	if err == nil {
-		// there is an existing hook, rename it, and let the user know
-		// Backup existing hook with timestamp
-		timestamp := time.Now().Format("20060102T150405")
-		backupPath := hookPath + "." + timestamp
-		if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
-			return fmt.Errorf("unable to back up existing pre-push hook: %w", err)
-		}
-		if err := os.Remove(hookPath); err != nil {
-			return fmt.Errorf("unable to remove hook after backing up: %w", err)
-		}
-		logger.Debug(fmt.Sprintf("pre-push hook updated; backup written to %s", backupPath))
-	}
-	// If there was an error other than expected not existing, return it
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("unable to read pre-push hook: %w", err)
-	}
-
-	err = os.WriteFile(hookPath, []byte(hookScript), 0755)
-	if err != nil {
-		return fmt.Errorf("unable to write pre-push hook: %w", err)
-	}
-	logger.Debug("pre-push hook installed")
-	return nil
 }
 
 func installPreCommitHook(logger *slog.Logger) error {
@@ -303,5 +241,34 @@ exec git drs precommit
 		return fmt.Errorf("unable to write pre-commit hook: %w", err)
 	}
 	logger.Debug("pre-commit hook installed")
+	return nil
+}
+
+func removeLegacyPrePushHook(logger *slog.Logger) error {
+	hooksDir, err := gitrepo.GetGitHooksDir()
+	if err != nil {
+		return fmt.Errorf("unable to get hooks directory: %w", err)
+	}
+	hookPath := filepath.Join(hooksDir, "pre-push")
+	content, err := os.ReadFile(hookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("unable to read pre-push hook: %w", err)
+	}
+	if !strings.Contains(string(content), "git drs pre-push-prepare") {
+		return nil
+	}
+
+	timestamp := time.Now().Format("20060102T150405")
+	backupPath := hookPath + "." + timestamp
+	if err := os.WriteFile(backupPath, content, 0o644); err != nil {
+		return fmt.Errorf("unable to back up legacy pre-push hook: %w", err)
+	}
+	if err := os.Remove(hookPath); err != nil {
+		return fmt.Errorf("unable to remove legacy pre-push hook: %w", err)
+	}
+	logger.Debug(fmt.Sprintf("legacy pre-push hook removed; backup written to %s", backupPath))
 	return nil
 }

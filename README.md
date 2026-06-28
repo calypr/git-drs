@@ -33,9 +33,10 @@ At a high level:
 1. configure a remote for one `organization/project`
 2. let `remote add` bootstrap repo-local `git-drs` state if needed
 3. track file patterns with `git drs track`
-4. add/commit/push normally
+4. add and commit with normal Git
 5. remove tracked pointers with `git drs rm` when you want repository deletion to reconcile with remote DRS state
-5. hydrate pointer files later with `git drs pull`
+6. run `git drs push` for managed metadata registration/upload plus Git push
+7. hydrate pointer files later with `git drs pull`
 
 ## Quick Start
 
@@ -69,6 +70,14 @@ Example:
 ```bash
 git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
 ```
+
+Current command split:
+
+- `git drs push` is the managed data push path
+- plain `git push` is plain Git only
+- `git drs pull` hydrates tracked pointer files already present in the checkout
+- `git drs ls-files` is the local tracked-file inventory command
+- `git drs add-url` prepares pointer plus local metadata for existing provider objects
 
 ## Bucket Mapping Model
 

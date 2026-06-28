@@ -138,7 +138,7 @@ What it covers:
 
 - `git drs push` metadata register + upload
 - multipart/resume behavior
-- `git drs pull` download and compatibility checks
+- `git drs pull` hydration and compatibility checks
 - cleanup by DID resolution
 
 ## Local add-url E2E: runbook

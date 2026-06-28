@@ -91,7 +91,7 @@ Most work reduces to this loop:
 
 `git drs push` handles the DRS upload flow and the Git push flow together.
 
-Use plain `git push` when you only want to push Git-only changes and do not want the `git-drs` upload stage.
+Use plain `git push` when you only want Git ref updates and do not want the `git-drs` registration/upload stage.
 
 ## The Core Tasks
 

@@ -14,7 +14,6 @@ import (
 	"github.com/calypr/git-drs/cmd/lsfiles"
 	"github.com/calypr/git-drs/cmd/ping"
 	"github.com/calypr/git-drs/cmd/precommit"
-	"github.com/calypr/git-drs/cmd/prepush"
 	"github.com/calypr/git-drs/cmd/pull"
 	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
@@ -37,7 +36,6 @@ var RootCmd = &cobra.Command{
 func init() {
 	// Hide internal commands
 	precommit.Cmd.Hidden = true
-	prepush.Cmd.Hidden = true
 	filter.Cmd.Hidden = true
 
 	RootCmd.AddCommand(initialize.Cmd)
@@ -52,7 +50,6 @@ func init() {
 	RootCmd.AddCommand(pull.Cmd)
 	RootCmd.AddCommand(push.Cmd)
 	RootCmd.AddCommand(precommit.Cmd)
-	RootCmd.AddCommand(prepush.Cmd)
 	RootCmd.AddCommand(addref.Cmd)
 	RootCmd.AddCommand(addurl.Cmd)
 	RootCmd.AddCommand(deleteCmd.Cmd)

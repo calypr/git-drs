@@ -48,7 +48,7 @@ Examples:
   - client must first resolve matching objects
   - then issue one delete per object
 
-This is acceptable for a handful of objects. It is poor for large repos, monorepos, or pre-push/pull batch flows.
+This is acceptable for a handful of objects. It is poor for large repos, monorepos, or push/pull batch flows.
 
 ### 2. Latency compounds even when payload size is small
 

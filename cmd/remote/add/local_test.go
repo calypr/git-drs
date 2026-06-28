@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/stretchr/testify/assert"
@@ -65,8 +64,8 @@ func TestLocalRemoteAddEnsuresInitialization(t *testing.T) {
 		t.Fatalf("LocalCmd.RunE returned error: %v", err)
 	}
 
-	if _, err := os.Stat(common.DRS_DIR); err != nil {
-		t.Fatalf("expected %s to exist: %v", common.DRS_DIR, err)
+	if _, err := os.Stat(gitrepo.DRSDir); err != nil {
+		t.Fatalf("expected %s to exist: %v", gitrepo.DRSDir, err)
 	}
 
 	filterProcess, err := gitrepo.GetGitConfigString("filter.drs.process")

@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
-	"github.com/calypr/git-drs/internal/gitrepo"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -54,44 +52,24 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, config.ErrNoDefaultRemote) {
 			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
-			return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+			return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
 		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
 
-	drsCtx, err := cfg.GetRemoteClient(remote, logger)
+	drsCtx, err := remoteruntime.New(cfg, remote, logger)
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
 
-	var downloadFn drsfilter.SmudgeDownloadFunc
-	if !shouldSkipSmudge() {
+	var downloadFn internalfilter.SmudgeDownloadFunc
+	if !internalfilter.ShouldSkipSmudge() {
 		downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-			return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+			return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 		}
 	}
 
-	return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, downloadFn)
+	return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, downloadFn)
 }
 
 func init() {}
-
-func shouldSkipSmudge() bool {
-	if val := os.Getenv("GIT_LFS_SKIP_SMUDGE"); val != "" {
-		return val == "1" || strings.ToLower(val) == "true"
-	}
-	if val := os.Getenv("GIT_DRS_SKIP_SMUDGE"); val != "" {
-		return val == "1" || strings.ToLower(val) == "true"
-	}
-	if valStr, err := gitrepo.GetGitConfigString("drs.skipsmudge"); err == nil && valStr != "" {
-		if val, err := strconv.ParseBool(valStr); err == nil {
-			return val
-		}
-	}
-	if valStr, err := gitrepo.GetGitConfigString("lfs.skipsmudge"); err == nil && valStr != "" {
-		if val, err := strconv.ParseBool(valStr); err == nil {
-			return val
-		}
-	}
-	return true
-}

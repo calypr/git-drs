@@ -1,14 +1,10 @@
 package addurl
 
 import (
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"os"
 	"os/exec"
 	"testing"
-
-	"log/slog"
-
-	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/gitrepo"
 )
 
 type fakeRemote struct {
@@ -28,9 +24,6 @@ func (f fakeRemote) GetBucketName() string {
 }
 func (f fakeRemote) GetStoragePrefix() string {
 	return f.prefix
-}
-func (f fakeRemote) GetClient(string, *slog.Logger) (*config.GitContext, error) {
-	return nil, nil
 }
 
 func TestResolveTargetScope_DefaultFallsBackToRemoteConfig(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
@@ -27,7 +27,7 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		},
 	}
-	if existing, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid); err == nil && existing != nil {
+	if existing, err := drsobject.ReadObject(drspaths.DRSObjectsPath, oid); err == nil && existing != nil {
 		drsObj = existing
 		drsObj.Name = &name
 		drsObj.Size = size
@@ -35,7 +35,7 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		}
 	}
-	return drsobject.WriteObject(common.DRS_OBJS_PATH, drsObj, oid)
+	return drsobject.WriteObject(drspaths.DRSObjectsPath, drsObj, oid)
 }
 
 // CleanContent reads raw file content from content, hashes it with SHA-256,
@@ -93,7 +93,7 @@ func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Read
 	}
 
 	// Move temp file to the final content-addressed location.
-	cachePath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, oid)
+	cachePath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, oid)
 	if err != nil {
 		return fmt.Errorf("clean: resolve cache path: %w", err)
 	}

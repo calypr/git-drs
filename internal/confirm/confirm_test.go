@@ -1,4 +1,4 @@
-package common
+package confirm
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ func TestPromptForConfirmation(t *testing.T) {
 	}
 }
 
-func TestPromptForConfirmation_Mismatch(t *testing.T) {
+func TestPromptForConfirmationMismatch(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)

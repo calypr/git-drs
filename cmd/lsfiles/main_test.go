@@ -12,6 +12,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
@@ -72,7 +73,7 @@ func TestCollectRowsLocalDefault(t *testing.T) {
 			pointerPath:   {Name: pointerPath, Oid: strings.Repeat("b", 64)},
 		}, nil
 	}
-	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
 		t.Fatalf("unexpected remote lookup for checksums %v", checksums)
 		return nil, nil
 	}
@@ -133,8 +134,8 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) {
 		return config.Remote("origin"), nil
 	}
-	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-		return &config.GitContext{}, nil
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+		return &remoteruntime.GitContext{}, nil
 	}
 
 	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
@@ -150,7 +151,7 @@ func TestCollectRowsWithDRSLookupAndFilters(t *testing.T) {
 		}
 		return []string{"refs/remotes/dev/main"}, nil
 	}
-	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
 		got := map[string][]drsapi.DrsObject{}
 		for _, checksum := range checksums {
 			switch checksum {
@@ -219,8 +220,8 @@ func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
 	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) {
 		return config.Remote("origin"), nil
 	}
-	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-		return &config.GitContext{}, nil
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+		return &remoteruntime.GitContext{}, nil
 	}
 	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{
@@ -234,7 +235,7 @@ func TestCollectRowsWithDRSLookupBatchError(t *testing.T) {
 		}
 		return []string{"refs/remotes/dev/main"}, nil
 	}
-	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *config.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
+	lookupScopedObjectsBatch = func(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
 		return nil, errors.New("lookup failed")
 	}
 	resolveDefaultRemote = func() string { return "" }

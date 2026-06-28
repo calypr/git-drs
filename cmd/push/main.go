@@ -13,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pushsync"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,7 @@ var Cmd = &cobra.Command{
 		}
 
 		fmt.Fprintln(os.Stderr, "DEBUG: Getting remote client for remote:", remote)
-		drsClient, err := cfg.GetRemoteClient(remote, myLogger)
+		drsClient, err := remoteruntime.New(cfg, remote, myLogger)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to get remote client:", err)
 			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))

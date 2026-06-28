@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdownload"
 	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -59,7 +60,7 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
 
-	drsCtx, err := cfg.GetRemoteClient(remote, logger)
+	drsCtx, err := remoteruntime.New(cfg, remote, logger)
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
@@ -67,7 +68,7 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	var downloadFn drsfilter.SmudgeDownloadFunc
 	if !shouldSkipSmudge() {
 		downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-			return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+			return drsdownload.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 		}
 	}
 

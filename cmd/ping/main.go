@@ -8,6 +8,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +24,7 @@ type statusInfo struct {
 	AuthMode      string
 }
 
-var pingHealth = func(ctx context.Context, gc *config.GitContext) error {
+var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
 	return gc.Client.Health().Ping(ctx)
 }
 
@@ -53,7 +54,7 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *config.GitContext, error) {
+func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *remoteruntime.GitContext, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return statusInfo{}, nil, err
@@ -73,7 +74,7 @@ func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *config.GitC
 		return statusInfo{}, nil, fmt.Errorf("no remote configuration found for %q", remoteName)
 	}
 
-	gc, err := cfg.GetRemoteClient(remoteName, logger)
+	gc, err := remoteruntime.New(cfg, remoteName, logger)
 	if err != nil {
 		return statusInfo{}, nil, err
 	}
@@ -115,7 +116,7 @@ func printStatus(status statusInfo) {
 	fmt.Printf("auth: %s\n", status.AuthMode)
 }
 
-func authMode(gc *config.GitContext) string {
+func authMode(gc *remoteruntime.GitContext) string {
 	if gc == nil || gc.Credential == nil {
 		return "none"
 	}

@@ -1,4 +1,4 @@
-package common
+package confirm
 
 import (
 	"bufio"
@@ -33,17 +33,14 @@ func PromptForConfirmation(w io.Writer, prompt string, expectedResponse string, 
 	return nil
 }
 
-// DisplayWarningHeader writes a formatted warning header to the writer
 func DisplayWarningHeader(w io.Writer, operation string) {
 	fmt.Fprintf(w, "\n⚠️  WARNING: You are about to %s\n\n", operation)
 }
 
-// DisplayField writes a formatted key-value field to the writer
 func DisplayField(w io.Writer, key, value string) {
 	fmt.Fprintf(w, "%-11s %s\n", key+":", value)
 }
 
-// DisplayFooter writes the standard "cannot be undone" footer to the writer
 func DisplayFooter(w io.Writer) {
 	fmt.Fprintf(w, "\nThis action CANNOT be undone.\n\n")
 }

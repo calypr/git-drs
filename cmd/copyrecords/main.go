@@ -12,6 +12,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/request"
 	syservices "github.com/calypr/syfon/client/services"
@@ -178,11 +179,11 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		srcCtx, err := cfg.GetRemoteClient(srcRemoteName, logger)
+		srcCtx, err := remoteruntime.New(cfg, srcRemoteName, logger)
 		if err != nil {
 			return fmt.Errorf("error creating source client: %w", err)
 		}
-		dstCtx, err := cfg.GetRemoteClient(dstRemoteName, logger)
+		dstCtx, err := remoteruntime.New(cfg, dstRemoteName, logger)
 		if err != nil {
 			return fmt.Errorf("error creating target client: %w", err)
 		}

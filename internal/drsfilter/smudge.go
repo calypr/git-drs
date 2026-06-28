@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
 )
 
@@ -38,7 +38,7 @@ func SmudgeContent(ctx context.Context, pathname string, ptr io.Reader, dst io.W
 		logger.Debug("smudge", "pathname", pathname, "oid", oid, "size", size)
 	}
 
-	cachePath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, oid)
+	cachePath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, oid)
 	if err != nil {
 		return fmt.Errorf("smudge: resolve cache path: %w", err)
 	}

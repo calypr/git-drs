@@ -21,12 +21,13 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdownload"
 	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
 	"github.com/calypr/git-drs/internal/gitfilter"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -74,13 +75,13 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("filter: load config: %w", err)
 	}
 
-	var drsCtx *config.GitContext
+	var drsCtx *remoteruntime.GitContext
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
 		logger.Info("filter: no default remote", "err", err)
 	} else {
-		drsCtx, err = cfg.GetRemoteClient(remote, logger)
+		drsCtx, err = remoteruntime.New(cfg, remote, logger)
 		if err != nil {
 			logger.Info("DRS server not configured or unreachable", "err", err)
 		}
@@ -103,13 +104,13 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) gitfilter.SmudgeFunc {
+func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, logger *slog.Logger) gitfilter.SmudgeFunc {
 	return func(ctx context.Context, req gitfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn drsfilter.SmudgeDownloadFunc
 		if drsCtx != nil && !shouldSkipSmudge() {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-				return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+				return drsdownload.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
 			}
 		}
 		return drsfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)

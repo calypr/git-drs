@@ -7,13 +7,14 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/drstrack"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/google/uuid"
@@ -24,8 +25,8 @@ import (
 // behavior (logger factory, object inspection, LFS helpers, config loader, etc.).
 type AddURLService struct {
 	newLogger           func(string, bool) (*slog.Logger, error)
-	inspectRemoteObject func(ctx context.Context, drsCtx *config.GitContext, input addURLInput) (*inspectedObject, error)
-	getRemoteClient     func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error)
+	inspectRemoteObject func(ctx context.Context, drsCtx *remoteruntime.GitContext, input addURLInput) (*inspectedObject, error)
+	getRemoteClient     func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error)
 	isLFSTracked        func(path string) (bool, error)
 	getGitRoots         func(ctx context.Context) (string, string, error)
 	gitLFSTrack         func(ctx context.Context, path string) (bool, error)
@@ -38,8 +39,8 @@ func NewAddURLService() *AddURLService {
 	return &AddURLService{
 		newLogger:           drslog.NewLogger,
 		inspectRemoteObject: inspectRemoteObjectViaServer,
-		getRemoteClient: func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-			return cfg.GetRemoteClient(remote, logger)
+		getRemoteClient: func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+			return remoteruntime.New(cfg, remote, logger)
 		},
 		isLFSTracked: lfs.IsLFSTracked,
 		getGitRoots:  lfs.GetGitRootDirectories,
@@ -163,7 +164,7 @@ type addURLDrsFile struct {
 }
 
 func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectPath string) (*drsapi.DrsObject, error) {
-	existing, err := drsobject.ReadObject(common.DRS_OBJS_PATH, file.Oid)
+	existing, err := drsobject.ReadObject(drspaths.DRSObjectsPath, file.Oid)
 	var drsObj *drsapi.DrsObject
 	if err == nil && existing != nil {
 		drsObj = existing
@@ -196,7 +197,7 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 		}
 	}
 
-	if err := drsobject.WriteObject(common.DRS_OBJS_PATH, drsObj, file.Oid); err != nil {
+	if err := drsobject.WriteObject(drspaths.DRSObjectsPath, drsObj, file.Oid); err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %w", file.Oid, err)
 	}
 	return drsObj, nil

@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syclient "github.com/calypr/syfon/client"
@@ -245,7 +245,7 @@ func TestEnsureMetadataRegisteredReusesExistingDownloadableRecordWithoutUpload(t
 	}
 	client := raw.(*syclient.Client)
 
-	rt := newPushRuntime(&config.GitContext{
+	rt := newPushRuntime(&remoteruntime.GitContext{
 		Client:       client,
 		Organization: "syfon",
 		ProjectId:    "e2e",
@@ -378,7 +378,7 @@ func TestEnsureMetadataRegisteredReregistersWhenScopedNameDiffers(t *testing.T) 
 
 	session := &batchSyncSession{
 		ctx: context.Background(),
-		rt: newPushRuntime(&config.GitContext{
+		rt: newPushRuntime(&remoteruntime.GitContext{
 			Client:       client,
 			Organization: "syfon",
 			ProjectId:    "e2e",
@@ -447,7 +447,7 @@ func TestEnsureMetadataRegisteredReportsMetadataProgress(t *testing.T) {
 	reporter := &recordingReporter{}
 	session := &batchSyncSession{
 		ctx: context.Background(),
-		rt: newPushRuntime(&config.GitContext{
+		rt: newPushRuntime(&remoteruntime.GitContext{
 			Client:       client,
 			Organization: "syfon",
 			ProjectId:    "e2e",
@@ -696,7 +696,7 @@ func assertScopedDRSObjectForPushRebuildsAccessMethod(t *testing.T, existingURL 
 	}
 
 	rt := &pushRuntime{
-		API: &config.GitContext{
+		API: &remoteruntime.GitContext{
 			Organization:  "syfon",
 			ProjectId:     "e2e",
 			BucketName:    "syfon-e2e-bucket",
@@ -748,7 +748,7 @@ func TestScopedDRSObjectForPushPreservesExplicitAddURLAccessMethod(t *testing.T)
 	}
 
 	rt := &pushRuntime{
-		API: &config.GitContext{
+		API: &remoteruntime.GitContext{
 			Organization: "syfon",
 			ProjectId:    "e2e",
 			BucketName:   "syfon-e2e-bucket",

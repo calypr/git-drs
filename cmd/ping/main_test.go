@@ -11,6 +11,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
@@ -88,7 +89,7 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 	}
 
 	oldHealth := pingHealth
-	pingHealth = func(ctx context.Context, gc *config.GitContext) error {
+	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
 		if gc == nil || gc.ProjectId != "end_to_end_test" {
 			t.Fatalf("unexpected git context: %+v", gc)
 		}

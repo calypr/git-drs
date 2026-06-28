@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	localcommon "github.com/calypr/git-drs/internal/common"
-	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drspaths"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	syclient "github.com/calypr/syfon/client"
 	sycommon "github.com/calypr/syfon/client/common"
@@ -74,8 +74,8 @@ func TestResolveUploadSourcePath_NoSentinelObjectForPointer(t *testing.T) {
 	}
 
 	// Ensure the implicit cache root matches command behavior under the cwd.
-	if _, err := os.Stat(localcommon.LFS_OBJS_PATH); err == nil {
-		t.Fatalf("expected no local object cache at %s", localcommon.LFS_OBJS_PATH)
+	if _, err := os.Stat(drspaths.LFSObjectsPath); err == nil {
+		t.Fatalf("expected no local object cache at %s", drspaths.LFSObjectsPath)
 	}
 
 	src, ok, err := resolveUploadSourcePath(oid, worktreePath, true)
@@ -190,7 +190,7 @@ func TestUploadFileForObjectSinglePartUsesScopedUploadURLResolution(t *testing.T
 	client := raw.(*syclient.Client)
 
 	rt := &pushRuntime{
-		API: &config.GitContext{
+		API: &remoteruntime.GitContext{
 			Client:       client,
 			Organization: "syfon",
 			ProjectId:    "e2e",

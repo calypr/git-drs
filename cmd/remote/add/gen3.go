@@ -12,10 +12,11 @@ import (
 	"github.com/calypr/calypr-cli/conf"
 	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/authparse"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	"github.com/spf13/cobra"
 )
@@ -72,7 +73,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	case fenceToken != "":
 		accessToken = fenceToken
 		var err error
-		apiEndpoint, err = common.ParseAPIEndpointFromToken(accessToken)
+		apiEndpoint, err = authparse.ParseAPIEndpointFromToken(accessToken)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from provided access token: %w", err)
 		}
@@ -86,7 +87,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		apiKey = cred.APIKey
 		keyID = cred.KeyID
 
-		apiEndpoint, err = common.ParseAPIEndpointFromToken(cred.APIKey)
+		apiEndpoint, err = authparse.ParseAPIEndpointFromToken(cred.APIKey)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from API key in credentials file: %w", err)
 		}
@@ -120,7 +121,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := credentials.EnsureValidCredential(ctx, cred, logg); err != nil {
-		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", config.WrapCredentialValidationError(remoteName, err))
+		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", remoteruntime.WrapCredentialValidationError(remoteName, err))
 	}
 
 	scope, err := gitrepo.ResolveBucketScope(organization, project, "", "")

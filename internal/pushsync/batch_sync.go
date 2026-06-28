@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	localcommon "github.com/calypr/git-drs/internal/common"
-	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslookup"
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
@@ -44,7 +44,7 @@ type uploadCandidate struct {
 const metadataLookupBatchSize = 500
 
 // BatchSyncForPush performs checksum-first push preparation.
-func BatchSyncForPush(cl *config.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
+func BatchSyncForPush(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
 	session := &batchSyncSession{
 		ctx:            ctx,
 		rt:             newPushRuntime(cl),
@@ -104,7 +104,7 @@ func (s *batchSyncSession) lookupMetadata() error {
 	batches := chunkStrings(s.oids, metadataLookupBatchSize)
 	for idx, batch := range batches {
 		fmt.Fprintf(os.Stderr, "DEBUG:   lookupMetadata batch %d/%d (size: %d)\n", idx+1, len(batches), len(batch))
-		objectsByHash, err := drsremote.ObjectsByHashes(s.ctx, s.rt.API, batch)
+		objectsByHash, err := drslookup.ObjectsByHashes(s.ctx, s.rt.API, batch)
 		if err != nil {
 			return fmt.Errorf("batch hash lookup failed: %w", err)
 		}
@@ -159,7 +159,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			s.uploadRequired[oid] = true
 			continue
 		}
-		if match, err := drsremote.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
+		if match, err := drslookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
 			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
 			continue
@@ -258,7 +258,7 @@ func (s *batchSyncSession) buildReusableScopedObject(oid string, existing *drsap
 
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
 	file := s.filesByOID[oid]
-	if localObj, err := localdrsobject.ReadObject(localcommon.DRS_OBJS_PATH, oid); err == nil && localObj != nil {
+	if localObj, err := localdrsobject.ReadObject(drspaths.DRSObjectsPath, oid); err == nil && localObj != nil {
 		return scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
 	}
 	stat, err := os.Stat(file.Name)

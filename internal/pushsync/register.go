@@ -9,10 +9,10 @@ import (
 	"os"
 	"strings"
 
-	localcommon "github.com/calypr/git-drs/internal/common"
-	"github.com/calypr/git-drs/internal/config"
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
@@ -54,7 +54,7 @@ type pushTuning struct {
 }
 
 type pushRuntime struct {
-	API        *config.GitContext
+	API        *remoteruntime.GitContext
 	Credential *conf.Credential
 	Logger     *slog.Logger
 	Scope      pushScope
@@ -62,7 +62,7 @@ type pushRuntime struct {
 	ProbeURL   func(context.Context, string) error
 }
 
-func newPushRuntime(cl *config.GitContext) *pushRuntime {
+func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 	if cl == nil {
 		return &pushRuntime{}
 	}
@@ -146,7 +146,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 		return "", false, fmt.Errorf("empty oid")
 	}
 
-	lfsObjPath, err := lfs.ObjectPath(localcommon.LFS_OBJS_PATH, oid)
+	lfsObjPath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, oid)
 	if err == nil {
 		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
 			return lfsObjPath, true, nil
@@ -282,7 +282,7 @@ func scopedUploadMetadata(rt *pushRuntime) sycommon.FileMetadata {
 	}
 }
 
-func newDownloadProbe(cl *config.GitContext) func(context.Context, string) error {
+func newDownloadProbe(cl *remoteruntime.GitContext) func(context.Context, string) error {
 	httpClient := http.DefaultClient
 	if cl != nil && cl.Client != nil && cl.Client.HTTPClient() != nil {
 		httpClient = cl.Client.HTTPClient()

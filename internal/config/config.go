@@ -3,12 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/go-git/go-git/v5"
 )
@@ -33,26 +32,6 @@ var ErrNoDefaultRemote = errors.New("no default remote configured")
 type Config struct {
 	DefaultRemote Remote
 	Remotes       map[Remote]RemoteSelect
-}
-
-func (c Config) GetRemoteClient(remote Remote, logger *slog.Logger) (*GitContext, error) {
-	x, ok := c.Remotes[remote]
-	if !ok {
-		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
-	}
-	if x.Local != nil {
-		return x.Local.GetClient(string(remote), logger)
-	}
-	if x.Gen3 != nil {
-		username, password, err := gitrepo.GetRemoteBasicAuth(string(remote))
-		if err == nil && strings.TrimSpace(username) != "" && strings.TrimSpace(password) != "" {
-			// If repo-local basic auth is configured, prefer the local/basic-auth client
-			// path even when the remote entry was parsed as Gen3.
-			return localRemoteFromGen3(x.Gen3, username, password).GetClient(string(remote), logger)
-		}
-		return x.Gen3.GetClient(string(remote), logger)
-	}
-	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }
 
 func (c Config) GetRemote(remote Remote) DRSRemote {
@@ -354,6 +333,6 @@ func getConfigPath() (string, error) {
 		return "", err
 	}
 
-	configPath := filepath.Join(topLevel, common.DRS_DIR, common.CONFIG_YAML)
+	configPath := filepath.Join(topLevel, drspaths.DRSDir, drspaths.ConfigYAML)
 	return configPath, nil
 }

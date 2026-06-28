@@ -9,6 +9,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +38,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		client, err := cfg.GetRemoteClient(remoteName, logger)
+		client, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			return err
 		}

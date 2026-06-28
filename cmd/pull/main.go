@@ -11,12 +11,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drsdownload"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drslookup"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pathspec"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
@@ -28,8 +30,8 @@ var dryRun bool
 var (
 	loadCfg         = config.LoadConfig
 	resolveRemote   = func(cfg *config.Config, name string) (config.Remote, error) { return cfg.GetRemoteOrDefault(name) }
-	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-		return cfg.GetRemoteClient(remote, logger)
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+		return remoteruntime.New(cfg, remote, logger)
 	}
 	loadWorktreeInventory = lfs.GetWorktreeLfsFiles
 )
@@ -97,7 +99,7 @@ var Cmd = &cobra.Command{
 		missingOIDs := make([]string, 0, len(pointers))
 		seenMissing := make(map[string]struct{}, len(pointers))
 		for _, f := range pointers {
-			cachePath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
+			cachePath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
@@ -116,7 +118,7 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 			for _, oid := range missingOIDs {
-				recs, err := drsremote.ObjectsByHashForScope(ctx, drsCtx, oid)
+				recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 				if err != nil || len(recs) == 0 {
 					continue
 				}
@@ -134,7 +136,7 @@ var Cmd = &cobra.Command{
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
 				}
-				if resolved, err := drsremote.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
+				if resolved, err := drsdownload.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
 				} else {
@@ -142,7 +144,7 @@ var Cmd = &cobra.Command{
 				}
 			}
 			for _, f := range pointers {
-				dstPath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
+				dstPath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
@@ -156,14 +158,14 @@ var Cmd = &cobra.Command{
 				if obj, ok := prefetched[f.Oid]; ok {
 					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
 						objCopy := obj
-						if err := drsremote.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+						if err := drsdownload.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
 						continue
 					}
 				}
-				if err := drsremote.DownloadToCachePath(downloadCtx, drsCtx, logg, f.Oid, dstPath); err != nil {
+				if err := drsdownload.DownloadToCachePath(downloadCtx, drsCtx, logg, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
@@ -220,7 +222,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
 		}
-		srcPath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, f.Oid)
+		srcPath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
@@ -257,8 +259,8 @@ func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer
 	return nil
 }
 
-func buildPullDownloadDebugContext(ctx context.Context, drsCtx *config.GitContext, oid string) string {
-	recs, err := drsremote.ObjectsByHashForScope(ctx, drsCtx, oid)
+func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.GitContext, oid string) string {
+	recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}

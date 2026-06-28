@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
 )
 
@@ -147,7 +147,7 @@ func setupSmudgeTestRepo(t *testing.T) string {
 
 func mustObjectPath(t *testing.T, oid string) string {
 	t.Helper()
-	path, err := lfs.ObjectPath(common.LFS_OBJS_PATH, oid)
+	path, err := lfs.ObjectPath(drspaths.LFSObjectsPath, oid)
 	if err != nil {
 		t.Fatalf("ObjectPath: %v", err)
 	}

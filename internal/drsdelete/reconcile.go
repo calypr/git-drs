@@ -6,8 +6,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drslookup"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycommon "github.com/calypr/syfon/common"
 )
 
@@ -24,7 +24,7 @@ type Summary struct {
 	PendingAmbiguous int
 }
 
-func ReconcileCommittedDeletes(ctx context.Context, drsCtx *config.GitContext, refs []RefUpdate, logger *slog.Logger) (Summary, error) {
+func ReconcileCommittedDeletes(ctx context.Context, drsCtx *remoteruntime.GitContext, refs []RefUpdate, logger *slog.Logger) (Summary, error) {
 	if drsCtx == nil || drsCtx.Client == nil {
 		return Summary{}, fmt.Errorf("DRS client unavailable")
 	}
@@ -60,7 +60,7 @@ func ReconcileCommittedDeletes(ctx context.Context, drsCtx *config.GitContext, r
 			continue
 		}
 
-		records, err := drsremote.ObjectsByHashForScope(ctx, drsCtx, oid)
+		records, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 		if err != nil {
 			return summary, err
 		}

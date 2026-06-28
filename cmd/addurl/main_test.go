@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/precommit_cache"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
 
@@ -72,7 +73,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	service := NewAddURLService()
 	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, drsCtx *config.GitContext, in addURLInput) (*inspectedObject, error) {
+		func(ctx context.Context, drsCtx *remoteruntime.GitContext, in addURLInput) (*inspectedObject, error) {
 			return &inspectedObject{
 				objectURL: "s3://bucket/path/to/file.bin",
 				info: &sycloud.ObjectInfo{
@@ -86,8 +87,8 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 				},
 			}, nil
 		},
-		func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-			return &config.GitContext{
+		func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+			return &remoteruntime.GitContext{
 				Organization:  "calypr",
 				ProjectId:     "calypr-dev",
 				BucketName:    "cbds",
@@ -132,7 +133,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("expected no local LFS object payload at %s, got err=%v", lfsObject, err)
 	}
 
-	drsObject, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid)
+	drsObject, err := drsobject.ReadObject(drspaths.DRSObjectsPath, oid)
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
@@ -327,8 +328,8 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 func stubAddURLDeps(
 	t *testing.T,
 	service *AddURLService,
-	inspectFn func(context.Context, *config.GitContext, addURLInput) (*inspectedObject, error),
-	getRemoteClientFn func(*config.Config, config.Remote, *slog.Logger) (*config.GitContext, error),
+	inspectFn func(context.Context, *remoteruntime.GitContext, addURLInput) (*inspectedObject, error),
+	getRemoteClientFn func(*config.Config, config.Remote, *slog.Logger) (*remoteruntime.GitContext, error),
 	isTrackedFn func(string) (bool, error),
 ) func() {
 	t.Helper()

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	syclient "github.com/calypr/syfon/client"
 )
 
@@ -45,14 +45,14 @@ func initRepoWithDelete(t *testing.T, specs []pointerSpec) string {
 	return repo
 }
 
-func newGitContext(t *testing.T, serverURL string) *config.GitContext {
+func newGitContext(t *testing.T, serverURL string) *remoteruntime.GitContext {
 	t.Helper()
 	rawClient, err := syclient.New(serverURL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
 	client := rawClient.(*syclient.Client)
-	return &config.GitContext{
+	return &remoteruntime.GitContext{
 		Client:       client,
 		Organization: "org",
 		ProjectId:    "proj",

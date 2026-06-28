@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
 	syrequest "github.com/calypr/syfon/client/request"
 )
@@ -39,7 +39,7 @@ type internalInspectObjectResponse struct {
 	LastModTime string `json:"last_modified,omitempty"`
 }
 
-func inspectRemoteObjectViaServer(ctx context.Context, drsCtx *config.GitContext, input addURLInput) (*inspectedObject, error) {
+func inspectRemoteObjectViaServer(ctx context.Context, drsCtx *remoteruntime.GitContext, input addURLInput) (*inspectedObject, error) {
 	if drsCtx == nil || drsCtx.Client == nil || drsCtx.Client.Requestor() == nil {
 		return nil, fmt.Errorf("remote-backed add-url inspection requires a configured syfon client")
 	}

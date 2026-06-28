@@ -1,4 +1,4 @@
-package common
+package authparse
 
 import (
 	"fmt"
@@ -13,11 +13,11 @@ func ParseAPIEndpointFromToken(tokenString string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode token in ParseAPIEndpointFromToken: '%s': %w", tokenString, err)
 	}
-	issUrl, ok := claims["iss"].(string)
+	issURL, ok := claims["iss"].(string)
 	if !ok {
 		return "", fmt.Errorf("missing or invalid 'iss' claim")
 	}
-	parsedURL, err := url.Parse(issUrl)
+	parsedURL, err := url.Parse(issURL)
 	if err != nil {
 		return "", err
 	}

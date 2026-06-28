@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/lfs"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
@@ -31,7 +31,7 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	oid := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize 21\n"
 	explicitURL := "s3://bucket/path/to/file.bin"
-	if err := drsobject.WriteObject(common.DRS_OBJS_PATH, &drsapi.DrsObject{
+	if err := drsobject.WriteObject(drspaths.DRSObjectsPath, &drsapi.DrsObject{
 		Size: 21,
 		AccessMethods: &[]drsapi.AccessMethod{{
 			Type: drsapi.AccessMethodTypeS3,
@@ -53,12 +53,12 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 		t.Fatalf("expected pointer passthrough, got %q", out.String())
 	}
 
-	if objPath, err := lfs.ObjectPath(common.DRS_OBJS_PATH, oid); err != nil {
+	if objPath, err := lfs.ObjectPath(drspaths.DRSObjectsPath, oid); err != nil {
 		t.Fatalf("ObjectPath: %v", err)
 	} else if _, err := os.Stat(objPath); err != nil {
 		t.Fatalf("expected DRS map entry at %s: %v", objPath, err)
 	}
-	gotObj, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid)
+	gotObj, err := drsobject.ReadObject(drspaths.DRSObjectsPath, oid)
 	if err != nil {
 		t.Fatalf("read DRS map entry: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 
 	sum := sha256.Sum256([]byte(pointer))
 	contentOID := hex.EncodeToString(sum[:])
-	if cachePath, err := lfs.ObjectPath(common.LFS_OBJS_PATH, contentOID); err == nil {
+	if cachePath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, contentOID); err == nil {
 		if _, statErr := os.Stat(cachePath); !os.IsNotExist(statErr) {
 			t.Fatalf("did not expect pointer text to be cached as payload at %s", cachePath)
 		}

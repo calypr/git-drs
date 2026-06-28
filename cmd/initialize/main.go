@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
@@ -70,8 +70,8 @@ func InitializeRepo(logg *slog.Logger) error {
 	}
 
 	// create drs directories
-	drsDir := common.DRS_DIR
-	drsLfsObjsDir := common.DRS_OBJS_PATH
+	drsDir := drspaths.DRSDir
+	drsLfsObjsDir := drspaths.DRSObjectsPath
 	if err := os.MkdirAll(drsDir, 0755); err != nil {
 		return fmt.Errorf("error: unable to create drs directory: %v", err)
 	}
@@ -112,7 +112,7 @@ func isInitialized() (bool, error) {
 		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 	}
 
-	if _, err := os.Stat(common.DRS_DIR); err != nil {
+	if _, err := os.Stat(drspaths.DRSDir); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
@@ -162,7 +162,7 @@ var noSkipSmudge bool
 
 func initGitConfig() error {
 	configs := map[string]string{
-		"push.autoSetupRemote": "true",
+		"push.autoSetupRemote":    "true",
 		"lfs.allowincompletepush": "false",
 		"lfs.concurrenttransfers": strconv.Itoa(transfers),
 		// Use git-drs as the long-running filter-process handler.

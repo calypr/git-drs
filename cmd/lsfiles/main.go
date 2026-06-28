@@ -11,9 +11,10 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drslookup"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/pathspec"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/spf13/cobra"
 )
@@ -29,8 +30,8 @@ var drsStatus bool
 var (
 	loadConfig      = config.LoadConfig
 	resolveRemote   = func(cfg *config.Config, name string) (config.Remote, error) { return cfg.GetRemoteOrDefault(name) }
-	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*config.GitContext, error) {
-		return cfg.GetRemoteClient(remote, logger)
+	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+		return remoteruntime.New(cfg, remote, logger)
 	}
 	loadLFSInventory = func(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		if len(branches) == 0 {
@@ -41,7 +42,7 @@ var (
 	listRemoteRefs           = defaultListRemoteRefs
 	listGitRemotes           = defaultListGitRemotes
 	resolveDefaultRemote     = defaultResolveDefaultRemote
-	lookupScopedObjectsBatch = drsremote.ObjectsByHashesForScope
+	lookupScopedObjectsBatch = drslookup.ObjectsByHashesForScope
 )
 
 type fileRow struct {
@@ -125,7 +126,7 @@ func defaultResolveDefaultRemote() string {
 func collectRows(cmd *cobra.Command, gitRemoteName, drsRemoteName string, patterns []string, resolveDRS bool) ([]fileRow, error) {
 	logger := drslog.GetLogger()
 
-	var client *config.GitContext
+	var client *remoteruntime.GitContext
 	if resolveDRS {
 		cfg, err := loadConfig()
 		if err != nil {

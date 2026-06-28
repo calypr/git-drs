@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/bytedance/sonic"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drslookup"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
@@ -18,12 +19,12 @@ var remote string
 var checksum = false
 var pretty = false
 
-func queryByChecksum(ctx context.Context, gc *config.GitContext, checksum string) ([]drsapi.DrsObject, error) {
+func queryByChecksum(ctx context.Context, gc *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {
 	hashType := checksumTypeForString(checksum)
 	if hashType != hash.ChecksumTypeSHA256.String() {
 		return nil, fmt.Errorf("checksum lookup currently only supports sha256 (got %q); non-sha256 support is tracked in syfon DRSService.GetObjectsByChecksum", hashType)
 	}
-	return drsremote.ObjectsByHashForScope(ctx, gc, checksum)
+	return drslookup.ObjectsByHashForScope(ctx, gc, checksum)
 }
 
 func checksumTypeForString(sum string) string {
@@ -39,6 +40,23 @@ func checksumTypeForString(sum string) string {
 	default:
 		return string(hash.NormalizeChecksumType(sum))
 	}
+}
+
+func printDRSObject(obj drsapi.DrsObject, pretty bool) error {
+	var out []byte
+	var err error
+
+	if pretty {
+		out, err = sonic.ConfigFastest.MarshalIndent(obj, "", "  ")
+	} else {
+		out, err = sonic.ConfigFastest.Marshal(obj)
+	}
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s\n", string(out))
+	return nil
 }
 
 // Cmd line declaration
@@ -67,7 +85,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		gc, err := cfg.GetRemoteClient(remoteName, logger)
+		gc, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			return err
 		}
@@ -78,7 +96,7 @@ var Cmd = &cobra.Command{
 				return err
 			}
 			for _, drsObj := range objs {
-				if err := common.PrintDRSObject(drsObj, pretty); err != nil {
+				if err := printDRSObject(drsObj, pretty); err != nil {
 					return err
 				}
 			}
@@ -89,7 +107,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return common.PrintDRSObject(obj, pretty)
+		return printDRSObject(obj, pretty)
 	},
 }
 

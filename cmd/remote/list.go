@@ -7,6 +7,7 @@ import (
 	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +71,7 @@ var ListCmd = &cobra.Command{
 					continue
 				}
 				if err := ensureValidCredential(cmd.Context(), cred, logg); err != nil {
-					logg.Warn(config.WrapCredentialValidationError(string(name), err).Error())
+					logg.Warn(remoteruntime.WrapCredentialValidationError(string(name), err).Error())
 				}
 			}
 		}

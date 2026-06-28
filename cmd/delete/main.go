@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/confirm"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/drslookup"
+	"github.com/calypr/git-drs/internal/drspaths"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -46,14 +48,14 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
+		drsClient, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsremote.ObjectsByHashForScope(context.Background(), drsClient, oid)
+		records, err := drslookup.ObjectsByHashForScope(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -64,22 +66,22 @@ var Cmd = &cobra.Command{
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
 			projectId := drsClient.ProjectId
-			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
-			common.DisplayField(os.Stderr, "Remote", string(remoteName))
-			common.DisplayField(os.Stderr, "Project", projectId)
-			common.DisplayField(os.Stderr, "OID", oid)
-			common.DisplayField(os.Stderr, "Hash Type", hashType)
-			common.DisplayField(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records)))
+			confirm.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
+			confirm.DisplayField(os.Stderr, "Remote", string(remoteName))
+			confirm.DisplayField(os.Stderr, "Project", projectId)
+			confirm.DisplayField(os.Stderr, "OID", oid)
+			confirm.DisplayField(os.Stderr, "Hash Type", hashType)
+			confirm.DisplayField(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records)))
 			if len(records) > 0 {
-				common.DisplayField(os.Stderr, "Example DID", records[0].Id)
+				confirm.DisplayField(os.Stderr, "Example DID", records[0].Id)
 			}
-			common.DisplayField(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend")
-			common.DisplayFooter(os.Stderr)
+			confirm.DisplayField(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend")
+			confirm.DisplayFooter(os.Stderr)
 
-			if err := common.PromptForConfirmation(
+			if err := confirm.PromptForConfirmation(
 				os.Stderr,
 				"Type 'yes' to confirm deletion",
-				common.ConfirmationYes,
+				drspaths.ConfirmationYes,
 				false,
 			); err != nil {
 				return err

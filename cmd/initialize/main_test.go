@@ -119,3 +119,30 @@ func TestEnsureInitialized(t *testing.T) {
 		t.Fatalf("unexpected filter.drs.clean: %q", filterClean)
 	}
 }
+
+func TestEnsureInitializedRemovesLegacyPrePushHook(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	logger := drslog.NewNoOpLogger()
+
+	hookPath := filepath.Join(".git", "hooks", "pre-push")
+	legacyHook := "#!/bin/sh\nexec git drs pre-push-prepare\n"
+	if err := os.WriteFile(hookPath, []byte(legacyHook), 0o755); err != nil {
+		t.Fatalf("write legacy pre-push hook: %v", err)
+	}
+
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized error: %v", err)
+	}
+
+	if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy pre-push hook to be removed, got err=%v", err)
+	}
+
+	matches, err := filepath.Glob(hookPath + ".*")
+	if err != nil {
+		t.Fatalf("glob hook backups: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("expected legacy pre-push hook backup to be created")
+	}
+}

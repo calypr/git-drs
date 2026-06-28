@@ -88,6 +88,9 @@ func InitializeRepo(logg *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("error installing pre-commit hook: %v", err)
 	}
+	if err := removeLegacyPrePushHook(logg); err != nil {
+		return fmt.Errorf("error repairing legacy pre-push hook: %v", err)
+	}
 
 	logg.Debug("Git DRS initialized")
 	return nil
@@ -101,7 +104,7 @@ func EnsureInitialized(logg *slog.Logger) error {
 		return err
 	}
 	if initialized {
-		return nil
+		return removeLegacyPrePushHook(logg)
 	}
 	return InitializeRepo(logg)
 }
@@ -238,5 +241,34 @@ exec git drs precommit
 		return fmt.Errorf("unable to write pre-commit hook: %w", err)
 	}
 	logger.Debug("pre-commit hook installed")
+	return nil
+}
+
+func removeLegacyPrePushHook(logger *slog.Logger) error {
+	hooksDir, err := gitrepo.GetGitHooksDir()
+	if err != nil {
+		return fmt.Errorf("unable to get hooks directory: %w", err)
+	}
+	hookPath := filepath.Join(hooksDir, "pre-push")
+	content, err := os.ReadFile(hookPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("unable to read pre-push hook: %w", err)
+	}
+	if !strings.Contains(string(content), "git drs pre-push-prepare") {
+		return nil
+	}
+
+	timestamp := time.Now().Format("20060102T150405")
+	backupPath := hookPath + "." + timestamp
+	if err := os.WriteFile(backupPath, content, 0o644); err != nil {
+		return fmt.Errorf("unable to back up legacy pre-push hook: %w", err)
+	}
+	if err := os.Remove(hookPath); err != nil {
+		return fmt.Errorf("unable to remove legacy pre-push hook: %w", err)
+	}
+	logger.Debug(fmt.Sprintf("legacy pre-push hook removed; backup written to %s", backupPath))
 	return nil
 }

@@ -127,7 +127,6 @@ func TestMain(m *testing.M) {
 		syfonBinPath = filepath.Join(gitDrsBinDir, "syfon-docker-e2e")
 		buildSyfon := exec.Command("go", "build", "-o", syfonBinPath, ".")
 		buildSyfon.Dir = syfonRoot
-		buildSyfon.Env = append(os.Environ(), "GOWORK=off")
 		os.Stderr.WriteString(fmt.Sprintf("building syfon integration binary into %s from %s\n", syfonBinPath, syfonRoot))
 		if out, err := buildSyfon.CombinedOutput(); err != nil {
 			os.Stderr.Write(out)

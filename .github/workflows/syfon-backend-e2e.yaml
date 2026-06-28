@@ -33,26 +33,39 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon module directory
-        id: syfon-root
+      - name: Resolve Syfon commit from pinned module version
+        id: syfon-ref
         working-directory: git-drs
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          module="github.com/calypr/syfon"
-          if ! go mod download "$module"; then
-            module="github.com/calypr/syfon/client"
-            go mod download "$module"
-          fi
-          root="$(go list -m -f '{{ .Dir }}' "$module")"
-          if [[ -z "$root" || "$root" == "<nil>" ]]; then
-            echo "error: could not resolve module directory for $module" >&2
+          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon)"
+          if [[ -z "$version" || "$version" == "<nil>" ]]; then
+            echo "error: could not resolve pinned syfon version" >&2
             exit 1
           fi
-          version="$(go list -m -f '{{ .Version }}' "$module")"
-          echo "module=$module" >> "$GITHUB_OUTPUT"
-          echo "root=$root" >> "$GITHUB_OUTPUT"
+          short_ref="${version##*-}"
+          api_url="https://api.github.com/repos/calypr/syfon/commits/$short_ref"
+          full_ref="$(curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$api_url" | jq -r '.sha')"
+          if [[ -z "$full_ref" || "$full_ref" == "null" ]]; then
+            echo "error: could not resolve full syfon commit for $short_ref" >&2
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module $module at version $version from $root"
+          echo "ref=$full_ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out calypr/syfon ref $full_ref"
+
+      - name: Check out Syfon
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/syfon
+          ref: ${{ steps.syfon-ref.outputs.ref }}
+          path: syfon
+          fetch-depth: 1
 
       - name: Install test prerequisites
         working-directory: git-drs
@@ -65,5 +78,5 @@ jobs:
         working-directory: git-drs
         env:
           SYFON_E2E_DOCKER: "1"
-          TEST_SYFON_ROOT: ${{ steps.syfon-root.outputs.root }}
+          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
         run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

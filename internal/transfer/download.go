@@ -13,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
@@ -123,6 +124,11 @@ func (s *resolvedSource) GetRangeReader(ctx context.Context, guid string, offset
 func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.ReadCloser, error) {
 	resp, err := sytransfer.GenericDownload(ctx, s.requestor, s.accessURL, start, end)
 	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		err := sycommon.ResponseBodyError(resp, fmt.Sprintf("download from %s failed", s.accessURL))
+		resp.Body.Close()
 		return nil, err
 	}
 	if start != nil && resp.StatusCode == http.StatusOK {

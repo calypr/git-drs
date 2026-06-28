@@ -3,6 +3,7 @@ package ping
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -97,6 +98,19 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 	}
 	t.Cleanup(func() { pingHealth = oldHealth })
 
+	oldScopeAccess := pingScopeAccess
+	pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
+		if gc == nil || gc.ProjectId != "end_to_end_test" {
+			t.Fatalf("unexpected git context for scope probe: %+v", gc)
+		}
+		return scopeAccessInfo{
+			Checked:         true,
+			VisibleBucket:   "cbds",
+			ProjectReadable: true,
+		}, nil
+	}
+	t.Cleanup(func() { pingScopeAccess = oldScopeAccess })
+
 	oldStdout := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -125,9 +139,59 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 		"bucket: cbds",
 		"storage_prefix: prefix",
 		"health: ok",
+		"scope_access: ok",
+		"visible_bucket: cbds",
+		"project_access: readable",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestPingRunEReturnsReadableScopeError(t *testing.T) {
+	tmpDir := testutils.SetupTestGitRepo(t)
+	testutils.CreateTestConfig(t, tmpDir, &config.Config{
+		DefaultRemote: config.Remote(config.ORIGIN),
+		Remotes: map[config.Remote]config.RemoteSelect{
+			config.Remote(config.ORIGIN): {
+				Local: &config.LocalRemote{
+					BaseURL:      "http://127.0.0.1:8080",
+					ProjectID:    "end_to_end_test",
+					Bucket:       "cbds",
+					Organization: "calypr",
+				},
+			},
+		},
+	})
+	if err := gitrepo.SetBucketMapping("calypr", "end_to_end_test", "cbds", "prefix"); err != nil {
+		t.Fatalf("SetBucketMapping failed: %v", err)
+	}
+
+	oldHealth := pingHealth
+	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error { return nil }
+	t.Cleanup(func() { pingHealth = oldHealth })
+
+	oldScopeAccess := pingScopeAccess
+	pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
+		return scopeAccessInfo{}, errors.New("bucket visibility lookup failed: unexpected response: 403: denied")
+	}
+	t.Cleanup(func() { pingScopeAccess = oldScopeAccess })
+
+	err := Cmd.RunE(Cmd, nil)
+	if err == nil {
+		t.Fatal("expected scope access error")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		"configured scope access check failed",
+		"organization=calypr",
+		"project=end_to_end_test",
+		"bucket=cbds",
+		"bucket visibility lookup failed: unexpected response: 403: denied",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected error to contain %q, got %q", want, got)
 		}
 	}
 }

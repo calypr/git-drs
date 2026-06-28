@@ -178,3 +178,52 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 		t.Fatal("expected downloader to attempt a range request before restarting")
 	}
 }
+
+func TestDownloadResolvedToPathReturnsHTTPErrorBeforeWritingBody(t *testing.T) {
+	t.Parallel()
+
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/download/object.bin" {
+			return nil, io.EOF
+		}
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       io.NopCloser(strings.NewReader("<html><body><h1>403 Forbidden</h1></body></html>")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+	drsCtx := &remoteruntime.GitContext{Client: client}
+
+	tmpDir := t.TempDir()
+	dstPath := filepath.Join(tmpDir, "cache", "object.bin")
+	obj := &drsapi.DrsObject{Id: "obj-1", Size: 685585}
+	accessURL := &drsapi.AccessURL{Url: "https://signed.example/download/object.bin"}
+
+	err = DownloadResolvedToPath(context.Background(), drsCtx, "obj-1", dstPath, obj, accessURL, sydownload.DownloadOptions{
+		MultipartThreshold: 685586,
+		Concurrency:        2,
+		ChunkSize:          8,
+	})
+	if err == nil {
+		t.Fatal("expected HTTP error")
+	}
+	if !strings.Contains(err.Error(), "download from https://signed.example/download/object.bin failed") {
+		t.Fatalf("expected download URL in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Fatalf("expected 403 in error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Forbidden") {
+		t.Fatalf("expected response body in error, got %v", err)
+	}
+	if _, statErr := os.Stat(dstPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no downloaded file to be written, got stat err=%v", statErr)
+	}
+}

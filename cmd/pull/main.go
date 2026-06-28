@@ -2,6 +2,8 @@ package pull
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,7 +35,7 @@ var (
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
 		return remoteruntime.New(cfg, remote, logger)
 	}
-	loadWorktreeInventory = lfs.GetWorktreeLfsFiles
+	loadWorktreeInventory = lfs.GetTrackedLfsFiles
 )
 
 var Cmd = &cobra.Command{
@@ -107,9 +109,10 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
-			if _, err := os.Stat(cachePath); err == nil {
+			state, err := inspectCachedObject(cachePath, f.Oid, f.Size)
+			if err == nil && state.complete {
 				continue
-			} else if !os.IsNotExist(err) {
+			} else if err != nil {
 				return fmt.Errorf("failed to stat cached object for %s: %w", f.Oid, err)
 			}
 			if _, seen := seenMissing[f.Oid]; seen {
@@ -152,10 +155,16 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
-				if _, err := os.Stat(dstPath); err == nil {
+				state, err := inspectCachedObject(dstPath, f.Oid, f.Size)
+				if err == nil && state.complete {
 					continue
-				} else if !os.IsNotExist(err) {
+				} else if err != nil {
 					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
+				}
+				if state.exists {
+					if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
+						return fmt.Errorf("failed to remove incomplete cached object %s: %w", dstPath, err)
+					}
 				}
 				progress.OnDownloadStart(toPullFile(f))
 				downloadCtx := progressContextForPointer(ctx, progress, f)
@@ -248,6 +257,57 @@ func matchesAnyPattern(path string, patterns []string) bool {
 		}
 	}
 	return false
+}
+
+type cachedObjectState struct {
+	exists   bool
+	complete bool
+}
+
+func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedObjectState, error) {
+	var state cachedObjectState
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return state, nil
+		}
+		return state, err
+	}
+	state.exists = true
+	if info.IsDir() {
+		return state, fmt.Errorf("cached object path is a directory: %s", path)
+	}
+	if expectedSize > 0 && info.Size() != expectedSize {
+		return state, nil
+	}
+	if expectedSize <= 0 && info.Size() <= 0 {
+		return state, nil
+	}
+	if strings.TrimSpace(expectedOID) == "" {
+		state.complete = true
+		return state, nil
+	}
+
+	actualOID, err := calculateFileSHA256(path)
+	if err != nil {
+		return state, err
+	}
+	state.complete = strings.EqualFold(strings.TrimPrefix(expectedOID, "sha256:"), actualOID)
+	return state, nil
+}
+
+func calculateFileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func matchesPattern(path, pattern string) bool {

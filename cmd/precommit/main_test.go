@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
 func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
@@ -35,12 +37,13 @@ func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
 		t.Fatalf("mkdir oids: %v", err)
 	}
 
+	cache := &precommit_cache.Cache{Root: cacheRoot, PathsDir: pathsDir, OIDsDir: oidsDir}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.txt", now); err != nil {
+	if err := handleUpsert(context.Background(), cache, "data/file.txt", now); err != nil {
 		t.Fatalf("handleUpsert: %v", err)
 	}
 
-	pathEntry := pathEntryFile(pathsDir, "data/file.txt")
+	pathEntry := precommit_cache.PathEntryPath(cache, "data/file.txt")
 	if _, err := os.Stat(pathEntry); !os.IsNotExist(err) {
 		t.Fatalf("expected no cache entry for non-LFS file, got err=%v", err)
 	}
@@ -76,17 +79,18 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 		t.Fatalf("mkdir oids: %v", err)
 	}
 
+	cache := &precommit_cache.Cache{Root: cacheRoot, PathsDir: pathsDir, OIDsDir: oidsDir}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.bin", now); err != nil {
+	if err := handleUpsert(context.Background(), cache, "data/file.bin", now); err != nil {
 		t.Fatalf("handleUpsert: %v", err)
 	}
 
-	pathEntry := pathEntryFile(pathsDir, "data/file.bin")
+	pathEntry := precommit_cache.PathEntryPath(cache, "data/file.bin")
 	pathData, err := os.ReadFile(pathEntry)
 	if err != nil {
 		t.Fatalf("read path entry: %v", err)
 	}
-	var pathCache PathEntry
+	var pathCache precommit_cache.PathEntry
 	if err := json.Unmarshal(pathData, &pathCache); err != nil {
 		t.Fatalf("unmarshal path entry: %v", err)
 	}
@@ -97,12 +101,12 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 		t.Fatalf("expected lfs oid sha256:deadbeef, got %q", pathCache.LFSOID)
 	}
 
-	oidEntry := oidEntryFile(oidsDir, "sha256:deadbeef")
+	oidEntry := precommit_cache.OIDEntryPath(cache, "sha256:deadbeef")
 	oidData, err := os.ReadFile(oidEntry)
 	if err != nil {
 		t.Fatalf("read oid entry: %v", err)
 	}
-	var oidCache OIDEntry
+	var oidCache precommit_cache.OIDEntry
 	if err := json.Unmarshal(oidData, &oidCache); err != nil {
 		t.Fatalf("unmarshal oid entry: %v", err)
 	}

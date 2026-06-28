@@ -7,17 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/go-git/go-git/v5"
 )
-
-func DrsTopLevel() (string, error) {
-	base, err := GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, common.DRS_DIR), nil
-}
 
 // GetRepo opens the current git repository
 func GetRepo() (*git.Repository, error) {
@@ -131,18 +122,4 @@ func GetGitHooksDir() (string, error) {
 	// This is a simplification; for complex setups (submodules, worktrees),
 	// we might need more robust logic, but this matches previous behavior.
 	return filepath.Join(wt.Filesystem.Root(), ".git", "hooks"), nil
-}
-
-// AddFile adds a file to the git staging area (index)
-func AddFile(path string) error {
-	repo, err := GetRepo()
-	if err != nil {
-		return err
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-	_, err = wt.Add(path)
-	return err
 }

@@ -50,38 +50,6 @@ func IsLFSTracked(path string) (bool, error) {
 	return isTrackedFilter(strings.TrimSpace(fields[2])), nil
 }
 
-func GetAllLfsFiles(gitRemoteName, gitRemoteLocation string, branches []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	if logger == nil {
-		return nil, fmt.Errorf("logger is required")
-	}
-	repoDir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-
-	if gitRemoteName == "" {
-		gitRemoteName = "origin"
-	}
-	if gitRemoteLocation != "" {
-		logger.Debug(fmt.Sprintf("Using git remote %s at %s for LFS inventory", gitRemoteName, gitRemoteLocation))
-	} else {
-		logger.Debug(fmt.Sprintf("Using git remote %s for LFS inventory", gitRemoteName))
-	}
-	logger.Debug("Scanning Git refs for LFS pointer files (no git lfs CLI required)")
-
-	// no timeout for now
-	ctx := context.Background()
-	refs := buildRefs(branches)
-	lfsFileMap := make(map[string]LfsFileInfo)
-	for _, ref := range refs {
-		if err := addFilesFromRef(ctx, repoDir, ref, logger, lfsFileMap); err != nil {
-			return nil, err
-		}
-	}
-
-	return lfsFileMap, nil
-}
-
 // GetLfsFilesForRefs scans arbitrary refs or SHAs and returns the LFS pointer
 // files present in those trees.
 func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
@@ -568,33 +536,6 @@ func ParseLFSPointer(data []byte) (oid string, size int64, ok bool) {
 		return "", 0, false
 	}
 	return pointer.Oid, pointer.Size, true
-}
-
-func buildRefs(branches []string) []string {
-	if len(branches) == 0 {
-		return []string{"HEAD"}
-	}
-	refs := make([]string, 0, len(branches))
-	seen := make(map[string]struct{})
-	for _, branch := range branches {
-		branch = strings.TrimSpace(branch)
-		if branch == "" {
-			continue
-		}
-		ref := branch
-		if branch != "HEAD" && !strings.HasPrefix(branch, "refs/") {
-			ref = fmt.Sprintf("refs/heads/%s", branch)
-		}
-		if _, ok := seen[ref]; ok {
-			continue
-		}
-		seen[ref] = struct{}{}
-		refs = append(refs, ref)
-	}
-	if len(refs) == 0 {
-		return []string{"HEAD"}
-	}
-	return refs
 }
 
 // CreateLfsPointer creates a Git LFS pointer file for the given DRS object.

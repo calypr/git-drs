@@ -1,11 +1,7 @@
 package common
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -27,22 +23,6 @@ func ParseOrgProject(org, project string) (string, string) {
 	}
 	parts := strings.SplitN(project, "-", 2)
 	return parts[0], parts[1]
-}
-
-// CalculateFileSHA256 returns the lowercase hex SHA256 checksum for a file.
-func CalculateFileSHA256(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", fmt.Errorf("open file %s: %w", path, err)
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", fmt.Errorf("hash file %s: %w", path, err)
-	}
-
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // PrintDRSObject marshals and prints a DRS object as JSON.

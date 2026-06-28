@@ -88,7 +88,7 @@ servers:
 
 ### DRS Object Management
 
-Objects are stored in `.git/drs/objects/` during pre-commit and referenced during push/pull workflows.
+Local DRS metadata objects are stored in `.git/drs/lfs/objects/`. The separate `.git/drs/pre-commit/` tree is only a rebuildable local cache for path/OID bookkeeping.
 
 ## Development Setup
 

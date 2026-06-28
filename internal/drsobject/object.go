@@ -55,24 +55,6 @@ func BuildWithPrefix(fileName string, checksum string, size int64, drsID string,
 	})
 }
 
-func ConvertToCandidate(obj *drsapi.DrsObject) drsapi.DrsObjectCandidate {
-	if obj == nil {
-		return drsapi.DrsObjectCandidate{}
-	}
-	return drsapi.DrsObjectCandidate{
-		AccessMethods:    obj.AccessMethods,
-		Aliases:          obj.Aliases,
-		Checksums:        obj.Checksums,
-		Contents:         obj.Contents,
-		ControlledAccess: obj.ControlledAccess,
-		Description:      obj.Description,
-		MimeType:         obj.MimeType,
-		Name:             obj.Name,
-		Size:             obj.Size,
-		Version:          obj.Version,
-	}
-}
-
 func ConvertToInternalRecord(obj *drsapi.DrsObject, fileName string, organization string, project string) internalapi.InternalRecord {
 	if obj == nil {
 		return internalapi.InternalRecord{}

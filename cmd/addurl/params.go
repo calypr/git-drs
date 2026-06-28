@@ -2,12 +2,9 @@ package addurl
 
 import (
 	"fmt"
-	"net/url"
-	"path"
-	"strings"
-
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
+	"net/url"
+	"strings"
 )
 
 // addURLInput holds the parsed CLI state for the add-url command.
@@ -75,37 +72,6 @@ func looksLikeCloudURL(raw string) bool {
 	default:
 		return false
 	}
-}
-
-func resolveObjectURL(input addURLInput, scope gitrepo.ResolvedBucketScope) (string, error) {
-	if looksLikeCloudURL(input.sourceArg) {
-		return input.sourceArg, nil
-	}
-	if input.scheme == "" {
-		return "", fmt.Errorf("object key mode requires --scheme because local bucket mappings store bucket/prefix but not provider scheme")
-	}
-	key := joinObjectKey(scope.Prefix, input.sourceArg)
-	switch input.scheme {
-	case "s3":
-		return fmt.Sprintf("s3://%s/%s", scope.Bucket, key), nil
-	case "gs", "gcs":
-		return fmt.Sprintf("gs://%s/%s", scope.Bucket, key), nil
-	case "azblob", "az":
-		return "", fmt.Errorf("object key mode for Azure requires a full azblob:// URL because the local mapping does not store account_name")
-	default:
-		return "", fmt.Errorf("unsupported --scheme %q (expected s3 or gs, or pass a full object URL)", input.scheme)
-	}
-}
-
-func joinObjectKey(prefix, key string) string {
-	parts := make([]string, 0, 2)
-	if p := strings.Trim(strings.TrimSpace(prefix), "/"); p != "" {
-		parts = append(parts, p)
-	}
-	if k := strings.Trim(strings.TrimSpace(key), "/"); k != "" {
-		parts = append(parts, k)
-	}
-	return path.Join(parts...)
 }
 
 func firstNonEmpty(values ...string) string {

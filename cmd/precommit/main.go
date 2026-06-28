@@ -1,23 +1,12 @@
-// Package precommit
-// -------------------------------------
-// LFS-only local cache updater for:
-//   - Path -> OID  : .git/drs/pre-commit/v1/paths/<encoded-path>.json
-//   - OID  -> Paths + S3 URL hint : .git/drs/pre-commit/v1/oids/<oid>.json
-//
-// This hook is intentionally:
-//   - LFS-only (non-LFS paths are ignored)
-//   - local-only (no network, no server index reads)
-//   - index-based (reads STAGED content via `git show :<path>`)
-//
-// Note: This is a reference implementation. Adjust logging/policy as desired.
+// Package precommit updates the local `.git/drs/pre-commit` cache from staged
+// pointer changes. The cache is rebuildable local bookkeeping, distinct from
+// the authoritative local DRS metadata stored under `.git/drs/lfs/objects`.
 package precommit
 
 import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,11 +19,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/git-drs/internal/precommit_cache"
 	"github.com/spf13/cobra"
 )
 
 const (
-	cacheVersionDir                     = "drs/pre-commit/v1"
 	lfsSpecLine                         = "version https://git-lfs.github.com/spec/v1"
 	defaultDirectCommitWarningThreshold = int64(10 * 1024 * 1024)
 )
@@ -43,20 +32,6 @@ var (
 	directCommitWarningThresholdBytes = defaultDirectCommitWarningThreshold
 	confirmOversizedDirectGitCommit   = promptOversizedDirectGitCommit
 )
-
-type PathEntry struct {
-	Path      string `json:"path"`
-	LFSOID    string `json:"lfs_oid"`
-	UpdatedAt string `json:"updated_at"`
-}
-
-type OIDEntry struct {
-	LFSOID        string   `json:"lfs_oid"`
-	Paths         []string `json:"paths"`
-	S3URL         string   `json:"s3_url,omitempty"` // hint only; may be empty
-	UpdatedAt     string   `json:"updated_at"`
-	ContentChange bool     `json:"content_changed"`
-}
 
 type ChangeKind int
 
@@ -90,33 +65,15 @@ var Cmd = &cobra.Command{
 	},
 }
 
-func main() {
-	ctx := context.Background()
-	if err := run(ctx); err != nil {
-		// For a reference impl, treat errors as non-fatal unless you want strict enforcement.
-		// Exiting non-zero blocks the commit.
-		fmt.Fprintf(os.Stderr, "pre-commit drs cache: %v\n", err)
-		os.Exit(1)
-	}
-}
-
 func run(ctx context.Context) error {
-	gitDir, err := gitRevParseGitDir(ctx)
+	cache, err := precommit_cache.Open(ctx)
 	if err != nil {
 		return err
 	}
-
-	cacheRoot := filepath.Join(gitDir, cacheVersionDir)
-	pathsDir := filepath.Join(cacheRoot, "paths")
-	oidsDir := filepath.Join(cacheRoot, "oids")
-	tombsDir := filepath.Join(cacheRoot, "tombstones")
-
-	if err := os.MkdirAll(pathsDir, 0o755); err != nil {
+	if err := precommit_cache.EnsureLayout(cache); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(oidsDir, 0o755); err != nil {
-		return err
-	}
+	tombsDir := filepath.Join(cache.Root, "tombstones")
 	_ = os.MkdirAll(tombsDir, 0o755) // optional
 
 	changes, err := stagedChanges(ctx)
@@ -157,8 +114,8 @@ func run(ctx context.Context) error {
 			continue
 		}
 
-		oldPathFile := pathEntryFile(pathsDir, ch.OldPath)
-		newPathFile := pathEntryFile(pathsDir, ch.NewPath)
+		oldPathFile := precommit_cache.PathEntryPath(cache, ch.OldPath)
+		newPathFile := precommit_cache.PathEntryPath(cache, ch.NewPath)
 
 		if newIsLFS {
 			// Move/overwrite path entry file
@@ -167,7 +124,7 @@ func run(ctx context.Context) error {
 			}
 
 			// Ensure path entry content correct
-			if err := writeJSONAtomic(newPathFile, PathEntry{
+			if err := precommit_cache.WritePathEntry(cache, precommit_cache.PathEntry{
 				Path:      ch.NewPath,
 				LFSOID:    newOID,
 				UpdatedAt: now,
@@ -176,7 +133,7 @@ func run(ctx context.Context) error {
 			}
 
 			// Update oid entry: replace old path with new path for that OID
-			if err := oidAddOrReplacePath(oidsDir, newOID, ch.OldPath, ch.NewPath, now, false); err != nil {
+			if err := precommit_cache.UpsertOIDPath(cache, newOID, ch.OldPath, ch.NewPath, "", now, false); err != nil {
 				return err
 			}
 		} else {
@@ -189,18 +146,18 @@ func run(ctx context.Context) error {
 	for _, ch := range changes {
 		switch ch.Kind {
 		case KindAdd, KindModify:
-			if err := handleUpsert(ctx, pathsDir, oidsDir, ch.NewPath, now); err != nil {
+			if err := handleUpsert(ctx, cache, ch.NewPath, now); err != nil {
 				return err
 			}
 		case KindRename:
 			// Treat like upsert on NewPath to ensure OID/path consistency if content also changed.
-			if err := handleUpsert(ctx, pathsDir, oidsDir, ch.NewPath, now); err != nil {
+			if err := handleUpsert(ctx, cache, ch.NewPath, now); err != nil {
 				return err
 			}
 			// Optionally also remove old path from *other* OID entry if rename+content-change changed OID.
 			// We'll do it inside handleUpsert by checking previous cached OID for that path (after move).
 		case KindDelete:
-			if err := handleDelete(ctx, pathsDir, oidsDir, tombsDir, ch.NewPath, now); err != nil {
+			if err := handleDelete(ctx, cache, tombsDir, ch.NewPath, now); err != nil {
 				return err
 			}
 		}
@@ -209,7 +166,7 @@ func run(ctx context.Context) error {
 	return nil
 }
 
-func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) error {
+func handleUpsert(ctx context.Context, cache *precommit_cache.Cache, path, now string) error {
 	oid, isLFS, err := stagedLFSOID(ctx, path)
 	if err != nil {
 		// If file isn't in index, ignore.
@@ -220,20 +177,13 @@ func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) erro
 		return nil
 	}
 
-	pathFile := pathEntryFile(pathsDir, path)
-
-	// Load previous path entry if it exists to detect content changes.
-	var prev PathEntry
-	prevExists := false
-	if b, err := os.ReadFile(pathFile); err == nil {
-		_ = json.Unmarshal(b, &prev)
-		if prev.Path != "" && prev.LFSOID != "" {
-			prevExists = true
-		}
+	prev, prevExists, err := precommit_cache.ReadPathEntry(cache, path)
+	if err != nil {
+		return err
 	}
 
 	// Write/update path entry.
-	if err := writeJSONAtomic(pathFile, PathEntry{
+	if err := precommit_cache.WritePathEntry(cache, precommit_cache.PathEntry{
 		Path:      path,
 		LFSOID:    oid,
 		UpdatedAt: now,
@@ -242,43 +192,36 @@ func handleUpsert(ctx context.Context, pathsDir, oidsDir, path, now string) erro
 	}
 
 	// Update OID entry for new oid: add path.
-	contentChanged := prevExists && prev.LFSOID != oid
-	if err := oidAddOrReplacePath(oidsDir, oid, "", path, now, contentChanged); err != nil {
+	contentChanged := prevExists && prev != nil && prev.LFSOID != oid
+	if err := precommit_cache.UpsertOIDPath(cache, oid, "", path, "", now, contentChanged); err != nil {
 		return err
 	}
 
 	// If content changed, remove path from the *old* oid entry (best effort).
 	if contentChanged {
-		_ = oidRemovePath(oidsDir, prev.LFSOID, path, now)
+		_ = precommit_cache.RemoveOIDPath(cache, prev.LFSOID, path, now)
 	}
 
 	return nil
 }
 
-func handleDelete(ctx context.Context, pathsDir, oidsDir, tombsDir, path, now string) error {
+func handleDelete(ctx context.Context, cache *precommit_cache.Cache, tombsDir, path, now string) error {
 	// Only consider deletion if it was previously an LFS entry (cache-driven).
-	pathFile := pathEntryFile(pathsDir, path)
-	b, err := os.ReadFile(pathFile)
-	if err != nil {
+	entry, ok, err := precommit_cache.ReadPathEntry(cache, path)
+	if err != nil || !ok {
 		// nothing to do
 		return nil
 	}
-	var pe PathEntry
-	if err := json.Unmarshal(b, &pe); err != nil {
-		// corrupted cache; remove it
-		_ = os.Remove(pathFile)
-		return nil
-	}
 	// Remove path entry.
-	_ = os.Remove(pathFile)
+	_ = os.Remove(precommit_cache.PathEntryPath(cache, path))
 
 	// Remove this path from the old oid entry (best effort).
-	if pe.LFSOID != "" {
-		_ = oidRemovePath(oidsDir, pe.LFSOID, path, now)
+	if entry.LFSOID != "" {
+		_ = precommit_cache.RemoveOIDPath(cache, entry.LFSOID, path, now)
 	}
 
 	// Optional tombstone.
-	tombFile := filepath.Join(tombsDir, encodePath(path)+".json")
+	tombFile := filepath.Join(tombsDir, precommit_cache.EncodePath(path)+".json")
 	_ = writeJSONAtomic(tombFile, map[string]string{
 		"path":       path,
 		"deleted_at": now,
@@ -460,27 +403,6 @@ func humanBytes(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-func gitRevParseGitDir(ctx context.Context) (string, error) {
-	out, err := git(ctx, "rev-parse", "--git-dir")
-	if err != nil {
-		return "", err
-	}
-	gitDir := strings.TrimSpace(string(out))
-	if gitDir == "" {
-		return "", errors.New("could not determine .git dir")
-	}
-	// If gitDir is relative, resolve relative to repo root
-	if !filepath.IsAbs(gitDir) {
-		rootOut, err := git(ctx, "rev-parse", "--show-toplevel")
-		if err != nil {
-			return "", err
-		}
-		root := strings.TrimSpace(string(rootOut))
-		gitDir = filepath.Join(root, gitDir)
-	}
-	return gitDir, nil
-}
-
 func git(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = os.Environ()
@@ -496,100 +418,6 @@ func git(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
 	}
 	return stdout.Bytes(), nil
-}
-
-// pathEntryFile maps a repo-relative path to a cache file location.
-// We keep a deterministic encoding so any path maps to exactly one file.
-func pathEntryFile(pathsDir, path string) string {
-	return filepath.Join(pathsDir, encodePath(path)+".json")
-}
-
-func encodePath(path string) string {
-	// base64url encoding of the UTF-8 path string (no padding) is simple and safe.
-	return base64.RawURLEncoding.EncodeToString([]byte(path))
-}
-
-func oidEntryFile(oidsDir, oid string) string {
-	// OID contains ":"; make it filesystem safe but still human readable.
-	// Use a stable transform; here: sha256 of oid string to avoid path length issues.
-	sum := sha256.Sum256([]byte(oid))
-	return filepath.Join(oidsDir, fmt.Sprintf("%x.json", sum[:]))
-}
-
-// oidAddOrReplacePath:
-// - loads oid entry (if exists)
-// - adds newPath to paths[]
-// - if oldPath != "" and present, replaces it with newPath
-// - sets ContentChange flag if requested (ORed into existing flag)
-// - preserves existing s3_url hint
-func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChanged bool) error {
-	f := oidEntryFile(oidsDir, oid)
-
-	entry := OIDEntry{
-		LFSOID:    oid,
-		Paths:     []string{},
-		UpdatedAt: now,
-	}
-	if b, err := os.ReadFile(f); err == nil {
-		_ = json.Unmarshal(b, &entry)
-		// ensure oid is set even if old file was incomplete
-		entry.LFSOID = oid
-	}
-
-	paths := make(map[string]struct{}, len(entry.Paths)+1)
-	for _, p := range entry.Paths {
-		paths[p] = struct{}{}
-	}
-
-	if oldPath != "" {
-		delete(paths, oldPath)
-	}
-	if newPath != "" {
-		paths[newPath] = struct{}{}
-	}
-
-	entry.Paths = keysSorted(paths)
-	entry.UpdatedAt = now
-	entry.ContentChange = entry.ContentChange || contentChanged
-
-	return writeJSONAtomic(f, entry)
-}
-
-func oidRemovePath(oidsDir, oid, path, now string) error {
-	f := oidEntryFile(oidsDir, oid)
-
-	b, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	var entry OIDEntry
-	if err := json.Unmarshal(b, &entry); err != nil {
-		return err
-	}
-	paths := make(map[string]struct{}, len(entry.Paths))
-	for _, p := range entry.Paths {
-		if p == path {
-			continue
-		}
-		paths[p] = struct{}{}
-	}
-	entry.Paths = keysSorted(paths)
-	entry.UpdatedAt = now
-
-	// If no paths remain, keep the file (it may still hold s3_url hint) or delete it.
-	// This ADR allows stale entries; keeping is fine. Optionally delete when empty:
-	// if len(entry.Paths) == 0 && entry.S3URL == "" { return os.Remove(f) }
-
-	return writeJSONAtomic(f, entry)
-}
-
-func keysSorted(m map[string]struct{}) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // writeJSONAtomic writes JSON to a temp file then renames it into place.

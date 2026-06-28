@@ -328,23 +328,6 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 	return obj, nil
 }
 
-func recordsEquivalentForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject) bool {
-	if existing == nil || generated == nil {
-		return false
-	}
-	if strings.TrimSpace(drsName(existing)) != strings.TrimSpace(drsName(generated)) {
-		return false
-	}
-	return firstAccessURL(existing) == firstAccessURL(generated)
-}
-
-func drsName(obj *drsapi.DrsObject) string {
-	if obj == nil || obj.Name == nil {
-		return ""
-	}
-	return strings.TrimSpace(*obj.Name)
-}
-
 func shouldPreserveExistingAccessMethodsForPush(existing *drsapi.DrsObject, generated *drsapi.DrsObject, oid string) bool {
 	existingURL := firstAccessURL(existing)
 	if existingURL == "" {

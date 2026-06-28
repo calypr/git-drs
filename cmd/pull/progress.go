@@ -39,10 +39,6 @@ func newPullProgressRenderer(out io.Writer) *pullProgressRenderer {
 	}
 }
 
-func isPullWriterTTY(w io.Writer) bool {
-	return progressui.IsWriterTTY(w)
-}
-
 func (r *pullProgressRenderer) render(force bool) {
 	lines := make([]string, 0, len(r.fileOrder))
 	for _, id := range r.fileOrder {

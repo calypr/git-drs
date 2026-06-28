@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 const (
@@ -31,20 +30,58 @@ type PathEntry struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// OIDEntry represents the per-OID cache file format.
-// It lists repository paths that referenced the OID, an optional
-// non-authoritative external URL hint, a timestamp and a flag that
-// indicates whether content changed for a path update.
+// OIDEntry represents the canonical per-OID cache file format.
+// The cache historically used `s3_url`; we still read that for compatibility,
+// but new writes use `external_url`.
 type OIDEntry struct {
 	LFSOID        string   `json:"lfs_oid"`
 	Paths         []string `json:"paths"`
-	ExternalURL   string   `json:"external_url,omitempty"` // non-authoritative hint
+	ExternalURL   string   `json:"external_url,omitempty"`
 	UpdatedAt     string   `json:"updated_at"`
 	ContentChange bool     `json:"content_changed"`
 }
 
-// Cache provides read-only access to the `.git/drs/pre-commit` cache.
-// Use Open to construct an instance with correct paths resolved.
+func (e OIDEntry) MarshalJSON() ([]byte, error) {
+	type wireOIDEntry struct {
+		LFSOID        string   `json:"lfs_oid"`
+		Paths         []string `json:"paths"`
+		ExternalURL   string   `json:"external_url,omitempty"`
+		UpdatedAt     string   `json:"updated_at"`
+		ContentChange bool     `json:"content_changed"`
+	}
+	return json.Marshal(wireOIDEntry{
+		LFSOID:        e.LFSOID,
+		Paths:         e.Paths,
+		ExternalURL:   strings.TrimSpace(e.ExternalURL),
+		UpdatedAt:     e.UpdatedAt,
+		ContentChange: e.ContentChange,
+	})
+}
+
+func (e *OIDEntry) UnmarshalJSON(data []byte) error {
+	type wireOIDEntry struct {
+		LFSOID        string   `json:"lfs_oid"`
+		Paths         []string `json:"paths"`
+		ExternalURL   string   `json:"external_url,omitempty"`
+		S3URL         string   `json:"s3_url,omitempty"`
+		UpdatedAt     string   `json:"updated_at"`
+		ContentChange bool     `json:"content_changed"`
+	}
+	var wire wireOIDEntry
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	e.LFSOID = wire.LFSOID
+	e.Paths = wire.Paths
+	e.ExternalURL = firstNonEmpty(wire.ExternalURL, wire.S3URL)
+	e.UpdatedAt = wire.UpdatedAt
+	e.ContentChange = wire.ContentChange
+	return nil
+}
+
+// Cache describes the on-disk layout for the local pre-commit cache.
+// The cache is shared local bookkeeping for precommit/add-url, not an
+// authoritative metadata store.
 type Cache struct {
 	GitDir    string
 	Root      string
@@ -53,9 +90,8 @@ type Cache struct {
 	StatePath string
 }
 
-// Open discovers the repository `.git` directory and returns a Cache
-// configured to read the repository's pre-commit cache layout.
-// Returns an error if git metadata cannot be resolved.
+// Open discovers the repository `.git` directory and returns a Cache with the
+// current pre-commit cache layout resolved.
 func Open(ctx context.Context) (*Cache, error) {
 	gitDir, err := gitRevParseGitDir(ctx)
 	if err != nil {
@@ -71,106 +107,11 @@ func Open(ctx context.Context) (*Cache, error) {
 	}, nil
 }
 
-//
-// Primary lookup helpers
-//
-
-// LookupOIDByPath returns the cached LFS OID for a repo-relative path.
-// It returns (oid, true, nil) when present, (\"\", false, nil) when absent,
-// and an error if the underlying read failed.
-func (c *Cache) LookupOIDByPath(path string) (string, bool, error) {
-	pe, ok, err := c.ReadPathEntry(path)
-	if err != nil || !ok {
-		return "", ok, err
+func EnsureLayout(cache *Cache) error {
+	if cache == nil {
+		return errors.New("cache is nil")
 	}
-	if pe.LFSOID == "" {
-		return "", false, nil
-	}
-	return pe.LFSOID, true, nil
-}
-
-// LookupPathsByOID returns advisory repository-relative paths that recently
-// referenced the given LFS OID. Paths are returned sorted. Absent OID yields
-// (nil, false, nil).
-func (c *Cache) LookupPathsByOID(oid string) ([]string, bool, error) {
-	oe, ok, err := c.ReadOIDEntry(oid)
-	if err != nil || !ok {
-		return nil, ok, err
-	}
-	paths := append([]string(nil), oe.Paths...)
-	sort.Strings(paths)
-	return paths, true, nil
-}
-
-// LookupExternalURLByOID returns the cached external URL hint for an OID.
-// Returns (\"\", false, nil) if the entry is missing or the hint is empty.
-func (c *Cache) LookupExternalURLByOID(oid string) (string, bool, error) {
-	oe, ok, err := c.ReadOIDEntry(oid)
-	if err != nil || !ok {
-		return "", ok, err
-	}
-	u := strings.TrimSpace(oe.ExternalURL)
-	if u == "" {
-		return "", false, nil
-	}
-	return u, true, nil
-}
-
-// ResolveExternalURLByPath resolves a path -> oid -> external_url (hint).
-// Returns the external URL hint when available. Missing data yields
-// (\"\", false, nil).
-func (c *Cache) ResolveExternalURLByPath(path string) (string, bool, error) {
-	oid, ok, err := c.LookupOIDByPath(path)
-	if err != nil || !ok {
-		return "", false, err
-	}
-	return c.LookupExternalURLByOID(oid)
-}
-
-//
-// Lower-level file access
-//
-
-// ReadPathEntry reads and parses the JSON path entry for a repository-relative
-// path. Returns (entry, true, nil) on success, (nil, false, nil) if the file
-// does not exist, or an error on I/O/parse failure.
-func (c *Cache) ReadPathEntry(path string) (*PathEntry, bool, error) {
-	f := c.pathEntryFile(path)
-	b, err := os.ReadFile(f)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("read path entry %q: %w", f, err)
-	}
-	var pe PathEntry
-	if err := json.Unmarshal(b, &pe); err != nil {
-		return nil, false, fmt.Errorf("parse path entry %q: %w", f, err)
-	}
-	return &pe, true, nil
-}
-
-// ReadOIDEntry reads and parses the JSON OID entry for an LFS OID string.
-// Returns (entry, true, nil) on success, (nil, false, nil) if missing,
-// or an error on I/O/parse failure.
-func (c *Cache) ReadOIDEntry(oid string) (*OIDEntry, bool, error) {
-	f := c.oidEntryFile(oid)
-	b, err := os.ReadFile(f)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("read oid entry %q: %w", f, err)
-	}
-	var oe OIDEntry
-	if err := json.Unmarshal(b, &oe); err != nil {
-		return nil, false, fmt.Errorf("parse oid entry %q: %w", f, err)
-	}
-	return &oe, true, nil
-}
-
-func (c *Cache) EnsureLayout() error {
-	for _, dir := range []string{c.Root, c.PathsDir, c.OIDsDir} {
+	for _, dir := range []string{cache.Root, cache.PathsDir, cache.OIDsDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
@@ -178,109 +119,162 @@ func (c *Cache) EnsureLayout() error {
 	return nil
 }
 
-func (c *Cache) UpsertPathEntry(entry PathEntry) error {
-	if err := c.EnsureLayout(); err != nil {
-		return err
-	}
-	return writeJSONAtomic(c.pathEntryFile(entry.Path), entry)
-}
-
-func (c *Cache) AddOrReplaceOIDPath(oid, oldPath, newPath, now string, contentChanged bool) error {
-	if err := c.EnsureLayout(); err != nil {
-		return err
-	}
-	return oidAddOrReplacePath(c.OIDsDir, oid, oldPath, newPath, now, contentChanged)
-}
-
-func (c *Cache) RemovePathFromOID(oid, path, now string) error {
-	if err := c.EnsureLayout(); err != nil {
-		return err
-	}
-	return oidRemovePath(c.OIDsDir, oid, path, now)
-}
-
-func (c *Cache) DeletePathEntry(path string) error {
-	if err := c.EnsureLayout(); err != nil {
-		return err
-	}
-	if err := os.Remove(c.pathEntryFile(path)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
-//
-// Validation helpers (optional)
-//
-
-// CheckExternalURLMismatch compares a cached external URL hint against an
-// authoritative URL. If either value is empty this is a no-op. When both are
-// non-empty and differ an error describing the mismatch is returned.
-func CheckExternalURLMismatch(localHint, authoritative string) error {
-	l := strings.TrimSpace(localHint)
-	a := strings.TrimSpace(authoritative)
-	if l == "" || a == "" {
-		return nil
-	}
-	if l != a {
-		return fmt.Errorf(
-			"external URL mismatch: cache=%q authoritative=%q",
-			l, a,
-		)
-	}
-	return nil
-}
-
-// StaleAfter reports whether a JSON entry with the given updatedAt RFC3339
-// timestamp is older than maxAge. Returns false if the timestamp cannot be parsed.
-func StaleAfter(updatedAt string, maxAge time.Duration) bool {
-	t, err := time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return false
-	}
-	return time.Since(t) > maxAge
-}
-
-//
-// Filename / encoding helpers
-//
-
-// pathEntryFile returns the filesystem path to the JSON file for the given
-// repository-relative path within the Cache.PathsDir.
-func (c *Cache) pathEntryFile(path string) string {
-	return filepath.Join(c.PathsDir, EncodePath(path)+".json")
-}
-
-// oidEntryFile returns the filesystem path to the JSON file for the given
-// LFS OID. Files are named by sha256(oid) to avoid filesystem restrictions.
-func (c *Cache) oidEntryFile(oid string) string {
-	sum := sha256.Sum256([]byte(oid))
-	return filepath.Join(c.OIDsDir, fmt.Sprintf("%x.json", sum[:]))
-}
-
 // EncodePath returns a filesystem-safe base64 raw-URL encoding for a path.
-// The encoding is reversible by DecodePath.
 func EncodePath(path string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(path))
 }
 
-// DecodePath decodes a value produced by EncodePath back to the original path.
-// Returns an error if the input is not valid base64 raw-URL.
-func DecodePath(encoded string) (string, error) {
-	b, err := base64.RawURLEncoding.DecodeString(encoded)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+func PathEntryPath(cache *Cache, path string) string {
+	return filepath.Join(cache.PathsDir, EncodePath(path)+".json")
 }
 
-//
-// Git helpers
-//
+func OIDEntryPath(cache *Cache, oid string) string {
+	sum := sha256.Sum256([]byte(oid))
+	return filepath.Join(cache.OIDsDir, fmt.Sprintf("%x.json", sum[:]))
+}
+
+func ReadPathEntry(cache *Cache, path string) (*PathEntry, bool, error) {
+	file := PathEntryPath(cache, path)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	var entry PathEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false, err
+	}
+	return &entry, true, nil
+}
+
+func WritePathEntry(cache *Cache, entry PathEntry) error {
+	return writeJSONAtomic(PathEntryPath(cache, entry.Path), entry)
+}
+
+func ReadOIDEntry(cache *Cache, oid string, now string) (*OIDEntry, error) {
+	file := OIDEntryPath(cache, oid)
+	entry := &OIDEntry{
+		LFSOID:    oid,
+		Paths:     []string{},
+		UpdatedAt: now,
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return entry, nil
+		}
+		return nil, err
+	}
+	if err := json.Unmarshal(data, entry); err != nil {
+		return nil, err
+	}
+	entry.LFSOID = oid
+	return entry, nil
+}
+
+func UpsertOIDPath(cache *Cache, oid, oldPath, newPath, externalURL, now string, contentChanged bool) error {
+	entry, err := ReadOIDEntry(cache, oid, now)
+	if err != nil {
+		return err
+	}
+
+	paths := make(map[string]struct{}, len(entry.Paths)+1)
+	for _, existing := range entry.Paths {
+		existing = strings.TrimSpace(existing)
+		if existing == "" {
+			continue
+		}
+		paths[existing] = struct{}{}
+	}
+	if oldPath != "" {
+		delete(paths, oldPath)
+	}
+	if newPath != "" {
+		paths[newPath] = struct{}{}
+	}
+
+	entry.Paths = sortedKeys(paths)
+	entry.UpdatedAt = now
+	entry.ContentChange = entry.ContentChange || contentChanged
+	entry.ExternalURL = firstNonEmpty(externalURL, entry.ExternalURL)
+
+	return writeJSONAtomic(OIDEntryPath(cache, oid), entry)
+}
+
+func RemoveOIDPath(cache *Cache, oid, path, now string) error {
+	entry, err := ReadOIDEntry(cache, oid, now)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	paths := make(map[string]struct{}, len(entry.Paths))
+	for _, existing := range entry.Paths {
+		existing = strings.TrimSpace(existing)
+		if existing == "" || existing == path {
+			continue
+		}
+		paths[existing] = struct{}{}
+	}
+	entry.Paths = sortedKeys(paths)
+	entry.UpdatedAt = now
+	return writeJSONAtomic(OIDEntryPath(cache, oid), entry)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func writeJSONAtomic(path string, v any) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
+}
 
 // gitRevParseGitDir runs `git rev-parse --git-dir` (and `--show-toplevel` if
 // necessary) to return an absolute path to the repository `.git` directory.
-// Returns an error when git fails or the result cannot be resolved.
 func gitRevParseGitDir(ctx context.Context) (string, error) {
 	out, err := git(ctx, "rev-parse", "--git-dir")
 	if err != nil {
@@ -301,8 +295,6 @@ func gitRevParseGitDir(ctx context.Context) (string, error) {
 	return gitDir, nil
 }
 
-// git executes a git command and returns combined output. If git exits with
-// a non-zero status the returned error includes the command and stderr/stdout.
 func git(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = os.Environ()
@@ -315,98 +307,4 @@ func git(ctx context.Context, args ...string) ([]byte, error) {
 		)
 	}
 	return out, nil
-}
-
-func writeJSONAtomic(path string, v any) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	enc := json.NewEncoder(tmp)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
-}
-
-func oidAddOrReplacePath(oidsDir, oid, oldPath, newPath, now string, contentChanged bool) error {
-	f := oidEntryFilePath(oidsDir, oid)
-	var oe OIDEntry
-	if b, err := os.ReadFile(f); err == nil {
-		_ = json.Unmarshal(b, &oe)
-	}
-	if oe.LFSOID == "" {
-		oe.LFSOID = oid
-	}
-	pathsSet := make(map[string]struct{}, len(oe.Paths)+1)
-	for _, p := range oe.Paths {
-		p = strings.TrimSpace(p)
-		if p == "" || p == oldPath {
-			continue
-		}
-		pathsSet[p] = struct{}{}
-	}
-	if strings.TrimSpace(newPath) != "" {
-		pathsSet[newPath] = struct{}{}
-	}
-	oe.Paths = oe.Paths[:0]
-	for p := range pathsSet {
-		oe.Paths = append(oe.Paths, p)
-	}
-	sort.Strings(oe.Paths)
-	oe.UpdatedAt = now
-	oe.ContentChange = contentChanged
-	return writeJSONAtomic(f, oe)
-}
-
-func oidRemovePath(oidsDir, oid, path, now string) error {
-	if strings.TrimSpace(oid) == "" || strings.TrimSpace(path) == "" {
-		return nil
-	}
-	f := oidEntryFilePath(oidsDir, oid)
-	b, err := os.ReadFile(f)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	var oe OIDEntry
-	if err := json.Unmarshal(b, &oe); err != nil {
-		return err
-	}
-	filtered := oe.Paths[:0]
-	for _, existing := range oe.Paths {
-		if strings.TrimSpace(existing) == "" || existing == path {
-			continue
-		}
-		filtered = append(filtered, existing)
-	}
-	oe.Paths = filtered
-	oe.UpdatedAt = now
-	if len(oe.Paths) == 0 {
-		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		return nil
-	}
-	sort.Strings(oe.Paths)
-	return writeJSONAtomic(f, oe)
-}
-
-func oidEntryFilePath(oidsDir, oid string) string {
-	sum := sha256.Sum256([]byte(oid))
-	return filepath.Join(oidsDir, fmt.Sprintf("%x.json", sum[:]))
 }

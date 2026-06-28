@@ -3,7 +3,6 @@ package addurl
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,7 +17,6 @@ import (
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
@@ -201,38 +199,6 @@ func TestParseAddURLInput_ObjectKeyModeDefaultsPathToKey(t *testing.T) {
 	}
 }
 
-func TestResolveObjectURL_UsesConfiguredBucketScopeForObjectKeyMode(t *testing.T) {
-	input := addURLInput{
-		sourceArg: "nested/path/file.bin",
-		scheme:    "s3",
-	}
-	scope := gitrepo.ResolvedBucketScope{
-		Bucket: "mapped-bucket",
-		Prefix: "mapped/prefix",
-	}
-
-	got, err := resolveObjectURL(input, scope)
-	if err != nil {
-		t.Fatalf("resolveObjectURL: %v", err)
-	}
-	if got != "s3://mapped-bucket/mapped/prefix/nested/path/file.bin" {
-		t.Fatalf("unexpected object URL: %s", got)
-	}
-}
-
-func TestResolveObjectURL_RejectsObjectKeyModeWithoutScheme(t *testing.T) {
-	_, err := resolveObjectURL(addURLInput{sourceArg: "nested/path/file.bin"}, gitrepo.ResolvedBucketScope{
-		Bucket: "mapped-bucket",
-		Prefix: "mapped/prefix",
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "requires --scheme") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestUpdatePrecommitCacheWritesEntries(t *testing.T) {
 	repo := setupGitRepo(t)
 	path := filepath.Join(repo, "data", "file.bin")
@@ -277,8 +243,7 @@ func TestUpdatePrecommitCacheWritesEntries(t *testing.T) {
 		t.Fatalf("expected updated_at to be set")
 	}
 
-	oidSum := sha256.Sum256([]byte(oid))
-	oidEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", oidSum[:]))
+	oidEntryFile := precommit_cache.OIDEntryPath(&precommit_cache.Cache{OIDsDir: oidDir}, oid)
 	oidData, err := os.ReadFile(oidEntryFile)
 	if err != nil {
 		t.Fatalf("read oid entry: %v", err)
@@ -328,8 +293,8 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
 	oidDir := filepath.Join(cacheRoot, "oids")
 
-	firstSum := sha256.Sum256([]byte(firstOID))
-	firstEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", firstSum[:]))
+	cache := &precommit_cache.Cache{OIDsDir: oidDir}
+	firstEntryFile := precommit_cache.OIDEntryPath(cache, firstOID)
 	firstData, err := os.ReadFile(firstEntryFile)
 	if err != nil {
 		t.Fatalf("read first oid entry: %v", err)
@@ -342,8 +307,7 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 		t.Fatalf("expected old oid entry paths to be empty, got %v", firstEntry.Paths)
 	}
 
-	secondSum := sha256.Sum256([]byte(secondOID))
-	secondEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", secondSum[:]))
+	secondEntryFile := precommit_cache.OIDEntryPath(cache, secondOID)
 	secondData, err := os.ReadFile(secondEntryFile)
 	if err != nil {
 		t.Fatalf("read second oid entry: %v", err)
@@ -359,11 +323,6 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 		t.Fatalf("expected new oid entry paths to include data/file.bin, got %v", secondEntry.Paths)
 	}
 }
-
-// deprecated test case: now that we always "trust" the client-provided SHA256, this case is not applicable
-//func TestRunAddURL_SHA256Mismatch(t *testing.T) {
-//	...
-//}
 
 func stubAddURLDeps(
 	t *testing.T,

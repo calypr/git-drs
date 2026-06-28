@@ -29,25 +29,6 @@ const (
 
 var ErrNoDefaultRemote = errors.New("no default remote configured")
 
-func AllRemoteTypes() []RemoteType {
-	return []RemoteType{Gen3ServerType, LocalServerType}
-}
-
-func IsValidRemoteType(mode string) error {
-	modeOptions := make([]string, len(AllRemoteTypes()))
-	for i, m := range AllRemoteTypes() {
-		modeOptions[i] = string(m)
-	}
-
-	for _, validMode := range modeOptions {
-		if mode == string(validMode) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("invalid mode '%s'. Valid options are: %s", mode, strings.Join(modeOptions, ", "))
-}
-
 // Config holds the overall config structure
 type Config struct {
 	DefaultRemote Remote
@@ -286,18 +267,6 @@ func CreateEmptyConfig() error {
 	// We can check if we can open the repo.
 	_, err := getRepo()
 	return err
-}
-
-func GetProjectId(remote Remote) (string, error) {
-	cfg, err := LoadConfig()
-	if err != nil {
-		return "", fmt.Errorf("error loading config: %v", err)
-	}
-	rmt := cfg.GetRemote(remote)
-	if rmt == nil {
-		return "", fmt.Errorf("no remote configuration found for current remote: %s", remote)
-	}
-	return rmt.GetProjectId(), nil
 }
 
 // SaveConfig writes the configuration using go-git

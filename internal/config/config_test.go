@@ -161,30 +161,6 @@ func TestConfig_FindRemote(t *testing.T) {
 	}
 }
 
-func TestRemote_Validation(t *testing.T) {
-	// IsValidRemoteType test
-	tests := []struct {
-		name    string
-		mode    string
-		isValid bool
-	}{
-		{"valid gen3", "gen3", true},
-		{"valid local", "local", true},
-		{"invalid", "foo", false},
-		{"empty", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := IsValidRemoteType(tt.mode)
-			valid := err == nil
-			if valid != tt.isValid {
-				t.Errorf("IsValidRemoteType(%q) = %v, want %v", tt.mode, valid, tt.isValid)
-			}
-		})
-	}
-}
-
 func TestConfig_MultipleRemotes(t *testing.T) {
 	cfg := &Config{
 		Remotes: make(map[Remote]RemoteSelect),

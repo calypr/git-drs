@@ -2,7 +2,6 @@ package addurl
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,23 +97,4 @@ sha256 param  : %s
 		return fmt.Errorf("print resolved object info: %w", err)
 	}
 	return nil
-}
-
-// writeJSONAtomic marshals `value` to JSON and writes it to `path` atomically
-// by writing to a temporary file in the same directory and renaming it. It
-// ensures parent directories exist.
-func writeJSONAtomic(path string, value any) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }

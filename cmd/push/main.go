@@ -136,21 +136,6 @@ func init() {
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 
-func currentDeleteRefUpdates(ctx context.Context) ([]drsdelete.RefUpdate, error) {
-	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
-	if err != nil {
-		return nil, nil
-	}
-	return []drsdelete.RefUpdate{{
-		OldSHA: upstream,
-		NewSHA: head,
-	}}, nil
-}
-
 func currentPushRefUpdates(ctx context.Context, remote string) ([]drsdelete.RefUpdate, error) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")

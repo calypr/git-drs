@@ -1,10 +1,11 @@
 package addurl
 
 import (
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/calypr/git-drs/internal/gitrepo"
 )
 
 type fakeRemote struct {

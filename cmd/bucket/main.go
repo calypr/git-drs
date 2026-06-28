@@ -13,7 +13,7 @@ import (
 
 	conf "github.com/calypr/calypr-cli/conf"
 	"github.com/calypr/calypr-cli/credentials"
-	"github.com/calypr/git-drs/internal/authparse"
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
@@ -275,7 +275,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		endpoint = strings.TrimSpace(endpoint)
 	}
 	if endpoint == "" {
-		parsed, err := authparse.ParseAPIEndpointFromToken(token)
+		parsed, err := config.ParseAPIEndpointFromToken(token)
 		if err != nil {
 			return "", "", fmt.Errorf("unable to resolve API endpoint from token: %w", err)
 		}

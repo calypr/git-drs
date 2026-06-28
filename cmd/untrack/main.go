@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/internal/drstrack"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
 
-var gitLFSUntrackPatterns = drstrack.UntrackPatterns
+var gitLFSUntrackPatterns = gitrepo.UntrackPatterns
 
 var Cmd = NewCommand()
 

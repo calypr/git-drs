@@ -17,17 +17,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsdownload"
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/gitfilter"
-	"github.com/calypr/git-drs/internal/gitrepo"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -39,26 +35,6 @@ var Cmd = &cobra.Command{
 	Hidden:  true,
 	Args:    cobra.NoArgs,
 	RunE:    runFilter,
-}
-
-func shouldSkipSmudge() bool {
-	if val := os.Getenv("GIT_LFS_SKIP_SMUDGE"); val != "" {
-		return val == "1" || strings.ToLower(val) == "true"
-	}
-	if val := os.Getenv("GIT_DRS_SKIP_SMUDGE"); val != "" {
-		return val == "1" || strings.ToLower(val) == "true"
-	}
-	if valStr, err := gitrepo.GetGitConfigString("drs.skipsmudge"); err == nil && valStr != "" {
-		if val, err := strconv.ParseBool(valStr); err == nil {
-			return val
-		}
-	}
-	if valStr, err := gitrepo.GetGitConfigString("lfs.skipsmudge"); err == nil && valStr != "" {
-		if val, err := strconv.ParseBool(valStr); err == nil {
-			return val
-		}
-	}
-	return true
 }
 
 func runFilter(cmd *cobra.Command, _ []string) error {
@@ -93,7 +69,7 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 	}
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
 	// Build the filter and register handlers.
-	f := gitfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
+	f := internalfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
 		OnSmudge(makeSmudgeHandler(drsCtx, logger)).
 		OnClean(makeCleanHandler(lfsRoot, logger))
 
@@ -104,16 +80,16 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, logger *slog.Logger) gitfilter.SmudgeFunc {
-	return func(ctx context.Context, req gitfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
+func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, logger *slog.Logger) internalfilter.SmudgeFunc {
+	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
-		var downloadFn drsfilter.SmudgeDownloadFunc
-		if drsCtx != nil && !shouldSkipSmudge() {
+		var downloadFn internalfilter.SmudgeDownloadFunc
+		if drsCtx != nil && !internalfilter.ShouldSkipSmudge() {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-				return drsdownload.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+				return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 			}
 		}
-		return drsfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
+		return internalfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
 	}
 }
 
@@ -121,10 +97,10 @@ func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, logger *slog.Logger) gi
 // Clean handler — stage: real file content → LFS pointer
 // --------------------------------------------------------------------------
 
-func makeCleanHandler(lfsRoot string, logger *slog.Logger) gitfilter.CleanFunc {
-	return func(ctx context.Context, req gitfilter.FilterRequest, content io.Reader, dst io.Writer) error {
+func makeCleanHandler(lfsRoot string, logger *slog.Logger) internalfilter.CleanFunc {
+	return func(ctx context.Context, req internalfilter.FilterRequest, content io.Reader, dst io.Writer) error {
 		logger.Debug("clean", "pathname", req.Pathname)
-		return drsfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
+		return internalfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
 	}
 }
 

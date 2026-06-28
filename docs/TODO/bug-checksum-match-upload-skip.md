@@ -2,7 +2,7 @@
 
 ## Current behavior
 
-`internal/pushsync` currently treats an existing checksum match as reusable without proving that the referenced payload is still downloadable. This is intentional for now because it avoids extra probe traffic during `git drs push`, but it weakens the older availability guarantee.
+`internal/transfer` currently treats an existing checksum match as reusable without proving that the referenced payload is still downloadable. This is intentional for now because it avoids extra probe traffic during `git drs push`, but it weakens the older availability guarantee.
 
 In practice, a stale metadata record, broken backing blob, or bad access URL can still cause push preparation to skip upload and proceed to `git push`, leaving refs that later cannot be pulled successfully.
 

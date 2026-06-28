@@ -12,7 +12,6 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
@@ -70,8 +69,8 @@ func InitializeRepo(logg *slog.Logger) error {
 	}
 
 	// create drs directories
-	drsDir := drspaths.DRSDir
-	drsLfsObjsDir := drspaths.DRSObjectsPath
+	drsDir := gitrepo.DRSDir
+	drsLfsObjsDir := gitrepo.DRSObjectsPath
 	if err := os.MkdirAll(drsDir, 0755); err != nil {
 		return fmt.Errorf("error: unable to create drs directory: %v", err)
 	}
@@ -112,7 +111,7 @@ func isInitialized() (bool, error) {
 		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 	}
 
-	if _, err := os.Stat(drspaths.DRSDir); err != nil {
+	if _, err := os.Stat(gitrepo.DRSDir); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}

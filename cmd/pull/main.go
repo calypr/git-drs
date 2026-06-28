@@ -8,17 +8,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsdownload"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drslookup"
-	"github.com/calypr/git-drs/internal/drspaths"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	"github.com/calypr/git-drs/internal/pathspec"
+	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
@@ -82,8 +82,8 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		progress := newPullProgressRenderer(os.Stderr)
-		progress.OnPlan(pointers)
+		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
+		progress.OnPlan(toPullFiles(pointers))
 		defer func() {
 			if finishErr := progress.Finish(); retErr == nil && finishErr != nil {
 				retErr = fmt.Errorf("finalize pull progress: %w", finishErr)
@@ -103,7 +103,7 @@ var Cmd = &cobra.Command{
 		missingOIDs := make([]string, 0, len(pointers))
 		seenMissing := make(map[string]struct{}, len(pointers))
 		for _, f := range pointers {
-			cachePath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
+			cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
@@ -122,7 +122,7 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 			for _, oid := range missingOIDs {
-				recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
+				recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 				if err != nil || len(recs) == 0 {
 					continue
 				}
@@ -140,7 +140,7 @@ var Cmd = &cobra.Command{
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
 				}
-				if resolved, err := drsdownload.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
+				if resolved, err := internaltransfer.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
 				} else {
@@ -148,7 +148,7 @@ var Cmd = &cobra.Command{
 				}
 			}
 			for _, f := range pointers {
-				dstPath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
+				dstPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
@@ -157,19 +157,19 @@ var Cmd = &cobra.Command{
 				} else if !os.IsNotExist(err) {
 					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
 				}
-				progress.OnDownloadStart(f)
+				progress.OnDownloadStart(toPullFile(f))
 				downloadCtx := progressContextForPointer(ctx, progress, f)
 				if obj, ok := prefetched[f.Oid]; ok {
 					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
 						objCopy := obj
-						if err := drsdownload.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+						if err := internaltransfer.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
 						continue
 					}
 				}
-				if err := drsdownload.DownloadToCachePath(downloadCtx, drsCtx, logg, f.Oid, dstPath); err != nil {
+				if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
@@ -195,7 +195,7 @@ type pointerFile struct {
 func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
 	keys := make([]string, 0, len(inventory))
 	for path := range inventory {
-		if !pathspec.MatchesAny(path, patterns) {
+		if !matchesAnyPattern(path, patterns) {
 			continue
 		}
 		keys = append(keys, path)
@@ -210,7 +210,7 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	return files
 }
 
-func progressContextForPointer(ctx context.Context, progress *pullProgressRenderer, file pointerFile) context.Context {
+func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {
 	ctx = sycommon.WithOid(ctx, file.Name)
 	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
 		if ev.Event != "progress" {
@@ -221,12 +221,79 @@ func progressContextForPointer(ctx context.Context, progress *pullProgressRender
 	})
 }
 
-func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer) error {
+func toPullFiles(files []pointerFile) []internaltransfer.PullFile {
+	out := make([]internaltransfer.PullFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, toPullFile(file))
+	}
+	return out
+}
+
+func toPullFile(file pointerFile) internaltransfer.PullFile {
+	return internaltransfer.PullFile{Name: file.Name, Oid: file.Oid, Size: file.Size}
+}
+
+func matchesAnyPattern(path string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	normalized := filepath.ToSlash(filepath.Clean(path))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if matchesPattern(normalized, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesPattern(path, pattern string) bool {
+	pattern = filepath.ToSlash(filepath.Clean(pattern))
+	if !strings.ContainsAny(pattern, "*?[") {
+		return path == pattern
+	}
+	re, err := regexp.Compile(globToRegexp(pattern))
+	if err != nil {
+		return false
+	}
+	return re.MatchString(path)
+}
+
+func globToRegexp(pattern string) string {
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '*':
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				b.WriteString(".*")
+				i++
+				continue
+			}
+			b.WriteString(`[^/]*`)
+		case '?':
+			b.WriteString(`[^/]`)
+		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
+			b.WriteByte('\\')
+			b.WriteByte(ch)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	b.WriteString("$")
+	return b.String()
+}
+
+func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
 		}
-		srcPath, err := lfs.ObjectPath(drspaths.LFSObjectsPath, f.Oid)
+		srcPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
@@ -234,7 +301,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer
 		if err != nil {
 			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
 		}
-		progress.OnCheckoutStart(f)
+		progress.OnCheckoutStart(toPullFile(f))
 		if dir := filepath.Dir(f.Name); dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				src.Close()
@@ -258,13 +325,13 @@ func checkoutDownloadedFiles(files []pointerFile, progress *pullProgressRenderer
 		if err := src.Close(); err != nil {
 			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
 		}
-		progress.OnCompleted(f)
+		progress.OnCompleted(toPullFile(f))
 	}
 	return nil
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.GitContext, oid string) string {
-	recs, err := drslookup.ObjectsByHashForScope(ctx, drsCtx, oid)
+	recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
 	}

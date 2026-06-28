@@ -2,16 +2,13 @@ package add
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	"github.com/spf13/cobra"
 )
 
@@ -43,38 +40,16 @@ var LocalCmd = &cobra.Command{
 			}
 		}
 		resolvedBucket := strings.TrimSpace(scope.Bucket)
-		resolvedStoragePrefix := strings.TrimSpace(scope.Prefix)
 		if resolvedBucket == "" {
 			return fmt.Errorf("no bucket mapping found for organization=%q project=%q", organization, project)
 		}
 
-		remoteSelect := config.RemoteSelect{
-			Local: &config.LocalRemote{
-				BaseURL:       url,
-				ProjectID:     project,
-				Bucket:        resolvedBucket,
-				Organization:  organization,
-				StoragePrefix: resolvedStoragePrefix,
-			},
-		}
-
-		newConfig, err := config.UpdateRemote(config.Remote(remoteName), remoteSelect)
+		newConfig, err := persistLocalRemote(remoteName, url, organization, project, scope)
 		if err != nil {
 			return err
 		}
-		if err := gitrepo.SetRemoteLFSURL(remoteName, url); err != nil {
-			return fmt.Errorf("failed to configure lfs url for remote %q: %w", remoteName, err)
-		}
-		if err := gitrepo.ConfigureCredentialHelperForRepo(); err != nil {
-			return fmt.Errorf("failed to configure git credential helper: %w", err)
-		}
-		if strings.TrimSpace(localUsername) != "" || strings.TrimSpace(localPassword) != "" {
-			if strings.TrimSpace(localUsername) == "" || strings.TrimSpace(localPassword) == "" {
-				return fmt.Errorf("both --username and --password are required when configuring local basic auth")
-			}
-			if err := gitrepo.SetRemoteBasicAuth(remoteName, strings.TrimSpace(localUsername), strings.TrimSpace(localPassword)); err != nil {
-				return fmt.Errorf("failed to configure local basic auth for remote %q: %w", remoteName, err)
-			}
+		if err := configureLocalBasicAuth(remoteName, localUsername, localPassword); err != nil {
+			return err
 		}
 
 		fmt.Printf("Added remote '%s'. Config: %v\n", remoteName, newConfig.GetRemote(config.Remote(remoteName)))
@@ -85,38 +60,4 @@ var LocalCmd = &cobra.Command{
 		}
 		return nil
 	},
-}
-
-func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, password, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
-	if strings.TrimSpace(endpoint) == "" {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
-	}
-	if username != "" || password != "" {
-		req.SetBasicAuth(username, password)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
-	}
-
-	var payload bucketapi.BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
-	}
-
-	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, err
-	}
-	return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
 }

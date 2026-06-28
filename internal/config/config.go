@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/go-git/go-git/v5"
 )
@@ -333,6 +332,6 @@ func getConfigPath() (string, error) {
 		return "", err
 	}
 
-	configPath := filepath.Join(topLevel, drspaths.DRSDir, drspaths.ConfigYAML)
+	configPath := filepath.Join(topLevel, gitrepo.DRSDir, gitrepo.ConfigYAML)
 	return configPath, nil
 }

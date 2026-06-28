@@ -16,7 +16,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/drspaths"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
@@ -133,7 +133,7 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("expected no local LFS object payload at %s, got err=%v", lfsObject, err)
 	}
 
-	drsObject, err := drsobject.ReadObject(drspaths.DRSObjectsPath, oid)
+	drsObject, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}

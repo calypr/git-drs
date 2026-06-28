@@ -2,22 +2,18 @@ package add
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/calypr/calypr-cli/conf"
 	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
-	"github.com/calypr/git-drs/internal/authparse"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
 	"github.com/spf13/cobra"
 )
 
@@ -73,7 +69,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	case fenceToken != "":
 		accessToken = fenceToken
 		var err error
-		apiEndpoint, err = authparse.ParseAPIEndpointFromToken(accessToken)
+		apiEndpoint, err = config.ParseAPIEndpointFromToken(accessToken)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from provided access token: %w", err)
 		}
@@ -87,7 +83,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		apiKey = cred.APIKey
 		keyID = cred.KeyID
 
-		apiEndpoint, err = authparse.ParseAPIEndpointFromToken(cred.APIKey)
+		apiEndpoint, err = config.ParseAPIEndpointFromToken(cred.APIKey)
 		if err != nil {
 			return fmt.Errorf("failed to parse API endpoint from API key in credentials file: %w", err)
 		}
@@ -137,86 +133,13 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		return fmt.Errorf("no bucket mapping found for organization=%q project=%q", organization, project)
 	}
 
-	remoteGen3 := config.RemoteSelect{
-		Gen3: &config.Gen3Remote{
-			Endpoint:      apiEndpoint,
-			ProjectID:     project,
-			Organization:  organization,
-			Bucket:        resolvedBucket,
-			StoragePrefix: resolvedStoragePrefix,
-		},
-	}
-
-	remote := config.Remote(remoteName)
-	if _, err := config.UpdateRemote(remote, remoteGen3); err != nil {
-		return fmt.Errorf("failed to update remote config: %w", err)
+	if err := persistGen3Remote(remoteName, organization, project, apiEndpoint, scope, func() error {
+		return configure.Save(cred)
+	}); err != nil {
+		return err
 	}
 	logg.Debug(fmt.Sprintf("Remote added/updated: %s → %s (project: %s, bucket: %s, storage_prefix: %s)", remoteName, apiEndpoint, project, resolvedBucket, resolvedStoragePrefix))
 
-	if err := configure.Save(cred); err != nil {
-		return fmt.Errorf("failed to configure/update Gen3 profile: %w", err)
-	}
-	// Configure stock git credential plumbing for lfs + persist the refreshed token locally.
-	if err := gitrepo.ConfigureCredentialHelperForRepo(); err != nil {
-		return fmt.Errorf("failed to configure git credential helper: %w", err)
-	}
-	if err := gitrepo.SetRemoteLFSURL(remoteName, apiEndpoint); err != nil {
-		return fmt.Errorf("failed to set lfs url for remote %s: %w", remoteName, err)
-	}
-
 	logg.Debug(fmt.Sprintf("Gen3 profile '%s' configured and token refreshed successfully", remoteName))
 	return nil
-}
-
-func parseScopeArg(raw string) (string, string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", "", fmt.Errorf("organization/project scope is required")
-	}
-
-	parts := strings.Split(raw, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
-	}
-	organization := strings.TrimSpace(parts[0])
-	project := strings.TrimSpace(parts[1])
-	if organization == "" || project == "" {
-		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
-	}
-	return organization, project, nil
-}
-
-func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
-	if strings.TrimSpace(endpoint) == "" {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
-	}
-	if strings.TrimSpace(token) == "" {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing access token for server bucket lookup")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
-	}
-
-	var payload bucketapi.BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
-	}
-
-	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, err
-	}
-	return gitrepo.ResolvedBucketScope{Bucket: bucket}, nil
 }

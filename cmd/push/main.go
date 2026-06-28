@@ -9,11 +9,10 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsdelete"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
-	"github.com/calypr/git-drs/internal/pushsync"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -92,13 +91,13 @@ var Cmd = &cobra.Command{
 		fmt.Fprintln(os.Stderr, "DEBUG: LFS files to push resolved. Total files:", len(lfsFiles))
 
 		fmt.Fprintln(os.Stderr, "DEBUG: Reconciling committed deletes...")
-		if _, err := drsdelete.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
+		if _, err := internaltransfer.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to reconcile deletes:", err)
 			return fmt.Errorf("failed to reconcile deletes: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "DEBUG: Deletes reconciled. Starting BatchSyncForPush...")
-		progress := newUploadProgressRenderer(os.Stderr)
-		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
+		progress := internaltransfer.NewUploadProgressRenderer(os.Stderr)
+		if err := internaltransfer.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush failed:", err)
 			if finishErr := progress.Finish(); finishErr != nil {
 				return fmt.Errorf("failed batch register/upload workflow: %w (progress finalize error: %v)", err, finishErr)
@@ -141,7 +140,7 @@ func init() {
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 
-func currentPushRefUpdates(ctx context.Context, remote string) ([]drsdelete.RefUpdate, error) {
+func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
 	if err != nil {
@@ -159,7 +158,7 @@ func currentPushRefUpdates(ctx context.Context, remote string) ([]drsdelete.RefU
 			oldSHA = zeroSHA
 		}
 	}
-	return []drsdelete.RefUpdate{{
+	return []internaltransfer.RefUpdate{{
 		OldSHA: oldSHA,
 		NewSHA: head,
 	}}, nil
@@ -191,7 +190,7 @@ func getRemoteMergeBase(ctx context.Context, remote string, head string) (string
 	return strings.TrimSpace(string(outMerge)), nil
 }
 
-func listRefUpdatePaths(ctx context.Context, refs []drsdelete.RefUpdate) ([]string, error) {
+func listRefUpdatePaths(ctx context.Context, refs []internaltransfer.RefUpdate) ([]string, error) {
 	const zeroSHA = "0000000000000000000000000000000000000000"
 	set := make(map[string]struct{})
 	for _, ref := range refs {

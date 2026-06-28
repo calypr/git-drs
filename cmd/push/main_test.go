@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/calypr/git-drs/internal/drsdelete"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 )
 
 func TestCurrentPushRefUpdatesUsesZeroBaseWhenUpstreamMissing(t *testing.T) {
@@ -81,7 +81,7 @@ func TestListRefUpdatePathsUsesDiffForExistingBranch(t *testing.T) {
 	}
 	t.Cleanup(func() { gitOutputFn = oldFn })
 
-	got, err := listRefUpdatePaths(context.Background(), []drsdelete.RefUpdate{{OldSHA: "old-sha", NewSHA: "new-sha"}})
+	got, err := listRefUpdatePaths(context.Background(), []internaltransfer.RefUpdate{{OldSHA: "old-sha", NewSHA: "new-sha"}})
 	if err != nil {
 		t.Fatalf("listRefUpdatePaths returned error: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestListRefUpdatePathsUsesLsTreeForFirstPush(t *testing.T) {
 	}
 	t.Cleanup(func() { gitOutputFn = oldFn })
 
-	got, err := listRefUpdatePaths(context.Background(), []drsdelete.RefUpdate{{OldSHA: "0000000000000000000000000000000000000000", NewSHA: "new-sha"}})
+	got, err := listRefUpdatePaths(context.Background(), []internaltransfer.RefUpdate{{OldSHA: "0000000000000000000000000000000000000000", NewSHA: "new-sha"}})
 	if err != nil {
 		t.Fatalf("listRefUpdatePaths returned error: %v", err)
 	}

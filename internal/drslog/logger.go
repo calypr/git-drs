@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/calypr/git-drs/internal/drspaths"
 	"github.com/calypr/git-drs/internal/gitrepo"
 
 	"github.com/calypr/syfon/client/logs"
@@ -97,11 +96,11 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 
 	if filename == "" {
 		// create drs dir if it doesn't exist
-		if err := os.MkdirAll(drspaths.DRSDir, 0755); err != nil {
+		if err := os.MkdirAll(gitrepo.DRSDir, 0755); err != nil {
 			return nil, err
 		}
 
-		filename = drspaths.DRSLogFile
+		filename = gitrepo.DRSLogFile
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

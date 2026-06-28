@@ -45,8 +45,7 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 //
 // pathname is the repo-relative path of the file being cleaned; it is used
 // only for the DRS map entry name and log messages.
-func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) error {
-	_ = ctx // reserved for future cancellation propagation
+func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
 
 	objDir := filepath.Join(lfsRoot, "objects")
 	if err := os.MkdirAll(objDir, 0o755); err != nil {
@@ -61,7 +60,9 @@ func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Read
 	tmpPath := tmp.Name()
 	defer func() {
 		if _, statErr := os.Stat(tmpPath); statErr == nil {
-			_ = os.Remove(tmpPath)
+			if rmErr := os.Remove(tmpPath); rmErr != nil && retErr == nil {
+				retErr = fmt.Errorf("clean: remove temp file: %w", rmErr)
+			}
 		}
 	}()
 

@@ -253,7 +253,9 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 				ensureErr := credentials.EnsureValidCredential(ctx, prof, drslog.GetLogger())
 				cancel()
 				if ensureErr == nil {
-					_ = configure.Save(prof)
+					if err := configure.Save(prof); err != nil {
+						return "", "", fmt.Errorf("failed to save refreshed credential for remote %q: %w", remoteName, err)
+					}
 					token = strings.TrimSpace(prof.AccessToken)
 				}
 			}

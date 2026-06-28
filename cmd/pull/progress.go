@@ -27,6 +27,7 @@ type pullFileProgress struct {
 
 type pullProgressRenderer struct {
 	base      *progressui.Renderer
+	err       error
 	planned   bool
 	files     map[string]*pullFileProgress
 	fileOrder []string
@@ -40,6 +41,9 @@ func newPullProgressRenderer(out io.Writer) *pullProgressRenderer {
 }
 
 func (r *pullProgressRenderer) render(force bool) {
+	if r.err != nil {
+		return
+	}
 	lines := make([]string, 0, len(r.fileOrder))
 	for _, id := range r.fileOrder {
 		item := r.files[id]
@@ -48,7 +52,7 @@ func (r *pullProgressRenderer) render(force bool) {
 		}
 		lines = append(lines, r.renderLine(item))
 	}
-	r.base.Render(force, lines)
+	r.err = r.base.Render(force, lines)
 }
 
 func (r *pullProgressRenderer) OnPlan(files []pointerFile) {
@@ -135,9 +139,9 @@ func (r *pullProgressRenderer) OnCompleted(file pointerFile) {
 	r.render(false)
 }
 
-func (r *pullProgressRenderer) Finish() {
+func (r *pullProgressRenderer) Finish() error {
 	if !r.planned {
-		return
+		return r.err
 	}
 	lines := make([]string, 0, len(r.fileOrder))
 	for _, id := range r.fileOrder {
@@ -147,8 +151,11 @@ func (r *pullProgressRenderer) Finish() {
 		}
 		lines = append(lines, r.renderLine(item))
 	}
-	r.base.Finish(lines)
+	if r.err == nil {
+		r.err = r.base.Finish(lines)
+	}
 	r.planned = false
+	return r.err
 }
 
 func (r *pullProgressRenderer) renderLine(file *pullFileProgress) string {

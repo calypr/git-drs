@@ -61,7 +61,9 @@ func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger
 	if err := credentials.EnsureValidCredential(ctx, cred, logger); err != nil {
 		return nil, WrapCredentialValidationError(remoteName, err)
 	}
-	_ = manager.Save(cred)
+	if err := manager.Save(cred); err != nil {
+		return nil, fmt.Errorf("save refreshed credential for remote %q: %w", remoteName, err)
+	}
 	return newGitContext(*cred, remote, logger)
 }
 

@@ -207,9 +207,7 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 // If SHA256 is provided, it is trusted and returned. Otherwise we derive a
 // deterministic placeholder OID from provider identity without writing any
 // local LFS object payload.
-func (s *AddURLService) ensureLFSObject(ctx context.Context, objectInfo *sycloud.ObjectInfo, input addURLInput, lfsRoot string) (string, error) {
-	_ = ctx
-	_ = lfsRoot
+func (s *AddURLService) ensureLFSObject(_ context.Context, objectInfo *sycloud.ObjectInfo, input addURLInput, _ string) (string, error) {
 	if input.sha256 != "" {
 		return input.sha256, nil
 	}

@@ -27,6 +27,7 @@ type metadataProgress struct {
 type uploadProgressRenderer struct {
 	mu        sync.Mutex
 	base      *progressui.Renderer
+	err       error
 	planned   bool
 	plan      pushsync.UploadPlanSummary
 	metadata  metadataProgress
@@ -42,6 +43,9 @@ func newUploadProgressRenderer(out io.Writer) *uploadProgressRenderer {
 }
 
 func (r *uploadProgressRenderer) renderLocked(force bool) {
+	if r.err != nil {
+		return
+	}
 	lines := make([]string, 0, len(r.fileOrder)+1)
 	if r.metadata.total > 0 {
 		lines = append(lines, r.renderMetadataLine())
@@ -53,7 +57,7 @@ func (r *uploadProgressRenderer) renderLocked(force bool) {
 		}
 		lines = append(lines, r.renderLine(idx, len(r.fileOrder), file))
 	}
-	r.base.Render(force, lines)
+	r.err = r.base.Render(force, lines)
 }
 
 func (r *uploadProgressRenderer) OnMetadataPlan(plan pushsync.MetadataPlanSummary) {
@@ -148,12 +152,12 @@ func (r *uploadProgressRenderer) OnUploadProgress(ev pushsync.UploadProgressEven
 	r.renderLocked(false)
 }
 
-func (r *uploadProgressRenderer) Finish() {
+func (r *uploadProgressRenderer) Finish() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if !r.planned && r.metadata.total == 0 {
-		return
+		return r.err
 	}
 	lines := make([]string, 0, len(r.fileOrder))
 	if r.metadata.total > 0 {
@@ -166,9 +170,12 @@ func (r *uploadProgressRenderer) Finish() {
 		}
 		lines = append(lines, r.renderLine(idx, len(r.fileOrder), file))
 	}
-	r.base.Finish(lines)
+	if r.err == nil {
+		r.err = r.base.Finish(lines)
+	}
 	r.planned = false
 	r.metadata = metadataProgress{}
+	return r.err
 }
 
 func (r *uploadProgressRenderer) HadUploads() bool {
@@ -177,7 +184,13 @@ func (r *uploadProgressRenderer) HadUploads() bool {
 	return r != nil && r.planned
 }
 
-func (r *uploadProgressRenderer) renderLine(idx int, total int, file *uploadFileProgress) string {
+func (r *uploadProgressRenderer) Err() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.err
+}
+
+func (r *uploadProgressRenderer) renderLine(_ int, _ int, file *uploadFileProgress) string {
 	label := "preparing upload"
 	if file != nil && file.path != "" {
 		label = progressui.TrimLabel(file.path, 48)
@@ -203,8 +216,6 @@ func (r *uploadProgressRenderer) renderLine(idx int, total int, file *uploadFile
 	pct := progressui.RenderPercentCapped(displayCurrent, totalBytes, completed)
 	bytesLabel := progressui.RenderByteProgress(displayCurrent, totalBytes, completed)
 
-	_ = idx
-	_ = total
 	return fmt.Sprintf("%s%s %s %s %s", prefix, label, bar, pct, bytesLabel)
 }
 

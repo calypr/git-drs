@@ -56,7 +56,9 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	}
 
 	if out != "" {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+			return fmt.Errorf("write track output: %w", err)
+		}
 	}
 	return nil
 }

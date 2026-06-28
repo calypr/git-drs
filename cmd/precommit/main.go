@@ -74,7 +74,9 @@ func run(ctx context.Context) error {
 		return err
 	}
 	tombsDir := filepath.Join(cache.Root, "tombstones")
-	_ = os.MkdirAll(tombsDir, 0o755) // optional
+	if err := os.MkdirAll(tombsDir, 0o755); err != nil {
+		return fmt.Errorf("create tombstones directory: %w", err)
+	}
 
 	changes, err := stagedChanges(ctx)
 	if err != nil {
@@ -138,7 +140,9 @@ func run(ctx context.Context) error {
 			}
 		} else {
 			// Out of scope now: remove any cached path entry.
-			_ = os.Remove(oldPathFile)
+			if err := removeIfExists(oldPathFile); err != nil {
+				return fmt.Errorf("remove stale path entry for %s: %w", ch.OldPath, err)
+			}
 		}
 	}
 
@@ -199,7 +203,9 @@ func handleUpsert(ctx context.Context, cache *precommit_cache.Cache, path, now s
 
 	// If content changed, remove path from the *old* oid entry (best effort).
 	if contentChanged {
-		_ = precommit_cache.RemoveOIDPath(cache, prev.LFSOID, path, now)
+		if err := precommit_cache.RemoveOIDPath(cache, prev.LFSOID, path, now); err != nil {
+			return fmt.Errorf("remove stale OID path mapping for %s: %w", path, err)
+		}
 	}
 
 	return nil
@@ -213,19 +219,25 @@ func handleDelete(ctx context.Context, cache *precommit_cache.Cache, tombsDir, p
 		return nil
 	}
 	// Remove path entry.
-	_ = os.Remove(precommit_cache.PathEntryPath(cache, path))
+	if err := removeIfExists(precommit_cache.PathEntryPath(cache, path)); err != nil {
+		return fmt.Errorf("remove path entry for %s: %w", path, err)
+	}
 
-	// Remove this path from the old oid entry (best effort).
+	// Remove this path from the old oid entry.
 	if entry.LFSOID != "" {
-		_ = precommit_cache.RemoveOIDPath(cache, entry.LFSOID, path, now)
+		if err := precommit_cache.RemoveOIDPath(cache, entry.LFSOID, path, now); err != nil {
+			return fmt.Errorf("remove OID path mapping for %s: %w", path, err)
+		}
 	}
 
 	// Optional tombstone.
 	tombFile := filepath.Join(tombsDir, precommit_cache.EncodePath(path)+".json")
-	_ = writeJSONAtomic(tombFile, map[string]string{
+	if err := writeJSONAtomic(tombFile, map[string]string{
 		"path":       path,
 		"deleted_at": now,
-	})
+	}); err != nil {
+		return fmt.Errorf("write tombstone for %s: %w", path, err)
+	}
 
 	return nil
 }
@@ -422,7 +434,7 @@ func git(ctx context.Context, args ...string) ([]byte, error) {
 
 // writeJSONAtomic writes JSON to a temp file then renames it into place.
 // This avoids partially written cache files if the process is interrupted.
-func writeJSONAtomic(path string, v any) error {
+func writeJSONAtomic(path string, v any) (retErr error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -433,20 +445,30 @@ func writeJSONAtomic(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) && retErr == nil {
+			retErr = closeErr
+		}
+	}()
 
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -476,11 +498,21 @@ func moveFileBestEffort(src, dst string) error {
 	}
 
 	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+		if closeErr := out.Close(); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
 		return err
 	}
 	if err := out.Close(); err != nil {
 		return err
 	}
 	return os.Remove(src)
+}
+
+func removeIfExists(path string) error {
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }

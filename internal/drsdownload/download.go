@@ -42,8 +42,7 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 	return &accessURL, &match, nil
 }
 
-func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, logger *slog.Logger, oid, cachePath string) error {
-	_ = logger
+func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, _ *slog.Logger, oid, cachePath string) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}

@@ -13,8 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 )
 
-func TrackPatterns(ctx context.Context, patterns []string, verbose bool, dryRun bool) (string, error) {
-	_ = ctx
+func TrackPatterns(_ context.Context, patterns []string, verbose bool, dryRun bool) (string, error) {
 	changedAttribLines := make(map[string]string, len(patterns))
 	var output strings.Builder
 
@@ -54,9 +53,7 @@ func TrackPatterns(ctx context.Context, patterns []string, verbose bool, dryRun 
 	return output.String(), nil
 }
 
-func ListTrackedPatterns(ctx context.Context, verbose bool) (string, error) {
-	_ = ctx
-	_ = verbose
+func ListTrackedPatterns(_ context.Context, _ bool) (string, error) {
 
 	attribContents, err := readLocalGitAttributes()
 	if err != nil {
@@ -92,9 +89,7 @@ func ListTrackedPatterns(ctx context.Context, verbose bool) (string, error) {
 	return out.String(), nil
 }
 
-func UntrackPatterns(ctx context.Context, patterns []string, verbose bool, dryRun bool) (string, error) {
-	_ = ctx
-	_ = verbose
+func UntrackPatterns(_ context.Context, patterns []string, _ bool, dryRun bool) (string, error) {
 
 	attribContents, err := readLocalGitAttributes()
 	if err != nil {

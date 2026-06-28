@@ -48,7 +48,9 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 	}
 
 	if out != "" {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+			return fmt.Errorf("write untrack output: %w", err)
+		}
 	}
 	return nil
 }

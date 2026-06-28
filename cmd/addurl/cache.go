@@ -52,7 +52,9 @@ func updatePrecommitCache(ctx context.Context, logger *slog.Logger, pathArg, oid
 		return err
 	}
 	if contentChanged {
-		_ = precommit_cache.RemoveOIDPath(cache, prevEntry.LFSOID, relPath, now)
+		if err := precommit_cache.RemoveOIDPath(cache, prevEntry.LFSOID, relPath, now); err != nil {
+			return fmt.Errorf("remove stale OID path mapping for %s: %w", relPath, err)
+		}
 	}
 	return nil
 }

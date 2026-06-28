@@ -47,7 +47,7 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		logg := drslog.GetLogger()
 
 		cfg, err := loadCfg()
@@ -84,7 +84,11 @@ var Cmd = &cobra.Command{
 
 		progress := newPullProgressRenderer(os.Stderr)
 		progress.OnPlan(pointers)
-		defer progress.Finish()
+		defer func() {
+			if finishErr := progress.Finish(); retErr == nil && finishErr != nil {
+				retErr = fmt.Errorf("finalize pull progress: %w", finishErr)
+			}
+		}()
 
 		if dryRun {
 			for _, f := range pointers {

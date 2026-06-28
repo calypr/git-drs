@@ -55,17 +55,17 @@ func (r *Renderer) SetTTY(isTTY bool) {
 	r.isTTY = isTTY
 }
 
-func (r *Renderer) Render(force bool, lines []string) {
+func (r *Renderer) Render(force bool, lines []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if len(lines) == 0 {
-		return
+		return nil
 	}
 
 	now := r.now()
 	if !force && !r.isTTY && !r.lastRender.IsZero() && now.Sub(r.lastRender) < NonTTYProgressInterval {
-		return
+		return nil
 	}
 	r.lastRender = now
 	r.spinnerIndex = (r.spinnerIndex + 1) % len(SpinnerFrames)
@@ -73,45 +73,61 @@ func (r *Renderer) Render(force bool, lines []string) {
 
 	if r.isTTY {
 		if r.renderedLines > 0 {
-			_, _ = fmt.Fprintf(r.out, "\x1b[%dA", r.renderedLines)
+			if _, err := fmt.Fprintf(r.out, "\x1b[%dA", r.renderedLines); err != nil {
+				return err
+			}
 		}
 		for _, line := range lines {
-			_, _ = fmt.Fprintf(r.out, "\r\x1b[2K%s\n", line)
+			if _, err := fmt.Fprintf(r.out, "\r\x1b[2K%s\n", line); err != nil {
+				return err
+			}
 		}
 		r.renderedLines = len(lines)
-		return
+		return nil
 	}
 
 	for _, line := range lines {
-		_, _ = fmt.Fprintln(r.out, line)
+		if _, err := fmt.Fprintln(r.out, line); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (r *Renderer) Finish(lines []string) {
+func (r *Renderer) Finish(lines []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.active {
-		return
+		return nil
 	}
 	r.lastRender = r.now()
 	if len(lines) > 0 {
 		if r.isTTY {
 			if r.renderedLines > 0 {
-				_, _ = fmt.Fprintf(r.out, "\x1b[%dA", r.renderedLines)
+				if _, err := fmt.Fprintf(r.out, "\x1b[%dA", r.renderedLines); err != nil {
+					return err
+				}
 			}
 			for _, line := range lines {
-				_, _ = fmt.Fprintf(r.out, "\r\x1b[2K%s\n", line)
+				if _, err := fmt.Fprintf(r.out, "\r\x1b[2K%s\n", line); err != nil {
+					return err
+				}
 			}
 			r.renderedLines = len(lines)
 		} else {
 			for _, line := range lines {
-				_, _ = fmt.Fprintln(r.out, line)
+				if _, err := fmt.Fprintln(r.out, line); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	_, _ = fmt.Fprintln(r.out)
+	if _, err := fmt.Fprintln(r.out); err != nil {
+		return err
+	}
 	r.active = false
 	r.renderedLines = 0
+	return nil
 }
 
 func (r *Renderer) Spinner() string {

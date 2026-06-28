@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		fmt.Fprintln(os.Stderr, "DEBUG: ENTERING RunE for push")
 		myLogger := drslog.GetLogger()
 		ctx := context.Background()
@@ -100,10 +100,14 @@ var Cmd = &cobra.Command{
 		progress := newUploadProgressRenderer(os.Stderr)
 		if err := pushsync.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush failed:", err)
-			progress.Finish()
+			if finishErr := progress.Finish(); finishErr != nil {
+				return fmt.Errorf("failed batch register/upload workflow: %w (progress finalize error: %v)", err, finishErr)
+			}
 			return fmt.Errorf("failed batch register/upload workflow: %w", err)
 		}
-		progress.Finish()
+		if err := progress.Finish(); err != nil {
+			return fmt.Errorf("finalize upload progress: %w", err)
+		}
 		fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush completed successfully")
 		switch {
 		case len(lfsFiles) == 0:

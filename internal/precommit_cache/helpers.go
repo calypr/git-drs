@@ -243,7 +243,7 @@ func sortedKeys(values map[string]struct{}) []string {
 	return out
 }
 
-func writeJSONAtomic(path string, v any) error {
+func writeJSONAtomic(path string, v any) (retErr error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -254,23 +254,41 @@ func writeJSONAtomic(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) && retErr == nil {
+			retErr = closeErr
+		}
+	}()
 
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
+		if rmErr := removeIfExists(tmp); rmErr != nil {
+			return errors.Join(err, rmErr)
+		}
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func removeIfExists(path string) error {
+	err := os.Remove(path)
+	if err == nil || errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 // gitRevParseGitDir runs `git rev-parse --git-dir` (and `--show-toplevel` if

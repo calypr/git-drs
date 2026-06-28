@@ -33,50 +33,26 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon ref from go.mod
-        id: syfon-ref
+      - name: Resolve Syfon module directory
+        id: syfon-root
         working-directory: git-drs
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
-          if [[ -z "$version" || "$version" == "<nil>" ]]; then
-            version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon/client)"
+          module="github.com/calypr/syfon"
+          if ! go mod download "$module"; then
+            module="github.com/calypr/syfon/client"
+            go mod download "$module"
           fi
-          ref="$version"
-          if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
-            short_ref="${BASH_REMATCH[1]}"
-            ref=""
-            if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-              ref="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/calypr/syfon/commits/$short_ref" | grep -o '"sha": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
-            fi
-            if [[ -z "$ref" ]]; then
-              ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v want="$short_ref" '$1 ~ ("^" want) { print $1; exit }')"
-            fi
-            if [[ -z "$ref" ]]; then
-              echo "error: could not resolve full Syfon commit for pseudo-version $version (short ref $short_ref)" >&2
-              exit 1
-            fi
+          root="$(go list -m -f '{{ .Dir }}' "$module")"
+          if [[ -z "$root" || "$root" == "<nil>" ]]; then
+            echo "error: could not resolve module directory for $module" >&2
+            exit 1
           fi
+          version="$(go list -m -f '{{ .Version }}' "$module")"
+          echo "module=$module" >> "$GITHUB_OUTPUT"
+          echo "root=$root" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
-
-      - name: Check out Syfon
-        uses: actions/checkout@v4
-        with:
-          repository: calypr/syfon
-          ref: ${{ steps.syfon-ref.outputs.ref }}
-          path: syfon
-          fetch-depth: 1
-
-      - name: Check out data-client
-        uses: actions/checkout@v4
-        with:
-          repository: calypr/data-client
-          path: data-client
-          fetch-depth: 1
+          echo "Using Syfon module $module at version $version from $root"
 
       - name: Install test prerequisites
         working-directory: git-drs
@@ -89,5 +65,5 @@ jobs:
         working-directory: git-drs
         env:
           SYFON_E2E_DOCKER: "1"
-          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
+          TEST_SYFON_ROOT: ${{ steps.syfon-root.outputs.root }}
         run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

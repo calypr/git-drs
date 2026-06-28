@@ -81,10 +81,10 @@ Then move or copy the built binary somewhere on your `PATH`.
 
 ## What Installation Does Not Do
 
-Installing the binary does not configure a repository. Repository-local setup now happens when you run:
+Installing the binary does not configure a repository. Repository-local setup now normally happens when you run:
 
 ```bash
-git drs remote add ...
+git drs remote add gen3 ...
 ```
 
 ## Read Next

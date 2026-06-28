@@ -11,7 +11,7 @@ You do **not** need Git LFS installed in order to:
 - install `git-drs`
 - add a `git-drs` remote
 - track files with `git drs track`
-- upload with `git push` or `git drs push`
+- upload with `git drs push`
 - hydrate data with `git drs pull`
 
 ## When Git LFS Still Matters
@@ -34,4 +34,4 @@ For current workflows, prefer:
 | Track files | `git drs track "*.bam"` |
 | See tracked files | `git drs ls-files` |
 | Hydrate file content | `git drs pull` |
-| Upload/register data | `git push` or `git drs push` |
+| Upload/register data | `git drs push` |

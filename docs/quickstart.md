@@ -97,23 +97,25 @@ git commit -m "Configure tracked files"
 
 ## 5. Day-One Commands
 
-Pull Git history:
+Update Git history:
 
 ```bash
 git pull
 ```
 
-Hydrate tracked files:
+Hydrate tracked pointer files already present in the checkout:
 
 ```bash
 git drs pull
 ```
 
-Upload/register tracked objects:
+Register/upload tracked objects and complete the managed push flow:
 
 ```bash
 git drs push
 ```
+
+Use plain `git push` only when you intentionally want Git-only ref updates without the managed `git-drs` upload/registration path.
 
 ## Read Next
 

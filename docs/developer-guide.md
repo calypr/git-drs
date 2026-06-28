@@ -1,150 +1,165 @@
 # Developer Guide
 
-This guide covers Git DRS internals, architecture, and development information.
+This guide describes the current `git-drs` architecture after the CLI and internal cleanup passes.
 
-## Architecture Overview
+## High-Level Model
 
-Git DRS integrates with Git through several mechanisms:
+`git-drs` sits between normal Git workflows and Syfon/Gen3-backed object workflows.
 
-### Git Hooks Integration
+Use the tools at the right layer:
 
-**Pre-commit Hook**: `git drs precommit`
-- Triggered automatically before each commit
-- Processes all staged files
-- Creates DRS records for new files
-- Only processes files that don't already exist on the DRS server
-- Prepares metadata for later upload during push
+- use `git` for commits, branches, merges, `git pull`, and plain `git push`
+- use `git-drs` for remote configuration, tracking rules, object hydration, object registration/upload, and tracked-file delete reconciliation
 
-**Managed Push/Pull**
-- `git drs push` performs the register/upload workflow directly through the syfon client stack
-- `git drs pull` performs the download workflow directly through the syfon client stack
+The important command split is:
 
-### File Processing Flow
+- `git pull` updates Git history and checkout state
+- `git drs pull` hydrates tracked pointer files already present in the checkout
+- `git drs push` performs the managed data push path: metadata registration, upload when needed, delete reconciliation, and then the Git push flow
+- plain `git push` is plain Git only
 
-```
-1. Developer: git add file.bam
-2. Developer: git commit -m "Add data"
-3. Git Hook: git drs precommit
-   - Creates DRS object metadata
-   - Stores in .git/drs/ directory
-4. Git DRS:
-   - `git drs push` runs register/upload directly
-   - `git drs pull` runs download directly
-```
+## Current Package Ownership
 
-## Current Data Path
+The current codebase is organized around a few clear owners:
 
-Git DRS no longer uses a custom transfer agent.
+- `cmd/...`
+  - CLI entrypoints and command-local workflow
+  - commands may still own substantial logic when that logic is specific to one command
+- `internal/transfer`
+  - upload/download execution
+  - pull/push progress rendering
+  - delete reconciliation derived from pushed Git history
+- `internal/filter`
+  - clean/smudge logic
+  - long-running Git filter-process protocol handling
+  - skip-smudge behavior
+- `internal/lookup`
+  - scoped DRS object lookup and record matching
+- `internal/gitrepo`
+  - repo-local Git wiring
+  - `.gitattributes` tracking manipulation
+  - repo-local path/config helpers
+- `internal/remoteruntime`
+  - live remote runtime/client assembly from stored config
+  - credential refresh/bootstrap needed to build a working client context
+- `internal/config`
+  - persisted repo config model and config I/O
+- `internal/precommit_cache`
+  - pre-commit cache layout, JSON types, and shared cache-path helpers
+  - not the owner of hook policy
 
-- Upload path (primary): `git drs push` discovers local pointers, bulk-registers missing objects, checks validity, and uploads missing bits.
-- Download path (primary): `git drs pull` resolves object records and downloads into local object storage.
+## Repository-Local State
 
-## Repository Structure
+`git-drs` keeps local state under `.git/drs/`.
 
-### Core Components
+The important split is:
 
-```
-cmd/                    # CLI command implementations
-├── initialize/         # Repository initialization
-├── push/               # Register/upload workflow
-├── pull/               # Download workflow
-├── precommit/         # Pre-commit hook
-├── addurl/            # Cloud object URL reference handling
-└── ...
+- `.git/drs/lfs/objects`
+  - authoritative local DRS metadata objects
+  - consumed directly by commands such as `git drs push` and `git drs query`
+- `.git/drs/pre-commit`
+  - rebuildable local cache for path/OID/external URL bookkeeping
+  - currently written by `git drs precommit` and `git drs add-url`
 
-client/                # DRS client implementations
-├── interface.go       # Client interface definitions
-├── DRS.go         # Gen3/DRS client
-└── drs-map.go        # File mapping utilities
+The pre-commit cache is non-authoritative and safe to rebuild. The local DRS metadata objects are the real local source of truth.
 
-config/                # Configuration management
-└── config.go         # Config file handling
+## Current Workflow Paths
 
-drs/                   # DRS object utilities
-├── object.go         # DRS object structures
-└── util.go           # Utility functions
+### Setup path
 
-lfs/                   # Pointer utilities
-└── lfs.go            # Pointer/discovery helpers
+`git drs remote add gen3 ...` or `git drs remote add local ...` is the standard entrypoint for connecting a repository.
 
-utils/                 # Shared utilities
-├── common.go         # Common functions
-├── lfs-track.go      # Tracking utilities
-└── util.go           # General utilities
-```
+That path:
 
-### Configuration System
+- stores or refreshes remote config
+- prepares credentials for the selected runtime
+- bootstraps repo-local `git-drs` wiring when it is missing
 
-**Repository Configuration**: `.git/drs/config.yaml`
-```yaml
-current_server: gen3
-servers:
-  gen3:
-    endpoint: "https://data.example.org/"
-    profile: "myprofile"
-    project: "project-123"
-    bucket: "data-bucket"
-```
+You can still run `git drs init` explicitly, but the normal onboarding path is `remote add`.
 
-### DRS Object Management
+### Push path
 
-Local DRS metadata objects are stored in `.git/drs/lfs/objects/`. The separate `.git/drs/pre-commit/` tree is only a rebuildable local cache for path/OID bookkeeping.
+`git drs push`:
 
-## Development Setup
+- discovers local pointer/object metadata
+- looks up existing scoped records
+- registers missing metadata
+- uploads missing payload bytes when local content exists
+- reconciles committed tracked-file deletes from the Git ref delta
+- then completes the Git push flow
 
-### Prerequisites
+The managed push path runs directly through the current Syfon client/runtime stack.
 
-- Go 1.26.2+
-- Access to a DRS server for testing
+### Pull path
 
-### Building from Source
+`git drs pull`:
+
+- scans tracked pointer files in the current checkout
+- resolves matching DRS records for the configured remote scope
+- downloads payload bytes into the local cache/object area
+- hydrates worktree files
+
+It does not run `git pull`.
+
+### Filter path
+
+Git clean/smudge/filter-process integration is handled by the current filter stack:
+
+- `git-drs clean`
+- `git-drs smudge`
+- `git-drs filter`
+
+These commands use `internal/filter` plus `internal/transfer` rather than an old custom transfer-agent model.
+
+## Pre-Commit Ownership
+
+The current hook story is narrower than older versions of the repo:
+
+- `git drs precommit`
+  - reads staged Git content only
+  - updates the rebuildable `.git/drs/pre-commit` cache
+  - does not perform network I/O
+- `git drs add-url`
+  - writes a pointer file
+  - writes authoritative local DRS metadata
+  - updates the pre-commit cache for local coherence
+
+Neither plain `git push` nor `git drs push` depends on the pre-commit cache for remote registration.
+
+## Development Notes
+
+### Building
 
 ```bash
-# Clone repository
-git clone https://github.com/calypr/git-drs.git
-cd git-drs
-
-# Install dependencies
-go mod download
-
-# Build
 go build
-
-# Install locally
-export PATH=$PATH:$(pwd)
 ```
 
-### Development Workflow
-
-1. **Make changes** to source code
-2. **Build and test**:
-   ```bash
-   go build
-   go test ./...
-   ```
-3. **Test with real repository**:
-   ```bash
-   cd /path/to/test-repo
-   /path/to/git-drs/git-drs --help
-   ```
-
-## Debugging and Logging
-
-### Log Locations
-
-- **Commit logs**: `.git/drs/git-drs.log`
-- **Push/Pull logs**: `.git/drs/git-drs.log`
-
-
-## Testing
-
-### Unit Tests
+### Compile-oriented sweep
 
 ```bash
-# Test specific functionality
-go test ./utils -run TestTrack
+GOCACHE=$(pwd)/.gocache go test ./... -run TestDoesNotExist -count=1 -vet=off
 ```
 
-### Integration Tests
+### Lint
 
-**WIP**
+```bash
+GOCACHE=$(pwd)/.gocache make lint
+```
+
+### Real-repo verification
+
+When debugging behavior, validate the actual workflow split:
+
+```bash
+git drs remote list
+git drs ls-files
+git drs ls-files --drs
+git drs pull --dry-run
+```
+
+That usually distinguishes:
+
+- remote/config issues
+- tracking issues
+- hydration issues
+- DRS registration issues

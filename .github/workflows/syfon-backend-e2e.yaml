@@ -47,9 +47,16 @@ jobs:
           ref="$version"
           if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
             short_ref="${BASH_REMATCH[1]}"
-            ref="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/calypr/syfon/commits/$short_ref" | grep -o '"sha": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
+            ref=""
+            if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+              ref="$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/calypr/syfon/commits/$short_ref" | grep -o '"sha": *"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
+            fi
             if [[ -z "$ref" ]]; then
-              ref="$short_ref"
+              ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v want="$short_ref" '$1 ~ ("^" want) { print $1; exit }')"
+            fi
+            if [[ -z "$ref" ]]; then
+              echo "error: could not resolve full Syfon commit for pseudo-version $version (short ref $short_ref)" >&2
+              exit 1
             fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"

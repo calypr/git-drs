@@ -145,7 +145,7 @@ git drs ls-files --drs
 Then retry with higher Git/HTTP verbosity if needed:
 
 ```bash
-GIT_TRACE=1 GIT_CURL_VERBOSE=1 git push
+GIT_TRACE=1 GIT_CURL_VERBOSE=1 git drs push
 ```
 
 ### Failed clone or fresh checkout still has pointer files
@@ -317,7 +317,7 @@ And for the underlying Gen3 profile data:
 
 If you want the least surprising fix, just re-run `git drs remote add gen3 ...` with the current credential file. That updates the stored profile and repo token plumbing in one step.
 
-### `git push` fails with upload or register errors
+### `git drs push` fails with upload or register errors
 
 Check:
 
@@ -332,6 +332,14 @@ Typical root causes:
 - wrong remote selected
 - missing server-side bucket mapping
 - object registration or upload permissions missing for the target scope
+
+If the failure happened during managed data push behavior, make sure you actually ran:
+
+```bash
+git drs push
+```
+
+Plain `git push` does not run `git-drs` registration/upload behavior.
 
 ### Files are not being tracked
 

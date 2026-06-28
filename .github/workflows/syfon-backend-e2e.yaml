@@ -37,8 +37,6 @@ jobs:
         id: syfon-ref
         working-directory: git-drs
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon)"
           if [[ -z "$version" || "$version" == "<nil>" ]]; then
@@ -46,12 +44,8 @@ jobs:
             exit 1
           fi
           short_ref="${version##*-}"
-          api_url="https://api.github.com/repos/calypr/syfon/commits/$short_ref"
-          full_ref="$(curl -fsSL \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$api_url" | jq -r '.sha')"
-          if [[ -z "$full_ref" || "$full_ref" == "null" ]]; then
+          full_ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v short="$short_ref" '$1 ~ "^" short { print $1; exit }')"
+          if [[ -z "$full_ref" ]]; then
             echo "error: could not resolve full syfon commit for $short_ref" >&2
             exit 1
           fi

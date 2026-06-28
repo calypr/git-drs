@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
+	calyprconf "github.com/calypr/calypr-cli/conf"
+	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	syclient "github.com/calypr/syfon/client"
 	syconf "github.com/calypr/syfon/client/config"
@@ -59,7 +60,7 @@ func (s Gen3Remote) GetBucketName() string    { return s.Bucket }
 func (s Gen3Remote) GetStoragePrefix() string { return s.StoragePrefix }
 
 func (s Gen3Remote) GetClient(remoteName string, logger *slog.Logger) (*GitContext, error) {
-	manager := syconf.NewConfigure(logger)
+	manager := calyprconf.NewConfigure(logger)
 	cred, err := manager.Load(remoteName)
 	if err != nil {
 		return nil, err

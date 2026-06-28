@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
+	conf "github.com/calypr/calypr-cli/conf"
+	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 

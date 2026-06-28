@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
+	"github.com/calypr/calypr-cli/conf"
+	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
-	conf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 

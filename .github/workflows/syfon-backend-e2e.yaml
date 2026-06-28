@@ -44,7 +44,7 @@ jobs:
             exit 1
           fi
           short_ref="${version##*-}"
-          full_ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v short="$short_ref" '$1 ~ "^" short { print $1; exit }')"
+          full_ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v short="$short_ref" '$1 ~ "^" short && first == "" { first = $1 } END { if (first != "") print first; else exit 1 }')"
           if [[ -z "$full_ref" ]]; then
             echo "error: could not resolve full syfon commit for $short_ref" >&2
             exit 1

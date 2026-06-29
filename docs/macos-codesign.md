@@ -1,6 +1,3 @@
-## Operation Guide
-
-```markdown
 # Git-DRS macOS Code Signing - Operation Guide
 
 ## Quick Start
@@ -34,7 +31,7 @@ base64 ~/Downloads/certificate.p12 | xclip -selection clipboard
 |------|-------|
 | `APPLE_CERT_DATA` | Paste base64-encoded certificate (from Step 2) |
 | `APPLE_CERT_PASSWORD` | Password used to protect the .p12 file |
-| `APPLE_TEAM_ID` | Your Apple Developer Team ID (e.g., ABC123XYZ4) |
+| `APPLE_TEAM_ID` | Codesign identity configured for the Apple Developer certificate |
 
 ### 2. Creating a Release
 
@@ -97,7 +94,7 @@ CodeDirectory v=20500 size=1234 flags=0x10200(runtime) hashes=5+7 ...
 
 **Cause:** Incorrect certificate password or Team ID
 **Solution:**
-1. Verify `APPLE_TEAM_ID` matches your Developer ID Application certificate
+1. Verify `APPLE_TEAM_ID` matches the configured Developer ID Application signing identity
 2. Verify `APPLE_CERT_PASSWORD` is correct (no extra spaces)
 3. Test certificate locally: `openssl pkcs12 -in certificate.p12 -passin pass:PASSWORD -noout`
 
@@ -186,4 +183,3 @@ If credentials are compromised:
 - [GoReleaser Code Signing Docs](https://goreleaser.com/customization/sign/)
 - [macOS Gatekeeper](https://support.apple.com/en-us/HT202491)
 - [drs_downloader Implementation](https://github.com/anvilproject/drs_downloader/blob/main/.github/workflows/build.yml)
-```

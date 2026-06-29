@@ -10,105 +10,46 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  goreleaser:
+    runs-on: macos-latest
     steps:
-      -
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      -
-        name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      -
-        name: Build binaries with GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: 'latest'
-          args: build --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      -
-        name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: goreleaser-builds
-          path: build/release/
-          retention-days: 1
 
-  sign:
-    needs: build
-    runs-on: macos-latest
-    steps:
-      -
-        name: Checkout
-        uses: actions/checkout@v4
-      -
-        name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: goreleaser-builds
-          path: build/release/
-      -
-        name: Import Apple Developer Certificate
-        run: |
-          # Create temporary keychain
-          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
-          security create-keychain -p "" $KEYCHAIN_PATH
-          security default-keychain -s $KEYCHAIN_PATH
-          security unlock-keychain -p "" $KEYCHAIN_PATH
-          
-          # Decode and import certificate
-          echo "${{ secrets.APPLE_CERT_DATA }}" | base64 --decode > $RUNNER_TEMP/certificate.p12
-          security import $RUNNER_TEMP/certificate.p12 \
-            -k $KEYCHAIN_PATH \
-            -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
-            -T /usr/bin/codesign
-          
-          # Set keychain settings
-          security set-keychain-settings -lut 3600 $KEYCHAIN_PATH
-      -
-        name: Sign macOS binaries
-        run: |
-          for binary in build/release/git-drs-darwin-*; do
-            if [ -f "$binary" ]; then
-              echo "Signing: $binary"
-              codesign --force \
-                --options=runtime \
-                -s "${{ secrets.APPLE_TEAM_ID }}" \
-                "$binary"
-              echo "✓ Signed: $binary"
-            fi
-          done
-      -
-        name: Verify signed binaries
-        run: |
-          echo "Verifying macOS code signatures..."
-          for binary in build/release/git-drs-darwin-*; do
-            if [ -f "$binary" ]; then
-              echo "Verifying: $binary"
-              codesign -v "$binary"
-              echo "Details:"
-              codesign -dv "$binary" | head -5
-              echo ""
-            fi
-          done
-      -
-        name: Set up Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      -
-        name: Release with GoReleaser
+
+      - name: Import Apple Developer certificate
+        env:
+          APPLE_CERT_DATA: ${{ secrets.APPLE_CERT_DATA }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+
+          printf '%s' "$APPLE_CERT_DATA" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Release with GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: 'latest'
+          version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SKIP_VALIDATE: true
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

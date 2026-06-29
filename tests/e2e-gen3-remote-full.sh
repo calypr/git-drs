@@ -853,7 +853,7 @@ auth_preflight() {
   fi
   local probe_oid probe status out body
   probe_oid="e2e-auth-probe"
-  probe="${DRS_URL%/}/data/upload/${probe_oid}?bucket=${BUCKET}&file_name=${probe_oid}"
+  probe="${DRS_URL%/}/data/upload/${probe_oid}?bucket=${BUCKET}&key=${probe_oid}"
   out="$(mktemp)"
   status="$(curl -sS -o "$out" -w '%{http_code}' \
     -H "Authorization: Bearer $GEN3_TOKEN" \
@@ -968,7 +968,7 @@ multipart_preflight() {
     -H "Accept: application/json" \
     -H "Content-Type: application/json" \
     "$url" \
-    -d "{\"file_name\":\"e2e-multipart-preflight.bin\",\"bucket\":\"$BUCKET\"}" || true)"
+    -d "{\"key\":\"e2e-multipart-preflight.bin\",\"bucket\":\"$BUCKET\"}" || true)"
   body="$(cat "$out")"
   rm -f "$out"
 
@@ -1758,9 +1758,9 @@ main() {
     api_json POST "${INDEXD_BASE}/bulk/sha256/validity" "$validity_body" "200" >/dev/null
     api_json POST "${DRS_URL%/}/index/bulk/documents" "$(jq -n --argjson ids "$all_oids_json" '$ids')" "200" >/dev/null
 
-    api_json GET "${DRS_URL%/}/data/upload/$single_oid?bucket=$active_bucket&file_name=$single_oid" "" "200,401,403,404" >/dev/null
+    api_json GET "${DRS_URL%/}/data/upload/$single_oid?bucket=$active_bucket&key=$single_oid" "" "200,401,403,404" >/dev/null
     api_json GET "${DRS_URL%/}/data/download/$single_oid" "" "200,302,307,401,403,404" >/dev/null
-    api_json GET "${DRS_URL%/}/data/upload/$single_oid?bucket=$active_bucket&file_name=$single_oid" "" "200,401,403,404" >/dev/null
+    api_json GET "${DRS_URL%/}/data/upload/$single_oid?bucket=$active_bucket&key=$single_oid" "" "200,401,403,404" >/dev/null
     api_json GET "${DRS_URL%/}/data/download/$single_oid" "" "200,302,307,401,403,404" >/dev/null
 
     api_json GET "$BUCKET_API_BASE" "" "200,401,403" >/dev/null

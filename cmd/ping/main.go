@@ -10,6 +10,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	syservices "github.com/calypr/syfon/client/services"
 	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
@@ -196,7 +197,12 @@ func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeA
 	}
 
 	if project != "" {
-		if _, err := gc.Client.DRS().GetProjectSample(ctx, project, 1); err != nil {
+		if _, err := gc.Client.Index().List(ctx, syservices.ListRecordsOptions{
+			Organization: organization,
+			ProjectID:    project,
+			Limit:        1,
+			Page:         1,
+		}); err != nil {
 			return scopeAccessInfo{}, fmt.Errorf("project listing failed: %w", err)
 		}
 		info.ProjectReadable = true

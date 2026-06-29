@@ -1,3 +1,5 @@
+version: 2
+
 builds:
   - id: darwin-amd64
     binary: git-drs
@@ -41,8 +43,6 @@ env_files:
   github_token: .github_token
 
 archives:
-  - format: tar.gz
-    name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-{{.Version}}"
 
 binary_signs:
   - cmd: codesign
@@ -56,3 +56,6 @@ binary_signs:
       - darwin-amd64
       - darwin-arm64
     stdin: "{{.Env.APPLE_CERT_PASSWORD}}"
+  - formats:
+      - tar.gz
+    name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-v{{.Version}}"

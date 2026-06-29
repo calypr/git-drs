@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -52,6 +53,25 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		logg := drslog.GetLogger()
 
+		inventory, err := loadWorktreeInventory(logg)
+		if err != nil {
+			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
+		}
+		pointers := collectPointerFiles(inventory, includePatterns)
+		if len(pointers) == 0 {
+			logg.Debug("no matching pointer files to hydrate")
+			return nil
+		}
+
+		if dryRun {
+			for _, f := range pointers {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), f.Name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
 		cfg, err := loadCfg()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
@@ -74,16 +94,6 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		inventory, err := loadWorktreeInventory(logg)
-		if err != nil {
-			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
-		}
-		pointers := collectPointerFiles(inventory, includePatterns)
-		if len(pointers) == 0 {
-			logg.Debug("no matching pointer files to hydrate")
-			return nil
-		}
-
 		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
 		progress.OnPlan(toPullFiles(pointers))
 		defer func() {
@@ -91,15 +101,6 @@ var Cmd = &cobra.Command{
 				retErr = fmt.Errorf("finalize pull progress: %w", finishErr)
 			}
 		}()
-
-		if dryRun {
-			for _, f := range pointers {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), f.Name); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
 
 		ctx := context.Background()
 		missingOIDs := make([]string, 0, len(pointers))
@@ -175,6 +176,10 @@ var Cmd = &cobra.Command{
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
+						if err := verifyObjectAtPath(dstPath, f.Oid, f.Size); err != nil {
+							_ = os.Remove(dstPath)
+							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
+						}
 						continue
 					}
 				}
@@ -182,12 +187,19 @@ var Cmd = &cobra.Command{
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
+				if err := verifyObjectAtPath(dstPath, f.Oid, f.Size); err != nil {
+					_ = os.Remove(dstPath)
+					return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
+				}
 			}
 		} else {
 			logg.Debug("no missing pointer objects to download")
 		}
 
 		if err := checkoutDownloadedFiles(pointers, progress); err != nil {
+			return err
+		}
+		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
 			return err
 		}
 
@@ -296,6 +308,20 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 	return state, nil
 }
 
+func verifyObjectAtPath(path, expectedOID string, expectedSize int64) error {
+	state, err := inspectCachedObject(path, expectedOID, expectedSize)
+	if err != nil {
+		return err
+	}
+	if !state.exists {
+		return fmt.Errorf("object missing at %s", path)
+	}
+	if !state.complete {
+		return fmt.Errorf("object at %s does not match expected oid/size", path)
+	}
+	return nil
+}
+
 func calculateFileSHA256(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -357,6 +383,9 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
+		if err := verifyObjectAtPath(srcPath, f.Oid, f.Size); err != nil {
+			return fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
+		}
 		src, err := os.Open(srcPath)
 		if err != nil {
 			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
@@ -385,7 +414,48 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err := src.Close(); err != nil {
 			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
 		}
+		if err := verifyObjectAtPath(f.Name, f.Oid, f.Size); err != nil {
+			if removeErr := os.Remove(f.Name); removeErr != nil && !os.IsNotExist(removeErr) {
+				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
+			}
+			return fmt.Errorf("checked out invalid content for %s: %w", f.Name, err)
+		}
 		progress.OnCompleted(toPullFile(f))
+	}
+	return nil
+}
+
+func refreshGitIndexForHydratedFiles(files []pointerFile) error {
+	paths := make([]string, 0, len(files))
+	seen := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		path := strings.TrimSpace(f.Name)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+
+	// Re-run Git's clean filter on the just-hydrated paths so the index/worktree
+	// bookkeeping matches stock LFS behavior. The hydrated bytes were already
+	// verified against the pointer OID/size above, so this should be a
+	// semantic no-op that only clears the false-dirty state.
+	args := append([]string{"add", "--"}, paths...)
+	cmd := exec.Command("git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			return fmt.Errorf("failed to refresh git index for hydrated files: %w", err)
+		}
+		return fmt.Errorf("failed to refresh git index for hydrated files: %w: %s", err, msg)
 	}
 	return nil
 }

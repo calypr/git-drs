@@ -20,7 +20,6 @@ type copyRecord struct {
 	CreatedTime      *string                `json:"created_time,omitempty"`
 	Description      *string                `json:"description,omitempty"`
 	Did              string                 `json:"did"`
-	FileName         *string                `json:"file_name,omitempty"`
 	Name             *string                `json:"name,omitempty"`
 	Hashes           *copyHashInfo          `json:"hashes,omitempty"`
 	Organization     *string                `json:"organization,omitempty"`

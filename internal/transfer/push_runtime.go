@@ -239,7 +239,7 @@ func resolveScopedUploadURL(rt *pushRuntime, ctx context.Context, backend sytran
 		query := url.Values{}
 		query.Set("organization", organization)
 		query.Set("project", project)
-		query.Set("file_name", objectKey)
+		query.Set("key", objectKey)
 		var out internalapi.InternalSignedURL
 		if err := rt.API.Client.Requestor().Do(ctx, http.MethodGet, "/data/upload/"+url.PathEscape(did), nil, &out, syrequest.WithQueryValues(query)); err != nil {
 			return "", err

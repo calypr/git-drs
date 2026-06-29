@@ -85,8 +85,8 @@ var Cmd = &cobra.Command{
 				if err := displayField(os.Stderr, "  DID", sample.Did); err != nil {
 					return err
 				}
-				if sample.FileName != nil && *sample.FileName != "" {
-					if err := displayField(os.Stderr, "  Filename", *sample.FileName); err != nil {
+				if sample.Name != nil && *sample.Name != "" {
+					if err := displayField(os.Stderr, "  Name", *sample.Name); err != nil {
 						return err
 					}
 				}

@@ -21,14 +21,13 @@ archives:
   - format: tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-{{.Version}}"
 
-signs:
+binary_signs:
   - cmd: codesign
     args:
       - "--force"
       - "--options=runtime"
       - "-s"
       - "{{.Env.APPLE_TEAM_ID}}"
-      - "{{.Path}}"
+      - "${artifact}"
     goos: darwin
-    artifacts: binary
     stdin: "{{.Env.APPLE_CERT_PASSWORD}}"

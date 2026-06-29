@@ -20,3 +20,15 @@ env_files:
 archives:
   - format: tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-{{.Version}}"
+
+signs:
+  - cmd: codesign
+    args:
+      - "--force"
+      - "--options=runtime"
+      - "-s"
+      - "{{.Env.APPLE_TEAM_ID}}"
+      - "{{.Path}}"
+    goos: darwin
+    artifacts: binary
+    stdin: "{{.Env.APPLE_CERT_PASSWORD}}"

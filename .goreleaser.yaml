@@ -52,3 +52,5 @@ archives:
   - formats:
       - tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-v{{.Version}}"
+    files:
+      - none: "*"

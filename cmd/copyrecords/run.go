@@ -15,17 +15,14 @@ type copyStats struct {
 	Written    int
 }
 
-func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteNameFileName bool) (copyStats, error) {
+func copyProjectRecords(ctx context.Context, logger *slog.Logger, source []copyRecord, dst indexAPI, org, project string, batchSize int, overwriteName bool) (copyStats, error) {
 	if batchSize <= 0 {
 		batchSize = 250
 	}
 
 	stats := copyStats{}
 	fmt.Fprintf(os.Stderr, "copy-records: scanning source records for %s/%s\n", org, project)
-	records, err := listSourceRecordsByControlledAccess(ctx, src, org, project, batchSize)
-	if err != nil {
-		return stats, err
-	}
+	records := source
 	stats.SourceSeen = len(records)
 	fmt.Fprintf(os.Stderr, "copy-records: source scan complete, %d records in scope\n", stats.SourceSeen)
 
@@ -37,7 +34,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, src indexAPI, 
 
 		batch := records[start:end]
 		fmt.Fprintf(os.Stderr, "copy-records: reconciling batch %d-%d of %d\n", start+1, end, len(records))
-		toWrite, batchStats, err := buildMergedBatch(ctx, dst, batch, overwriteNameFileName)
+		toWrite, batchStats, err := buildMergedBatch(ctx, dst, batch, overwriteName)
 		if err != nil {
 			return stats, err
 		}

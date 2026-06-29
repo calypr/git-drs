@@ -313,7 +313,7 @@ resolve_auth_from_profile_if_needed() {
 auth_preflight() {
   local probe_oid probe out status body
   probe_oid="monorepo-auth-probe"
-  probe="${DRS_URL%/}/data/upload/${probe_oid}?bucket=${ACTIVE_BUCKET}&file_name=${probe_oid}"
+  probe="${DRS_URL%/}/data/upload/${probe_oid}?bucket=${ACTIVE_BUCKET}&key=${probe_oid}"
   out="$(mktemp)"
   local curl_args=(-sS -o "$out" -w '%{http_code}' -H "Accept: application/json")
   if [[ "$SERVER_MODE" == "remote" ]]; then
@@ -373,7 +373,7 @@ multipart_preflight() {
   elif [[ -n "$ADMIN_AUTH_HEADER" ]]; then
     curl_args+=(-H "$ADMIN_AUTH_HEADER")
   fi
-  curl_args+=("$url" -d "{\"file_name\":\"monorepo-multipart-preflight.bin\",\"bucket\":\"$ACTIVE_BUCKET\"}")
+  curl_args+=("$url" -d "{\"key\":\"monorepo-multipart-preflight.bin\",\"bucket\":\"$ACTIVE_BUCKET\"}")
   status="$(curl "${curl_args[@]}" || true)"
   body="$(cat "$out")"
   rm -f "$out"

@@ -5,7 +5,7 @@ This repository includes small helper scripts used for listing and cleaning DRS 
 ## Scripts
 
 - `create-minio-alias.sh` — Configure a MinIO\/S3 alias for `mc` using positional parameters: `alias`, `endpoint`, `access_key`, `secret_key`, optional `--insecure`.
-- `list-drs-sha256` — List DRS object records with their did, sha256, file_name and resource.
+- `list-drs-sha256` — List DRS object records with their did, sha256, name and resource.
 - `list-s3-by-sha256` — Given a list of sha256 hashes, list S3 URLs for the files.
 - `delete-s3-by-sha256` — Given a list of sha256 hashes, delete files from S3 by their sha256.
 
@@ -26,7 +26,7 @@ The `--insecure` flag is optional and will pass `--insecure` to `mc alias set` t
 
 - Do not commit secrets. If you store credentials for tests, keep them out of the repository or add the file to `.gitignore`.
 - List data first to be careful with destructive commands.
-  - `list-drs-sha256` will list the did, sha256, file_name and resource.  You can pipe the output of this script into:
+  - `list-drs-sha256` will list the did, sha256, name and resource.  You can pipe the output of this script into:
     - list-s3-by-sha256 to get a list of S3 URLs for the files.
     - delete-s3-by-sha256 to delete files from S3 by their sha256.
 

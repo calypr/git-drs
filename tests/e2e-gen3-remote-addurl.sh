@@ -456,7 +456,7 @@ upload_fixture_to_bucket() {
   local key="$3"
   local src="$4"
   local sign_url signed_url
-  sign_url="${DRS_URL%/}/data/upload/${oid}?bucket=${bucket}&file_name=${key}"
+  sign_url="${DRS_URL%/}/data/upload/${oid}?bucket=${bucket}&key=${key}"
   signed_url="$(api_json GET "$sign_url" "" "200" | jq -r '.url // .Url // empty')"
   if [[ -z "$signed_url" ]]; then
     echo "error: failed to obtain signed upload URL from $sign_url" >&2

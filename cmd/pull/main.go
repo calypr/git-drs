@@ -52,6 +52,25 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		logg := drslog.GetLogger()
 
+		inventory, err := loadWorktreeInventory(logg)
+		if err != nil {
+			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
+		}
+		pointers := collectPointerFiles(inventory, includePatterns)
+		if len(pointers) == 0 {
+			logg.Debug("no matching pointer files to hydrate")
+			return nil
+		}
+
+		if dryRun {
+			for _, f := range pointers {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout(), f.Name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
 		cfg, err := loadCfg()
 		if err != nil {
 			return fmt.Errorf("error loading config: %v", err)
@@ -74,16 +93,6 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		inventory, err := loadWorktreeInventory(logg)
-		if err != nil {
-			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
-		}
-		pointers := collectPointerFiles(inventory, includePatterns)
-		if len(pointers) == 0 {
-			logg.Debug("no matching pointer files to hydrate")
-			return nil
-		}
-
 		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
 		progress.OnPlan(toPullFiles(pointers))
 		defer func() {
@@ -91,15 +100,6 @@ var Cmd = &cobra.Command{
 				retErr = fmt.Errorf("finalize pull progress: %w", finishErr)
 			}
 		}()
-
-		if dryRun {
-			for _, f := range pointers {
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), f.Name); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
 
 		ctx := context.Background()
 		missingOIDs := make([]string, 0, len(pointers))

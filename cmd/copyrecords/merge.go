@@ -9,7 +9,7 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
-func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, overwriteNameFileName bool) ([]copyRecord, copyStats, error) {
+func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, overwriteName bool) ([]copyRecord, copyStats, error) {
 	stats := copyStats{}
 	if len(source) == 0 {
 		return nil, stats, nil
@@ -76,7 +76,7 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 		if pending, ok := pendingUpdates[targetDID]; ok {
 			base = pending
 		}
-		merged, changed := mergeExistingRecord(base, src, overwriteNameFileName)
+		merged, changed := mergeExistingRecord(base, src, overwriteName)
 		if changed {
 			if _, ok := pendingUpdates[targetDID]; !ok {
 				updateOrder = append(updateOrder, targetDID)
@@ -153,17 +153,13 @@ func dedupeCopyRecordsByDID(records []copyRecord) []copyRecord {
 	return out
 }
 
-func mergeExistingRecord(dst, src copyRecord, overwriteNameFileName bool) (copyRecord, bool) {
+func mergeExistingRecord(dst, src copyRecord, overwriteName bool) (copyRecord, bool) {
 	merged := dst
 	changed := false
 
-	if overwriteNameFileName {
+	if overwriteName {
 		if !equalStringValuePointers(merged.Name, src.Name) {
 			merged.Name = src.Name
-			changed = true
-		}
-		if !equalStringValuePointers(merged.FileName, src.FileName) {
-			merged.FileName = src.FileName
 			changed = true
 		}
 	}

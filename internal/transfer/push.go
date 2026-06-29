@@ -229,8 +229,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 }
 
 func (s *batchSyncSession) metadataRecordForOID(oid string, obj *drsapi.DrsObject) internalapi.InternalRecord {
-	file := s.filesByOID[oid]
-	return localdrsobject.ConvertToInternalRecord(obj, file.Name, s.rt.Scope.Organization, s.rt.Scope.Project)
+	return localdrsobject.ConvertToInternalRecord(obj, s.rt.Scope.Organization, s.rt.Scope.Project)
 }
 
 func (s *batchSyncSession) findReusableRecord(records []drsapi.DrsObject) *drsapi.DrsObject {

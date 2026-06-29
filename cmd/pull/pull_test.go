@@ -56,7 +56,8 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	loadCfg = func() (*config.Config, error) { return &config.Config{}, nil }
 	resolveRemote = func(cfg *config.Config, name string) (config.Remote, error) { return config.Remote("origin"), nil }
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
-		return &remoteruntime.GitContext{}, nil
+		t.Fatal("newRemoteClient should not be called during dry-run")
+		return nil, nil
 	}
 	loadWorktreeInventory = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{

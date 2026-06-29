@@ -1,12 +1,35 @@
 version: 2
 
 builds:
-  - binary: git-drs
+  - id: darwin-amd64
+    binary: git-drs
     goos:
       - darwin
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=0
+  - id: darwin-arm64
+    binary: git-drs
+    goos:
+      - darwin
+    goarch:
+      - arm64
+    env:
+      - CGO_ENABLED=0
+  - id: linux-amd64
+    binary: git-drs
+    goos:
       - linux
     goarch:
       - amd64
+    env:
+      - CGO_ENABLED=0
+  - id: linux-arm64
+    binary: git-drs
+    goos:
+      - linux
+    goarch:
       - arm64
     env:
       - CGO_ENABLED=0
@@ -23,3 +46,15 @@ archives:
   - formats:
       - tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-v{{.Version}}"
+
+binary_signs:
+  - cmd: codesign
+    args:
+      - "--force"
+      - "--options=runtime"
+      - "-s"
+      - "{{.Env.APPLE_TEAM_ID}}"
+      - "${artifact}"
+    ids:
+      - darwin-amd64
+      - darwin-arm64

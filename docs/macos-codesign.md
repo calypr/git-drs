@@ -53,14 +53,42 @@ git push origin v1.0.0
 #### Verify Signed Binary
 ```bash
 # Download the darwin binary from the release
-# Then verify the code signature
+cd ~/Downloads
+
+# 1. Basic signature verification (will return silently if valid)
 codesign -v git-drs
 
-# Check signature details
+# 2. Check signature details (shows signer info)
 codesign -dv git-drs
 
-# Verify hardened runtime
+# 3. Display full certificate information
 codesign -dv --entitlements - git-drs
+
+# 4. Verify hardened runtime is enabled
+codesign -dv --entitlements :- git-drs | grep -i "hardened"
+
+# 5. Check signature on the specific architecture (Intel)
+codesign -v --arch x86_64 git-drs
+
+# 6. Check signature on the specific architecture (Apple Silicon)
+codesign -v --arch arm64 git-drs
+
+# 7. Extract and display certificate details
+codesign -dv git-drs 2>&1 | grep "Authority"
+```
+
+**Expected Output for Valid Signature:**
+```
+git-drs: valid on disk
+git-drs: satisfies its Designated Requirement
+```
+
+**Expected Output for Hardened Runtime:**
+```
+Executable=/path/to/git-drs
+Identifier=com.calypr.git-drs
+Format=Mach-O universal (Intel 64-bit + Apple Silicon)
+CodeDirectory v=20500 size=1234 flags=0x10200(runtime) hashes=5+7 ...
 ```
 
 ### 3. Troubleshooting
@@ -88,6 +116,14 @@ codesign -dv --entitlements - git-drs
 - macOS: Use `base64 -i` (correct)
 - Linux: Use `base64` alone (correct)
 - If errors persist, install GNU coreutils: `brew install coreutils`
+
+#### Issue: Signature verification fails with "code or signature have been modified"
+
+**Cause:** Binary was corrupted or modified after signing
+**Solution:**
+1. Re-download the binary from the release
+2. Verify checksum matches release notes (if provided)
+3. Check available disk space during download
 
 ### 4. Advanced: Notarization (Optional)
 

@@ -33,8 +33,8 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon ref from pinned module version
-        id: syfon-ref
+      - name: Resolve Syfon source from pinned module version
+        id: syfon-source
         working-directory: git-drs
         shell: bash
         run: |
@@ -43,24 +43,17 @@ jobs:
             echo "error: could not resolve pinned syfon version" >&2
             exit 1
           fi
-          ref="$version"
-          short_ref="${version##*-}"
-          if [[ "$version" == *-0.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] ]]; then
-            ref="$short_ref"
-          elif [[ "$version" =~ ^[0-9a-f]{7,40}$ ]]; then
-            ref="$version"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
 
-      - name: Check out Syfon
-        uses: actions/checkout@v4
-        with:
-          repository: calypr/syfon
-          ref: ${{ steps.syfon-ref.outputs.ref }}
-          path: syfon
-          fetch-depth: 1
+          go mod download github.com/calypr/syfon
+          root="$(go list -m -f '{{ .Dir }}' github.com/calypr/syfon)"
+          if [[ -z "$root" || "$root" == "<nil>" || ! -d "$root" ]]; then
+            echo "error: could not resolve downloaded syfon source directory for $version" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "root=$root" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version from $root"
 
       - name: Install test prerequisites
         working-directory: git-drs
@@ -73,5 +66,6 @@ jobs:
         working-directory: git-drs
         env:
           SYFON_E2E_DOCKER: "1"
-          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
+          TEST_SYFON_ROOT: ${{ steps.syfon-source.outputs.root }}
+          GOWORK: "off"
         run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

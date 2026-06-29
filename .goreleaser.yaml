@@ -9,6 +9,9 @@ builds:
       - amd64
     env:
       - CGO_ENABLED=0
+    hooks:
+      post:
+        - codesign --force --options=runtime -s "{{ .Env.APPLE_TEAM_ID }}" "{{ .Path }}"
   - id: darwin-arm64
     binary: git-drs
     goos:
@@ -17,6 +20,9 @@ builds:
       - arm64
     env:
       - CGO_ENABLED=0
+    hooks:
+      post:
+        - codesign --force --options=runtime -s "{{ .Env.APPLE_TEAM_ID }}" "{{ .Path }}"
   - id: linux-amd64
     binary: git-drs
     goos:
@@ -46,15 +52,3 @@ archives:
   - formats:
       - tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-v{{.Version}}"
-
-binary_signs:
-  - cmd: codesign
-    args:
-      - "--force"
-      - "--options=runtime"
-      - "-s"
-      - "{{.Env.APPLE_TEAM_ID}}"
-      - "${artifact}"
-    ids:
-      - darwin-amd64
-      - darwin-arm64

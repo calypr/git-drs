@@ -67,7 +67,7 @@ SQL=$(cat <<'SQL_EOF'
 \pset format unaligned
 \pset fieldsep ' '
 -- Select sha256 hashes for the relevant DIDs; :'resource_name' is substituted as a SQL string literal
-SELECT h.did, h.hash_value, r.file_name, a.resource
+SELECT h.did, h.hash_value, r.name, a.resource
   FROM index_record_hash AS h
   JOIN index_record_authz AS a
     ON a.did = h.did

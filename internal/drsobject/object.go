@@ -3,7 +3,6 @@ package drsobject
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"strings"
 
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -55,7 +54,7 @@ func BuildWithPrefix(fileName string, checksum string, size int64, drsID string,
 	})
 }
 
-func ConvertToInternalRecord(obj *drsapi.DrsObject, fileName string, organization string, project string) internalapi.InternalRecord {
+func ConvertToInternalRecord(obj *drsapi.DrsObject, organization string, project string) internalapi.InternalRecord {
 	if obj == nil {
 		return internalapi.InternalRecord{}
 	}
@@ -68,14 +67,12 @@ func ConvertToInternalRecord(obj *drsapi.DrsObject, fileName string, organizatio
 		}
 		hashes[typ] = val
 	}
-
-	fileName = filepath.ToSlash(strings.TrimSpace(fileName))
 	record := internalapi.InternalRecord{
 		Did:              strings.TrimSpace(obj.Id),
 		AccessMethods:    obj.AccessMethods,
 		ControlledAccess: obj.ControlledAccess,
 		Description:      obj.Description,
-		FileName:         &fileName,
+		Name:             obj.Name,
 		Hashes:           &hashes,
 		Size:             &obj.Size,
 		Version:          obj.Version,

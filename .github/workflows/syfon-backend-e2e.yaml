@@ -33,7 +33,7 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon commit from pinned module version
+      - name: Resolve Syfon ref from pinned module version
         id: syfon-ref
         working-directory: git-drs
         shell: bash
@@ -43,15 +43,13 @@ jobs:
             echo "error: could not resolve pinned syfon version" >&2
             exit 1
           fi
-          short_ref="${version##*-}"
-          full_ref="$(git ls-remote https://github.com/calypr/syfon.git | awk -v short="$short_ref" '$1 ~ "^" short && first == "" { first = $1 } END { if (first != "") print first; else exit 1 }')"
-          if [[ -z "$full_ref" ]]; then
-            echo "error: could not resolve full syfon commit for $short_ref" >&2
-            exit 1
+          ref="$version"
+          if [[ "$version" =~ -[0-9]{14}-([0-9a-f]{12})$ ]]; then
+            ref="${BASH_REMATCH[1]}"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "ref=$full_ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out calypr/syfon ref $full_ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
 
       - name: Check out Syfon
         uses: actions/checkout@v4

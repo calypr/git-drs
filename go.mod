@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/calypr/calypr-cli v0.0.4-0.20260628024636-bb44afe0c576
-	github.com/calypr/syfon v0.3.2-0.20260626185412-93de95693419
+	github.com/calypr/syfon v0.3.2-0.20260616212227-547f1e22e1ac
 	github.com/calypr/syfon/apigen v0.2.9-0.20260616212227-547f1e22e1ac
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
 	github.com/go-git/go-git/v5 v5.19.1

@@ -33,8 +33,8 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon source from pinned module version
-        id: syfon-source
+      - name: Resolve Syfon ref from pinned module version
+        id: syfon-ref
         working-directory: git-drs
         shell: bash
         run: |
@@ -44,16 +44,28 @@ jobs:
             exit 1
           fi
 
-          go mod download github.com/calypr/syfon
-          root="$(go list -m -f '{{ .Dir }}' github.com/calypr/syfon)"
-          if [[ -z "$root" || "$root" == "<nil>" || ! -d "$root" ]]; then
-            echo "error: could not resolve downloaded syfon source directory for $version" >&2
-            exit 1
+          ref="$version"
+          if [[ "$version" =~ -([0-9a-f]{12,40})$ ]]; then
+            ref="${BASH_REMATCH[1]}"
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "root=$root" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version from $root"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "Using Syfon module version $version; checking out local ref $ref"
+
+      - name: Check out Syfon
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/syfon
+          path: syfon
+          fetch-depth: 0
+
+      - name: Select pinned Syfon commit
+        working-directory: syfon
+        shell: bash
+        run: |
+          git checkout --detach "${{ steps.syfon-ref.outputs.ref }}"
+          git rev-parse --verify HEAD
 
       - name: Install test prerequisites
         working-directory: git-drs
@@ -66,6 +78,5 @@ jobs:
         working-directory: git-drs
         env:
           SYFON_E2E_DOCKER: "1"
-          TEST_SYFON_ROOT: ${{ steps.syfon-source.outputs.root }}
-          GOWORK: "off"
+          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
         run: go test -count=1 -tags integration ./tests/integration/docker_syfon -run '^${{ matrix.run_regex }}$' -v

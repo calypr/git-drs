@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  goreleaser:
+  build:
     runs-on: ubuntu-latest
     steps:
       -
@@ -24,35 +24,91 @@ jobs:
         with:
           go-version-file: go.mod
       -
-        name: Run GoReleaser
+        name: Build binaries with GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
-          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          # 'latest', 'nightly', or a semver
+          version: 'latest'
+          args: build --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      -
+        name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: goreleaser-builds
+          path: build/release/
+          retention-days: 1
+
+  sign:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v4
+      -
+        name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: goreleaser-builds
+          path: build/release/
+      -
+        name: Import Apple Developer Certificate
+        run: |
+          # Create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          
+          # Decode and import certificate
+          echo "${{ secrets.APPLE_CERT_DATA }}" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 \
+            -k $KEYCHAIN_PATH \
+            -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
+            -T /usr/bin/codesign
+          
+          # Set keychain settings
+          security set-keychain-settings -lut 3600 $KEYCHAIN_PATH
+      -
+        name: Sign macOS binaries
+        run: |
+          for binary in build/release/git-drs-darwin-*; do
+            if [ -f "$binary" ]; then
+              echo "Signing: $binary"
+              codesign --force \
+                --options=runtime \
+                -s "${{ secrets.APPLE_TEAM_ID }}" \
+                "$binary"
+              echo "✓ Signed: $binary"
+            fi
+          done
+      -
+        name: Verify signed binaries
+        run: |
+          echo "Verifying macOS code signatures..."
+          for binary in build/release/git-drs-darwin-*; do
+            if [ -f "$binary" ]; then
+              echo "Verifying: $binary"
+              codesign -v "$binary"
+              echo "Details:"
+              codesign -dv "$binary" | head -5
+              echo ""
+            fi
+          done
+      -
+        name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      -
+        name: Release with GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
           version: 'latest'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERT_DATA: ${{ secrets.APPLE_CERT_DATA }}
-          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      -
-        name: Verify signed binaries
-        run: |
-          # Find and verify all darwin binaries
-          echo "Verifying macOS code signatures..."
-          for binary in dist/git-drs-darwin-*; do
-            if [ -f "$binary" ]; then
-              echo "Checking: $binary"
-              file "$binary"
-              # Note: codesign is only available on macOS runners
-              # On Linux, we can only verify with file command
-              echo "  ✓ Binary found"
-            fi
-          done
-          
-          # List all release artifacts
-          echo ""
-          echo "Release artifacts:"
-          ls -lh dist/ | grep -E "(git-drs|tar.gz|zip)"
+          SKIP_VALIDATE: true

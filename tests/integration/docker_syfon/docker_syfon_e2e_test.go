@@ -306,18 +306,19 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	runCommand(t, cloneDir, nil, "git", "drs", "install")
 	runCommand(t, cloneDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, cloneDir, server.url, minioEnv)
-	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin")
-	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
+	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", knownPath)
 
 	gotKnown := mustReadFile(t, cloneDir, knownPath)
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	gotUnknown := mustReadFile(t, cloneDir, unknownPath)
-	if !bytes.Equal(gotUnknown, unknownData) {
-		t.Fatalf("unknown add-url file mismatch: got %q want %q", string(gotUnknown), string(unknownData))
+	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
+		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
+	} else if !strings.Contains(out, "downloaded invalid cached object") || !strings.Contains(out, "does not match expected oid/size") {
+		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
 	}
-	t.Logf("add-url round-trip verification complete")
+	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
+	t.Logf("add-url known-checksum round-trip and unknown-checksum validation failure verified")
 }
 
 func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {

@@ -13,7 +13,7 @@ func main() {
 
 	_, err := drslog.NewLogger("", true)
 	if err != nil {
-		fmt.Printf("Failed to open log file: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to open log file: %v", err)
 		os.Exit(1)
 	}
 

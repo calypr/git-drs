@@ -80,6 +80,12 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 	return lfsFileMap, nil
 }
 
+// GetReachablePointerFilesForRef scans a Git ref/tree and returns valid Git
+// LFS/DRS pointer blobs reachable from that tree.
+func GetReachablePointerFilesForRef(ref string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	return GetLfsFilesForRefs([]string{ref}, logger)
+}
+
 // GetLfsFilesForRefPaths scans the given paths in a specific ref/tree and
 // returns only those entries whose blob content is a valid Git LFS pointer.
 func GetLfsFilesForRefPaths(ref string, paths []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {

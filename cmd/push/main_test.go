@@ -3,8 +3,10 @@ package push
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/lfs"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 )
 
@@ -71,40 +73,61 @@ func TestCurrentPushRefUpdatesUsesRemoteMergeBaseWhenUpstreamMissing(t *testing.
 	}
 }
 
-func TestListRefUpdatePathsUsesDiffForExistingBranch(t *testing.T) {
-	oldFn := gitOutputFn
-	gitOutputFn = func(ctx context.Context, args ...string) (string, error) {
-		if fmt.Sprint(args) != "[diff --name-only old-sha new-sha]" {
-			t.Fatalf("unexpected git args: %v", args)
-		}
-		return "a.dat\nb.txt\n", nil
-	}
-	t.Cleanup(func() { gitOutputFn = oldFn })
+func TestDiscoverLfsFilesForPushScansReachableNewSHA(t *testing.T) {
+	oldReachableFn := getReachablePointerFilesForRefFn
+	t.Cleanup(func() {
+		getReachablePointerFilesForRefFn = oldReachableFn
+	})
 
-	got, err := listRefUpdatePaths(context.Background(), []internaltransfer.RefUpdate{{OldSHA: "old-sha", NewSHA: "new-sha"}})
-	if err != nil {
-		t.Fatalf("listRefUpdatePaths returned error: %v", err)
+	getReachablePointerFilesForRefFn = func(ref string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		if ref != "new-sha" {
+			t.Fatalf("unexpected reachable ref scan: %s", ref)
+		}
+		return map[string]lfs.LfsFileInfo{"data/file.dat": {Name: "data/file.dat"}}, nil
 	}
-	if len(got) != 2 || got[0] != "a.dat" || got[1] != "b.txt" {
-		t.Fatalf("unexpected paths: %+v", got)
+
+	got, err := discoverLfsFilesForPush([]internaltransfer.RefUpdate{{OldSHA: "old-sha", NewSHA: "new-sha"}}, slog.Default())
+	if err != nil {
+		t.Fatalf("discoverLfsFilesForPush returned error: %v", err)
+	}
+	if _, ok := got["data/file.dat"]; !ok {
+		t.Fatalf("missing discovered file: %+v", got)
 	}
 }
 
-func TestListRefUpdatePathsUsesLsTreeForFirstPush(t *testing.T) {
-	oldFn := gitOutputFn
-	gitOutputFn = func(ctx context.Context, args ...string) (string, error) {
-		if fmt.Sprint(args) != "[ls-tree -r --name-only new-sha]" {
-			t.Fatalf("unexpected git args: %v", args)
-		}
-		return "a.dat\nb.txt\n", nil
-	}
-	t.Cleanup(func() { gitOutputFn = oldFn })
+func TestDiscoverLfsFilesForPushScansReachableNewSHAWhenDiffWouldBeEmpty(t *testing.T) {
+	oldReachableFn := getReachablePointerFilesForRefFn
+	t.Cleanup(func() {
+		getReachablePointerFilesForRefFn = oldReachableFn
+	})
 
-	got, err := listRefUpdatePaths(context.Background(), []internaltransfer.RefUpdate{{OldSHA: "0000000000000000000000000000000000000000", NewSHA: "new-sha"}})
-	if err != nil {
-		t.Fatalf("listRefUpdatePaths returned error: %v", err)
+	getReachablePointerFilesForRefFn = func(ref string, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		if ref != "HEAD" {
+			t.Fatalf("unexpected reachable ref scan: %s", ref)
+		}
+		return map[string]lfs.LfsFileInfo{
+			"data/BigMHC Training and Evaluation Data/el_test.csv": {
+				Name: "data/BigMHC Training and Evaluation Data/el_test.csv",
+			},
+		}, nil
 	}
-	if len(got) != 2 || got[0] != "a.dat" || got[1] != "b.txt" {
-		t.Fatalf("unexpected paths: %+v", got)
+
+	got, err := discoverLfsFilesForPush([]internaltransfer.RefUpdate{{OldSHA: "HEAD", NewSHA: "HEAD"}}, slog.Default())
+	if err != nil {
+		t.Fatalf("discoverLfsFilesForPush returned error: %v", err)
+	}
+	if _, ok := got["data/BigMHC Training and Evaluation Data/el_test.csv"]; !ok {
+		t.Fatalf("missing fallback discovered file: %+v", got)
+	}
+}
+
+func TestCountUniqueOIDsDeduplicates(t *testing.T) {
+	got := countUniqueOIDs(map[string]lfs.LfsFileInfo{
+		"data/a.dat": {Oid: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+		"data/b.dat": {Oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		"data/c.dat": {Oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+	})
+	if got != 2 {
+		t.Fatalf("expected two unique oids, got %d", got)
 	}
 }

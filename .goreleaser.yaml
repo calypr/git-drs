@@ -52,4 +52,8 @@ archives:
   - formats:
       - tar.gz
     name_template: "{{.ProjectName}}-{{.Os}}-{{.Arch}}-v{{.Version}}"
-    files: []
+
+    # HACK: Provide a file glob that matches nothing in your directory.
+    # This prevents GoReleaser from reverting to default README/LICENSE fallback files.
+    files:
+      - none*

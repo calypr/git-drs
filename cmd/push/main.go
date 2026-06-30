@@ -3,9 +3,9 @@ package push
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -26,6 +26,7 @@ var runCommand = func(name string, args ...string) ([]byte, error) {
 
 var gitOutputFn = gitOutput
 var getRemoteMergeBaseFn = getRemoteMergeBase
+var getReachablePointerFilesForRefFn = lfs.GetReachablePointerFilesForRef
 
 var Cmd = &cobra.Command{
 	Use:   "push [remote-name]",
@@ -76,19 +77,15 @@ var Cmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to resolve push refs:", err)
 			return fmt.Errorf("failed to resolve pushed refs: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Push refs resolved. Resolving pushed paths...")
-		pushedPaths, err := listRefUpdatePaths(ctx, pushRefs)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to resolve pushed paths:", err)
-			return fmt.Errorf("failed to resolve pushed paths: %w", err)
-		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Pushed paths resolved. Discovering LFS files...")
-		lfsFiles, err := lfs.GetLfsFilesForRefPaths("HEAD", pushedPaths, myLogger)
+		fmt.Fprintln(os.Stderr, "DEBUG: Push refs resolved. Discovering reachable LFS files...")
+		lfsFiles, err := discoverLfsFilesForPush(pushRefs, myLogger)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "DEBUG: Failed to discover LFS files:", err)
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: LFS files to push resolved. Total files:", len(lfsFiles))
+		uniqueOIDs := countUniqueOIDs(lfsFiles)
+		fmt.Fprintf(os.Stderr, "DEBUG: Reachable LFS files resolved. Total files: %d unique oids: %d\n", len(lfsFiles), uniqueOIDs)
+		fmt.Fprintf(os.Stdout, "Discovered %d reachable DRS pointer file(s) (%d unique object(s)).\n", len(lfsFiles), uniqueOIDs)
 
 		fmt.Fprintln(os.Stderr, "DEBUG: Reconciling committed deletes...")
 		if _, err := internaltransfer.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
@@ -110,7 +107,7 @@ var Cmd = &cobra.Command{
 		fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush completed successfully")
 		switch {
 		case len(lfsFiles) == 0:
-			fmt.Fprintln(os.Stdout, "No git-drs tracked files found; pushing Git refs only.")
+			fmt.Fprintln(os.Stdout, "No reachable DRS pointer files found; pushing Git refs only.")
 		case !progress.HadUploads():
 			fmt.Fprintln(os.Stdout, "No DRS payload uploads needed; all tracked objects are already available remotely.")
 		}
@@ -138,6 +135,42 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().BoolVar(&pushWithHooks, "with-hooks", false, "Run git push with local hooks enabled")
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
+}
+
+func discoverLfsFilesForPush(refs []internaltransfer.RefUpdate, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+	const zeroSHA = "0000000000000000000000000000000000000000"
+	files := make(map[string]lfs.LfsFileInfo)
+	seenRefs := make(map[string]struct{}, len(refs))
+	for _, update := range refs {
+		ref := strings.TrimSpace(update.NewSHA)
+		if ref == "" || ref == zeroSHA {
+			continue
+		}
+		if _, ok := seenRefs[ref]; ok {
+			continue
+		}
+		seenRefs[ref] = struct{}{}
+		refFiles, err := getReachablePointerFilesForRefFn(ref, logger)
+		if err != nil {
+			return nil, err
+		}
+		for path, info := range refFiles {
+			files[path] = info
+		}
+	}
+	return files, nil
+}
+
+func countUniqueOIDs(files map[string]lfs.LfsFileInfo) int {
+	seen := make(map[string]struct{}, len(files))
+	for _, info := range files {
+		oid := strings.ToLower(strings.TrimSpace(info.Oid))
+		if oid == "" {
+			continue
+		}
+		seen[oid] = struct{}{}
+	}
+	return len(seen)
 }
 
 func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {
@@ -188,41 +221,6 @@ func getRemoteMergeBase(ctx context.Context, remote string, head string) (string
 		return "", nil
 	}
 	return strings.TrimSpace(string(outMerge)), nil
-}
-
-func listRefUpdatePaths(ctx context.Context, refs []internaltransfer.RefUpdate) ([]string, error) {
-	const zeroSHA = "0000000000000000000000000000000000000000"
-	set := make(map[string]struct{})
-	for _, ref := range refs {
-		newSHA := strings.TrimSpace(ref.NewSHA)
-		oldSHA := strings.TrimSpace(ref.OldSHA)
-		if newSHA == "" || newSHA == zeroSHA {
-			continue
-		}
-		var args []string
-		if oldSHA == "" || oldSHA == zeroSHA {
-			args = []string{"ls-tree", "-r", "--name-only", newSHA}
-		} else {
-			args = []string{"diff", "--name-only", oldSHA, newSHA}
-		}
-		out, err := gitOutputFn(ctx, args...)
-		if err != nil {
-			return nil, err
-		}
-		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			set[line] = struct{}{}
-		}
-	}
-	paths := make([]string, 0, len(set))
-	for path := range set {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths, nil
 }
 
 func gitOutput(ctx context.Context, args ...string) (string, error) {

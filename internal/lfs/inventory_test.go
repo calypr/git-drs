@@ -54,6 +54,93 @@ func TestGetLfsFilesForRefPaths(t *testing.T) {
 	}
 }
 
+func TestGetLfsFilesForRefPathsHandlesSpaces(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "checkout", "-b", "main")
+
+	oid := "997312a8a4f826fd4e4ef2d572badacea37a3dc79e87336a97a4c0f82ef25f14"
+	spacePath := "data/BigMHC Training and Evaluation Data/el_test.csv"
+	writePointerFile(t, filepath.Join(repo, filepath.FromSlash(spacePath)), oid, "102550733")
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "commit pointer with spaces")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+
+	files, err := GetLfsFilesForRefPaths("HEAD", []string{spacePath}, drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("GetLfsFilesForRefPaths error: %v", err)
+	}
+	info, ok := files[spacePath]
+	if !ok {
+		t.Fatalf("missing pointer file with spaces in result: %+v", files)
+	}
+	if info.Oid != oid || info.Size != 102550733 || !info.IsPointer {
+		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+}
+
+func TestGetReachablePointerFilesForRefHandlesSpacesAndIgnoresNonPointers(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
+	runGitCmdTest(t, repo, "config", "user.name", "Test User")
+	runGitCmdTest(t, repo, "checkout", "-b", "main")
+
+	oid := "997312a8a4f826fd4e4ef2d572badacea37a3dc79e87336a97a4c0f82ef25f14"
+	spacePath := "data/BigMHC Training and Evaluation Data/el_test.csv"
+	writePointerFile(t, filepath.Join(repo, filepath.FromSlash(spacePath)), oid, "102550733")
+	if err := os.WriteFile(filepath.Join(repo, "data", "regular.txt"), []byte("regular content"), 0o644); err != nil {
+		t.Fatalf("write regular file: %v", err)
+	}
+	malformedPath := filepath.Join(repo, "data", "malformed.dat")
+	if err := os.WriteFile(malformedPath, []byte("version https://git-lfs.github.com/spec/v1\noid sha256:not-a-sha\nsize 10\n"), 0o644); err != nil {
+		t.Fatalf("write malformed pointer: %v", err)
+	}
+	runGitCmdTest(t, repo, "add", ".")
+	runGitCmdTest(t, repo, "commit", "-m", "commit reachable files")
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(cwd)
+	})
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+
+	files, err := GetReachablePointerFilesForRef("HEAD", drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("GetReachablePointerFilesForRef error: %v", err)
+	}
+	info, ok := files[spacePath]
+	if !ok {
+		t.Fatalf("missing pointer file with spaces in reachable result: %+v", files)
+	}
+	if info.Oid != oid || info.Size != 102550733 || !info.IsPointer {
+		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+	if _, ok := files["data/regular.txt"]; ok {
+		t.Fatalf("regular file should not be included: %+v", files)
+	}
+	if _, ok := files["data/malformed.dat"]; ok {
+		t.Fatalf("malformed pointer should not be included: %+v", files)
+	}
+}
+
 func TestGetWorktreeLfsFiles(t *testing.T) {
 	repo := t.TempDir()
 	runGitCmdTest(t, repo, "init")

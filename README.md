@@ -111,6 +111,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 - [Getting Started](docs/getting-started.md)
 - [Commands Reference](docs/commands.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Creating a Syfon Bucket Scope Mapping](docs/syfon-bucket-scope-mapping.md)
 - [Developer Guide](docs/developer-guide.md)
 - [GA4GH DRS Scalability Gaps](docs/ga4gh-drs-scalability-gaps.md)
 

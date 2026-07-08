@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -25,6 +27,66 @@ func TestPingCmdArgs(t *testing.T) {
 	}
 	if err := Cmd.Args(Cmd, []string{"origin", "extra"}); err == nil {
 		t.Fatal("expected error for extra args")
+	}
+}
+
+func TestAcceptancePingTerraDRSServer(t *testing.T) {
+	var serviceInfoRequests int
+	terraDRS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/service-info" {
+			t.Fatalf("expected Terra DRS service-info ping, got %s %s", r.Method, r.URL.Path)
+		}
+		serviceInfoRequests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"terra-drs","name":"Terra DRS","type":{"group":"org.ga4gh","artifact":"drs","version":"1.0.0"}}`))
+	}))
+	t.Cleanup(terraDRS.Close)
+
+	tmpDir := testutils.SetupTestGitRepo(t)
+	testutils.CreateTestConfig(t, tmpDir, &config.Config{
+		DefaultRemote: config.Remote("anvil"),
+		Remotes: map[config.Remote]config.RemoteSelect{
+			config.Remote("anvil"): {
+				Terra: &config.TerraRemote{
+					Endpoint: terraDRS.URL,
+					Auth:     "google-adc",
+					Mode:     "read-only",
+				},
+			},
+		},
+	})
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout })
+
+	runErr := Cmd.RunE(Cmd, []string{"anvil"})
+	_ = w.Close()
+	if runErr != nil {
+		t.Fatalf("Cmd.RunE returned error: %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{
+		"remote: anvil (default)",
+		"type: terra",
+		"endpoint: " + terraDRS.URL,
+		"health: ok",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, got)
+		}
+	}
+	if serviceInfoRequests != 1 {
+		t.Fatalf("expected exactly one Terra DRS service-info ping, got %d", serviceInfoRequests)
 	}
 }
 

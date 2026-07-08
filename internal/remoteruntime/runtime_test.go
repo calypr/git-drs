@@ -59,6 +59,35 @@ func TestNewLocalIncludesRepoBasicAuth(t *testing.T) {
 	}
 }
 
+func TestNewTerraRemoteContext(t *testing.T) {
+	setupTestRepo(t)
+
+	cfg, err := config.UpdateRemote(config.Remote("anvil"), config.RemoteSelect{
+		Terra: &config.TerraRemote{
+			Endpoint: "https://drs.anvilproject.org",
+			Auth:     "google-adc",
+			Mode:     "read-only",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRemote failed: %v", err)
+	}
+
+	gitCtx, err := New(cfg, config.Remote("anvil"), drslog.GetLogger())
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	if gitCtx.RemoteType != config.TerraServerType {
+		t.Fatalf("RemoteType = %q, want %q", gitCtx.RemoteType, config.TerraServerType)
+	}
+	if gitCtx.Endpoint != "https://drs.anvilproject.org" {
+		t.Fatalf("Endpoint = %q, want Terra endpoint", gitCtx.Endpoint)
+	}
+	if gitCtx.Client != nil {
+		t.Fatalf("Terra runtime should not create a Syfon client, got %+v", gitCtx.Client)
+	}
+}
+
 func TestLocalClientResolvesBucketScopeMappings(t *testing.T) {
 	setupTestRepo(t)
 

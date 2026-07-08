@@ -20,6 +20,8 @@ const credentialHelpSuffix = "Refresh credentials with `git drs remote add gen3 
 
 type GitContext struct {
 	Client             *syclient.Client
+	RemoteType         config.RemoteType
+	Endpoint           string
 	Organization       string
 	ProjectId          string
 	BucketName         string
@@ -47,7 +49,25 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 		}
 		return gen3Client(string(remote), *x.Gen3, logger)
 	}
+	if x.Terra != nil {
+		return terraClient(*x.Terra, logger)
+	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
+}
+
+func terraClient(remote config.TerraRemote, logger *slog.Logger) (*GitContext, error) {
+	if strings.TrimSpace(remote.Endpoint) == "" {
+		return nil, fmt.Errorf("no terra endpoint specified")
+	}
+	if _, err := url.Parse(remote.Endpoint); err != nil {
+		return nil, err
+	}
+	return &GitContext{
+		RemoteType: config.TerraServerType,
+		Endpoint:   remote.Endpoint,
+		Logger:     logger,
+		Credential: &syconf.Credential{APIEndpoint: remote.Endpoint},
+	}, nil
 }
 
 func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger) (*GitContext, error) {
@@ -106,6 +126,8 @@ func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logg
 
 	return &GitContext{
 		Client:        client,
+		RemoteType:    config.LocalServerType,
+		Endpoint:      remote.BaseURL,
 		Organization:  remote.GetOrganization(),
 		ProjectId:     projectID,
 		BucketName:    bucketName,
@@ -150,6 +172,8 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 
 	return &GitContext{
 		Client:             client,
+		RemoteType:         config.Gen3ServerType,
+		Endpoint:           profileConfig.APIEndpoint,
 		ProjectId:          projectID,
 		BucketName:         scope.Bucket,
 		Organization:       remote.GetOrganization(),

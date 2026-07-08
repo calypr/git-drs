@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -433,7 +432,7 @@ func readIndexPointerInfo(ctx context.Context, repoDir, path string) (LfsFileInf
 }
 
 func grepPointerPaths(ctx context.Context, repoDir, ref string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "git", "grep", "-z", "-l", "https://git-lfs.github.com/spec/v1", ref, "--")
+	cmd := exec.CommandContext(ctx, "git", "grep", "-z", "-l", "-e", "https://git-lfs.github.com/spec/v1", "-e", "https://calypr.github.io/spec/v1", ref, "--")
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -493,8 +492,6 @@ type lfsPointer struct {
 
 func parseLFSPointer(content string) (lfsPointer, bool) {
 	var p lfsPointer
-	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
-
 	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -527,7 +524,19 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 	if p.Version == "" || p.OidType == "" || p.Oid == "" {
 		return lfsPointer{}, false
 	}
-	if p.OidType != "sha256" || !sha256Re.MatchString(p.Oid) {
+	switch strings.ToLower(p.OidType) {
+	case "sha256":
+		p.OidType = "sha256"
+		if !sha256OIDRe.MatchString(p.Oid) {
+			return lfsPointer{}, false
+		}
+		p.Oid = strings.ToLower(p.Oid)
+	case "drs":
+		p.OidType = "drs"
+		if p.Version != "https://calypr.github.io/spec/v1" || !strings.HasPrefix(p.Oid, "//") {
+			return lfsPointer{}, false
+		}
+	default:
 		return lfsPointer{}, false
 	}
 

@@ -14,6 +14,7 @@ import (
 )
 
 var remote string
+var remoteType string
 var Cmd = &cobra.Command{
 	Use:   "add-ref <drs_uri> <dst path>",
 	Short: "Add a reference to an existing DRS object via URI",
@@ -61,4 +62,5 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
+	Cmd.Flags().StringVar(&remoteType, "remote-type", "", "resolver remote type for DRS references (for example: terra)")
 }

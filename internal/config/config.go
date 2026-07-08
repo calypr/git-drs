@@ -20,6 +20,7 @@ const (
 
 	Gen3ServerType  RemoteType = "gen3"
 	LocalServerType RemoteType = "local"
+	TerraServerType RemoteType = "terra"
 
 	configSection          = "drs"
 	remoteSubsectionPrefix = "remote."
@@ -42,6 +43,8 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 		return x.Gen3
 	} else if x.Local != nil {
 		return x.Local
+	} else if x.Terra != nil {
+		return x.Terra
 	}
 	return nil
 }
@@ -130,6 +133,15 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		if remote.Gen3.StoragePrefix != "" {
 			remoteSubsection.SetOption("storage_prefix", remote.Gen3.StoragePrefix)
 		}
+	} else if remote.Terra != nil {
+		remoteSubsection.SetOption("type", "terra")
+		remoteSubsection.SetOption("endpoint", remote.Terra.Endpoint)
+		if remote.Terra.Auth != "" {
+			remoteSubsection.SetOption("auth", remote.Terra.Auth)
+		}
+		if remote.Terra.Mode != "" {
+			remoteSubsection.SetOption("mode", remote.Terra.Mode)
+		}
 	} else if remote.Local != nil {
 		remoteSubsection.SetOption("type", "local")
 		remoteSubsection.SetOption("endpoint", remote.Local.BaseURL)
@@ -162,7 +174,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	return LoadConfig()
 }
 
-func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string) {
+func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string, auth string, mode string) {
 	if !strings.HasPrefix(subsectionName, remoteSubsectionPrefix) {
 		return
 	}
@@ -177,6 +189,12 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 			Bucket:        bucket,
 			Organization:  organization,
 			StoragePrefix: storagePrefix,
+		}
+	} else if remoteType == "terra" {
+		rs.Terra = &TerraRemote{
+			Endpoint: endpoint,
+			Auth:     auth,
+			Mode:     mode,
 		}
 	} else if remoteType == "local" {
 		rs.Local = &LocalRemote{
@@ -232,6 +250,8 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("bucket"),
 				subsection.Option("organization"),
 				subsection.Option("storage_prefix"),
+				subsection.Option("auth"),
+				subsection.Option("mode"),
 			)
 		}
 	}

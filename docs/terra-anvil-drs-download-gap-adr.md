@@ -16,9 +16,21 @@ Architecture Decision Record / feature gap analysis
 
 - [Terra/AnVIL TDD acceptance tests](./terra-anvil-tdd-tests.md)
 
+## Short answer: Terra DRS service-info endpoint
+
+Yes. Terra Data Repository exposes the GA4GH DRS service-info endpoint at:
+
+```text
+https://data.terra.bio/ga4gh/drs/v1/service-info
+```
+
+For `git-drs` Terra health checks, `https://data.terra.bio` is the Terra DRS service base URL and `git drs ping` derives `/ga4gh/drs/v1/service-info` from that base. Terra also uses DRSHub for DRS URI resolution; DRSHub URLs such as `https://drshub.dsde-<env>.broadinstitute.org/api/v4/drs/resolve` are resolver API URLs, not the GA4GH DRS service-info endpoint that `git drs ping` should use.
+
 ## Summary
 
 `git-drs` already has most of the repository and hydration machinery needed for Terra/AnVIL, so the remaining work should be scoped as an incremental provider/identity extension rather than a wholesale redesign. The most direct path is to add a `terra` remote mode, wire Terra authentication and provider resolution at remote setup time, and then close the two compatibility gaps that are currently not well-defined for Terra references: SHA256-shaped local identity and direct DRS URL pointer identity. A manifest bootstrap workflow remains useful, but it can build on the same lower-level `add-ref`/resolver work instead of being treated as a separate large subsystem.
+
+The Terra remote endpoint used for service-health checks should be the Terra DRS service base URL, for example `https://data.terra.bio` in production. That base URL supports the GA4GH DRS service-info route at `/ga4gh/drs/v1/service-info`. DRSHub remains relevant for resolving Terra DRS URIs into access information, but it is a resolver service rather than the service-info host for `git drs ping`.
 
 ## Background
 
@@ -95,7 +107,7 @@ Example target CLI:
 
 ```bash
 git drs remote add terra anvil \
-  --drs-endpoint https://drs.anvilproject.org \
+  --drs-endpoint https://data.terra.bio \
   --auth google-adc \
   --mode read-only
 ```

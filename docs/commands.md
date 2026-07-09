@@ -75,6 +75,59 @@ List configured `git-drs` remotes.
 git drs remote list
 ```
 
+### `git drs ping [remote-name]`
+
+Show the effective `git-drs` remote configuration and verify that the remote responds.
+
+```bash
+git drs ping
+git drs ping anvil
+```
+
+What it checks:
+
+- prints the selected remote, remote type, endpoint, scope, bucket, storage prefix, and auth mode
+- runs a health check against the selected remote
+- for Terra DRS remotes, pings the GA4GH DRS service-info endpoint at `<endpoint>/ga4gh/drs/v1/service-info`
+- for Terra/AnVIL TDR-hosted data in production, use `https://data.terra.bio` as the endpoint; Terra also uses DRSHub for DRS URI resolution, but DRSHub is a resolver service rather than the GA4GH DRS service-info host
+- for scoped Syfon-style remotes, verifies that the configured organization/project and bucket are visible and readable
+
+Example Terra configuration and ping:
+
+```bash
+git config drs.default-remote anvil
+git config drs.remote.anvil.type terra
+git config drs.remote.anvil.endpoint https://data.terra.bio
+git config drs.remote.anvil.auth google-adc
+git config drs.remote.anvil.mode read-only
+git drs ping anvil
+```
+
+A successful Terra ping includes:
+
+```text
+remote: anvil (default)
+type: terra
+endpoint: https://data.terra.bio
+health: ok
+```
+
+Troubleshooting:
+
+- `no remote configuration found`: run `git drs remote list` and pass an existing remote name, or configure the Terra remote with the `git config` commands above.
+- `terra endpoint is empty`: set `drs.remote.<name>.endpoint` to the Terra DRS base URL, for example `https://data.terra.bio` for the production Terra Data Repository DRS service.
+- `terra endpoint must be an absolute URL`: include the URL scheme, for example `https://data.terra.bio` instead of `data.terra.bio`.
+- `terra DRS service-info returned ...`: verify the server is up and that the base endpoint is correct. You can test the exact URL with `curl -i https://data.terra.bio/ga4gh/drs/v1/service-info`.
+- network, DNS, or TLS errors: check VPN/proxy/firewall settings and retry with `GIT_CURL_VERBOSE=1 git drs ping <remote-name>` for additional HTTP diagnostics from Git-adjacent workflows.
+
+For developers, the live Terra ping integration test is intentionally behind the `integration` build tag because it reaches the public Terra DRS service:
+
+```bash
+go test -tags=integration ./cmd/ping -run TestIntegrationPingTerraDRSServer -count=1
+```
+
+Set `GIT_DRS_TERRA_DRS_ENDPOINT` to point the test at a different Terra DRS deployment. Terra's DRSHub resolver URL follows the `https://drshub.dsde-<env>.broadinstitute.org/api/v4/drs/resolve` pattern used by `terra-notebook-utils`, but `git drs ping` needs the GA4GH DRS service base URL that exposes `/ga4gh/drs/v1/service-info`; for Terra production that service base URL is `https://data.terra.bio`.
+
 ### `git drs remote remove <remote-name>`
 
 Remove a configured `git-drs` remote.

@@ -18,7 +18,7 @@ func TestAcceptanceLoadTerraRemoteConfig(t *testing.T) {
 
 	runGitConfig("drs.default-remote", "anvil")
 	runGitConfig("drs.remote.anvil.type", "terra")
-	runGitConfig("drs.remote.anvil.endpoint", "https://drs.anvilproject.org")
+	runGitConfig("drs.remote.anvil.endpoint", "https://data.terra.bio")
 	runGitConfig("drs.remote.anvil.auth", "google-adc")
 	runGitConfig("drs.remote.anvil.mode", "read-only")
 
@@ -30,7 +30,7 @@ func TestAcceptanceLoadTerraRemoteConfig(t *testing.T) {
 	if remote == nil {
 		t.Fatalf("expected terra remote to load as a DRS remote")
 	}
-	if got := remote.GetEndpoint(); got != "https://drs.anvilproject.org" {
+	if got := remote.GetEndpoint(); got != "https://data.terra.bio" {
 		t.Fatalf("unexpected terra endpoint: %q", got)
 	}
 }

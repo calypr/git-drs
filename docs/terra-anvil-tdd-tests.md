@@ -26,7 +26,7 @@ The test writes Git config entries equivalent to a future Terra remote:
   default-remote = anvil
 [drs "remote.anvil"]
   type = terra
-  endpoint = https://drs.anvilproject.org
+  endpoint = https://data.terra.bio
   auth = google-adc
   mode = read-only
 ```

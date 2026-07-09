@@ -64,7 +64,7 @@ func TestNewTerraRemoteContext(t *testing.T) {
 
 	cfg, err := config.UpdateRemote(config.Remote("anvil"), config.RemoteSelect{
 		Terra: &config.TerraRemote{
-			Endpoint: "https://drs.anvilproject.org",
+			Endpoint: "https://data.terra.bio",
 			Auth:     "google-adc",
 			Mode:     "read-only",
 		},
@@ -80,7 +80,7 @@ func TestNewTerraRemoteContext(t *testing.T) {
 	if gitCtx.RemoteType != config.TerraServerType {
 		t.Fatalf("RemoteType = %q, want %q", gitCtx.RemoteType, config.TerraServerType)
 	}
-	if gitCtx.Endpoint != "https://drs.anvilproject.org" {
+	if gitCtx.Endpoint != "https://data.terra.bio" {
 		t.Fatalf("Endpoint = %q, want Terra endpoint", gitCtx.Endpoint)
 	}
 	if gitCtx.Client != nil {

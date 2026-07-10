@@ -12,6 +12,16 @@ builds:
     hooks:
       post:
         - codesign --force --options=runtime -s "{{ .Env.APPLE_TEAM_ID }}" "{{ .Path }}"
+        - >-
+          sh -c 'set -e;
+          ZIP_PATH="$(mktemp -t git-drs-notary-XXXXXX).zip";
+          trap "rm -f \"$ZIP_PATH\"" EXIT;
+          ditto -c -k --keepParent "{{ .Path }}" "$ZIP_PATH";
+          xcrun notarytool submit "$ZIP_PATH"
+          --apple-id "{{ .Env.APPLE_NOTARY_USER }}"
+          --password "{{ .Env.APPLE_NOTARY_PASSWORD }}"
+          --team-id "{{ .Env.APPLE_TEAM_ID }}"
+          --wait'
   - id: darwin-arm64
     binary: git-drs
     goos:
@@ -23,6 +33,16 @@ builds:
     hooks:
       post:
         - codesign --force --options=runtime -s "{{ .Env.APPLE_TEAM_ID }}" "{{ .Path }}"
+        - >-
+          sh -c 'set -e;
+          ZIP_PATH="$(mktemp -t git-drs-notary-XXXXXX).zip";
+          trap "rm -f \"$ZIP_PATH\"" EXIT;
+          ditto -c -k --keepParent "{{ .Path }}" "$ZIP_PATH";
+          xcrun notarytool submit "$ZIP_PATH"
+          --apple-id "{{ .Env.APPLE_NOTARY_USER }}"
+          --password "{{ .Env.APPLE_NOTARY_PASSWORD }}"
+          --team-id "{{ .Env.APPLE_TEAM_ID }}"
+          --wait'
   - id: linux-amd64
     binary: git-drs
     goos:

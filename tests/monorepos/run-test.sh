@@ -187,7 +187,7 @@ if [ "$CLONE" = "true" ]; then
   echo "Pulling LFS objects from remote" >&2
   git drs init
   git drs remote add gen3 origin "$PROGRAM/$PROJECT" --cred "$CREDENTIALS_PATH"
-  git drs pull origin main
+  git drs pull origin
   if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
     exit 1

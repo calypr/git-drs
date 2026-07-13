@@ -560,17 +560,37 @@ func CreateLfsPointer(drsObj *drsapi.DrsObject, dst string) error {
 	if shaSum == "" {
 		return fmt.Errorf("no sha256 checksum found for DRS object")
 	}
+	return CreateLfsPointerWithOID(drsObj, dst, shaSum)
+}
 
-	// create pointer file content
+// CreateLfsPointerWithOID writes a Git LFS pointer using an explicit local/cache
+// oid. The oid may be a real content SHA256 or a derived source-identity key.
+func CreateLfsPointerWithOID(drsObj *drsapi.DrsObject, dst string, oid string) error {
+	oid = strings.TrimPrefix(strings.TrimSpace(oid), "sha256:")
+	if !sha256OIDRe.MatchString(oid) {
+		return fmt.Errorf("oid %q is not a valid sha256-shaped value", oid)
+	}
 	pointerContent := "version https://git-lfs.github.com/spec/v1\n"
-	pointerContent += fmt.Sprintf("oid sha256:%s\n", shaSum)
+	pointerContent += fmt.Sprintf("oid sha256:%s\n", strings.ToLower(oid))
 	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
-
-	// write to file
-	err := os.WriteFile(dst, []byte(pointerContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
 		return fmt.Errorf("failed to write LFS pointer file: %w", err)
 	}
+	return nil
+}
 
+// CreateDRSPointer writes a git-drs pointer that preserves the retrievable DRS URI.
+func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error {
+	drsURI = strings.TrimSpace(drsURI)
+	if !strings.HasPrefix(strings.ToLower(drsURI), "drs://") {
+		return fmt.Errorf("DRS URI %q must start with drs://", drsURI)
+	}
+	pointerOID := "//" + drsURI[len("drs://"):]
+	pointerContent := "version https://calypr.github.io/spec/v1\n"
+	pointerContent += fmt.Sprintf("oid drs:%s\n", pointerOID)
+	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
+	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
+		return fmt.Errorf("failed to write DRS pointer file: %w", err)
+	}
 	return nil
 }

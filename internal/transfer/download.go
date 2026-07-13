@@ -42,6 +42,39 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 	return &accessURL, &match, nil
 }
 
+func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI string) (*drsapi.AccessURL, *drsapi.DrsObject, error) {
+	if strings.HasPrefix(drsURI, "//") {
+		drsURI = "drs:" + drsURI
+	}
+	obj, err := drsCtx.Client.DRS().GetObject(ctx, drsURI)
+	if err != nil {
+		return nil, nil, err
+	}
+	if obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
+		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", obj.Id)
+	}
+	accessType := (*obj.AccessMethods)[0].Type
+	if accessType == "" {
+		return nil, nil, fmt.Errorf("no access type found in access method for DRS object %s", obj.Id)
+	}
+	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, obj.Id, string(accessType))
+	if err != nil {
+		return nil, nil, err
+	}
+	return &accessURL, &obj, nil
+}
+
+func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI, cachePath string) error {
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		return fmt.Errorf("mkdir for cache path: %w", err)
+	}
+	accessURL, obj, err := AccessURLForDRSURI(ctx, drsCtx, drsURI)
+	if err != nil {
+		return err
+	}
+	return downloadResolved(ctx, drsCtx, drsURI, cachePath, obj, accessURL)
+}
+
 func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)

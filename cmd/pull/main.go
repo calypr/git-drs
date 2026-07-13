@@ -183,7 +183,12 @@ var Cmd = &cobra.Command{
 						continue
 					}
 				}
-				if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
+				if isDRSPointerOID(f.Oid) {
+					if err := internaltransfer.DownloadDRSURIToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
+						debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
+						return fmt.Errorf("failed to download DRS URI %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
+					}
+				} else if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
@@ -229,6 +234,11 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size})
 	}
 	return files
+}
+
+func isDRSPointerOID(oid string) bool {
+	oid = strings.TrimSpace(oid)
+	return strings.HasPrefix(oid, "//") || strings.HasPrefix(strings.ToLower(oid), "drs://")
 }
 
 func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {
@@ -295,7 +305,7 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 	if expectedSize <= 0 && info.Size() <= 0 {
 		return state, nil
 	}
-	if strings.TrimSpace(expectedOID) == "" {
+	if strings.TrimSpace(expectedOID) == "" || strings.HasPrefix(strings.TrimSpace(expectedOID), "//") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(expectedOID)), "drs://") {
 		state.complete = true
 		return state, nil
 	}

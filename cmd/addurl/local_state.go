@@ -21,9 +21,10 @@ import (
 )
 
 type addURLDrsFile struct {
-	Name string
-	Size int64
-	Oid  string
+	Name          string
+	Size          int64
+	Oid           string
+	ContentSHA256 string
 }
 
 func drsobjectBuilder(bucket, organization, project, storagePrefix string) drsobject.Builder {
@@ -43,9 +44,18 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 		drsObj.Size = file.Size
 	} else {
 		drsID := uuid.NewSHA1(drsobject.UUIDNamespace, []byte(fmt.Sprintf("%s:%s", builder.Project, drsobject.NormalizeOid(file.Oid)))).String()
-		drsObj, err = builder.Build(file.Name, file.Oid, file.Size, drsID)
-		if err != nil {
-			return nil, fmt.Errorf("error building DRS object for oid %s: %w", file.Oid, err)
+		if file.ContentSHA256 != "" {
+			drsObj, err = builder.Build(file.Name, file.ContentSHA256, file.Size, drsID)
+			if err != nil {
+				return nil, fmt.Errorf("error building DRS object for oid %s: %w", file.Oid, err)
+			}
+		} else {
+			drsObj = &drsapi.DrsObject{
+				Id:      drsID,
+				SelfUri: objectPath,
+				Size:    file.Size,
+				Name:    &file.Name,
+			}
 		}
 	}
 

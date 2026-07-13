@@ -137,9 +137,10 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 
 	builder := drsobjectBuilder(scope.Bucket, org, project, scope.Prefix)
 	file := addURLDrsFile{
-		Name: input.path,
-		Size: objectInfo.SizeBytes,
-		Oid:  oid,
+		Name:          input.path,
+		Size:          objectInfo.SizeBytes,
+		Oid:           oid,
+		ContentSHA256: input.sha256,
 	}
 	if _, err := writeAddURLDrsObject(builder, file, input.objectURL); err != nil {
 		return fmt.Errorf("write local DRS object: %w", err)

@@ -241,6 +241,8 @@ Notes:
 
 ## Provider/Object Reference Workflows
 
+For details on pointer file formats and lifecycle state, see [Pointer Files and Reference State](pointer-files.md).
+
 ### `git drs add-url <object-url-or-key> [path]`
 
 Create a pointer plus local DRS metadata for an object that already exists in provider storage.
@@ -256,11 +258,12 @@ Notes:
 - object-key mode resolves against the configured bucket scope
 - explicit provider URL mode remains supported
 - `--scheme` is required for object-key mode
+- when `--sha256` is omitted, the pointer uses a derived local/cache OID and source URL metadata remains the retrieval identity
 - registration happens later on `git drs push`
 
 ### `git drs add-ref <drs-id> <path>`
 
-Add a local pointer file for an existing DRS object.
+Add a local pointer file for an existing DRS object. If the source DRS object has a SHA256 checksum, the pointer can use that checksum; otherwise the pointer preserves the source `drs://...` URI directly so hydration can resolve by DRS identity instead of checksum lookup.
 
 ```bash
 git drs add-ref drs://example/object-id data/object.bin

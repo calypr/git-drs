@@ -2,14 +2,20 @@ package addref
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -55,12 +61,43 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		err = lfs.CreateLfsPointer(&obj, dstPath)
-		return err
+		oid := addRefLocalOID(drsUri, remoteName, &obj)
+		if hasContentSHA256(&obj) {
+			if err := lfs.CreateLfsPointerWithOID(&obj, dstPath, oid); err != nil {
+				return err
+			}
+		} else if err := lfs.CreateDRSPointer(&obj, dstPath, drsUri); err != nil {
+			return err
+		}
+		if obj.SelfUri == "" {
+			obj.SelfUri = drsUri
+		}
+		if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &obj, oid); err != nil {
+			return fmt.Errorf("write source DRS metadata: %w", err)
+		}
+		return nil
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVarP(&remote, "remote", "r", "", "target remote DRS server (default: default_remote)")
 	Cmd.Flags().StringVar(&remoteType, "remote-type", "", "resolver remote type for DRS references (for example: terra)")
+}
+
+func hasContentSHA256(obj *drsapi.DrsObject) bool {
+	return obj != nil && drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256) != ""
+}
+
+func addRefLocalOID(sourceURI string, remoteName config.Remote, obj *drsapi.DrsObject) string {
+	if obj != nil {
+		if sha := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
+			return sha
+		}
+	}
+	return derivedSourceOID(sourceURI, string(remoteName))
+}
+
+func derivedSourceOID(sourceURI, remoteName string) string {
+	sum := sha256.Sum256([]byte("git-drs-source-ref:v1\nsource_uri=" + sourceURI + "\nremote=" + remoteName + "\n"))
+	return hex.EncodeToString(sum[:])
 }

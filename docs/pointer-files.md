@@ -96,6 +96,139 @@ In that case, `<derived-local-oid>` is a local/cache identifier, not a payload c
 
 The temporary access URL (the resolved "real" URL) created during this process is a download mechanism, not the durable identity committed in Git. The durable identity remains the pointer plus source metadata: content SHA256 when known, DRS URI for DRS references, or provider URL/source metadata for provider references.
 
+## Primary remote DRS server state
+
+The **primary remote DRS server** is the configured `drs.default-remote` or the remote passed to a command. For reference-first flows, distinguish three places where state can exist:
+
+- **Git state:** committed pointer text at the repository path.
+- **Local git-drs state:** sidecar DRS object JSON under the repo's local DRS metadata directory, plus optional local LFS cache bytes.
+- **Primary remote DRS server state:** Syfon/Gen3 DRS records, scoped to the configured organization/project, and any remote storage object those records point at.
+
+`add-ref` and `add-url` are intentionally metadata-first commands. They create Git and local git-drs state first; they do not necessarily create or mutate the primary remote DRS server until a later `git drs push` or an explicit server-side copy/register operation.
+
+### Sequence: pointer and DRS server state for `add-ref` / `add-url`
+
+The following sequence diagram shows the expected pointer-file changes, local
+metadata/cache changes, and primary remote DRS server changes for the
+reference-first `add-ref`/`add-url` flows. If a caller says `add-reg` in this
+context, treat it as the registration side of the same reference-first flow:
+the server-side record is created or refined only when metadata is pushed or
+explicitly registered, not when the local pointer is first written.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Git as Git worktree/index
+    participant Local as Local git-drs metadata/cache
+    participant Remote as Primary remote DRS server
+    participant Source as Source DRS/provider object
+
+    rect rgb(238, 248, 255)
+        note over User,Source: add-ref: reference an existing DRS URI
+        User->>Remote: git drs add-ref drs://source/object data/file
+        Remote->>Source: Resolve DRS URI / fetch DRS object metadata
+        Source-->>Remote: DRS object metadata, size, access methods, optional sha256
+        Remote-->>User: Resolved DRS object metadata
+        alt Resolved object includes real sha256
+            User->>Git: Write pointer oid sha256:<real-content-sha256>
+            User->>Local: Store DRS metadata keyed by real sha256
+        else Resolved object does not include real sha256
+            User->>Git: Write git-drs pointer oid drs://source/object
+            User->>Local: Store DRS metadata keyed by derived DRS/local cache key
+        end
+        note over Remote: No new scoped DRS record is required merely because add-ref wrote a local pointer.
+    end
+
+    rect rgb(248, 255, 238)
+        note over User,Source: add-url: reference an existing provider object
+        User->>Remote: git drs add-url s3://bucket/key data/file [--sha256]
+        Remote->>Source: Inspect provider object using remote bucket credentials/scope
+        Source-->>Remote: Provider URL, size, ETag/metadata, optional trusted sha256
+        Remote-->>User: Inspected object metadata
+        alt Real sha256 supplied or trusted
+            User->>Git: Write pointer oid sha256:<real-content-sha256>
+            User->>Local: Store local DRS metadata with checksum sha256=<real-content-sha256>
+        else Real sha256 unknown
+            User->>Local: Calculate placeholder/local OID from provider metadata
+            User->>Git: Write pointer oid sha256:<placeholder-local-oid>
+            User->>Local: Store provider access URL and size without checksum=<placeholder-local-oid>
+        end
+        note over Remote: Inspection does not itself create the durable DRS record for this repo scope.
+    end
+
+    rect rgb(255, 248, 238)
+        note over User,Remote: Push/register metadata with primary remote
+        User->>Remote: git drs push / register metadata for reachable pointers
+        alt Pointer/local metadata has real sha256
+            Remote->>Remote: Upsert scoped DRS record with sha256, size, and access method
+        else Only DRS URI/provider source identity is known
+            Remote->>Remote: Upsert metadata preserving source URI/provider access, size, and no fake sha256
+        end
+    end
+
+    rect rgb(255, 238, 248)
+        note over User,Source: Later hydration discovers real content sha256
+        User->>Remote: git drs pull resolves DRS URI or source metadata
+        Remote->>Source: Request temporary access URL / download bytes
+        Source-->>Local: Store downloaded payload bytes in cache/worktree
+        Local->>Local: Calculate real sha256 over downloaded bytes
+        Local->>Local: Store/refine local checksum metadata sha256=<real-content-sha256>
+        opt User intentionally rewrites pointer metadata
+            User->>Git: Replace DRS/placeholder pointer with oid sha256:<real-content-sha256>
+        end
+        opt User pushes refined metadata
+            User->>Remote: git drs push / register refined checksum metadata
+            Remote->>Remote: Store real sha256 as checksum; keep DRS/provider retrieval identity
+            Remote->>Remote: Ensure placeholder or derived local OID is not advertised as checksum
+        end
+    end
+```
+
+### After `git drs add-ref <drs-uri> <path>`
+
+Expected state immediately after `add-ref` succeeds:
+
+| Location | Expected state |
+|---|---|
+| Git/worktree | A pointer file exists at `<path>`. If the resolved DRS object has a real SHA256 checksum, the pointer uses `oid sha256:<content-sha256>`; otherwise it uses a git-drs DRS URI pointer that preserves the input DRS URI. |
+| Local git-drs metadata | The resolved DRS object returned by the selected remote/resolver is stored locally under the local OID used for the pointer/cache lookup. If the DRS object omitted `self_uri`, the input DRS URI is retained as `self_uri`. |
+| Local payload cache | No payload download is required just to create the reference. The cache may still be empty for this object. |
+| Primary remote DRS server | No new record is required merely because `add-ref` ran. The primary remote must be able to resolve the source DRS URI for future hydration, but `add-ref` should be treated as creating a local reference to an existing DRS record, not as copying or registering that record into a new project scope. |
+
+If the input DRS URI points at another DRS authority or resolver, the primary remote's durable state after `add-ref` is still unchanged unless the server itself implements and is asked to persist a proxy/copy record. The committed reference remains valid because the pointer/local metadata preserve the source DRS URI.
+
+### After `git drs add-url <object-url-or-key> [path]`
+
+Expected state immediately after `add-url` succeeds:
+
+| Location | Expected state |
+|---|---|
+| Git/worktree | A Git LFS-shaped pointer file exists at `[path]`. With `--sha256`, its OID is the real content SHA256. Without `--sha256`, its OID is a deterministic SHA256-shaped placeholder/local OID derived from inspected provider metadata. |
+| Local git-drs metadata | A local DRS object is written with the resolved provider URL as an access method. When `--sha256` is provided, the local DRS object includes a `sha256` checksum. When SHA256 is unknown, the placeholder/local OID is **not** written as a checksum. |
+| Local payload cache | No payload upload or download is required. The object bytes are expected to already exist at the provider URL inspected by the remote. |
+| Primary remote DRS server | No DRS record is required immediately. On a later `git drs push`, git-drs can bulk-register metadata for the pointer into the primary remote scope. For known-SHA objects, the remote record should include the real SHA256 and size. For unknown-SHA objects, the remote record must preserve the provider access URL and size, and must not claim that the placeholder/local OID is a real content checksum. |
+
+A primary remote may already know about the provider object because of its bucket credential/scope configuration. That inspection ability is not the same thing as a durable DRS record for the repository object; durable registration is a push-time concern.
+
+### After a DRS URI is downloaded and a real SHA256 is calculated
+
+Downloading through a DRS URI has two separate effects:
+
+1. It hydrates local state by resolving the stable DRS URI to a temporary access URL and writing payload bytes into the local cache/worktree.
+2. It may reveal the real content SHA256 if the downloaded bytes are hashed locally.
+
+Expected state after the real SHA256 is known:
+
+| Location | Expected state |
+|---|---|
+| Git/worktree | Existing committed pointer identity should not silently change during download. A DRS URI pointer remains a DRS URI pointer until the user/tool intentionally rewrites and commits it as a content-SHA pointer. |
+| Local payload cache | The downloaded bytes exist in the local cache. If a previous cache key was derived from a DRS URI or placeholder, that key remains a local retrieval/cache key, not proof of content identity. Implementations may also add an alias/cache entry keyed by the real SHA256, but should avoid losing the source DRS URI mapping. |
+| Local git-drs metadata | The real SHA256 can be added as checksum metadata alongside the preserved DRS URI/provider source identity. The DRS URI/provider URL remains the durable retrieval contract unless and until a remote record with the real checksum is registered. |
+| Primary remote DRS server | Merely downloading and hashing bytes locally should not mutate the primary remote. If the repository later pushes an updated metadata record, the primary remote should have a scoped DRS record whose `sha256` is the real content checksum, whose `size` matches the downloaded payload, and whose access methods still resolve to the original DRS/provider source or to a managed copied object. The remote should not retain a placeholder/local OID as a checksum once the real SHA256 is known. |
+
+When a placeholder or DRS-derived local OID is replaced in metadata by a real SHA256, treat it as a metadata refinement, not as evidence that the original source identity was wrong. The safe final server state is: **real content SHA256 for checksum-based lookup, stable DRS URI/provider access metadata for retrieval, and no placeholder/local OID advertised as a content checksum.**
+
 ## Practical review guidance
 
 When reviewing pointer changes:

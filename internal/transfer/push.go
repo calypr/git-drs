@@ -188,10 +188,19 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			continue
 		}
 		if match, err := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
-			// The record is already registered in this scope. Keep the existing
-			// record and avoid rewriting metadata on every push.
-			s.drsObjByOID[oid] = match
-			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+			// The record is normally already registered in this scope, so avoid
+			// rewriting it on every push. An explicit local access URL (for
+			// example one created by add-url) is an intentional metadata change,
+			// however, and must be propagated even when the server can already
+			// resolve the object by checksum.
+			if firstAccessURL(obj) != "" && firstAccessURL(obj) != firstAccessURL(match) {
+				s.drsObjByOID[oid] = obj
+				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+			} else {
+				s.drsObjByOID[oid] = match
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+			}
 			continue
 		}
 

@@ -23,14 +23,25 @@ import (
 )
 
 type batchSyncSession struct {
-	ctx            context.Context
-	rt             *pushRuntime
-	reporter       UploadProgressReporter
-	filesByOID     map[string]lfs.LfsFileInfo
-	oids           []string
-	drsObjByOID    map[string]*drsapi.DrsObject
-	existingByHash map[string][]drsapi.DrsObject
-	uploadRequired map[string]bool
+	ctx                context.Context
+	rt                 *pushRuntime
+	reporter           UploadProgressReporter
+	filesByOID         map[string]lfs.LfsFileInfo
+	oids               []string
+	drsObjByOID        map[string]*drsapi.DrsObject
+	existingByHash     map[string][]drsapi.DrsObject
+	uploadRequired     map[string]bool
+	skippedUnavailable int
+}
+
+type PushSyncSummary struct {
+	SkippedUnavailable int
+}
+
+func (s *batchSyncSession) debug(message string, args ...any) {
+	if s != nil && s.rt != nil && s.rt.Logger != nil {
+		s.rt.Logger.DebugContext(s.ctx, message, args...)
+	}
 }
 
 type uploadCandidate struct {
@@ -42,8 +53,14 @@ type uploadCandidate struct {
 }
 
 const metadataLookupBatchSize = 500
+const metadataRegisterBatchSize = 250
 
 func BatchSyncForPush(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
+	_, err := BatchSyncForPushWithSummary(cl, ctx, files, reporter)
+	return err
+}
+
+func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) (PushSyncSummary, error) {
 	session := &batchSyncSession{
 		ctx:            ctx,
 		rt:             newPushRuntime(cl),
@@ -53,32 +70,35 @@ func BatchSyncForPush(cl *remoteruntime.GitContext, ctx context.Context, files m
 		uploadRequired: make(map[string]bool),
 	}
 	if len(files) == 0 {
-		return nil
+		return PushSyncSummary{}, nil
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Normalizing files...")
+	session.debug("normalizing push files")
 	session.normalizeFiles(files)
-	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Looking up metadata for %d unique OIDs...\n", len(session.oids))
+	session.debug("looking up push metadata", "objects", len(session.oids))
 	if err := session.lookupMetadata(); err != nil {
-		return err
+		return PushSyncSummary{}, err
 	}
-	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Ensuring metadata registered...")
+	session.debug("ensuring push metadata registered")
 	if err := session.ensureMetadataRegistered(); err != nil {
-		return err
+		return PushSyncSummary{}, err
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Identifying upload candidates...")
+	session.debug("identifying upload candidates")
 	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
-		return err
+		return PushSyncSummary{}, err
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: BatchSyncForPush: Identified %d upload candidates\n", len(candidates))
+	session.debug("identified upload candidates", "objects", len(candidates))
 	if len(candidates) == 0 {
-		return nil
+		return PushSyncSummary{SkippedUnavailable: session.skippedUnavailable}, nil
 	}
 
-	fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush: Executing upload plan...")
-	return session.executeUploadPlan(candidates)
+	session.debug("executing upload plan")
+	if err := session.executeUploadPlan(candidates); err != nil {
+		return PushSyncSummary{}, err
+	}
+	return PushSyncSummary{SkippedUnavailable: session.skippedUnavailable}, nil
 }
 
 func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
@@ -102,7 +122,8 @@ func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
 	batches := chunkStrings(s.oids, metadataLookupBatchSize)
 	for idx, batch := range batches {
-		fmt.Fprintf(os.Stderr, "DEBUG:   lookupMetadata batch %d/%d (size: %d)\n", idx+1, len(batches), len(batch))
+		fmt.Fprintf(os.Stdout, "DRS: checking remote metadata batch %d/%d (%d object(s))\n", idx+1, len(batches), len(batch))
+		s.debug("metadata lookup batch", "batch", idx+1, "batches", len(batches), "size", len(batch))
 		objectsByHash, err := lookup.ObjectsByHashes(s.ctx, s.rt.API, batch)
 		if err != nil {
 			return fmt.Errorf("batch hash lookup failed: %w", err)
@@ -144,7 +165,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 	for idx, oid := range s.oids {
 		if idx > 0 && idx%500 == 0 {
-			fmt.Fprintf(os.Stderr, "DEBUG:   ensureMetadataRegistered processing object %d/%d\n", idx, len(s.oids))
+			s.debug("processing metadata object", "object", idx, "total", len(s.oids))
 		}
 		obj, err := s.getOrCreateDRSObjectCandidate(oid)
 		if err != nil {
@@ -154,12 +175,22 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
+			// A pointer in Git history is not actionable unless this checkout
+			// has the payload bytes. Do not create orphan metadata for historical
+			// pointers that the caller cannot upload.
+			if !s.hasLocalPayload(oid) {
+				s.skippedUnavailable++
+				s.debug("skipping pointer without local payload", "oid", oid)
+				continue
+			}
 			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 			s.uploadRequired[oid] = true
 			continue
 		}
 		if match, err := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
-			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+			// The record is already registered in this scope. Keep the existing
+			// record and avoid rewriting metadata on every push.
+			s.drsObjByOID[oid] = match
 			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
 			continue
 		}
@@ -192,30 +223,44 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		})
 	}
 
-	s.rt.Logger.InfoContext(s.ctx, fmt.Sprintf("bulk registering %d missing records", len(toRegister)))
-	registered, err := s.rt.API.Client.InternalAPI().InternalBulkCreateWithResponse(s.ctx, internalapi.InternalBulkCreateJSONRequestBody(
-		internalapi.BulkCreateRequest{Records: toRegister},
-	))
-	if err != nil {
-		return fmt.Errorf("bulk register failed: %w", err)
-	}
-	if registered.JSON201 == nil {
-		return fmt.Errorf("bulk register failed: unexpected response %d", registered.StatusCode())
-	}
-	if registered.JSON201.Records == nil {
-		return fmt.Errorf("bulk register failed: empty record response")
-	}
-	for i := range *registered.JSON201.Records {
-		rec := (*registered.JSON201.Records)[i]
-		oid := ""
-		if rec.Hashes != nil {
-			oid = localdrsobject.NormalizeOid((*rec.Hashes)["sha256"])
+	s.rt.Logger.InfoContext(s.ctx, "registering missing metadata", "records", len(toRegister))
+	for start := 0; start < len(toRegister); start += metadataRegisterBatchSize {
+		end := start + metadataRegisterBatchSize
+		if end > len(toRegister) {
+			end = len(toRegister)
 		}
-		if oid == "" {
-			continue
+		batch := toRegister[start:end]
+		registered, err := s.rt.API.Client.InternalAPI().InternalBulkCreateWithResponse(s.ctx, internalapi.InternalBulkCreateJSONRequestBody(
+			internalapi.BulkCreateRequest{Records: batch},
+		))
+		if err != nil {
+			return fmt.Errorf("bulk register failed for batch %d-%d: %w", start+1, end, err)
 		}
-		if obj := s.drsObjByOID[oid]; obj != nil && strings.TrimSpace(obj.Id) == "" {
-			obj.Id = strings.TrimSpace(rec.Did)
+		if registered.JSON201 == nil {
+			return fmt.Errorf("bulk register failed for batch %d-%d: unexpected response %d", start+1, end, registered.StatusCode())
+		}
+		if registered.JSON201.Records == nil {
+			return fmt.Errorf("bulk register failed for batch %d-%d: empty record response", start+1, end)
+		}
+		for i := range *registered.JSON201.Records {
+			rec := (*registered.JSON201.Records)[i]
+			oid := ""
+			if rec.Hashes != nil {
+				oid = localdrsobject.NormalizeOid((*rec.Hashes)["sha256"])
+			}
+			if oid == "" {
+				continue
+			}
+			if obj := s.drsObjByOID[oid]; obj != nil && strings.TrimSpace(obj.Id) == "" {
+				obj.Id = strings.TrimSpace(rec.Did)
+			}
+		}
+		if s.reporter != nil {
+			s.reporter.OnMetadataProgress(MetadataProgressEvent{
+				Completed: end,
+				Total:     len(toRegister),
+				Phase:     MetadataProgressRegistering,
+			})
 		}
 	}
 	if s.reporter != nil {
@@ -259,11 +304,15 @@ func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.Dr
 	if localObj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); err == nil && localObj != nil {
 		return scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
 	}
-	stat, err := os.Stat(file.Name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, err)
+	size := file.Size
+	if size <= 0 {
+		stat, err := os.Stat(file.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat file %s for oid %s: %w", file.Name, oid, err)
+		}
+		size = stat.Size()
 	}
-	obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, stat.Size(), nil)
+	obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, size, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build drs object for oid %s: %w", oid, err)
 	}
@@ -398,7 +447,8 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 			return nil, fmt.Errorf("failed to resolve upload source for oid %s: %w", oid, err)
 		}
 		if !canUpload {
-			s.rt.Logger.WarnContext(s.ctx, "no local payload available; skipping upload", "oid", oid, "path", file.Name)
+			s.skippedUnavailable++
+			s.debug("skipping upload without local payload", "oid", oid, "pointer", file.Name)
 			continue
 		}
 
@@ -416,6 +466,12 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 		})
 	}
 	return candidates, nil
+}
+
+func (s *batchSyncSession) hasLocalPayload(oid string) bool {
+	file := s.filesByOID[oid]
+	_, ok, err := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+	return err == nil && ok
 }
 
 func (s *batchSyncSession) needsUpload(oid string) (bool, error) {

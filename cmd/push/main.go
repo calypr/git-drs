@@ -40,17 +40,13 @@ var Cmd = &cobra.Command{
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
-		fmt.Fprintln(os.Stderr, "DEBUG: ENTERING RunE for push")
 		myLogger := drslog.GetLogger()
 		ctx := context.Background()
-		fmt.Fprintln(os.Stderr, "DEBUG: Loading config...")
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to load config:", err)
-			myLogger.Debug(fmt.Sprintf("Error loading config: %v", err))
+			myLogger.DebugContext(ctx, "load config failed", "error", err)
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Config loaded successfully")
 
 		var remote config.Remote
 		if len(args) > 0 {
@@ -63,39 +59,35 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		fmt.Fprintln(os.Stderr, "DEBUG: Getting remote client for remote:", remote)
 		drsClient, err := remoteruntime.New(cfg, remote, myLogger)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to get remote client:", err)
-			myLogger.Debug(fmt.Sprintf("Error creating DRS client: %s", err))
+			myLogger.DebugContext(ctx, "create remote client failed", "error", err)
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Remote client retrieved. Resolving push refs...")
 		drsClient.ForceUpload = pushForceUpload
-		pushRefs, err := currentPushRefUpdates(ctx, string(remote))
+		state, err := resolveSyncRefState(ctx, string(remote))
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to resolve push refs:", err)
 			return fmt.Errorf("failed to resolve pushed refs: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Push refs resolved. Discovering reachable LFS files...")
-		lfsFiles, err := discoverLfsFilesForPush(pushRefs, myLogger)
+		exclusions := []string{}
+		if state.AckOID != "" && !pushForceUpload {
+			exclusions = append(exclusions, state.AckOID)
+		}
+		lfsFiles, err := lfs.PointerInventoryForObjects(ctx, []string{state.TargetOID}, exclusions)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to discover LFS files:", err)
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
 		uniqueOIDs := countUniqueOIDs(lfsFiles)
-		fmt.Fprintf(os.Stderr, "DEBUG: Reachable LFS files resolved. Total files: %d unique oids: %d\n", len(lfsFiles), uniqueOIDs)
-		fmt.Fprintf(os.Stdout, "Discovered %d reachable DRS pointer file(s) (%d unique object(s)).\n", len(lfsFiles), uniqueOIDs)
-
-		fmt.Fprintln(os.Stderr, "DEBUG: Reconciling committed deletes...")
-		if _, err := internaltransfer.ReconcileCommittedDeletes(ctx, drsClient, pushRefs, myLogger); err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Failed to reconcile deletes:", err)
-			return fmt.Errorf("failed to reconcile deletes: %w", err)
+		if state.AckOID == "" {
+			fmt.Fprintf(os.Stdout, "DRS: no synchronization baseline for %s; bootstrapping full Git history and checking %d unique object(s)\n", state.RemoteRef, uniqueOIDs)
+			fmt.Fprintln(os.Stdout, "DRS: this full metadata check is normally needed once per branch; it repeats only when the remote synchronization ref is missing or behind")
+		} else {
+			fmt.Fprintf(os.Stdout, "DRS: checking %d new reachable pointer(s) (%d unique object(s)) since synchronization %s\n", len(lfsFiles), uniqueOIDs, state.AckOID[:12])
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Deletes reconciled. Starting BatchSyncForPush...")
 		progress := internaltransfer.NewUploadProgressRenderer(os.Stderr)
-		if err := internaltransfer.BatchSyncForPush(drsClient, ctx, lfsFiles, progress); err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush failed:", err)
+		syncSummary, err := internaltransfer.BatchSyncForPushWithSummary(drsClient, ctx, lfsFiles, progress)
+		if err != nil {
+			myLogger.DebugContext(ctx, "DRS push failed", "error", err)
 			if finishErr := progress.Finish(); finishErr != nil {
 				return fmt.Errorf("failed batch register/upload workflow: %w (progress finalize error: %v)", err, finishErr)
 			}
@@ -104,30 +96,34 @@ var Cmd = &cobra.Command{
 		if err := progress.Finish(); err != nil {
 			return fmt.Errorf("finalize upload progress: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: BatchSyncForPush completed successfully")
 		switch {
 		case len(lfsFiles) == 0:
-			fmt.Fprintln(os.Stdout, "No reachable DRS pointer files found; pushing Git refs only.")
+			fmt.Fprintln(os.Stdout, "DRS: no reachable LFS objects require synchronization")
 		case !progress.HadUploads():
-			fmt.Fprintln(os.Stdout, "No DRS payload uploads needed; all tracked objects are already available remotely.")
+			fmt.Fprintln(os.Stdout, "DRS: no payload uploads required")
 		}
 
 		pushArgs := []string{"push"}
 		if !pushWithHooks {
 			pushArgs = append(pushArgs, "--no-verify")
 		}
-		pushArgs = append(pushArgs, string(remote))
-		fmt.Fprintln(os.Stderr, "DEBUG: Invoking git push with args:", pushArgs)
+		pushArgs = append(pushArgs, string(remote), state.LocalRef+":"+state.RemoteRef)
+		myLogger.DebugContext(ctx, "pushing Git ref", "remote", remote, "ref", state.RemoteRef, "oid", state.TargetOID)
 		out, err := runCommand("git", pushArgs...)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "DEBUG: Git push failed:", err)
 			msg := strings.TrimSpace(string(out))
 			if msg == "" {
 				msg = err.Error()
 			}
 			return fmt.Errorf("git push failed for remote %q: %s", remote, msg)
 		}
-		fmt.Fprintln(os.Stderr, "DEBUG: Git push completed successfully")
+		if syncSummary.SkippedUnavailable > 0 {
+			fmt.Fprintf(os.Stdout, "DRS: %d historical object(s) had no local payload and were skipped\n", syncSummary.SkippedUnavailable)
+		}
+		if err := pushSyncAcknowledgment(ctx, string(remote), state); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "DRS: synchronized %s at %s\n", state.RemoteRef, state.TargetOID)
 		return nil
 	},
 }

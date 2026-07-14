@@ -175,6 +175,17 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if len(recs) == 0 {
+			// add-url deliberately does not place payload bytes in the local LFS
+			// cache. Its locally stored DRS object is nevertheless actionable
+			// because it points at an existing external object. Register that
+			// metadata without scheduling an upload.
+			if localObjectHasResolvableAccessMethod(oid) {
+				s.drsObjByOID[oid] = obj
+				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+				s.uploadRequired[oid] = false
+				continue
+			}
+
 			// A pointer in Git history is not actionable unless this checkout
 			// has the payload bytes. Do not create orphan metadata for historical
 			// pointers that the caller cannot upload.
@@ -500,13 +511,7 @@ func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
 	if s.rt.Tuning.ForceUpload {
 		return true, nil
 	}
-	if s.uploadRequired[oid] {
-		return true, nil
-	}
-	if len(s.existingByHash[oid]) == 0 {
-		return true, nil
-	}
-	return false, nil
+	return s.uploadRequired[oid], nil
 }
 
 func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
@@ -522,6 +527,11 @@ func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
 		}
 	}
 	return false
+}
+
+func localObjectHasResolvableAccessMethod(oid string) bool {
+	obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	return err == nil && hasResolvableAccessMethod(obj)
 }
 
 func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error {

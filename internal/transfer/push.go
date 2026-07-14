@@ -193,7 +193,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// example one created by add-url) is an intentional metadata change,
 			// however, and must be propagated even when the server can already
 			// resolve the object by checksum.
-			if firstAccessURL(obj) != "" && firstAccessURL(obj) != firstAccessURL(match) {
+			localURL := firstAccessURL(obj)
+			if localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); readErr == nil {
+				localURL = firstAccessURL(localObj)
+			}
+			if localURL != "" && localURL != firstAccessURL(match) {
 				s.drsObjByOID[oid] = obj
 				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
@@ -311,7 +315,16 @@ func (s *batchSyncSession) buildReusableScopedObject(oid string, existing *drsap
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
 	file := s.filesByOID[oid]
 	if localObj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); err == nil && localObj != nil {
-		return scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
+		obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
+		if err != nil {
+			return nil, err
+		}
+		// add-url records carry an explicit source URL that must survive the
+		// normal scoped-object normalization used for push.
+		if firstAccessURL(localObj) != "" {
+			obj.AccessMethods = localObj.AccessMethods
+		}
+		return obj, nil
 	}
 	size := file.Size
 	if size <= 0 {

@@ -243,10 +243,9 @@ What it does:
 
 Remote behavior on push:
 
-- `git drs push` derives deleted pointers from the pushed Git commit delta
-- if the scoped record has exactly one `controlled_access` entry, the whole DRS record is deleted
-- if the scoped record has multiple `controlled_access` entries, only the current `organization/project` resource is removed
-- underlying object bytes are not deleted by default
+- `git drs push` removes the pointer from the Git tip but does not delete the DRS record or payload
+- historical DRS objects remain available while their pointers are reachable from Git history
+- use the explicit `git drs delete` command when destructive DRS deletion is intended
 
 ### `git drs copy-records [source-remote] <target-remote> <organization/project>`
 

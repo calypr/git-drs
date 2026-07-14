@@ -276,3 +276,22 @@ func assertDRSRecordMissing(t *testing.T, serverURL, did string) {
 		t.Fatalf("expected DRS record %s to be deleted, got status=%d body=%s", did, resp.StatusCode, string(body))
 	}
 }
+
+func assertDRSRecordExists(t *testing.T, serverURL, did string) {
+	t.Helper()
+	target := strings.TrimRight(serverURL, "/") + "/ga4gh/drs/v1/objects/" + did
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		t.Fatalf("build GET %s: %v", target, err)
+	}
+	req.SetBasicAuth(dockerE2ELocalUser, dockerE2ELocalPassword)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected DRS record %s to remain, got status=%d body=%s", did, resp.StatusCode, string(body))
+	}
+}

@@ -179,7 +179,7 @@ sequenceDiagram
         end
         opt User pushes refined metadata
             User->>Remote: git drs push / register refined checksum metadata
-            Remote->>Remote: Store real sha256 as checksum; keep DRS/provider retrieval identity
+            Remote->>Remote: Store real sha256 as checksum, keep DRS/provider retrieval identity
             Remote->>Remote: Ensure placeholder or derived local OID is not advertised as checksum
         end
     end

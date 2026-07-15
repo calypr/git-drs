@@ -3,9 +3,12 @@ package lookup
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,5 +108,65 @@ func TestObjectsByHashesForScopeUsesOneBulkRequestAndFiltersByScope(t *testing.T
 	}
 	if records := got["temporary"]; len(records) != 1 || records[0].Checksums[0].Type != "git-drs-placeholder" {
 		t.Fatalf("expected placeholder checksum record, got %+v", records)
+	}
+}
+
+func TestMissingSHA256ForScopeUsesProjectScopedEndpoint(t *testing.T) {
+	t.Parallel()
+	var gotRequest struct {
+		Organization string   `json:"organization"`
+		Project      string   `json:"project"`
+		SHA256       []string `json:"sha256"`
+	}
+	httpClient := &http.Client{Transport: lookupRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.Path != bulkMissingSHA256Path {
+			return nil, fmt.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+			return nil, err
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"checked":2,"missing_sha256":["missing"]}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Request:    r,
+		}, nil
+	})}
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	client := raw.(*syclient.Client)
+	ctx := &remoteruntime.GitContext{Client: client, Organization: "org", ProjectId: "project"}
+
+	missing, err := MissingSHA256ForScope(context.Background(), ctx, []string{"present", "missing"})
+	if err != nil {
+		t.Fatalf("MissingSHA256ForScope returned error: %v", err)
+	}
+	if !slices.Equal(missing, []string{"missing"}) {
+		t.Fatalf("unexpected missing values: %v", missing)
+	}
+	if gotRequest.Organization != "org" || gotRequest.Project != "project" || !slices.Equal(gotRequest.SHA256, []string{"present", "missing"}) {
+		t.Fatalf("unexpected request payload: %+v", gotRequest)
+	}
+}
+
+func TestMissingSHA256ForScopeReportsUnsupportedServer(t *testing.T) {
+	t.Parallel()
+	httpClient := &http.Client{Transport: lookupRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("not found")),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	_, err = MissingSHA256ForScope(context.Background(), &remoteruntime.GitContext{Client: raw.(*syclient.Client), Organization: "org", ProjectId: "project"}, []string{"oid"})
+	if !errors.Is(err, ErrBulkMissingSHA256Unsupported) {
+		t.Fatalf("expected unsupported endpoint error, got %v", err)
 	}
 }

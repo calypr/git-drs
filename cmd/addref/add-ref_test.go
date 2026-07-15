@@ -1,11 +1,18 @@
 package addref
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
@@ -65,5 +72,55 @@ func TestCreateDRSPointerPreservesSourceURI(t *testing.T) {
 	expected := "version https://calypr.github.io/spec/v1\noid drs://example.org/object-1\nsize 42\n"
 	if string(data) != expected {
 		t.Fatalf("pointer mismatch: expected %q, got %q", expected, string(data))
+	}
+}
+
+func TestResolveAddRefObjectUsesSourceAuthorityRemoteCredentials(t *testing.T) {
+	var primaryRequests int
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryRequests++
+		http.Error(w, "primary remote must not resolve source DRS URI", http.StatusTeapot)
+	}))
+	defer primary.Close()
+
+	var sourceRequests int
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceRequests++
+		if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+			t.Fatalf("unexpected source path: %s", r.URL.Path)
+		}
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "source-user" || pass != "source-pass" {
+			t.Fatalf("expected source basic auth credentials, got ok=%v user=%q pass=%q", ok, user, pass)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"object-1","self_uri":"drs://` + r.Host + `/object-1","size":42}`))
+	}))
+	defer source.Close()
+
+	cfg := &config.Config{
+		DefaultRemote: "primary",
+		Remotes: map[config.Remote]config.RemoteSelect{
+			"primary": {Local: &config.LocalRemote{BaseURL: primary.URL}},
+			"source":  {Local: &config.LocalRemote{BaseURL: source.URL, BasicUsername: "source-user", BasicPassword: "source-pass"}},
+		},
+	}
+	primaryCtx, err := remoteruntime.New(cfg, "primary", drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("create primary runtime: %v", err)
+	}
+
+	obj, err := resolveAddRefObject(context.Background(), cfg, "primary", primaryCtx, "drs://"+strings.TrimPrefix(source.URL, "http://")+"/object-1")
+	if err != nil {
+		t.Fatalf("resolveAddRefObject: %v", err)
+	}
+	if obj.Id != "object-1" || obj.Size != 42 {
+		t.Fatalf("unexpected object: %+v", obj)
+	}
+	if sourceRequests != 1 {
+		t.Fatalf("expected one source request, got %d", sourceRequests)
+	}
+	if primaryRequests != 0 {
+		t.Fatalf("expected primary not to be contacted, got %d requests", primaryRequests)
 	}
 }

@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
@@ -15,6 +17,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +53,7 @@ var Cmd = &cobra.Command{
 			return err
 		}
 
-		obj, err := client.Client.DRS().GetObject(context.Background(), drsUri)
+		obj, err := resolveAddRefObject(context.Background(), cfg, remoteName, client, drsUri)
 		if err != nil {
 			return err
 		}
@@ -100,4 +103,87 @@ func addRefLocalOID(sourceURI string, remoteName config.Remote, obj *drsapi.DrsO
 func derivedSourceOID(sourceURI, remoteName string) string {
 	sum := sha256.Sum256([]byte("git-drs-source-ref:v1\nsource_uri=" + sourceURI + "\nremote=" + remoteName + "\n"))
 	return hex.EncodeToString(sum[:])
+}
+
+type drsObjectGetter interface {
+	GetObject(context.Context, string) (drsapi.DrsObject, error)
+}
+
+func resolveAddRefObject(ctx context.Context, cfg *config.Config, primaryRemote config.Remote, primary *remoteruntime.GitContext, drsURI string) (drsapi.DrsObject, error) {
+	objectID, sourceRemote, ok := sourceRemoteForDRSURI(cfg, primaryRemote, drsURI)
+	if !ok {
+		return primary.Client.DRS().GetObject(ctx, drsURI)
+	}
+	if sourceRemote == primaryRemote {
+		if sourceEndpoint, sourceOK := sourceEndpointForDRSURI(drsURI); sourceOK && !endpointMatchesDRSURI(primary.Endpoint, drsURI) {
+			getter, err := newAnonymousSourceDRSGetter(sourceEndpoint)
+			if err != nil {
+				return drsapi.DrsObject{}, err
+			}
+			return getter.GetObject(ctx, objectID)
+		}
+		return primary.Client.DRS().GetObject(ctx, objectID)
+	}
+	client, err := remoteruntime.New(cfg, sourceRemote, primary.Logger)
+	if err != nil {
+		return drsapi.DrsObject{}, err
+	}
+	return client.Client.DRS().GetObject(ctx, objectID)
+}
+
+func sourceRemoteForDRSURI(cfg *config.Config, primaryRemote config.Remote, drsURI string) (objectID string, remoteName config.Remote, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(drsURI))
+	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
+		return drsURI, primaryRemote, false
+	}
+	objectID = strings.TrimPrefix(u.EscapedPath(), "/")
+	if objectID == "" {
+		return drsURI, primaryRemote, false
+	}
+	for name, selected := range cfg.Remotes {
+		remote := config.Config{Remotes: map[config.Remote]config.RemoteSelect{name: selected}}.GetRemote(name)
+		if remote == nil {
+			continue
+		}
+		endpoint, err := url.Parse(remote.GetEndpoint())
+		if err != nil {
+			continue
+		}
+		if strings.EqualFold(endpoint.Host, u.Host) {
+			return objectID, name, true
+		}
+	}
+	return objectID, primaryRemote, true
+}
+
+func sourceEndpointForDRSURI(drsURI string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(drsURI))
+	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
+		return "", false
+	}
+	return "https://" + u.Host, true
+}
+
+func endpointMatchesDRSURI(endpoint string, drsURI string) bool {
+	u, err := url.Parse(strings.TrimSpace(drsURI))
+	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
+		return false
+	}
+	endpointURL, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(endpointURL.Host, u.Host)
+}
+
+func newAnonymousSourceDRSGetter(endpoint string) (drsObjectGetter, error) {
+	raw, err := syclient.New(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	client, ok := raw.(*syclient.Client)
+	if !ok {
+		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
+	}
+	return client.DRS(), nil
 }

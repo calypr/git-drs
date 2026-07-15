@@ -48,7 +48,7 @@ A DRS/provider access URL is usually not stable source identity. It is a tempora
 
 `add-ref` creates a reference to an existing DRS object without downloading payload bytes solely to compute a checksum.
 
-1. The command resolves the input DRS URI through the selected remote/resolver.
+1. The client resolves the input DRS URI against the source authority/resolver named by the `drs://...` URI, using credentials appropriate for that source. A primary remote is only used for this metadata fetch when it is explicitly configured as the source resolver/proxy.
 2. If the DRS object reports a real SHA256, `git-drs` writes a SHA256 pointer whose OID is that content checksum.
 3. If the DRS object does not report a real SHA256, `git-drs` writes a DRS URI pointer whose OID preserves the original `drs://...` source reference.
 4. The fetched DRS metadata is stored locally under a deterministic local/cache OID.
@@ -121,15 +121,21 @@ sequenceDiagram
     actor User
     participant Git as Git worktree/index
     participant Local as Local git-drs metadata/cache
+    participant Source as Source DRS authority/resolver
     participant Remote as Primary remote DRS server
-    participant Source as Source DRS/provider object
+    participant Provider as Provider object
 
     rect rgb(238, 248, 255)
         note over User,Source: add-ref: reference an existing DRS URI
-        User->>Remote: git drs add-ref drs://source/object data/file
-        Remote->>Source: Resolve DRS URI / fetch DRS object metadata
-        Source-->>Remote: DRS object metadata, size, access methods, optional sha256
-        Remote-->>User: Resolved DRS object metadata
+        User->>Source: git drs add-ref drs://source/object data/file
+        Source-->>User: DRS object metadata, size, access methods, optional sha256
+        note over User,Source: Client resolves drs://source/object against the source authority/resolver using source credentials.
+        opt Primary remote is explicitly configured as source resolver/proxy
+            User->>Remote: Resolve drs://source/object through configured proxy
+            Remote->>Source: Fetch DRS object metadata using configured/delegated source credentials
+            Source-->>Remote: DRS object metadata
+            Remote-->>User: Resolved DRS object metadata
+        end
         alt Resolved object includes real sha256
             User->>Git: Write pointer oid sha256:<real-content-sha256>
             User->>Local: Store DRS metadata keyed by real sha256
@@ -141,10 +147,10 @@ sequenceDiagram
     end
 
     rect rgb(248, 255, 238)
-        note over User,Source: add-url: reference an existing provider object
+        note over User,Provider: add-url: reference an existing provider object
         User->>Remote: git drs add-url s3://bucket/key data/file [--sha256]
-        Remote->>Source: Inspect provider object using remote bucket credentials/scope
-        Source-->>Remote: Provider URL, size, ETag/metadata, optional trusted sha256
+        Remote->>Provider: Inspect provider object using remote bucket credentials/scope
+        Provider-->>Remote: Provider URL, size, ETag/metadata, optional trusted sha256
         Remote-->>User: Inspected object metadata
         alt Real sha256 supplied or trusted
             User->>Git: Write pointer oid sha256:<real-content-sha256>
@@ -169,9 +175,8 @@ sequenceDiagram
 
     rect rgb(255, 238, 248)
         note over User,Source: Later hydration discovers real content sha256
-        User->>Remote: git drs pull resolves DRS URI or source metadata
-        Remote->>Source: Request temporary access URL / download bytes
-        Source-->>Local: Store downloaded payload bytes in cache/worktree
+        User->>Source: git drs pull resolves DRS URI or source metadata
+        Source-->>Local: Temporary access URL / downloaded payload bytes in cache/worktree
         Local->>Local: Calculate real sha256 over downloaded bytes
         Local->>Local: Store/refine local checksum metadata sha256=<real-content-sha256>
         opt User intentionally rewrites pointer metadata
@@ -194,7 +199,7 @@ Expected state immediately after `add-ref` succeeds:
 | Git/worktree | A pointer file exists at `<path>`. If the resolved DRS object has a real SHA256 checksum, the pointer uses `oid sha256:<content-sha256>`; otherwise it uses a git-drs DRS URI pointer that preserves the input DRS URI. |
 | Local git-drs metadata | The resolved DRS object returned by the selected remote/resolver is stored locally under the local OID used for the pointer/cache lookup. If the DRS object omitted `self_uri`, the input DRS URI is retained as `self_uri`. |
 | Local payload cache | No payload download is required just to create the reference. The cache may still be empty for this object. |
-| Primary remote DRS server | No new record is required merely because `add-ref` ran. The primary remote must be able to resolve the source DRS URI for future hydration, but `add-ref` should be treated as creating a local reference to an existing DRS record, not as copying or registering that record into a new project scope. |
+| Primary remote DRS server | No new record is required merely because `add-ref` ran. The client should resolve the source DRS URI through the source authority/resolver using source credentials for future hydration. The primary remote only needs to resolve that URI when it is explicitly configured as the source resolver/proxy; otherwise, `add-ref` should be treated as creating a local reference to an existing DRS record, not as copying or registering that record into a new project scope. |
 
 If the input DRS URI points at another DRS authority or resolver, the primary remote's durable state after `add-ref` is still unchanged unless the server itself implements and is asked to persist a proxy/copy record. The committed reference remains valid because the pointer/local metadata preserve the source DRS URI.
 

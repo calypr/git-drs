@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -209,6 +210,64 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 	cfg.Remotes[remoteName] = rs
 }
 
+func loadGitConfigOverrides(cfg *Config) error {
+	cmd := exec.Command("git", "config", "--get-regexp", `^drs\.`)
+	out, err := cmd.Output()
+	if err != nil {
+		// git config exits non-zero when no matching keys exist. In that case,
+		// the go-git result above is still the complete repository-local config.
+		return nil
+	}
+
+	remoteOptions := make(map[Remote]map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if key == "drs.default-remote" {
+			cfg.DefaultRemote = Remote(value)
+			continue
+		}
+		const prefix = "drs.remote."
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(key, prefix)
+		idx := strings.LastIndex(rest, ".")
+		if idx <= 0 || idx == len(rest)-1 {
+			continue
+		}
+		name := Remote(rest[:idx])
+		option := rest[idx+1:]
+		if remoteOptions[name] == nil {
+			remoteOptions[name] = make(map[string]string)
+		}
+		remoteOptions[name][option] = value
+	}
+
+	for name, opts := range remoteOptions {
+		parseAndAddRemote(
+			cfg,
+			remoteSubsectionPrefix+string(name),
+			opts["type"],
+			opts["endpoint"],
+			opts["project"],
+			opts["bucket"],
+			opts["organization"],
+			opts["storage_prefix"],
+			opts["auth"],
+			opts["mode"],
+		)
+	}
+	return nil
+}
+
 // LoadConfig loads configuration using go-git
 func LoadConfig() (*Config, error) {
 	repo, err := getRepo()
@@ -254,6 +313,10 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("mode"),
 			)
 		}
+	}
+
+	if err := loadGitConfigOverrides(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

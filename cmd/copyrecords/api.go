@@ -77,7 +77,9 @@ func (r *rawIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptio
 	if opts.Limit != 0 {
 		params.Set("limit", fmt.Sprintf("%d", opts.Limit))
 	}
-	if opts.Page != 0 {
+	if opts.Start != "" {
+		params.Set("start", opts.Start)
+	} else if opts.Page != 0 {
 		params.Set("page", fmt.Sprintf("%d", opts.Page))
 	}
 	var out copyListRecordsResponse

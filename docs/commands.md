@@ -226,18 +226,20 @@ git drs push production
 What it does:
 
 - resolves local pointer/object metadata
-- looks up matching remote metadata in scope
-- registers missing metadata
-- uploads local payload bytes when needed
-- reconciles committed tracked-file deletes derived from the pushed Git ref delta
+- discovers all newly reachable LFS/DRS pointer objects in the Git object graph
+- compares them with the remote `refs/git-drs/synced/*` acknowledgment ref
+- registers only missing scoped metadata
+- uploads only missing local payload bytes
+- advances the synchronization acknowledgment only after Git and DRS work succeeds
 - completes the Git push flow
 
 Notes:
 
 - this is the normal command for tracked data changes
 - plain `git push` does not trigger `git-drs` registration or upload behavior
-- delete reconciliation is Git-history-derived; there is no delete-intent sidecar state
-- the diff base comes from the current branch upstream when available, otherwise from the best available remote tracking base
+- synchronization is history-derived; pointers deleted from the tip remain covered while reachable from Git history
+- the remote acknowledgment ref allows a later `git drs push` from another clone to recover after plain `git push`
+- unreachable-object cleanup is separate from normal push and is not performed implicitly
 
 ## Provider/Object Reference Workflows
 
@@ -297,10 +299,9 @@ What it does:
 
 Remote behavior on push:
 
-- `git drs push` derives deleted pointers from the pushed Git commit delta
-- if the scoped record has exactly one `controlled_access` entry, the whole DRS record is deleted
-- if the scoped record has multiple `controlled_access` entries, only the current `organization/project` resource is removed
-- underlying object bytes are not deleted by default
+- `git drs push` removes the pointer from the Git tip but does not delete the DRS record or payload
+- historical DRS objects remain available while their pointers are reachable from Git history
+- use the explicit `git drs delete` command when destructive DRS deletion is intended
 
 ### `git drs copy-records [source-remote] <target-remote> <organization/project>`
 

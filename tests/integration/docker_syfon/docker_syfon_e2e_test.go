@@ -172,13 +172,13 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	}
 	t.Logf("hash verification complete for source.txt=%s multipart.bin=%s", smallSumHex, largeSumHex)
 
-	t.Logf("STEP 7: Deleting a tracked file via git drs rm and verifying remote record + bucket removal...")
+	t.Logf("STEP 7: Removing a tracked file via git drs rm while retaining its historical DRS object...")
 	runCommand(t, repoDir, nil, "git", "drs", "rm", "data/source.txt")
 	runCommand(t, repoDir, nil, "git", "commit", "-m", "remove source.txt through git drs rm")
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
 	logRepoSnapshot(t, repoDir, "post-delete-push")
-	assertMinIOObjectMissing(t, minioEnv.s3Client, minioEnv.bucket, smallDid)
-	assertDRSRecordMissing(t, server.url, smallDid)
+	assertMinIOObjectExists(t, minioEnv.s3Client, minioEnv.bucket, smallDid)
+	assertDRSRecordExists(t, server.url, smallDid)
 }
 
 func TestGitDrsDockerAddURLE2E(t *testing.T) {

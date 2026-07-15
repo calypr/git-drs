@@ -20,6 +20,9 @@ var (
 	readLocalDRSObject  = func(oid string) (*drsapi.DrsObject, error) {
 		return drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
 	}
+	writeLocalDRSObject = func(oid string, obj *drsapi.DrsObject) error {
+		return drsobject.WriteObject(gitrepo.DRSObjectsPath, obj, oid)
+	}
 )
 
 func parseScopeArg(raw string) (string, string, error) {
@@ -40,37 +43,29 @@ func parseScopeArg(raw string) (string, string, error) {
 }
 
 func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org, project string, batchSize int) ([]copyRecord, error) {
-	resource, err := sycommon.ResourcePath(org, project)
-	if err != nil {
+	if _, err := sycommon.ResourcePath(org, project); err != nil {
 		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
 	}
-	if batchSize <= 0 {
-		batchSize = 250
-	}
+	batchSize = normalizeCopyBatchSize(batchSize)
 
 	page := 1
+	startAfter := ""
 	out := make([]copyRecord, 0)
 	seen := map[string]struct{}{}
 	for {
-		fmt.Fprintf(os.Stderr, "copy-records: scanning source index page %d, matched-so-far=%d\n", page, len(out))
-		listResp, err := src.List(ctx, syservices.ListRecordsOptions{
-			Limit: batchSize,
-			Page:  page,
-		})
+		fmt.Fprintf(os.Stderr, "copy-records: scanning source index page %d for %s/%s, start-after=%q matched-so-far=%d\n", page, org, project, startAfter, len(out))
+		records, err := listSourceRecordPage(ctx, src, org, project, batchSize, startAfter)
 		if err != nil {
-			return nil, fmt.Errorf("fallback source list failed for %s/%s page %d: %w", org, project, page, err)
-		}
-		records := []copyRecord{}
-		if listResp.Records != nil {
-			records = *listResp.Records
+			return nil, err
 		}
 		if len(records) == 0 {
 			break
 		}
+		nextStartAfter := lastCopyRecordDID(records)
+		if nextStartAfter == "" {
+			return nil, fmt.Errorf("source list for %s/%s returned records without DIDs; cannot advance cursor", org, project)
+		}
 		for _, rec := range records {
-			if !recordHasControlledAccess(rec, resource) {
-				continue
-			}
 			did := strings.TrimSpace(rec.Did)
 			if did == "" {
 				continue
@@ -84,9 +79,35 @@ func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org,
 		if len(records) < batchSize {
 			break
 		}
+		startAfter = nextStartAfter
 		page++
 	}
 	return out, nil
+}
+
+func listSourceRecordPage(ctx context.Context, src indexAPI, org, project string, batchSize int, startAfter string) ([]copyRecord, error) {
+	listResp, err := src.List(ctx, syservices.ListRecordsOptions{
+		Organization: org,
+		ProjectID:    project,
+		Limit:        batchSize,
+		Start:        startAfter,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("source list failed for %s/%s start-after %q: %w", org, project, startAfter, err)
+	}
+	if listResp.Records == nil {
+		return nil, nil
+	}
+	return *listResp.Records, nil
+}
+
+func lastCopyRecordDID(records []copyRecord) string {
+	for i := len(records) - 1; i >= 0; i-- {
+		if did := strings.TrimSpace(records[i].Did); did != "" {
+			return did
+		}
+	}
+	return ""
 }
 
 func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
@@ -136,13 +157,14 @@ func copyRecordFromLocalObject(obj *drsapi.DrsObject) copyRecord {
 	}
 
 	record := copyRecord{
-		AccessMethods: obj.AccessMethods,
-		CreatedTime:   stringTimePointer(obj.CreatedTime.String()),
-		Description:   obj.Description,
-		Did:           strings.TrimSpace(obj.Id),
-		Name:          obj.Name,
-		Size:          int64Pointer(obj.Size),
-		Version:       obj.Version,
+		AccessMethods:    obj.AccessMethods,
+		ControlledAccess: obj.ControlledAccess,
+		CreatedTime:      stringTimePointer(obj.CreatedTime.String()),
+		Description:      obj.Description,
+		Did:              strings.TrimSpace(obj.Id),
+		Name:             obj.Name,
+		Size:             int64Pointer(obj.Size),
+		Version:          obj.Version,
 	}
 	if len(hashes) > 0 {
 		record.Hashes = &hashes

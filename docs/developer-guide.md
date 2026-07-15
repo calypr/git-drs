@@ -81,12 +81,14 @@ You can still run `git drs init` explicitly, but the normal onboarding path is `
 
 `git drs push`:
 
-- discovers local pointer/object metadata
-- looks up existing scoped records
-- registers missing metadata
-- uploads missing payload bytes when local content exists
-- reconciles committed tracked-file deletes from the Git ref delta
-- then completes the Git push flow
+- traverses newly reachable Git objects and extracts every supported LFS/DRS pointer
+- subtracts the remote `refs/git-drs/synced/*` acknowledgment history
+- negotiates only unsatisfied content-addressed objects with Syfon
+- registers only missing scoped records
+- uploads only missing local payload bytes
+- pushes Git refs and then advances the synchronization acknowledgment
+
+The acknowledgment ref is remote synchronization state, not a local cursor. It allows a later invocation from another clone to recover objects that arrived through plain `git push`. Removing a path does not delete its DRS record while the pointer remains reachable from retained Git history; cleanup is a separate retention operation.
 
 The managed push path runs directly through the current Syfon client/runtime stack.
 

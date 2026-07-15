@@ -20,10 +20,10 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Set up Go 1.x
+    - name: Set up Go 1.26.5
       uses: actions/setup-go@v5
       with:
-        go-version-file: go.mod
+        go-version: '1.26.5'
 
     - name: Build Git-DRS
       run: make build

@@ -124,3 +124,109 @@ func TestResolveAddRefObjectUsesSourceAuthorityRemoteCredentials(t *testing.T) {
 		t.Fatalf("expected primary not to be contacted, got %d requests", primaryRequests)
 	}
 }
+
+func TestResolveAddRefObjectIgnoresPrimaryEvenWhenPrimaryCanResolve(t *testing.T) {
+	var primaryRequests int
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryRequests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"primary-object","self_uri":"drs://primary/object-1","size":99}`))
+	}))
+	defer primary.Close()
+
+	var sourceRequests int
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sourceRequests++
+		if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+			t.Fatalf("unexpected source path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"source-object","self_uri":"drs://` + r.Host + `/object-1","size":42}`))
+	}))
+	defer source.Close()
+
+	cfg := &config.Config{
+		DefaultRemote: "primary",
+		Remotes: map[config.Remote]config.RemoteSelect{
+			"primary": {Local: &config.LocalRemote{BaseURL: primary.URL}},
+			"source":  {Local: &config.LocalRemote{BaseURL: source.URL}},
+		},
+	}
+	primaryCtx, err := remoteruntime.New(cfg, "primary", drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("create primary runtime: %v", err)
+	}
+
+	obj, err := resolveAddRefObject(context.Background(), cfg, "primary", primaryCtx, "drs://"+strings.TrimPrefix(source.URL, "http://")+"/object-1")
+	if err != nil {
+		t.Fatalf("resolveAddRefObject: %v", err)
+	}
+	if obj.Id != "source-object" || obj.Size != 42 {
+		t.Fatalf("expected object from source DRS authority/resolver, got %+v", obj)
+	}
+	if sourceRequests != 1 {
+		t.Fatalf("expected one source request, got %d", sourceRequests)
+	}
+	if primaryRequests != 0 {
+		t.Fatalf("expected primary not to be contacted, got %d requests", primaryRequests)
+	}
+}
+
+type fakeDRSObjectGetter struct {
+	gotObjectID *string
+	obj         drsapi.DrsObject
+}
+
+func (g fakeDRSObjectGetter) GetObject(_ context.Context, objectID string) (drsapi.DrsObject, error) {
+	*g.gotObjectID = objectID
+	return g.obj, nil
+}
+
+func TestResolveAddRefObjectUsesSourceAuthorityWhenNoRemoteMatches(t *testing.T) {
+	var primaryRequests int
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		primaryRequests++
+		http.Error(w, "primary remote must not resolve source DRS URI", http.StatusTeapot)
+	}))
+	defer primary.Close()
+
+	cfg := &config.Config{
+		DefaultRemote: "primary",
+		Remotes: map[config.Remote]config.RemoteSelect{
+			"primary": {Local: &config.LocalRemote{BaseURL: primary.URL}},
+		},
+	}
+	primaryCtx, err := remoteruntime.New(cfg, "primary", drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("create primary runtime: %v", err)
+	}
+
+	var gotEndpoint string
+	var gotObjectID string
+	oldGetter := newSourceDRSGetter
+	newSourceDRSGetter = func(endpoint string) (drsObjectGetter, error) {
+		gotEndpoint = endpoint
+		return fakeDRSObjectGetter{
+			gotObjectID: &gotObjectID,
+			obj:         drsapi.DrsObject{Id: "source-object", Size: 42},
+		}, nil
+	}
+	defer func() { newSourceDRSGetter = oldGetter }()
+
+	obj, err := resolveAddRefObject(context.Background(), cfg, "primary", primaryCtx, "drs://source.example.org/object-1")
+	if err != nil {
+		t.Fatalf("resolveAddRefObject: %v", err)
+	}
+	if obj.Id != "source-object" || obj.Size != 42 {
+		t.Fatalf("expected object from source DRS authority/resolver, got %+v", obj)
+	}
+	if gotEndpoint != "https://source.example.org" {
+		t.Fatalf("expected source endpoint, got %q", gotEndpoint)
+	}
+	if gotObjectID != "object-1" {
+		t.Fatalf("expected source object ID, got %q", gotObjectID)
+	}
+	if primaryRequests != 0 {
+		t.Fatalf("expected primary not to be contacted, got %d requests", primaryRequests)
+	}
+}

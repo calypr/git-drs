@@ -147,6 +147,14 @@ Set the default `git-drs` remote.
 git drs remote set production
 ```
 
+### Remote roles: primary and source authorities
+
+A repository can have multiple `git-drs` remotes. The configured default remote, `drs.default-remote`, or an explicit command-level remote is the **primary remote** for repository-scoped operations such as push, registration, checksum lookup, and provider inspection.
+
+A **source DRS authority/resolver** is the DRS service named by a `drs://...` URI or by source metadata recorded for a reference-first object. For `git drs add-ref`, the client resolves the input `drs://...` URI against that source authority/resolver using source credentials. The primary remote does not act as a proxy for other source DRS servers.
+
+When the source authority is also configured as one of the repository remotes, `git-drs` can use that remote's endpoint and credentials for the source request. When the source authority is not configured as a named remote, the source URI itself remains the retrieval identity; adding the reference still does not create or mutate a primary-remote DRS record.
+
 ## Tracking and Local Inventory
 
 ### `git drs track <pattern>`

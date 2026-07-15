@@ -110,35 +110,43 @@ type drsObjectGetter interface {
 }
 
 func resolveAddRefObject(ctx context.Context, cfg *config.Config, primaryRemote config.Remote, primary *remoteruntime.GitContext, drsURI string) (drsapi.DrsObject, error) {
-	objectID, sourceRemote, ok := sourceRemoteForDRSURI(cfg, primaryRemote, drsURI)
+	objectID, sourceEndpoint, ok := parseDRSURIForSource(drsURI)
 	if !ok {
 		return primary.Client.DRS().GetObject(ctx, drsURI)
 	}
-	if sourceRemote == primaryRemote {
-		if sourceEndpoint, sourceOK := sourceEndpointForDRSURI(drsURI); sourceOK && !endpointMatchesDRSURI(primary.Endpoint, drsURI) {
-			getter, err := newAnonymousSourceDRSGetter(sourceEndpoint)
-			if err != nil {
-				return drsapi.DrsObject{}, err
-			}
-			return getter.GetObject(ctx, objectID)
+	if sourceRemote, found := configuredRemoteForDRSURIHost(cfg, drsURI); found {
+		if sourceRemote == primaryRemote {
+			return primary.Client.DRS().GetObject(ctx, objectID)
 		}
-		return primary.Client.DRS().GetObject(ctx, objectID)
+		client, err := remoteruntime.New(cfg, sourceRemote, primary.Logger)
+		if err != nil {
+			return drsapi.DrsObject{}, err
+		}
+		return client.Client.DRS().GetObject(ctx, objectID)
 	}
-	client, err := remoteruntime.New(cfg, sourceRemote, primary.Logger)
+	getter, err := newSourceDRSGetter(sourceEndpoint)
 	if err != nil {
 		return drsapi.DrsObject{}, err
 	}
-	return client.Client.DRS().GetObject(ctx, objectID)
+	return getter.GetObject(ctx, objectID)
 }
 
-func sourceRemoteForDRSURI(cfg *config.Config, primaryRemote config.Remote, drsURI string) (objectID string, remoteName config.Remote, ok bool) {
+func parseDRSURIForSource(drsURI string) (objectID string, endpoint string, ok bool) {
 	u, err := url.Parse(strings.TrimSpace(drsURI))
 	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
-		return drsURI, primaryRemote, false
+		return "", "", false
 	}
 	objectID = strings.TrimPrefix(u.EscapedPath(), "/")
 	if objectID == "" {
-		return drsURI, primaryRemote, false
+		return "", "", false
+	}
+	return objectID, "https://" + u.Host, true
+}
+
+func configuredRemoteForDRSURIHost(cfg *config.Config, drsURI string) (config.Remote, bool) {
+	u, err := url.Parse(strings.TrimSpace(drsURI))
+	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
+		return "", false
 	}
 	for name, selected := range cfg.Remotes {
 		remote := config.Config{Remotes: map[config.Remote]config.RemoteSelect{name: selected}}.GetRemote(name)
@@ -150,31 +158,13 @@ func sourceRemoteForDRSURI(cfg *config.Config, primaryRemote config.Remote, drsU
 			continue
 		}
 		if strings.EqualFold(endpoint.Host, u.Host) {
-			return objectID, name, true
+			return name, true
 		}
 	}
-	return objectID, primaryRemote, true
+	return "", false
 }
 
-func sourceEndpointForDRSURI(drsURI string) (string, bool) {
-	u, err := url.Parse(strings.TrimSpace(drsURI))
-	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
-		return "", false
-	}
-	return "https://" + u.Host, true
-}
-
-func endpointMatchesDRSURI(endpoint string, drsURI string) bool {
-	u, err := url.Parse(strings.TrimSpace(drsURI))
-	if err != nil || !strings.EqualFold(u.Scheme, "drs") || strings.TrimSpace(u.Host) == "" {
-		return false
-	}
-	endpointURL, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(endpointURL.Host, u.Host)
-}
+var newSourceDRSGetter = newAnonymousSourceDRSGetter
 
 func newAnonymousSourceDRSGetter(endpoint string) (drsObjectGetter, error) {
 	raw, err := syclient.New(endpoint)

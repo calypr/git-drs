@@ -103,6 +103,14 @@ git config drs.remote.anvil.mode read-only
 git drs ping anvil
 ```
 
+Terra credential configuration:
+
+- `drs.remote.<name>.auth` records the credential source that the Terra resolver should use. The currently documented mode is `google-adc`, which means Application Default Credentials from the local Google Cloud environment.
+- Do not store Google access tokens, refresh tokens, service-account JSON, or other secrets in repo-local `git config`. The Terra remote stores only the endpoint, credential-source name, and mode.
+- Configure ADC outside `git-drs`, for example with `gcloud auth application-default login` for an interactive user credential or by setting `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key path in automation.
+- At runtime, `git-drs` loads the Terra remote from `drs.remote.<name>.*`, records the Terra endpoint in the remote context, and Terra-aware resolution/download code should obtain Google credentials from the configured source and attach them to outbound Terra/DRSHub/DRS requests as bearer tokens. The credential material is therefore passed through the process environment or ADC provider chain, not through committed repository files.
+- `git drs ping` validates the Terra DRS service-info endpoint and prints `auth: none` today because service-info is checked without creating a Syfon bearer/basic credential. Future Terra resolver operations should still honor `drs.remote.<name>.auth` when making authenticated object-resolution or access-url requests.
+
 A successful Terra ping includes:
 
 ```text

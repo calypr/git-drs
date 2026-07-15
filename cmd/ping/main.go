@@ -3,6 +3,7 @@ package ping
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -29,11 +30,16 @@ type statusInfo struct {
 	AuthMode      string
 }
 
-var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
+type healthInfo struct {
+	ServiceInfo string
+}
+
+var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
 	if gc != nil && gc.RemoteType == config.TerraServerType {
-		return pingTerraServiceInfo(ctx, gc.Endpoint)
+		serviceInfo, err := pingTerraServiceInfo(ctx, gc.Endpoint)
+		return healthInfo{ServiceInfo: serviceInfo}, err
 	}
-	return gc.Client.Health().Ping(ctx)
+	return healthInfo{}, gc.Client.Health().Ping(ctx)
 }
 
 var pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
@@ -64,10 +70,14 @@ var Cmd = &cobra.Command{
 		}
 		printStatus(status)
 
-		if err := pingHealth(cmd.Context(), gc); err != nil {
+		health, err := pingHealth(cmd.Context(), gc)
+		if err != nil {
 			return fmt.Errorf("remote health check failed for %q (%s): %w", status.Remote, status.Endpoint, err)
 		}
 		fmt.Println("health: ok")
+		if strings.TrimSpace(health.ServiceInfo) != "" {
+			fmt.Printf("service-info: %s\n", health.ServiceInfo)
+		}
 
 		scopeInfo, err := pingScopeAccess(cmd.Context(), gc)
 		if err != nil {
@@ -220,27 +230,31 @@ func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeA
 	return info, nil
 }
 
-func pingTerraServiceInfo(ctx context.Context, endpoint string) error {
+func pingTerraServiceInfo(ctx context.Context, endpoint string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	serviceInfoURL, err := terraServiceInfoURL(endpoint)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceInfoURL, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer resp.Body.Close()
+	serviceInfo, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("terra DRS service-info returned %s", resp.Status)
+		return "", fmt.Errorf("terra DRS service-info returned %s", resp.Status)
 	}
-	return nil
+	if readErr != nil {
+		return "", readErr
+	}
+	return strings.TrimSpace(string(serviceInfo)), nil
 }
 
 func terraServiceInfoURL(endpoint string) (string, error) {

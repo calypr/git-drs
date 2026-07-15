@@ -18,7 +18,7 @@ func TestIntegrationPingTerraDRSServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
 
-	if err := pingTerraServiceInfo(ctx, endpoint); err != nil {
+	if _, err := pingTerraServiceInfo(ctx, endpoint); err != nil {
 		t.Fatalf("ping Terra DRS service-info endpoint %q: %v", endpoint, err)
 	}
 }

@@ -80,6 +80,7 @@ func TestAcceptancePingTerraDRSServer(t *testing.T) {
 		"type: terra",
 		"endpoint: " + terraDRS.URL,
 		"health: ok",
+		`service-info: {"id":"terra-drs","name":"Terra DRS","type":{"group":"org.ga4gh","artifact":"drs","version":"1.0.0"}}`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, got)
@@ -152,11 +153,11 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 	}
 
 	oldHealth := pingHealth
-	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
+	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
 		if gc == nil || gc.ProjectId != "end_to_end_test" {
 			t.Fatalf("unexpected git context: %+v", gc)
 		}
-		return nil
+		return healthInfo{}, nil
 	}
 	t.Cleanup(func() { pingHealth = oldHealth })
 
@@ -211,6 +212,54 @@ func TestPingRunEPrintsStatusAndHealth(t *testing.T) {
 	}
 }
 
+func TestPingRunEPrintsServiceInfo(t *testing.T) {
+	tmpDir := testutils.SetupTestGitRepo(t)
+	testutils.CreateTestConfig(t, tmpDir, &config.Config{
+		DefaultRemote: config.Remote(config.ORIGIN),
+		Remotes: map[config.Remote]config.RemoteSelect{
+			config.Remote(config.ORIGIN): {
+				Local: &config.LocalRemote{
+					BaseURL: "http://127.0.0.1:8080",
+				},
+			},
+		},
+	})
+
+	oldHealth := pingHealth
+	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
+		return healthInfo{ServiceInfo: `{"id":"terra-drs","name":"Terra DRS"}`}, nil
+	}
+	t.Cleanup(func() { pingHealth = oldHealth })
+
+	oldScopeAccess := pingScopeAccess
+	pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
+		return scopeAccessInfo{}, nil
+	}
+	t.Cleanup(func() { pingScopeAccess = oldScopeAccess })
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = oldStdout })
+
+	runErr := Cmd.RunE(Cmd, nil)
+	_ = w.Close()
+	if runErr != nil {
+		t.Fatalf("Cmd.RunE returned error: %v", runErr)
+	}
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	if got, want := buf.String(), `service-info: {"id":"terra-drs","name":"Terra DRS"}`; !strings.Contains(got, want) {
+		t.Fatalf("expected output to contain %q, got %q", want, got)
+	}
+}
+
 func TestPingRunEReturnsReadableScopeError(t *testing.T) {
 	tmpDir := testutils.SetupTestGitRepo(t)
 	testutils.CreateTestConfig(t, tmpDir, &config.Config{
@@ -231,7 +280,7 @@ func TestPingRunEReturnsReadableScopeError(t *testing.T) {
 	}
 
 	oldHealth := pingHealth
-	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error { return nil }
+	pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) { return healthInfo{}, nil }
 	t.Cleanup(func() { pingHealth = oldHealth })
 
 	oldScopeAccess := pingScopeAccess

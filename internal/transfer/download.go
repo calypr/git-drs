@@ -54,6 +54,22 @@ func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 	return downloadResolved(ctx, drsCtx, oid, cachePath, match, accessURL)
 }
 
+// DownloadToPath resolves a DRS object by checksum and writes its payload to
+// the requested destination. Unlike DownloadToCachePath, this does not use
+// the Git-LFS object cache and is intended for callers that are not operating
+// on a Git checkout.
+func DownloadToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string) error {
+	accessURL, match, err := AccessURLForHashScope(ctx, drsCtx, oid)
+	if err != nil {
+		return err
+	}
+	return DownloadResolvedToPath(ctx, drsCtx, oid, dstPath, match, accessURL, sydownload.DownloadOptions{
+		MultipartThreshold: 5 * 1024 * 1024,
+		Concurrency:        2,
+		ChunkSize:          64 * 1024 * 1024,
+	})
+}
+
 func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)

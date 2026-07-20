@@ -9,6 +9,9 @@ var (
 	localPassword  string
 	localUsername  string
 	noSkipSmudge   bool
+	terraEndpoint  string
+	terraAuth      string
+	terraMode      string
 )
 
 // Cmd line declaration
@@ -29,4 +32,9 @@ func init() {
 	LocalCmd.Flags().StringVar(&localPassword, "password", "", "Password for local DRS HTTP basic auth")
 	LocalCmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
 	Cmd.AddCommand(LocalCmd)
+
+	TerraCmd.Flags().StringVar(&terraEndpoint, "drs-endpoint", "", "Terra DRS service base URL")
+	TerraCmd.Flags().StringVar(&terraAuth, "auth", "", "Terra authentication method (google-adc)")
+	TerraCmd.Flags().StringVar(&terraMode, "mode", "", "Terra remote mode (read-only)")
+	Cmd.AddCommand(TerraCmd)
 }

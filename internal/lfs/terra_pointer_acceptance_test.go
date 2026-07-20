@@ -23,6 +23,17 @@ size 11305017366
 	}
 }
 
+func TestAnVILCacheIdentityGolden(t *testing.T) {
+	got, err := cacheKeyForOID("DRS://example.org/object-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "d644000bac79ca85d486629f9271ebf2da9884b7bca0d8ad1ee514f9241cbc74"
+	if got != want {
+		t.Fatalf("cache identity changed: got %s, want %s", got, want)
+	}
+}
+
 func TestAcceptanceTerraDRSURIoidPointerHasDeterministicSHA256CacheKey(t *testing.T) {
 	const drsURI = "drs://cgc-ga4gh-api.sbgenomics.com/4c33ae65e4b08832ce3d94e9c"
 

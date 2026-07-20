@@ -34,7 +34,7 @@ func cacheKeyForOID(oid string) (string, error) {
 	}
 
 	if isDRSURI(oid) {
-		sum := sha256.Sum256([]byte(normalizeDRSURI(oid)))
+		sum := sha256.Sum256([]byte("git-drs-anvil-ref:v1\n" + normalizeDRSURI(oid)))
 		return hex.EncodeToString(sum[:]), nil
 	}
 

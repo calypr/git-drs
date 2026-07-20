@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/drsobject"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/hash"
 )
@@ -27,6 +28,7 @@ type LfsFileInfo struct {
 	OidType    string `json:"oid_type"`
 	Oid        string `json:"oid"`
 	Version    string `json:"version"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 func IsLFSTracked(path string) (bool, error) {
@@ -144,6 +146,7 @@ func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 			OidType:   pointer.OidType,
 			Oid:       pointer.Oid,
 			Version:   pointer.Version,
+			SHA256:    pointer.SHA256,
 		}
 	}
 	return files, nil
@@ -213,6 +216,7 @@ func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string,
 			OidType:   pointer.OidType,
 			Oid:       pointer.Oid,
 			Version:   pointer.Version,
+			SHA256:    pointer.SHA256,
 		}
 	}
 
@@ -409,6 +413,7 @@ func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {
 		OidType:   pointer.OidType,
 		Oid:       pointer.Oid,
 		Version:   pointer.Version,
+		SHA256:    pointer.SHA256,
 	}, true
 }
 
@@ -428,6 +433,7 @@ func readIndexPointerInfo(ctx context.Context, repoDir, path string) (LfsFileInf
 		OidType:   pointer.OidType,
 		Oid:       pointer.Oid,
 		Version:   pointer.Version,
+		SHA256:    pointer.SHA256,
 	}, true
 }
 
@@ -488,6 +494,7 @@ type lfsPointer struct {
 	OidType string
 	Oid     string
 	Size    int64
+	SHA256  string
 }
 
 func parseLFSPointer(content string) (lfsPointer, bool) {
@@ -518,6 +525,13 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 				return lfsPointer{}, false
 			}
 			p.Size = sz
+			continue
+		}
+		if strings.HasPrefix(line, "sha256 ") {
+			p.SHA256 = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(line, "sha256 ")))
+			if !sha256OIDRe.MatchString(p.SHA256) {
+				return lfsPointer{}, false
+			}
 		}
 	}
 
@@ -589,6 +603,9 @@ func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error
 	pointerContent := "version https://calypr.github.io/spec/v1\n"
 	pointerContent += fmt.Sprintf("oid drs:%s\n", pointerOID)
 	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
+	if checksum := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums).SHA256); checksum != "" {
+		pointerContent += fmt.Sprintf("sha256 %s\n", strings.ToLower(checksum))
+	}
 	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
 		return fmt.Errorf("failed to write DRS pointer file: %w", err)
 	}

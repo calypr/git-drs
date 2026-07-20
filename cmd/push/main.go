@@ -58,6 +58,9 @@ var Cmd = &cobra.Command{
 				return err
 			}
 		}
+		if selected, ok := cfg.Remotes[remote]; ok && selected.Terra != nil {
+			return fmt.Errorf("remote %q is read-only; publish AnVIL references with ordinary git push", remote)
+		}
 
 		drsClient, err := remoteruntime.New(cfg, remote, myLogger)
 		if err != nil {

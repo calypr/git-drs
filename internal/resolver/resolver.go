@@ -156,7 +156,28 @@ func trustedEndpoint(endpoint string) (*url.URL, error) {
 }
 
 func NormalizeDRSURI(raw string) (string, string, error) {
-	u, err := url.Parse(strings.TrimSpace(raw))
+	trimmed := strings.TrimSpace(raw)
+	// DRS compact identifiers use a colon between the authority and object ID
+	// (for example, drs://drs.anv0:v2_...). net/url interprets that colon as
+	// the beginning of a port and rejects the URI before we can extract the ID.
+	if len(trimmed) >= len("drs://") && strings.EqualFold(trimmed[:len("drs://")], "drs://") {
+		remainder := trimmed[len("drs://"):]
+		if separator := strings.IndexByte(remainder, ':'); separator >= 0 && !strings.Contains(remainder[:separator], "/") {
+			authority, escapedID := remainder[:separator], remainder[separator+1:]
+			authorityURL, authorityErr := url.Parse("https://" + authority)
+			id, idErr := url.PathUnescape(escapedID)
+			if authorityErr != nil || authorityURL.Host != authority || authorityURL.Hostname() == "" || authorityURL.User != nil ||
+				strings.ContainsAny(escapedID, "?#/") {
+				return "", "", fmt.Errorf("invalid DRS URI %q", raw)
+			}
+			if idErr != nil || strings.TrimSpace(id) == "" {
+				return "", "", fmt.Errorf("invalid DRS URI %q: object ID is required", raw)
+			}
+			return "drs://" + strings.ToLower(authority) + ":" + escapedID, id, nil
+		}
+	}
+
+	u, err := url.Parse(trimmed)
 	if err != nil || !strings.EqualFold(u.Scheme, "drs") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return "", "", fmt.Errorf("invalid DRS URI %q", raw)
 	}

@@ -38,6 +38,29 @@ func TestAnVILResolverContract(t *testing.T) {
 	}
 }
 
+func TestAnVILResolverAcceptsCompactDRSURI(t *testing.T) {
+	const compactURI = "drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/objects/v2_e68887be-c583-375a-a773-48771192c8fa" {
+			t.Fatalf("unexpected resolver path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":"v2_e68887be-c583-375a-a773-48771192c8fa","size":42}`))
+	}))
+	defer server.Close()
+
+	r, err := NewAnVILWithClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := r.GetObject(context.Background(), compactURI)
+	if err != nil {
+		t.Fatalf("compact DRS URI should be valid: %v", err)
+	}
+	if obj.DRSURI != compactURI || obj.ID != "v2_e68887be-c583-375a-a773-48771192c8fa" {
+		t.Fatalf("unexpected object: %+v", obj)
+	}
+}
+
 func TestAnVILResolverRedactsErrorBodiesAndClassifiesAuthorization(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Bearer secret signed=https://secret", http.StatusForbidden)

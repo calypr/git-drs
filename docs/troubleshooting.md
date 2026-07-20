@@ -188,6 +188,11 @@ git drs pull
 
 ### `git drs ls-files` does not show my file
 
+This is not expected for a pointer created by a current `git drs add-ref`:
+`add-ref` automatically adds its destination to `.gitattributes`. For pointers
+created with an older version, add the tracking rule with
+`git drs track path/to/file` and stage `.gitattributes`.
+
 Check these in order:
 
 1. is the path actually tracked?
@@ -213,6 +218,22 @@ git ls-files -- path/to/file
 ```bash
 git drs ls-files -l
 ```
+
+### `git add ... git drs add-ref --remote ...` reports `unknown option 'remote'`
+
+`git add` and `git drs add-ref` are separate commands. If they are entered on
+the same command line, Git interprets `--remote` as an option to `git add`,
+which does not have that option.
+
+Create the reference first, then stage the generated pointer and tracking rule:
+
+```bash
+git drs add-ref --remote anvil drs://drs.anv0:v2_example subject.tsv
+git add .gitattributes subject.tsv
+git commit -m "Add subject.tsv reference"
+```
+
+Do not prefix the `git drs add-ref` command with `git add`.
 
 ### `git remote remove` did not remove my `git-drs` remote
 

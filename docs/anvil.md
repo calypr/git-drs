@@ -45,6 +45,7 @@ Use the configured remote and choose the path that the data should occupy:
 ```bash
 git drs add-ref --remote anvil \
   drs://<authority>/<object-id> data/sample.cram
+# Run this only after add-ref finishes successfully.
 git add .git-drs/config.yaml .gitattributes data/sample.cram
 git commit -m "Reference AnVIL sample"
 git push

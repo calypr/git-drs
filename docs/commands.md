@@ -287,6 +287,10 @@ Add a local pointer file for an existing DRS object. If the source DRS object ha
 git drs add-ref drs://example/object-id data/object.bin
 ```
 
+`add-ref` also adds an exact read-only `filter=drs` rule for the destination to
+`.gitattributes`. Stage that file together with the pointer so local inventory
+commands such as `git drs ls-files` can discover the reference.
+
 ### `git drs query <drs-id>`
 
 Query a DRS object by ID or checksum.

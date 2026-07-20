@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/drsobject"
@@ -67,5 +68,33 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 		if _, statErr := os.Stat(cachePath); !os.IsNotExist(statErr) {
 			t.Fatalf("did not expect pointer text to be cached as payload at %s", cachePath)
 		}
+	}
+}
+
+func TestCleanContentPassesThroughDRSURIWithoutSHA256MapWarning(t *testing.T) {
+	repo := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(orig)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	const pointer = "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa\n" +
+		"size 200184\n"
+	var out bytes.Buffer
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewBufferString(pointer), &out, logger); err != nil {
+		t.Fatalf("CleanContent returned error: %v", err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("expected DRS pointer passthrough, got %q", out.String())
+	}
+	if strings.Contains(logs.String(), "failed to write DRS map entry") {
+		t.Fatalf("DRS URI pointer must not be written to the SHA256 map: %s", logs.String())
 	}
 }

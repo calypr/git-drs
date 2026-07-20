@@ -33,7 +33,7 @@ func cacheKeyForOID(oid string) (string, error) {
 		return strings.ToLower(oid), nil
 	}
 
-	if isDRSURI(oid) {
+	if IsDRSURI(oid) {
 		sum := sha256.Sum256([]byte("git-drs-anvil-ref:v1\n" + normalizeDRSURI(oid)))
 		return hex.EncodeToString(sum[:]), nil
 	}
@@ -41,7 +41,9 @@ func cacheKeyForOID(oid string) (string, error) {
 	return "", fmt.Errorf("error: %s is not a valid sha256 hash or DRS URI", oid)
 }
 
-func isDRSURI(uri string) bool {
+// IsDRSURI reports whether uri is a canonical DRS URI or the //authority/path
+// form stored internally after parsing a git-drs pointer's "oid drs:" line.
+func IsDRSURI(uri string) bool {
 	uri = strings.TrimSpace(uri)
 	return strings.HasPrefix(strings.ToLower(uri), "drs://") || strings.HasPrefix(uri, "//")
 }

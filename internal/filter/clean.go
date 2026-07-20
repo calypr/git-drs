@@ -73,8 +73,12 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 				if _, err := dst.Write(data); err != nil {
 					return fmt.Errorf("clean: write existing pointer: %w", err)
 				}
-				if mapErr := writeDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
-					logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
+				// DRS URI pointers already carry their durable lookup identity. The
+				// SHA256-keyed sidecar map is only applicable to SHA256 pointers.
+				if !lfs.IsDRSURI(pointerOID) {
+					if mapErr := writeDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
+						logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
+					}
 				}
 				logger.Debug("clean: passed through existing LFS pointer", "pathname", pathname, "oid", pointerOID, "size", pointerSize)
 				return nil

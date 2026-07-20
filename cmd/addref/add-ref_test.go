@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -72,6 +74,53 @@ func TestCreateDRSPointerPreservesSourceURI(t *testing.T) {
 	expected := "version https://calypr.github.io/spec/v1\noid drs://example.org/object-1\nsize 42\n"
 	if string(data) != expected {
 		t.Fatalf("pointer mismatch: expected %q, got %q", expected, string(data))
+	}
+}
+
+func TestAddRefTrackingMakesDRSPointerDiscoverable(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmd(t, repo, "init")
+	runGitCmd(t, repo, "config", "user.email", "test@example.com")
+	runGitCmd(t, repo, "config", "user.name", "Test User")
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	const path = "population_descriptor.tsv"
+	obj := &drsapi.DrsObject{Size: 200184}
+	if err := lfs.CreateDRSPointer(obj, path, "drs://drs.anv0:v2_example"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitrepo.TrackReadOnly(context.Background(), path); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, repo, "add", ".gitattributes", path)
+
+	files, err := lfs.GetTrackedLfsFiles(drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, ok := files[path]
+	if !ok {
+		t.Fatalf("expected add-ref pointer to be discoverable, got %+v", files)
+	}
+	if info.OidType != "drs" || info.Oid != "//drs.anv0:v2_example" || info.Size != 200184 {
+		t.Fatalf("unexpected pointer inventory: %+v", info)
+	}
+}
+
+func runGitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v: %s", args, err, out)
 	}
 }
 

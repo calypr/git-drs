@@ -116,6 +116,9 @@ var Cmd = &cobra.Command{
 		} else if err := lfs.CreateDRSPointer(&obj, dstPath, drsUri); err != nil {
 			return err
 		}
+		if _, err := gitrepo.TrackReadOnly(cmd.Context(), args[1]); err != nil {
+			return fmt.Errorf("track add-ref destination %s: %w", args[1], err)
+		}
 		if obj.SelfUri == "" {
 			obj.SelfUri = drsUri
 		}
@@ -272,6 +275,9 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		}
 		if err != nil {
 			return err
+		}
+		if _, err := gitrepo.TrackReadOnly(cmd.Context(), e.path); err != nil {
+			return fmt.Errorf("track add-ref destination %s: %w", e.path, err)
 		}
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%d reference(s) %s\n", len(entries), map[bool]string{true: "validated", false: "added"}[dryRun])

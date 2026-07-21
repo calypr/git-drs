@@ -56,9 +56,13 @@ and writes a small pointer. The pointer retains the canonical DRS URI even when
 the record has a SHA256 checksum. It never contains an access token or signed
 download URL. Destination paths must stay inside the Git repository.
 
-AnVIL remotes are read-only: publish pointers with ordinary `git push`.
-`git drs push` refuses a Terra remote because that command uploads payloads to
-writable DRS providers.
+AnVIL remotes are read-only. `git drs push` refuses a Terra remote before doing
+any remote work because that command uploads payloads to writable DRS
+providers. The failure does not require backing out a commit that references
+existing Terra data: publish that commit and its pointers with ordinary
+`git push` to a Git remote. Plain `git push` transfers only the Git commit and
+small DRS references; it does **not** upload the referenced files to Terra or
+create or modify Terra DRS records.
 
 ## Clone and hydrate as another user
 

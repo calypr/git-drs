@@ -59,7 +59,12 @@ var Cmd = &cobra.Command{
 			}
 		}
 		if selected, ok := cfg.Remotes[remote]; ok && selected.Terra != nil {
-			return fmt.Errorf("remote %q is read-only; publish AnVIL references with ordinary git push", remote)
+			return fmt.Errorf(
+				"remote %q is read-only: git drs push cannot upload files to Terra\n"+
+					"no files were uploaded, and you do not need to back out a commit that references existing Terra data\n"+
+					"to publish the commit and its DRS references, use ordinary git push to a Git remote; this pushes only Git metadata and does not upload files to Terra",
+				remote,
+			)
 		}
 
 		drsClient, err := remoteruntime.New(cfg, remote, myLogger)

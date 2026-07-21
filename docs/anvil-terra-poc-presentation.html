@@ -104,6 +104,46 @@ git drs pull -I "data/*.cram"</div><p class="callout" style="margin-top:2vh">No 
   </section>
 
   <section class="slide" data-n="06">
+    <p class="eyebrow">Example user workflow</p><h2>From AnVIL manifest to a pointer-only GitHub repo</h2>
+    <div class="grid2">
+      <div><h3>1 · Configure and add references</h3><div class="code" style="font-size:1.35vh">git init
+
+# Configure the read-only Terra remote.
+git drs remote add terra anvil \
+  --drs-endpoint https://data.terra.bio \
+  --auth google-adc \
+  --mode read-only
+
+# Download the TSV from AnVIL Data Explorer first.
+manifest=/tmp/anvil-manifest-38dc7537.tsv
+
+# Generate, review, then run one add-ref per row.
+scripts/anvil-add-ref-commands.sh "$manifest" \
+  > /tmp/add-anvil-refs.sh
+cat /tmp/add-anvil-refs.sh
+bash /tmp/add-anvil-refs.sh</div></div>
+      <div><h3>2 · Commit, hydrate, and publish</h3><div class="code" style="font-size:1.35vh"># The generated commands create references such as:
+# sequencing_dataset.tsv · subject.tsv
+# sequencing_file.tsv · plink_file_wide.tsv
+# sample.tsv · sample_set.tsv
+# population_descriptor.tsv
+
+git add .git-drs/ .gitattributes '*.tsv'
+git commit -m "Add references to AnVIL data"
+
+# Materialize only TSVs on local disk.
+git drs pull -I "*.tsv"
+git status
+
+git branch -M main
+git remote add origin \
+  https://github.com/bwalsh/ANVIL_1000G_PRIMED_data_model.git
+git push -u origin main</div></div>
+    </div>
+    <p class="callout" style="margin-top:2vh"><strong>Result:</strong> the local worktree contains hydrated TSV data; GitHub contains only small DRS pointers and safe public configuration—not the dataset payloads.</p>
+  </section>
+
+  <section class="slide" data-n="07">
     <p class="eyebrow">Examples</p><h2>Portable pointer + safe configuration</h2>
     <div class="grid2">
       <div><h3>Tracked pointer</h3><div class="code">version https://calypr.github.io/spec/v1
@@ -121,7 +161,7 @@ remotes:
     </div>
   </section>
 
-  <section class="slide" data-n="07">
+  <section class="slide" data-n="08">
     <p class="eyebrow">Architecture</p><h2>Provider-neutral resolution breaks Syfon coupling</h2>
     <svg viewBox="0 0 1200 410" role="img" aria-label="Layered resolver architecture" style="width:100%;height:47vh">
       <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#1d70a2"/></marker></defs>
@@ -136,7 +176,7 @@ remotes:
     <p class="callout">Resolver selection comes from the configured remote—not a user-facing <code>--remote-type</code> switch.</p>
   </section>
 
-  <section class="slide" data-n="08">
+  <section class="slide" data-n="09">
     <p class="eyebrow">Architecture detail</p><h2>Three identities—not one overloaded OID</h2>
     <div class="grid3">
       <article class="card"><span class="tag">REMOTE</span><h3 style="margin-top:2vh">Canonical DRS URI</h3><p>Normalized provider record identity. Committed to Git and used for object/access resolution.</p></article>
@@ -147,7 +187,7 @@ remotes:
     <p class="callout" style="margin-top:2vh"><strong>Download invariant:</strong> resolve fresh access → temporary file → size/checksum verify → atomic cache promotion → worktree hydration.</p>
   </section>
 
-  <section class="slide" data-n="09">
+  <section class="slide" data-n="10">
     <p class="eyebrow">Tests</p><h2>Good component coverage; one decisive gap</h2>
     <div class="grid3">
       <article class="card"><span class="tag">IMPLEMENTED</span><h3 style="margin-top:1.5vh">Focused coverage</h3><ul><li>Resolver contract + errors</li><li>Terra remote + safe config</li><li>Canonical pointer/cache key</li><li>Terra ping + push refusal</li></ul></article>
@@ -157,7 +197,7 @@ remotes:
     <div class="flow"><div class="node"><b>Arrange</b>Separate homes, config, ADC, caches</div><div class="arrow">→</div><div class="node"><b>Act</b>Commit → clone → authenticate → pull</div><div class="arrow">→</div><div class="node"><b>Assert</b>Verified bytes; isolated credentials</div></div>
   </section>
 
-  <section class="slide" data-n="10">
+  <section class="slide" data-n="11">
     <p class="eyebrow">Implementation audit</p><h2>Most original blockers are now closed</h2>
     <div class="grid2">
       <div><h3 style="color:#176b68">✓ Implemented</h3><ul><li>ADC-backed <code>AnVILResolver</code> handles metadata and access.</li><li>Terra <code>add-ref</code> and pull use provider-neutral resolution.</li><li>Remote config selects behavior; <code>--remote-type</code> is hidden and deprecated.</li><li>Terra pointers retain DRS URI, size, and optional SHA256.</li><li>DRS cache keys are derived separately from content checksums.</li></ul></div>
@@ -166,7 +206,7 @@ remotes:
     <p class="callout" style="margin-top:2vh"><strong>Bottom line:</strong> this is no longer an unwired design. It is an implemented vertical slice that still needs production-contract validation, resilience, and end-to-end proof.</p>
   </section>
 
-  <section class="slide" data-n="11">
+  <section class="slide" data-n="12">
     <p class="eyebrow">Next steps</p><h2>Turn the vertical slice into a proven POC</h2>
     <div class="timeline">
       <article class="phase"><span class="tag">P0 · VERIFY</span><h3 style="margin-top:1.5vh">Prove production fit</h3><ul><li>Confirm endpoint + OAuth scopes</li><li>Certify resolver response contract</li><li>Choose stable test records</li><li>Run clean two-user clone/pull</li><li>Audit logs/history for secrets</li></ul></article>
@@ -175,7 +215,7 @@ remotes:
     </div>
   </section>
 
-  <section class="slide" data-n="12">
+  <section class="slide" data-n="13">
     <p class="eyebrow">Questions</p><h2>Decisions needed to start the POC</h2>
     <div class="bigq">01 · Which authoritative AnVIL resolver contract, endpoint, and OAuth scopes will we certify?</div>
     <div class="bigq">02 · What stable test objects cover checksummed, non-checksummed, large, and denied cases?</div>

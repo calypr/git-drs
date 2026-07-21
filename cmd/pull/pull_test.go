@@ -250,7 +250,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(files, progress)
+	err = checkoutDownloadedFiles(files, progress, false)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -293,7 +293,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress); err != nil {
+	if err := checkoutDownloadedFiles(files, progress, false); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -313,6 +313,64 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 		"size " + strconv.Itoa(len(payload)) + "\n"
 	if got := cleaned.String(); got != wantPointer {
 		t.Fatalf("unexpected cleaned pointer:\n got: %q\nwant: %q", got, wantPointer)
+	}
+}
+
+func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not supported on Windows")
+	}
+
+	repo := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	payload := []byte("read-only remote payload")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("ObjectPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+
+	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles(files))
+	if err := checkoutDownloadedFiles(files, progress, true); err != nil {
+		t.Fatalf("checkoutDownloadedFiles: %v", err)
+	}
+
+	info, err := os.Stat(files[0].Name)
+	if err != nil {
+		t.Fatalf("stat checked-out file: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o444); got != want {
+		t.Fatalf("checked-out permissions = %o, want %o", got, want)
+	}
+}
+
+func TestRemoteIsReadOnly(t *testing.T) {
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"anvil": {Terra: &config.TerraRemote{Mode: "read-only"}},
+		"local": {Local: &config.LocalRemote{}},
+	}}
+	if !remoteIsReadOnly(cfg, "anvil") {
+		t.Fatal("expected read-only Terra remote to be detected")
+	}
+	if remoteIsReadOnly(cfg, "local") {
+		t.Fatal("did not expect local remote to be read-only")
 	}
 }
 

@@ -218,7 +218,8 @@ var Cmd = &cobra.Command{
 			logg.Debug("no missing pointer objects to download")
 		}
 
-		if err := checkoutDownloadedFiles(pointers, progress); err != nil {
+		readOnly := remoteIsReadOnly(cfg, remote)
+		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
 			return err
 		}
 		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
@@ -439,7 +440,15 @@ func globToRegexp(pattern string) string {
 	return b.String()
 }
 
-func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer) error {
+func remoteIsReadOnly(cfg *config.Config, remote config.Remote) bool {
+	selected, ok := cfg.Remotes[remote]
+	// Terra remotes are resolver-only and therefore always read-only. Match the
+	// push command's capability check rather than relying on optional legacy
+	// configuration fields being present.
+	return ok && selected.Terra != nil
+}
+
+func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
@@ -461,6 +470,17 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 				src.Close()
 				return fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
 			}
+		}
+		// A previous pull may have made this path read-only. Temporarily restore
+		// owner write permission so that a later pull can safely replace it.
+		if info, statErr := os.Stat(f.Name); statErr == nil {
+			if err := os.Chmod(f.Name, info.Mode().Perm()|0o200); err != nil {
+				src.Close()
+				return fmt.Errorf("failed to make %s writable for checkout: %w", f.Name, err)
+			}
+		} else if !os.IsNotExist(statErr) {
+			src.Close()
+			return fmt.Errorf("failed to inspect checkout path %s: %w", f.Name, statErr)
 		}
 		dst, err := os.OpenFile(f.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
@@ -484,6 +504,11 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
 			}
 			return fmt.Errorf("checked out invalid content for %s: %w", f.Name, err)
+		}
+		if readOnly {
+			if err := os.Chmod(f.Name, 0o444); err != nil {
+				return fmt.Errorf("failed to make pulled file %s read-only: %w", f.Name, err)
+			}
 		}
 		progress.OnCompleted(toPullFile(f))
 	}

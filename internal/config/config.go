@@ -375,6 +375,8 @@ func RemoveRemote(name Remote) (*Config, error) {
 		fmt.Sprintf("drs.remote.%s.bucket", name),
 		fmt.Sprintf("drs.remote.%s.organization", name),
 		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
+		fmt.Sprintf("drs.remote.%s.auth", name),
+		fmt.Sprintf("drs.remote.%s.mode", name),
 		fmt.Sprintf("drs.remote.%s.token", name),
 		fmt.Sprintf("drs.remote.%s.username", name),
 		fmt.Sprintf("drs.remote.%s.password", name),

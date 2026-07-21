@@ -15,9 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	syclient "github.com/calypr/syfon/client"
+	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
 
 // Options configures a DRS client. Either AccessToken or Username and
@@ -137,7 +140,7 @@ func (c *Client) Pull(ctx context.Context, opts PullOptions) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return fmt.Errorf("create destination directory for %s: %w", file.Path, err)
 		}
-		if err := internaltransfer.DownloadToPath(ctx, c.runtime, file.OID, dst); err != nil {
+		if err := c.downloadFile(ctx, file.OID, dst); err != nil {
 			return fmt.Errorf("pull %s: %w", file.Path, err)
 		}
 		if err := verifyFile(dst, file.OID, file.Size); err != nil {
@@ -146,6 +149,25 @@ func (c *Client) Pull(ctx context.Context, opts PullOptions) error {
 		}
 	}
 	return nil
+}
+
+func (c *Client) downloadFile(ctx context.Context, oid, dst string) error {
+	objects, err := lookup.ObjectsByHashForScope(ctx, c.runtime, oid)
+	if err == nil && len(objects) > 0 {
+		object := objects[0]
+		accessURLs, bulkErr := internaltransfer.BulkAccessURLsForObjects(ctx, c.runtime, []drsapi.DrsObject{object})
+		if bulkErr == nil {
+			if accessURL, ok := accessURLs[object.Id]; ok {
+				return internaltransfer.DownloadResolvedToPath(ctx, c.runtime, oid, dst, &object, &accessURL, sydownload.DownloadOptions{
+					MultipartThreshold: 5 * 1024 * 1024,
+					Concurrency:        2,
+					ChunkSize:          64 * 1024 * 1024,
+				})
+			}
+		}
+	}
+
+	return internaltransfer.DownloadToPath(ctx, c.runtime, oid, dst)
 }
 
 func safeRelativePath(path string) (string, error) {

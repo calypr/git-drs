@@ -10,6 +10,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
@@ -64,7 +65,20 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 
 	var downloadFn internalfilter.SmudgeDownloadFunc
 	if !internalfilter.ShouldSkipSmudge() {
+		var terraResolver resolver.Resolver
+		if drsCtx.RemoteType == config.TerraServerType {
+			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if err != nil {
+				return fmt.Errorf("smudge: create Terra resolver: %w", err)
+			}
+		}
 		downloadFn = func(callCtx context.Context, oid, cachePath string) error {
+			if terraResolver != nil {
+				if len(oid) >= 2 && oid[:2] == "//" {
+					oid = "drs:" + oid
+				}
+				return resolver.DownloadToCache(callCtx, terraResolver, oid, cachePath)
+			}
 			return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 		}
 	}

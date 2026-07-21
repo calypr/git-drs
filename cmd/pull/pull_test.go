@@ -335,9 +335,13 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 
 	worktreePath := filepath.Join(repo, "sample.bin")
 	payload := []byte("hello world payload")
-	sum := sha256.Sum256(payload)
-	oid := hex.EncodeToString(sum[:])
-	writePointerFile(t, worktreePath, oid, strconv.Itoa(len(payload)))
+	oid := "drs://drs.anv0:v2_example-without-sha256"
+	pointer := "version https://calypr.github.io/spec/v1\n" +
+		"oid " + oid + "\n" +
+		"size " + strconv.Itoa(len(payload)) + "\n"
+	if err := os.WriteFile(worktreePath, []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write DRS pointer: %v", err)
+	}
 
 	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin")
 	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")

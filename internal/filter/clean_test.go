@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -68,6 +70,61 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 		if _, statErr := os.Stat(cachePath); !os.IsNotExist(statErr) {
 			t.Fatalf("did not expect pointer text to be cached as payload at %s", cachePath)
 		}
+	}
+}
+
+func TestCleanContentPreservesIndexedDRSPointerForHydratedPayload(t *testing.T) {
+	repo := t.TempDir()
+	payload := []byte("hydrated population data\n")
+	pointer := "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://drs.anv0:v2_example\n" +
+		"size " + fmt.Sprint(len(payload)) + "\n"
+	path := filepath.Join(repo, "population_descriptor.tsv")
+	if err := os.WriteFile(path, []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write pointer: %v", err)
+	}
+	for _, args := range [][]string{{"init"}, {"add", "population_descriptor.tsv"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(orig)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, "drs://drs.anv0:v2_example")
+	if err != nil {
+		t.Fatalf("ObjectPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+	var out bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewReader(payload), &out, logger); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("expected indexed DRS pointer, got %q", out.String())
+	}
+
+	changed := bytes.Repeat([]byte("x"), len(payload))
+	out.Reset()
+	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewReader(changed), &out, logger); err != nil {
+		t.Fatalf("CleanContent changed payload: %v", err)
+	}
+	if out.String() == pointer {
+		t.Fatal("same-sized changed payload must not be hidden by the indexed DRS pointer")
 	}
 }
 

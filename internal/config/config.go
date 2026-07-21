@@ -215,7 +215,7 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 }
 
 func loadGitConfigOverrides(cfg *Config) error {
-	cmd := exec.Command("git", "config", "--get-regexp", `^drs\.`)
+	cmd := exec.Command("git", "config", "--local", "--get-regexp", `^drs\.`)
 	out, err := cmd.Output()
 	if err != nil {
 		// git config exits non-zero when no matching keys exist. In that case,

@@ -44,7 +44,7 @@ git drs remote add <name> <endpoint-or-alias> [flags]
 
 Flags:
   --scope <scope>             Optional provider-specific collection/project scope
-  --auth <method>             auto, none, bearer, basic, google-adc, or provider-helper
+  --auth <method>             auto, none, bearer, basic, google-adc, or provider-helper[:name]
   --credential <source>      Credential source, never an inline secret
   --provider <provider>      auto, ga4gh, gen3, terra, cgc, or synapse
   --storage <bucket/prefix>  Advanced write/registration storage override
@@ -76,13 +76,75 @@ maintained presets; they are not separate protocols. `--provider` is an escape
 hatch when discovery is absent or ambiguous, and should normally remain
 `auto`.
 
+### Authentication methods
+
+`--auth` selects **how an HTTP request is authorized**. It is distinct from
+`--credential`, which selects **where the material needed by that method comes
+from**. For example, `--auth bearer --credential env:CGC_TOKEN` says to put a
+bearer token in the request and to read that token from `CGC_TOKEN`.
+
+The methods have the following meanings:
+
+| Method | Meaning |
+| --- | --- |
+| `auto` | Select a method from trusted configuration and discovery, using the deterministic order below. This is the default; it does not mean "try every credential." |
+| `none` | Send no authentication. If the server rejects the request, report that authentication is required rather than silently trying local credentials. |
+| `bearer` | Send an OAuth-style bearer access token obtained from `--credential`. |
+| `basic` | Send an HTTP Basic username/password pair obtained from `--credential`. |
+| `google-adc` | Use Google Application Default Credentials to obtain and refresh the token expected by the service. |
+| `provider-helper` | Delegate token acquisition and refresh to the adapter for the selected provider; the adapter returns request credentials, but does not replace the DRS resolver. |
+
+`auto` should resolve once when the remote is added, persist the selected
+method (not a secret), and show the result to the user. The selection order is:
+
+1. an explicit `--credential` whose type implies a method, if unambiguous;
+2. the endpoint alias's maintained default (for example, a Terra alias may
+   select `google-adc`);
+3. authentication metadata returned by trusted service discovery;
+4. a single installed provider helper registered for the detected provider;
+5. `none` only when an anonymous capability probe succeeds.
+
+If the evidence is absent, conflicting, or names multiple usable methods,
+`remote add` should stop and ask the user to choose `--auth`; it must not send
+available credentials to a server merely because they exist. A 401 challenge
+may refine discovery, but it must not trigger a loop that tries bearer, basic,
+and local credential stores in turn. Subsequent commands use the persisted
+method, so `auto` does not make network behavior vary from invocation to
+invocation. `git drs remote diagnose` may explicitly rerun discovery.
+
+`provider-helper` is for authentication lifecycles that the generic methods
+cannot represent. Examples include a Gen3 profile helper that exchanges an API
+key and refreshes a Fence access token, or a future Synapse helper that obtains
+a short-lived token through Synapse's supported login flow. The value does not
+mean "execute any program found on `PATH`": the helper must be registered by a
+known provider adapter, selected by the detected or explicit `--provider`, and
+subject to the endpoint allowlist for that remote. If more than one helper is
+available, configuration should use a qualified value such as
+`provider-helper:gen3-profile` rather than relying on search order.
+
+This differs from `--credential helper:synapse`: a **credential helper** only
+returns already usable material, such as a bearer token, while a **provider
+helper** owns a provider-specific exchange or refresh flow and may use a
+credential source as its input. For example:
+
+```sh
+# A generic bearer method reads an already usable token.
+git drs remote add synapse https://repo-prod.prod.sagebase.org \
+  --auth bearer --credential helper:synapse
+
+# A provider adapter exchanges the named Gen3 profile and refreshes tokens.
+git drs remote add production https://example-gen3.org \
+  --provider gen3 --auth provider-helper:gen3-profile \
+  --credential profile:production --scope PROGRAM/PROJECT
+```
+
 ### Defaults remove flags
 
 - Discover the provider and supported features using GA4GH service-info and a
   small, maintained fingerprint table. Print the detected provider before
   persisting configuration.
-- Infer `--auth auto` from the preset, a 401 challenge, and installed credential
-  helpers. Do not silently downgrade from authenticated to anonymous access.
+- Resolve `--auth auto` using the deterministic authentication selection above.
+  Do not silently downgrade from authenticated to anonymous access.
 - Infer read-only versus writable from capability probing. Replace `--mode`
   with reported capabilities rather than a user assertion.
 - Default checkout behavior from the repository's existing configuration.

@@ -141,6 +141,28 @@ func safeDestination(dst string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+
+	// Do not allow an existing path component to redirect the eventual pointer
+	// write. Checking only the cleaned path is insufficient: os.WriteFile and
+	// MkdirAll follow symlinks, including a symlink at the destination itself.
+	current := root
+	for _, component := range strings.Split(clean, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, statErr := os.Lstat(current)
+		if os.IsNotExist(statErr) {
+			break
+		}
+		if statErr != nil {
+			return "", fmt.Errorf("inspect destination path %s: %w", dst, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("destination path contains a symlink: %s", dst)
+		}
+	}
 	return filepath.Join(root, clean), nil
 }
 

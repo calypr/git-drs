@@ -50,6 +50,53 @@ func TestCreateLfsPointer_NoSHA256(t *testing.T) {
 	}
 }
 
+func TestSafeDestinationRejectsSymlinkedParent(t *testing.T) {
+	repo := t.TempDir()
+	outside := t.TempDir()
+	runGitCmd(t, repo, "init")
+	if err := os.Symlink(outside, filepath.Join(repo, "data")); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	if _, err := safeDestination(filepath.Join("data", "pointer")); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink destination to be rejected, got %v", err)
+	}
+}
+
+func TestSafeDestinationRejectsSymlinkedFile(t *testing.T) {
+	repo := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside")
+	runGitCmd(t, repo, "init")
+	if err := os.WriteFile(outside, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "pointer")); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	if _, err := safeDestination("pointer"); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink destination to be rejected, got %v", err)
+	}
+}
+
 func TestAddRefLocalOIDUsesDerivedSourceWhenSHA256Missing(t *testing.T) {
 	obj := &drsapi.DrsObject{Checksums: []drsapi.Checksum{{Type: "md5", Checksum: "md5"}}}
 	oid := addRefLocalOID("drs://example.org/object-1", "source", obj)

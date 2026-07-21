@@ -57,8 +57,14 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		tmp.Close()
 		return err
 	}
-	for key, value := range access.Headers {
-		req.Header.Set(key, value)
+	for _, header := range access.Headers {
+		key, value, ok := strings.Cut(header, ":")
+		key = strings.TrimSpace(key)
+		if !ok || key == "" {
+			tmp.Close()
+			return fmt.Errorf("AnVIL resolver returned an invalid access header")
+		}
+		req.Header.Add(key, strings.TrimSpace(value))
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -110,8 +116,8 @@ type Checksum struct {
 }
 
 type ResolvedAccess struct {
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	URL     string   `json:"url"`
+	Headers []string `json:"headers"`
 }
 
 // AnVILResolver routes every DRS authority through the configured trusted

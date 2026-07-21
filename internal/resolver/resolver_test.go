@@ -3,8 +3,10 @@ package resolver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -35,6 +37,40 @@ func TestAnVILResolverContract(t *testing.T) {
 	access, err := r.GetAccess(context.Background(), obj.DRSURI, "a1")
 	if err != nil || access.URL != "https://storage.example/signed" {
 		t.Fatalf("unexpected access result: %+v, %v", access, err)
+	}
+}
+
+func TestDownloadToCacheUsesAccessURLHeaders(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Values("X-Provider-Token"); len(got) != 2 || got[0] != "first" || got[1] != "second:part" {
+			t.Errorf("unexpected provider headers: %q", got)
+			http.Error(w, "missing headers", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/object-1":
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"https","access_id":"a1"}]}`))
+		case "/ga4gh/drs/v1/objects/object-1/access/a1":
+			_, _ = fmt.Fprintf(w, `{"url":%q,"headers":["X-Provider-Token: first","X-Provider-Token: second:part"]}`, download.URL)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
 	}
 }
 

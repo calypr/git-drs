@@ -201,7 +201,7 @@ remotes:
     <p class="eyebrow">Implementation audit</p><h2>Most original blockers are now closed</h2>
     <div class="grid2">
       <div><h3 style="color:#176b68">✓ Implemented</h3><ul><li>ADC-backed <code>AnVILResolver</code> handles metadata and access.</li><li>Terra <code>add-ref</code> and pull use provider-neutral resolution.</li><li>Remote config selects behavior; <code>--remote-type</code> is hidden and deprecated.</li><li>Terra pointers retain DRS URI, size, and optional SHA256.</li><li>DRS cache keys are derived separately from content checksums.</li></ul></div>
-      <div><h3 style="color:#a66c00">△ Still incomplete</h3><ul><li>Provider-neutral routing is not yet universal; legacy providers still use Syfon paths.</li><li>The production AnVIL endpoint/scopes/contract still require authoritative validation.</li><li>Manifest resolution is sequential; bounded concurrency is not implemented.</li><li>Downloads lack bounded retry and automatic expired-URL re-resolution.</li><li>No complete clean-clone, independent two-user acceptance test exists.</li></ul></div>
+      <div><h3 style="color:#a66c00">△ Still incomplete</h3><ul><li>Routing is only partly provider-neutral: slash-form authorities may map to HTTPS, while compact AnVIL IDs still require the trusted Terra resolver.</li><li>Service-info is only a Terra health probe; it does not discover or persist authentication, provider, or capabilities.</li><li>Remote setup still has provider-specific command shapes instead of one endpoint/alias + scope/auth model.</li><li>Downloads still lack bounded concurrency, retry, cancellation, and expired-URL re-resolution.</li><li>The production contract and a clean-clone, independent two-user acceptance test remain unverified.</li></ul></div>
     </div>
     <p class="callout" style="margin-top:2vh"><strong>Bottom line:</strong> this is no longer an unwired design. It is an implemented vertical slice that still needs production-contract validation, resilience, and end-to-end proof.</p>
   </section>
@@ -209,9 +209,9 @@ remotes:
   <section class="slide" data-n="12">
     <p class="eyebrow">Next steps</p><h2>Turn the vertical slice into a proven POC</h2>
     <div class="timeline">
-      <article class="phase"><span class="tag">P0 · VERIFY</span><h3 style="margin-top:1.5vh">Prove production fit</h3><ul><li>Confirm endpoint + OAuth scopes</li><li>Certify resolver response contract</li><li>Choose stable test records</li><li>Run clean two-user clone/pull</li><li>Audit logs/history for secrets</li></ul></article>
-      <article class="phase"><span class="tag">P1 · HARDEN</span><h3 style="margin-top:1.5vh">Make it resilient</h3><ul><li>Expired-URL re-resolution</li><li>Bounded retry + cancellation</li><li>Bounded manifest concurrency</li><li><code>git drs doctor</code></li><li>CI + compatibility matrix</li></ul></article>
-      <article class="phase"><span class="tag">P2 · DEFER</span><h3 style="margin-top:1.5vh">Protect the scope</h3><ul><li>AnVIL uploads or mutation</li><li>Cross-provider copying</li><li>Remote GC</li><li>Workspace sync</li><li>All-provider redesign</li></ul></article>
+      <article class="phase"><span class="tag">P0 · VERIFY</span><h3 style="margin-top:1.5vh">Prove production fit</h3><ul><li>Confirm endpoint + OAuth scopes</li><li>Certify service-info/object/access contracts</li><li>Test slash + compact DRS IDs</li><li>Run clean two-user clone/pull</li><li>Audit logs/history for secrets</li></ul></article>
+      <article class="phase"><span class="tag">P1 · HARDEN</span><h3 style="margin-top:1.5vh">Make it resilient</h3><ul><li>Trusted authority/alias routing</li><li>Persist deterministic auth discovery</li><li>Expired-URL re-resolution</li><li>Bounded retry + concurrency</li><li>Remote diagnostics + CI</li></ul></article>
+      <article class="phase"><span class="tag">P2 · GENERALIZE</span><h3 style="margin-top:1.5vh">Keep DRS composable</h3><ul><li>Unify <code>remote add</code></li><li>Resolver/auth/capability interfaces</li><li>CGC + Synapse contract fixtures</li><li>Keep publishing provider-specific</li><li>Defer mutation and cross-provider copy</li></ul></article>
     </div>
   </section>
 

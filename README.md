@@ -108,10 +108,12 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 
 ## Documentation
 
+- [Documentation Home](docs/index.md)
 - [Getting Started](docs/getting-started.md)
 - [Commands Reference](docs/commands.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Developer Guide](docs/developer-guide.md)
+- [Publishing documentation with GitHub Pages](docs/github-pages.md)
 - [GA4GH DRS Scalability Gaps](docs/ga4gh-drs-scalability-gaps.md)
 
 ## Requirements

@@ -85,6 +85,53 @@ Cloning the Git repository does **not** grant AnVIL data access. A user without
 permission can inspect reference paths and DRS URIs but receives an
 authorization error when hydration resolves the object.
 
+## Undo an accidental change to downloaded data
+
+`git drs pull` makes files downloaded from a read-only remote read-only. If a
+user nevertheless makes a downloaded file writable, changes it, stages it, and
+commits it, the clean filter records the changed content as a new pointer.
+`git drs push` will still refuse the operation because the Terra remote is
+read-only; that error does not by itself identify the accidental edit.
+
+If the mistaken commit is the latest commit and has not been pushed, restore
+the original DRS pointer from its parent and amend the commit:
+
+```bash
+# Inspect the change before rewriting the commit.
+git diff HEAD^ HEAD -- data/sample.cram
+
+# Restore the original pointer in both the index and working tree.
+git restore --source=HEAD^ --staged --worktree -- data/sample.cram
+git commit --amend --no-edit
+
+# Confirm that the committed file is a pointer again.
+git show HEAD:data/sample.cram
+git status
+```
+
+If the entire latest commit was a mistake and it contains no work that should
+be kept, it can instead be removed with `git reset --hard HEAD^`. Inspect the
+commit and working tree first because this discards all changes in both.
+
+If the mistaken commit has already been shared, do not rewrite shared history.
+Restore the pointer in a corrective commit:
+
+```bash
+git restore --source=HEAD^ --staged --worktree -- data/sample.cram
+git commit -m "Restore AnVIL DRS reference"
+git push
+```
+
+After either repair, hydrate the restored pointer again when local access to
+the payload is needed:
+
+```bash
+git drs pull -I "data/sample.cram"
+```
+
+Use ordinary `git push` to publish commits containing read-only AnVIL
+references. Do not use `git drs push` for a Terra remote.
+
 ## Security and troubleshooting
 
 * `google application default credentials are unavailable`: run

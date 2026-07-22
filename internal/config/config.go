@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -26,6 +27,7 @@ const (
 	Gen3ServerType  RemoteType = "gen3"
 	LocalServerType RemoteType = "local"
 	TerraServerType RemoteType = "terra"
+	GA4GHServerType RemoteType = "ga4gh"
 
 	configSection          = "drs"
 	remoteSubsectionPrefix = "remote."
@@ -50,6 +52,8 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 		return x.Local
 	} else if x.Terra != nil {
 		return x.Terra
+	} else if x.Generic != nil {
+		return x.Generic
 	}
 	return nil
 }
@@ -162,6 +166,20 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		if remote.Local.StoragePrefix != "" {
 			remoteSubsection.SetOption("storage_prefix", remote.Local.StoragePrefix)
 		}
+	} else if remote.Generic != nil {
+		r := remote.Generic
+		remoteSubsection.SetOption("type", "ga4gh")
+		remoteSubsection.SetOption("endpoint", r.Endpoint)
+		remoteSubsection.SetOption("provider", r.Provider)
+		remoteSubsection.SetOption("auth", r.Auth)
+		for key, value := range map[string]string{"credential": r.Credential, "scope": r.Scope, "storage": r.Storage, "checkout": r.Checkout, "preset": r.Preset, "registry-service-id": r.RegistryServiceID} {
+			if value != "" {
+				remoteSubsection.SetOption(key, value)
+			}
+		}
+		if r.PresetVersion > 0 {
+			remoteSubsection.SetOption("preset-version", fmt.Sprint(r.PresetVersion))
+		}
 	}
 
 	// Set default remote if not set
@@ -214,6 +232,16 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 	cfg.Remotes[remoteName] = rs
 }
 
+func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
+	version, _ := strconv.Atoi(opts["preset-version"])
+	cfg.Remotes[name] = RemoteSelect{Generic: &GenericRemote{
+		Endpoint: opts["endpoint"], Provider: opts["provider"], Auth: opts["auth"],
+		Credential: opts["credential"], Scope: opts["scope"], Storage: opts["storage"],
+		Checkout: opts["checkout"], Preset: opts["preset"], PresetVersion: version,
+		RegistryServiceID: opts["registry-service-id"],
+	}}
+}
+
 func loadGitConfigOverrides(cfg *Config) error {
 	cmd := exec.Command("git", "config", "--local", "--get-regexp", `^drs\.`)
 	out, err := cmd.Output()
@@ -256,6 +284,10 @@ func loadGitConfigOverrides(cfg *Config) error {
 	}
 
 	for name, opts := range remoteOptions {
+		if opts["type"] == "ga4gh" {
+			addGenericRemote(cfg, name, opts)
+			continue
+		}
 		parseAndAddRemote(
 			cfg,
 			remoteSubsectionPrefix+string(name),
@@ -305,6 +337,14 @@ func LoadConfig() (*Config, error) {
 
 		for _, subsection := range section.Subsections {
 			if !strings.HasPrefix(subsection.Name, remoteSubsectionPrefix) {
+				continue
+			}
+			if subsection.Option("type") == "ga4gh" {
+				opts := make(map[string]string)
+				for _, key := range []string{"endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id"} {
+					opts[key] = subsection.Option(key)
+				}
+				addGenericRemote(cfg, Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)), opts)
 				continue
 			}
 			parseAndAddRemote(
@@ -377,6 +417,14 @@ func RemoveRemote(name Remote) (*Config, error) {
 		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
 		fmt.Sprintf("drs.remote.%s.auth", name),
 		fmt.Sprintf("drs.remote.%s.mode", name),
+		fmt.Sprintf("drs.remote.%s.provider", name),
+		fmt.Sprintf("drs.remote.%s.credential", name),
+		fmt.Sprintf("drs.remote.%s.scope", name),
+		fmt.Sprintf("drs.remote.%s.storage", name),
+		fmt.Sprintf("drs.remote.%s.checkout", name),
+		fmt.Sprintf("drs.remote.%s.preset", name),
+		fmt.Sprintf("drs.remote.%s.preset-version", name),
+		fmt.Sprintf("drs.remote.%s.registry-service-id", name),
 		fmt.Sprintf("drs.remote.%s.token", name),
 		fmt.Sprintf("drs.remote.%s.username", name),
 		fmt.Sprintf("drs.remote.%s.password", name),

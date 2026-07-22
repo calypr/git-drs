@@ -42,7 +42,9 @@ At a high level:
 
 ```bash
 git drs install
-git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
+git drs remote add production https://example-gen3.org --provider gen3 \
+  --scope HTAN_INT/BForePC --auth provider-helper:gen3-profile \
+  --credential file:/path/to/credentials.json
 git drs track "*.bam"
 git add .gitattributes
 git add sample.bam
@@ -91,7 +93,8 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | --- | --- |
 | `git drs install` | Install global `git-drs` filter config |
 | `git drs init` | Explicitly initialize or repair repository-local `git-drs` state |
-| `git drs remote add gen3 [remote] <org/project>` | Add or refresh a Gen3/Syfon remote |
+| `git drs remote add <endpoint-or-alias>` | Add a DRS remote (built-ins: calypr, terra, synapse, cgc) |
+| `git drs preset list` | List the non-secret presets embedded in this release |
 | `git drs remote list` | List configured remotes |
 | `git drs remote remove <name>` | Remove a configured DRS remote |
 | `git drs remote set <name>` | Set the default remote |

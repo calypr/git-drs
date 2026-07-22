@@ -35,6 +35,38 @@ Use this when you want explicit initialization or to repair repo-local hooks/con
 
 ## Remote Configuration
 
+### `git drs remote add <endpoint-or-alias> [flags]`
+
+Add a DRS server with the unified remote command. The built-in aliases are
+`calypr`, `terra`, `synapse`, and `cgc`; inspect their non-secret defaults with
+`git drs preset list` or `git drs preset show <alias>`.
+
+```bash
+git drs remote add cgc --credential env:CGC_TOKEN
+git drs remote add synapse --credential helper:synapse
+git drs remote add https://drs.example.org --provider ga4gh --auth none
+git drs remote add research https://gen3.example.org \
+  --provider gen3 --scope PROGRAM/PROJECT \
+  --auth provider-helper:gen3-profile --credential profile:research
+```
+
+For a URL, the local name is derived from the host. Use the two-argument form
+to choose a name explicitly. `--credential` accepts `env:`, `file:`, `helper:`,
+`profile:`, or `stdin`; it never accepts an inline secret. Other options are
+`--scope`, `--auth`, `--provider`, `--storage`, and `--checkout`. Presets are
+expanded once and the resolved endpoint, provider, authentication method, and
+catalog version are saved, so a later release cannot silently redirect an
+existing remote. Only HTTPS endpoints without embedded credentials are
+accepted.
+
+The older `gen3`, `local`, and `terra` command shapes are deprecated, hidden
+compatibility forms. New scripts should use the unified command.
+
+### `git drs preset list` / `git drs preset show <alias>`
+
+Display the presets embedded in this release. Presets contain endpoints and
+authentication methods but never credentials or secret values.
+
 ### `git drs remote add gen3 [remote-name] <organization/project>`
 
 Add or refresh a Gen3-backed Syfon remote.

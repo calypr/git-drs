@@ -1,5 +1,7 @@
 package config
 
+import "strings"
+
 type DRSRemote interface {
 	GetProjectId() string
 	GetOrganization() string
@@ -9,10 +11,25 @@ type DRSRemote interface {
 }
 
 type RemoteSelect struct {
-	Gen3  *Gen3Remote
-	Local *LocalRemote
-	Terra *TerraRemote
+	Gen3    *Gen3Remote
+	Local   *LocalRemote
+	Terra   *TerraRemote
+	Generic *GenericRemote
 }
+
+// GenericRemote is the compositional configuration produced by the unified
+// remote-add command. Credential contains a source identifier, never a secret.
+type GenericRemote struct {
+	Endpoint, Provider, Auth, Credential, Scope, Storage, Checkout string
+	Preset, RegistryServiceID                                      string
+	PresetVersion                                                  int
+}
+
+func (r GenericRemote) GetProjectId() string     { _, p, _ := strings.Cut(r.Scope, "/"); return p }
+func (r GenericRemote) GetOrganization() string  { o, _, _ := strings.Cut(r.Scope, "/"); return o }
+func (r GenericRemote) GetEndpoint() string      { return r.Endpoint }
+func (r GenericRemote) GetBucketName() string    { b, _, _ := strings.Cut(r.Storage, "/"); return b }
+func (r GenericRemote) GetStoragePrefix() string { _, p, _ := strings.Cut(r.Storage, "/"); return p }
 
 type Gen3Remote struct {
 	Endpoint      string `yaml:"endpoint"`

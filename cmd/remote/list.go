@@ -54,6 +54,12 @@ var ListCmd = &cobra.Command{
 			} else if remoteSelect.Local != nil {
 				remoteType = string(config.LocalServerType)
 				remote = remoteSelect.Local
+			} else if remoteSelect.Terra != nil {
+				remoteType = string(config.TerraServerType)
+				remote = remoteSelect.Terra
+			} else if remoteSelect.Generic != nil {
+				remoteType = remoteSelect.Generic.Provider
+				remote = remoteSelect.Generic
 			} else {
 				remoteType = "unknown"
 			}

@@ -14,8 +14,11 @@ import (
 var TerraCmd = &cobra.Command{
 	Use:   "terra <remote-name>",
 	Short: "Add a read-only Terra DRS remote",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return runUnified(cmd, []string{"terra"})
+		}
 		remoteName := strings.TrimSpace(args[0])
 		if remoteName == "" {
 			return fmt.Errorf("remote name is required")

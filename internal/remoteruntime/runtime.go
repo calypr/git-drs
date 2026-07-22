@@ -52,6 +52,12 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 	if x.Terra != nil {
 		return terraClient(*x.Terra, logger)
 	}
+	if x.Generic != nil {
+		if x.Generic.Provider == "terra" {
+			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
+		}
+		return &GitContext{RemoteType: config.GA4GHServerType, Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(), ProjectId: x.Generic.GetProjectId(), Logger: logger, Credential: &syconf.Credential{APIEndpoint: x.Generic.Endpoint}}, nil
+	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }
 

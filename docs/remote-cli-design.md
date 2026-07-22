@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed. This document describes a migration target rather than the current
-command-line contract.
+Implemented for built-in presets and unified endpoint configuration. Registry
+discovery, custom user/system preset catalogs, capability probing, and remote
+migration remain future work.
 
 ## Problem
 
@@ -86,10 +87,9 @@ absent or ambiguous, and should normally remain `auto`.
 
 ### Preset catalog and overrides
 
-**Implementation status:** this section is a proposal. There is currently no
-`internal/presets/presets.yaml`, preset-loading code, or `git drs preset`
-command. The implemented `remote add` commands remain the legacy `gen3`,
-`local`, and `terra` forms listed in the Problem section.
+The built-in catalog is embedded from `internal/presets/presets.yaml` and can
+be inspected with `git drs preset list` and `git drs preset show <alias>`.
+Legacy provider-specific add commands remain hidden compatibility shims.
 
 When this proposal is implemented, the built-in preset list should be
 maintained in a reviewed, version-controlled catalog in this repository. The

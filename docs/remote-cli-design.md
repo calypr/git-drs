@@ -36,11 +36,14 @@ of slightly different flags for every service.
 
 ## Proposed vocabulary
 
-Use one command with two required concepts: a local remote name and a server
-endpoint (or a well-known endpoint alias).
+Use one command whose only required concept is a server endpoint (or a
+well-known endpoint alias). The local remote name should normally be derived
+from the alias or endpoint host; an explicit name is only needed to override
+that default or to configure the same service more than once.
 
 ```text
-git drs remote add <name> <endpoint-or-alias> [flags]
+git drs remote add <endpoint-or-alias> [flags]
+git drs remote add <name> <endpoint-or-alias> [flags]  # explicit-name form
 
 Flags:
   --scope <scope>             Optional provider-specific collection/project scope
@@ -54,27 +57,129 @@ Flags:
 For example:
 
 ```sh
-# Provider and capabilities discovered from service-info where possible.
-git drs remote add cgc https://cgc-ga4gh-api.sbgenomics.com \
-  --auth bearer --credential env:CGC_TOKEN
+# Presets supply the endpoint, provider, and authentication method.
+git drs remote add cgc --credential env:CGC_TOKEN
 
-git drs remote add synapse https://repo-prod.prod.sagebase.org \
-  --auth bearer --credential helper:synapse
+# A GA4GH Service Registry ID can select a service without spelling its URL.
+git drs remote add registry:com.sb.cgc.drs --credential env:CGC_TOKEN
+
+git drs remote add synapse --credential helper:synapse
 
 # A preset may supply a public endpoint and authentication default.
-git drs remote add anvil terra --scope my-billing-project/my-workspace
+git drs remote add terra --scope my-billing-project/my-workspace
 
-# Gen3 keeps its scope, but no longer needs a different grammar.
-git drs remote add production https://example-gen3.org \
+# A custom deployment needs its URL; its name defaults from the host.
+git drs remote add https://example-gen3.org \
   --provider gen3 --scope PROGRAM/PROJECT \
   --credential file:~/.gen3/credentials.json
 ```
 
 `<endpoint-or-alias>` should be an HTTPS URL by default. Aliases such as
 `terra`, `cgc`, and `synapse` are conveniences that expand to versioned,
-maintained presets; they are not separate protocols. `--provider` is an escape
-hatch when discovery is absent or ambiguous, and should normally remain
-`auto`.
+maintained presets, including the endpoint and usual authentication method;
+they are not separate protocols. Thus `cgc` is not repeated as both a name and
+a URL, and users do not have to restate `--auth bearer` when the preset already
+knows it. For a URL, derive a stable local name from its host and report it
+before saving. If that name already exists, ask for an explicit name rather
+than silently replacing it. `--provider` is an escape hatch when discovery is
+absent or ambiguous, and should normally remain `auto`.
+
+### Preset catalog and overrides
+
+**Implementation status:** this section is a proposal. There is currently no
+`internal/presets/presets.yaml`, preset-loading code, or `git drs preset`
+command. The implemented `remote add` commands remain the legacy `gen3`,
+`local`, and `terra` forms listed in the Problem section.
+
+When this proposal is implemented, the built-in preset list should be
+maintained in a reviewed, version-controlled catalog in this repository. The
+proposed location is `internal/presets/presets.yaml`; choosing that path in this
+design does not create the file or implementation. The catalog should be
+embedded in each `git-drs` release. Each entry should contain only non-secret
+defaults: alias, endpoint, provider, authentication method, and optional
+registry service ID. The catalog should not be downloaded at command runtime.
+The proposed `git drs preset list` and `git drs preset show <alias>` commands
+should display the shipped entries, their source (`built-in`, `system`, or
+`user`), and the release version that supplied them.
+
+Preset expansion should be a one-time operation during `remote add`. The
+implementation should persist its resolved endpoint, provider, authentication
+method, preset alias, and catalog version in the remote configuration, and
+print those values before saving. Existing remotes would therefore not change
+when a later `git-drs` release edits a preset. The proposed
+`git drs remote diagnose <name>` may report a newer preset and offer an explicit
+migration; it must not adopt one automatically.
+
+The proposed commands would allow users and administrators to add presets in
+user and system configuration:
+
+```sh
+git drs preset add lab https://drs.example.edu --provider gen3 --level user
+git drs preset add institute https://drs.example.org --level system
+```
+
+Custom names must not silently shadow built-in aliases. A collision should
+fail and direct the user to a qualified selector such as `user:lab` or
+`system:lab`; built-ins may be selected explicitly as `built-in:cgc`. This
+preserves a short, predictable `cgc` path while allowing local catalogs without
+creating a route for configuration to redirect credentials unexpectedly.
+
+Explicit command-line values take precedence over non-endpoint preset defaults,
+so `--auth`, `--provider`, and `--scope` can override the expanded values after
+the command prints the effective configuration. To use a different endpoint,
+the user should pass that HTTPS URL or a qualified custom preset instead of
+overriding the meaning of a built-in alias. Credential sources and secret
+values never belong in any preset catalog.
+
+### Registry discovery
+
+The [GA4GH Service Registry](https://registry.ga4gh.org/) can remove the need
+to type an endpoint for services it lists. Prefer its service `id` as the
+selector because that value is intended as an identifier:
+
+```sh
+git drs remote add registry:com.sb.cgc.drs
+git drs remote add registry:org.sagebase.prod.repo-prod
+```
+
+The `registry:` prefix makes network lookup explicit and avoids confusing a
+registry selector with a built-in alias, local remote name, or URL. On a
+successful lookup, persist the resolved URL and registry ID in the remote
+configuration and print the registry name and URL for confirmation. Normal
+operations, including `push`, use that persisted endpoint; they must not
+silently follow a later registry change on every invocation. An explicit
+`remote diagnose` or refresh operation may report a changed registry record
+and ask the user whether to adopt it.
+
+A registry display `name` may be accepted as a convenience only when it has a
+single exact match. It is not a reliable primary key: names are human-readable,
+can change, can contain spaces, and are not necessarily unique. For example,
+the registry currently contains two DRS records named `Canine Data Commons`.
+Do not use fuzzy or prefix matching to guess a credential destination. If a
+name matches zero or multiple records, list the candidate IDs and require the
+user to select an ID or URL. Short forms such as `cgc` remain maintained aliases
+rather than fuzzy registry-name searches.
+
+Consequently, an arbitrary local remote name in a fresh repository cannot by
+itself safely determine a server. It can do so only when it is an exact
+maintained alias or an explicit, uniquely resolved registry selector.
+
+Registry lookup discovers a candidate DRS resolver endpoint, not a publishing
+contract. Registry records can represent multiple logical datasets at one URL,
+and their URLs vary between service roots and paths ending in
+`/ga4gh/drs/v1/objects`. Normalize and validate the advertised endpoint through
+service-info and capability probing before saving it. In particular, a
+registry match must not make `push` assume that upload or registration is
+supported; the publisher capability checks described below still apply. If
+the registry is unavailable or the record is invalid, fail with an actionable
+request for an explicit URL rather than guessing.
+
+Neither a GA4GH Service Registry record nor the GA4GH service-info response
+declares which HTTP `Authorization` scheme or credential flow a DRS deployment
+requires. Registry discovery therefore supplies only service identity and a
+candidate URL; service-info can confirm service identity and implementation
+metadata, but it cannot select `bearer`, `basic`, `google-adc`, or a provider
+helper. Do not infer authentication from registry membership or a DRS version.
 
 ### Authentication methods
 
@@ -100,17 +205,25 @@ method (not a secret), and show the result to the user. The selection order is:
 1. an explicit `--credential` whose type implies a method, if unambiguous;
 2. the endpoint alias's maintained default (for example, a Terra alias may
    select `google-adc`);
-3. authentication metadata returned by trusted service discovery;
-4. a single installed provider helper registered for the detected provider;
-5. `none` only when an anonymous capability probe succeeds.
+3. a single installed provider helper registered for the detected provider;
+4. `none` only when an anonymous capability probe succeeds.
 
 If the evidence is absent, conflicting, or names multiple usable methods,
 `remote add` should stop and ask the user to choose `--auth`; it must not send
 available credentials to a server merely because they exist. A 401 challenge
-may refine discovery, but it must not trigger a loop that tries bearer, basic,
-and local credential stores in turn. Subsequent commands use the persisted
-method, so `auto` does not make network behavior vary from invocation to
-invocation. `git drs remote diagnose` may explicitly rerun discovery.
+with a standards-compliant `WWW-Authenticate` header may identify an HTTP
+scheme, but the registry and service-info cannot. A challenge must not trigger
+a loop that tries bearer, basic, and local credential stores in turn.
+Subsequent commands use the persisted method, so `auto` does not make network
+behavior vary from invocation to invocation. `git drs remote diagnose` may
+explicitly rerun discovery.
+
+The common preset path should require no explicit `--auth`. For example, the
+CGC and Synapse presets select bearer authentication, while a Terra preset may
+select `google-adc`. `--auth` remains available for custom deployments,
+overrides, and ambiguous discovery; it is not routine boilerplate. Supplying a
+credential source whose type unambiguously implies a method likewise makes an
+explicit `--auth` unnecessary.
 
 `provider-helper` is for authentication lifecycles that the generic methods
 cannot represent. Examples include a Gen3 profile helper that exchanges an API
@@ -140,9 +253,12 @@ git drs remote add production https://example-gen3.org \
 
 ### Defaults remove flags
 
-- Discover the provider and supported features using GA4GH service-info and a
-  small, maintained fingerprint table. Print the detected provider before
-  persisting configuration.
+- Identify the service and provider using GA4GH service-info and a small,
+  maintained fingerprint table after resolving any explicit registry selector.
+  Probe resolver and publisher capabilities separately; service-info does not
+  advertise authentication or upload/registration support. Print the registry
+  match, endpoint, detected provider, and probed capabilities before persisting
+  configuration.
 - Resolve `--auth auto` using the deterministic authentication selection above.
   Do not silently downgrade from authenticated to anonymous access.
 - Infer read-only versus writable from capability probing. Replace `--mode`
@@ -252,8 +368,9 @@ silently diverge.
 
 Introduce the unified form without immediately removing scripts:
 
-1. Add `remote add <name> <endpoint-or-alias>` and store the compositional
-   remote configuration.
+1. Add `remote add <endpoint-or-alias>` with a derived local name, support
+   explicit `registry:<service-id>` lookup, retain the explicit-name form for
+   overrides, and store the resolved compositional remote configuration.
 2. Keep `remote add gen3`, `local`, and `terra` as hidden or deprecated
    compatibility shims that translate their arguments to the new model.
 3. Add `git drs remote migrate` and make `remote list --verbose` display the
@@ -267,13 +384,17 @@ Introduce the unified form without immediately removing scripts:
 The minimal common case then becomes memorable:
 
 ```sh
-git drs remote add <name> <server>
+git drs remote add <server-or-alias>
 ```
 
-Scope, authentication, publishing storage, and checkout policy appear only
-when the server or workflow actually needs them.
+An explicit local name, scope, authentication override, publishing storage,
+and checkout policy appear only when the server or workflow actually needs
+them. A credential source may still be required, but a preset or unambiguous
+source prevents the user from also having to state the corresponding
+authentication method.
 
 ## References
 
 - [Cancer Genomics Cloud DRS API overview](https://docs.cancergenomicscloud.org/reference/drs-api-overview)
+- [GA4GH Service Registry](https://registry.ga4gh.org/)
 - [Synapse DRS controller REST documentation](https://rest-docs.synapse.org/rest/index.html#org.sagebionetworks.drs.controller.DrsController)

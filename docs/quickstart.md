@@ -56,9 +56,21 @@ Verify:
 git-drs version
 ```
 
-## 2. Get Credentials
+## 2. Choose A Preset And Credential Source
 
-Download your Gen3 API credentials JSON from your commons profile page and save it somewhere stable, for example:
+See the non-secret server defaults included with your installed release:
+
+```bash
+git drs preset list
+git drs preset show calypr
+```
+
+The built-in aliases are `calypr`, `terra`, `synapse`, and `cgc`. Presets supply
+the endpoint, provider adapter, and usual authentication method; they never
+contain credentials.
+
+For the Calypr/Gen3 workflow below, download your Gen3 API credentials JSON
+from your commons profile page and save it somewhere stable, for example:
 
 ```bash
 ~/.gen3/credentials.json
@@ -72,12 +84,18 @@ Typical flow:
 4. Download the JSON file.
 5. Save it somewhere stable.
 
+On the command line, refer to the file as `file:~/.gen3/credentials.json`.
+Other supported credential sources are `env:VARIABLE`, `helper:NAME`,
+`profile:NAME`, and `stdin`. Do not put a token or password directly in
+`--credential`.
+
 ## 3. Connect An Existing Repository
 
 ```bash
 git clone <repo-url>
 cd <repo-name>
-git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:~/.gen3/credentials.json
 git drs pull
 ```
 
@@ -89,11 +107,16 @@ Use this path when the repository already contains tracked pointers and you want
 mkdir my-data-repo
 cd my-data-repo
 git init
-git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:~/.gen3/credentials.json
 git drs track "*.bam"
 git add .gitattributes
 git commit -m "Configure tracked files"
 ```
+
+`production` is the local remote name and `calypr` is the preset. If the preset
+name is also a suitable local name, the shorter form is
+`git drs remote add calypr ...`.
 
 ## 5. Day-One Commands
 

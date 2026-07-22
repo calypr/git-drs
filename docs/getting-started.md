@@ -16,19 +16,38 @@ The most important distinction is:
 - `git pull` updates commits and checkout state
 - `git drs pull` hydrates tracked pointer files already present in the checkout
 
-## The Setup Command
+## Connect A Remote
 
-The standard setup command is:
+List and inspect the presets shipped with the current release:
 
 ```bash
-git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs preset list
+git drs preset show calypr
 ```
 
-That command:
+Then add a named remote from a preset. For example, a scoped Calypr/Gen3
+remote using a credential file is:
 
-- stores the remote configuration
-- imports or refreshes credentials
+```bash
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:~/.gen3/credentials.json
+```
+
+This command:
+
+- expands the preset into a pinned endpoint, provider, authentication method,
+  and preset catalog version
+- stores only the credential source, not an inline secret
 - bootstraps repo-local `git-drs` wiring when it is missing
+
+The built-in presets are `calypr`, `terra`, `synapse`, and `cgc`. The local
+remote name is optional: `git drs remote add calypr ...` derives the name
+`calypr`. You can also connect an unlisted HTTPS endpoint directly:
+
+```bash
+git drs remote add research https://drs.example.org \
+  --provider ga4gh --auth none
+```
 
 ## The Two Common Workflows
 
@@ -37,7 +56,8 @@ That command:
 ```bash
 git clone <repo-url>
 cd <repo-name>
-git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:~/.gen3/credentials.json
 git drs pull
 ```
 
@@ -47,7 +67,8 @@ git drs pull
 mkdir my-data-repo
 cd my-data-repo
 git init
-git drs remote add gen3 production <organization/project> --cred ~/.gen3/credentials.json
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:~/.gen3/credentials.json
 git drs track "*.bam"
 git add .gitattributes
 git commit -m "Configure tracked files"
@@ -127,11 +148,17 @@ git drs push
 
 That is the supported delete flow for tracked `git-drs` objects. For the fuller decision tree, see [Removing Files](remove-files.md).
 
-### Refresh credentials
+### Change a credential source
 
 ```bash
-git drs remote add gen3 production <organization/project> --cred /path/to/new-credentials.json
+git drs remote remove production
+git drs remote add production calypr --scope <organization/project> \
+  --credential file:/path/to/new-credentials.json
 ```
+
+The unified command refuses to overwrite an existing remote. Remove and add it
+again when its endpoint, preset, or credential source must change. Prefer a
+refreshing helper or profile source when the provider supports one.
 
 ## Read Next
 

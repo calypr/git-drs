@@ -37,10 +37,7 @@ func List(ctx context.Context, options Options) ([]Pointer, error) {
 	prefixes := normalizePrefixes(options.ExcludePrefixes)
 	pointers := make([]Pointer, 0, len(files))
 	for path, file := range files {
-		sha256 := strings.TrimSpace(file.SHA256)
-		if sha256 == "" && file.OidType == "sha256" {
-			sha256 = strings.TrimSpace(file.Oid)
-		}
+		sha256 := strings.TrimSpace(file.Oid)
 		if file.OidType != "sha256" || sha256 == "" || excluded(path, prefixes) {
 			continue
 		}

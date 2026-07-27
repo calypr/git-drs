@@ -65,7 +65,7 @@ var Cmd = &cobra.Command{
 		}
 		if drsClient.IsReadOnly() || !drsClient.CanUpload() || !drsClient.CanRegister() {
 			return fmt.Errorf(
-				"remote %q is read-only: git drs push cannot upload or register files\n"+
+				"remote %q is read-only: git drs push cannot upload files to Terra or register DRS objects\n"+
 					"no files were uploaded, and you do not need to back out a commit that references existing Terra data\n"+
 					"to publish the commit and its DRS references, use ordinary git push to a Git remote; this pushes only Git metadata and does not upload files to Terra",
 				remote,

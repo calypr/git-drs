@@ -29,12 +29,25 @@ type catalog struct {
 var builtIn []byte
 
 func List() ([]Preset, error) {
+	return loadCatalog(builtIn)
+}
+
+func loadCatalog(data []byte) ([]Preset, error) {
 	var c catalog
-	if err := yaml.Unmarshal(builtIn, &c); err != nil {
+	if err := yaml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("decode built-in preset catalog: %w", err)
 	}
 	if c.Version != CatalogVersion {
 		return nil, fmt.Errorf("unsupported built-in preset catalog version %d", c.Version)
+	}
+	for i, preset := range c.Presets {
+		if strings.TrimSpace(preset.Auth) == "" {
+			name := strings.TrimSpace(preset.Alias)
+			if name == "" {
+				name = fmt.Sprintf("at index %d", i)
+			}
+			return nil, fmt.Errorf("preset %q does not specify an authentication type", name)
+		}
 	}
 	return append([]Preset(nil), c.Presets...), nil
 }

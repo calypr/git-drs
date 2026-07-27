@@ -72,9 +72,9 @@ compatibility forms. New scripts should use the unified command.
 ### `git drs preset list` / `git drs preset show <alias>`
 
 Display the presets embedded in this release. `list` shows each alias,
-provider, endpoint, and catalog version. `show` also displays its authentication
-default and, when present, registry service ID. Presets contain no credential
-or secret values.
+provider, authentication default, endpoint, and catalog version. `show` displays
+the same details vertically and, when present, the registry service ID. Presets
+contain no credential or secret values.
 
 | Alias | Provider | Authentication default |
 | --- | --- | --- |

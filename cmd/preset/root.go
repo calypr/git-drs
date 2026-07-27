@@ -17,7 +17,7 @@ var listCmd = &cobra.Command{Use: "list", Short: "List built-in presets", Args: 
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Alias < items[j].Alias })
 	for _, p := range items {
-		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-8s %s  built-in v%d\n", p.Alias, p.Provider, p.Endpoint, presets.CatalogVersion)
+		fmt.Fprintf(cmd.OutOrStdout(), "%-10s %-8s %-30s %s  built-in v%d\n", p.Alias, p.Provider, p.Auth, p.Endpoint, presets.CatalogVersion)
 	}
 	return nil
 }}

@@ -361,19 +361,6 @@ func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *test
 	}
 }
 
-func TestRemoteIsReadOnly(t *testing.T) {
-	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
-		"anvil": {Terra: &config.TerraRemote{Mode: "read-only"}},
-		"local": {Local: &config.LocalRemote{}},
-	}}
-	if !remoteIsReadOnly(cfg, "anvil") {
-		t.Fatal("expected read-only Terra remote to be detected")
-	}
-	if remoteIsReadOnly(cfg, "local") {
-		t.Fatal("did not expect local remote to be read-only")
-	}
-}
-
 func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	repo := t.TempDir()
 	gitDRS := buildGitDRSBinaryForTest(t)

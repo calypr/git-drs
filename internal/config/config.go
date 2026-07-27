@@ -3,18 +3,13 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/go-git/go-git/v5"
-	"gopkg.in/yaml.v3"
 )
 
 // RemoteType represents the type of server being initialized
@@ -104,10 +99,6 @@ func (c Config) listRemoteNames() []string {
 // getRepo opens the current git repository
 func getRepo() (*git.Repository, error) {
 	return gitrepo.GetRepo()
-}
-
-func (c Config) ConfigPath() (string, error) {
-	return getConfigPath()
 }
 
 // updates and git adds a Git DRS config file
@@ -319,10 +310,6 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Remotes: make(map[Remote]RemoteSelect),
 	}
-	if err := loadRepositoryConfig(cfg); err != nil {
-		return nil, err
-	}
-
 	// Iterate over all sections to find 'drs' and its subsections
 	for _, section := range conf.Raw.Sections {
 		if section.Name != configSection {
@@ -462,80 +449,4 @@ func firstRemote(cfg *Config) Remote {
 	}
 	sort.Strings(names)
 	return Remote(names[0])
-}
-
-// GetGitConfigInt reads an integer value from git config
-// getGitConfigValue retrieves a value from git config by key
-func getConfigPath() (string, error) {
-	topLevel, err := gitrepo.GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-
-	configPath := filepath.Join(topLevel, gitrepo.RepoDRSDir, gitrepo.ConfigYAML)
-	return configPath, nil
-}
-
-type repositoryConfig struct {
-	Version       int                               `yaml:"version"`
-	DefaultRemote string                            `yaml:"default_remote"`
-	Remotes       map[string]repositoryRemoteConfig `yaml:"remotes"`
-}
-
-type repositoryRemoteConfig struct {
-	Type     string `yaml:"type"`
-	Endpoint string `yaml:"endpoint"`
-	Auth     string `yaml:"auth"`
-	Mode     string `yaml:"mode"`
-}
-
-// loadRepositoryConfig loads only the public, allowlisted clone-portable
-// configuration. KnownFields deliberately fails closed for tokens, headers,
-// credential paths, and future fields until they receive a security review.
-func loadRepositoryConfig(cfg *Config) error {
-	path, err := getConfigPath()
-	if err != nil {
-		return err
-	}
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("open repository git-drs config: %w", err)
-	}
-	defer f.Close()
-	var raw repositoryConfig
-	dec := yaml.NewDecoder(io.LimitReader(f, 1<<20))
-	dec.KnownFields(true)
-	if err := dec.Decode(&raw); err != nil {
-		return fmt.Errorf("invalid repository config %s: %w", path, err)
-	}
-	if raw.Version != 1 {
-		return fmt.Errorf("invalid repository config %s: unsupported version %d", path, raw.Version)
-	}
-	if strings.TrimSpace(raw.DefaultRemote) != "" {
-		cfg.DefaultRemote = Remote(strings.TrimSpace(raw.DefaultRemote))
-	}
-	for name, r := range raw.Remotes {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return fmt.Errorf("invalid repository config %s: remote name cannot be empty", path)
-		}
-		if r.Type != "terra" {
-			return fmt.Errorf("invalid repository config %s: remote %q type must be terra", path, name)
-		}
-		if r.Auth != "google-adc" {
-			return fmt.Errorf("invalid repository config %s: remote %q auth must be google-adc", path, name)
-		}
-		if r.Mode != "read-only" {
-			return fmt.Errorf("invalid repository config %s: remote %q mode must be read-only", path, name)
-		}
-		u, err := url.ParseRequestURI(strings.TrimSpace(r.Endpoint))
-		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-			return fmt.Errorf("invalid repository config %s: remote %q endpoint must be an HTTPS URL without credentials", path, name)
-		}
-		cfg.Remotes[Remote(name)] = RemoteSelect{Terra: &TerraRemote{Endpoint: u.String(), Auth: r.Auth, Mode: r.Mode}}
-	}
-	return nil
 }

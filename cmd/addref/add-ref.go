@@ -68,17 +68,6 @@ var Cmd = &cobra.Command{
 		if selected == nil {
 			return fmt.Errorf("remote %q is not configured", remoteName)
 		}
-		if remoteType != "" {
-			actual := "gen3"
-			if _, ok := cfg.Remotes[remoteName]; ok && cfg.Remotes[remoteName].Terra != nil {
-				actual = "terra"
-			} else if cfg.Remotes[remoteName].Local != nil {
-				actual = "local"
-			}
-			if remoteType != actual {
-				return fmt.Errorf("--remote-type %q conflicts with configured remote %q type %q", remoteType, remoteName, actual)
-			}
-		}
 		dstPath, err = safeDestination(dstPath)
 		if err != nil {
 			return err
@@ -87,6 +76,12 @@ var Cmd = &cobra.Command{
 		client, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			return err
+		}
+		if !client.CanResolve() {
+			return fmt.Errorf("remote %q cannot resolve DRS objects", remoteName)
+		}
+		if remoteType != "" && remoteType != string(client.RemoteType) {
+			return fmt.Errorf("--remote-type %q conflicts with configured remote %q type %q", remoteType, remoteName, client.RemoteType)
 		}
 
 		obj, err := resolveAddRefObject(context.Background(), cfg, remoteName, client, drsUri)
@@ -105,7 +100,7 @@ var Cmd = &cobra.Command{
 		}
 
 		oid := addRefLocalOID(drsUri, remoteName, &obj)
-		if client.RemoteType == config.TerraServerType {
+		if client.IsReadOnly() {
 			if err := lfs.CreateDRSPointer(&obj, dstPath, drsUri); err != nil {
 				return err
 			}

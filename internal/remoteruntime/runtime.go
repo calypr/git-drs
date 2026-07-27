@@ -32,7 +32,20 @@ type GitContext struct {
 	UploadConcurrency  int
 	Logger             *slog.Logger
 	Credential         *syconf.Credential
+	Capabilities       Capabilities
 }
+
+// Capabilities is the command-facing contract for a resolved remote. Commands
+// must use this contract rather than infer behaviour from configuration types.
+type Capabilities struct {
+	Resolve, Download, Upload, Register, ReadOnly bool
+}
+
+func (g *GitContext) CanResolve() bool  { return g != nil && g.Capabilities.Resolve }
+func (g *GitContext) CanDownload() bool { return g != nil && g.Capabilities.Download }
+func (g *GitContext) CanUpload() bool   { return g != nil && g.Capabilities.Upload }
+func (g *GitContext) CanRegister() bool { return g != nil && g.Capabilities.Register }
+func (g *GitContext) IsReadOnly() bool  { return g != nil && g.Capabilities.ReadOnly }
 
 func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitContext, error) {
 	x, ok := cfg.Remotes[remote]
@@ -53,10 +66,20 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 		return terraClient(*x.Terra, logger)
 	}
 	if x.Generic != nil {
-		if x.Generic.Provider == "terra" {
+		switch x.Generic.Provider {
+		case "terra":
 			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
+		case "gen3":
+			return gen3Client(string(remote), config.Gen3Remote{
+				Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(),
+				ProjectID: x.Generic.GetProjectId(), Bucket: x.Generic.GetBucketName(),
+				StoragePrefix: x.Generic.GetStoragePrefix(),
+			}, logger)
+		case "ga4gh", "auto", "cgc", "synapse":
+			return nil, fmt.Errorf("provider %q does not yet have an operational remote adapter", x.Generic.Provider)
+		default:
+			return nil, fmt.Errorf("unsupported remote provider %q", x.Generic.Provider)
 		}
-		return &GitContext{RemoteType: config.GA4GHServerType, Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(), ProjectId: x.Generic.GetProjectId(), Logger: logger, Credential: &syconf.Credential{APIEndpoint: x.Generic.Endpoint}}, nil
 	}
 	return nil, fmt.Errorf("no valid remote configuration found for current remote: %s", remote)
 }
@@ -69,10 +92,11 @@ func terraClient(remote config.TerraRemote, logger *slog.Logger) (*GitContext, e
 		return nil, err
 	}
 	return &GitContext{
-		RemoteType: config.TerraServerType,
-		Endpoint:   remote.Endpoint,
-		Logger:     logger,
-		Credential: &syconf.Credential{APIEndpoint: remote.Endpoint},
+		RemoteType:   config.TerraServerType,
+		Endpoint:     remote.Endpoint,
+		Logger:       logger,
+		Credential:   &syconf.Credential{APIEndpoint: remote.Endpoint},
+		Capabilities: Capabilities{Resolve: true, Download: true, ReadOnly: true},
 	}, nil
 }
 
@@ -140,6 +164,7 @@ func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logg
 		StoragePrefix: storagePrefix,
 		Logger:        logger,
 		Credential:    cred,
+		Capabilities:  Capabilities{Resolve: true, Download: true, Upload: true, Register: true},
 	}, nil
 }
 
@@ -189,6 +214,7 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		UploadConcurrency:  uploadConcurrency,
 		Logger:             logger,
 		Credential:         &profileConfig,
+		Capabilities:       Capabilities{Resolve: true, Download: true, Upload: true, Register: true},
 	}, nil
 }
 

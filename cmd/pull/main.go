@@ -95,7 +95,10 @@ var Cmd = &cobra.Command{
 			return err
 		}
 		var anvil resolver.Resolver
-		if drsCtx.RemoteType == config.TerraServerType {
+		if !drsCtx.CanDownload() || !drsCtx.CanResolve() {
+			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
+		}
+		if drsCtx.IsReadOnly() {
 			anvil, err = resolver.NewAnVIL(cmd.Context(), drsCtx.Endpoint)
 			if err != nil {
 				return err
@@ -218,7 +221,7 @@ var Cmd = &cobra.Command{
 			logg.Debug("no missing pointer objects to download")
 		}
 
-		readOnly := remoteIsReadOnly(cfg, remote)
+		readOnly := drsCtx.IsReadOnly()
 		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
 			return err
 		}
@@ -438,14 +441,6 @@ func globToRegexp(pattern string) string {
 	}
 	b.WriteString("$")
 	return b.String()
-}
-
-func remoteIsReadOnly(cfg *config.Config, remote config.Remote) bool {
-	selected, ok := cfg.Remotes[remote]
-	// Terra remotes are resolver-only and therefore always read-only. Match the
-	// push command's capability check rather than relying on optional legacy
-	// configuration fields being present.
-	return ok && selected.Terra != nil
 }
 
 func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool) error {

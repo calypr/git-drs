@@ -85,20 +85,13 @@ Both users need:
 - a Google identity authorized for the referenced AnVIL data;
 - working Google ADC, initially established with the supported Google authentication tooling.
 
-The repository contains a non-secret `.git-drs/config.yaml` file:
+Each clone configures its remote in the repository-local Git config:
 
-```yaml
-version: 1
-default_remote: anvil
-remotes:
-  anvil:
-    type: terra
-    endpoint: https://data.terra.bio
-    auth: google-adc
-    mode: read-only
+```bash
+git drs remote add anvil terra --checkout hydrate
 ```
 
-Local Git configuration may override repository configuration, but secrets are never permitted in `.git-drs/config.yaml`.
+Repository-local Git config is authoritative. It is not tracked, and credential material remains in the provider credential store.
 
 ### First user: add and publish references
 
@@ -115,7 +108,7 @@ git drs add-ref --remote anvil \
 git drs add-ref --remote anvil \
   drs://<authority>/<object-id-2> data/sample-2.cram
 
-git add .git-drs/config.yaml .gitattributes data/
+git add .gitattributes data/
 git commit -m "Add AnVIL data references"
 git push
 ```
@@ -124,7 +117,7 @@ For multiple objects, the preferred POC workflow is a manifest:
 
 ```bash
 git drs add-ref --remote anvil --manifest references.tsv
-git add .git-drs/config.yaml .gitattributes data/
+git add .gitattributes data/
 git commit -m "Add AnVIL data references"
 git push
 ```
@@ -376,40 +369,28 @@ The implementation must:
 
 The batch operation is a wrapper over the same single-reference primitive, not an independent resolution system.
 
-### Phase 8: Commit non-secret repository configuration
+### Phase 8: Configure each clone
 
-Adopt Option B: commit `.git-drs/config.yaml` so a clone carries the public information required to select the correct resolver.
+Use the remote command to write the single authoritative repository-local Git configuration after cloning.
 
 Initial schema:
 
-```yaml
-version: 1
-default_remote: anvil
-remotes:
-  anvil:
-    type: terra
-    endpoint: https://data.terra.bio
-    auth: google-adc
-    mode: read-only
+```bash
+git drs remote add anvil terra --checkout hydrate
 ```
 
 Configuration rules:
 
-- only an allowlisted schema may be loaded from tracked configuration;
-- credentials, tokens, arbitrary headers, signed URLs, and local paths are forbidden;
-- local Git configuration may override public endpoint or remote selection;
-- secret-bearing configuration remains local and takes precedence;
-- commands must identify whether an effective setting came from repository or local configuration;
-- invalid or secret-like tracked fields must fail closed with an actionable error.
-
-With this configuration committed, the second user's desired flow is reduced to authentication, clone, and pull.
+- Git config is the only remote configuration representation;
+- credentials remain in environment variables or provider credential stores;
+- every clone runs `git drs remote add` before pulling.
 
 ## Git Push Semantics for This Prototype
 
 AnVIL data already exists and the configured Terra remote is read-only. Publishing references therefore uses ordinary Git:
 
 ```bash
-git add .git-drs/config.yaml .gitattributes data/
+git add .gitattributes data/
 git commit -m "Add AnVIL data references"
 git push
 ```
@@ -419,7 +400,6 @@ git push
 - pointer files;
 - repository paths and Git history;
 - `.gitattributes` rules;
-- non-secret `.git-drs/config.yaml`;
 - an optional reference manifest when the repository chooses to track it.
 
 It does not:
@@ -516,12 +496,11 @@ Verify that:
 
 ### 11. Repository configuration safety
 
-Verify that tracked configuration:
+Verify that repository-local Git configuration:
 
-- loads after a fresh clone;
-- can be safely overridden locally;
-- rejects secret-bearing or unknown sensitive fields;
-- never shadows explicit local credentials with repository-controlled secrets.
+- is created by `git drs remote add` after a fresh clone;
+- is the only source of remote metadata;
+- contains credential source identifiers but never credential values.
 
 ## Backlog in Priority Order
 
@@ -535,7 +514,7 @@ Verify that tracked configuration:
 6. Add explicit DRS URI, cache OID, and content checksum identities.
 7. Refactor pull to use `AnVILResolver` rather than a Syfon client.
 8. Validate size and SHA256 and atomically manage cache content.
-9. Implement and safely load `.git-drs/config.yaml`.
+9. Implement and safely load repository-local Git configuration.
 10. Reject `git drs push` for read-only Terra remotes.
 11. Add a real or contract-faithful two-user clone-and-pull acceptance test.
 
@@ -546,7 +525,7 @@ Verify that tracked configuration:
 3. Add safe retry, cancellation, and expired-URL re-resolution.
 4. Add `git drs doctor` checks for ADC, configuration, endpoint health, resolution, authorization, and pointer validity.
 5. Improve errors for absent credentials, denied access, missing records, invalid manifests, and integrity failures.
-6. Add CI coverage for clean-clone portability, authorization isolation, and repository configuration safety.
+6. Add CI coverage for clean-clone setup, authorization isolation, and repository configuration safety.
 7. Publish versioned binaries and a compatibility matrix for the tested AnVIL contract.
 
 ### P2: explicitly deferred
@@ -568,7 +547,7 @@ The AnVIL/Terra reference POC is functional when:
 - Each generated pointer commits the normalized canonical DRS URI.
 - Pointers also preserve expected size and SHA256 when available.
 - The Git repository contains no payload bytes, credentials, authorization headers, or signed URLs.
-- The repository commits a validated, non-secret `.git-drs/config.yaml` selecting the read-only AnVIL remote.
+- Each clone configures the read-only AnVIL remote in repository-local Git configuration.
 - Ordinary `git push` publishes the references without contacting AnVIL.
 - `git drs push` refuses to operate on the read-only Terra remote.
 - User B can clone without receiving any User A clone-local metadata, cache, or credentials.
@@ -579,4 +558,3 @@ The AnVIL/Terra reference POC is functional when:
 - Interrupted, expired-URL, and integrity-failure paths do not poison the cache or overwrite pointers with invalid content.
 - Repeated pulls are idempotent and reuse verified cache entries.
 - The complete two-user flow runs as a documented acceptance test in a clean environment.
-

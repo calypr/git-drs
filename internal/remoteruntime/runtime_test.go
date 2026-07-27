@@ -86,6 +86,32 @@ func TestNewTerraRemoteContext(t *testing.T) {
 	if gitCtx.Client != nil {
 		t.Fatalf("Terra runtime should not create a Syfon client, got %+v", gitCtx.Client)
 	}
+	if !gitCtx.CanResolve() || !gitCtx.CanDownload() || !gitCtx.IsReadOnly() || gitCtx.CanUpload() || gitCtx.CanRegister() {
+		t.Fatalf("unexpected Terra capabilities: %+v", gitCtx.Capabilities)
+	}
+}
+
+func TestNewGenericTerraUsesProviderAdapter(t *testing.T) {
+	setupTestRepo(t)
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"anvil": {Generic: &config.GenericRemote{Endpoint: "https://data.terra.bio", Provider: "terra", Auth: "google-adc"}},
+	}}
+	gitCtx, err := New(cfg, "anvil", drslog.GetLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gitCtx.RemoteType != config.TerraServerType || !gitCtx.IsReadOnly() || !gitCtx.CanDownload() {
+		t.Fatalf("generic Terra did not resolve through Terra adapter: %+v", gitCtx)
+	}
+}
+
+func TestNewRejectsProviderWithoutOperationalAdapter(t *testing.T) {
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"cgc": {Generic: &config.GenericRemote{Endpoint: "https://example.test", Provider: "cgc", Auth: "bearer"}},
+	}}
+	if _, err := New(cfg, "cgc", drslog.GetLogger()); err == nil {
+		t.Fatal("expected unimplemented provider adapter to fail explicitly")
+	}
 }
 
 func TestLocalClientResolvesBucketScopeMappings(t *testing.T) {

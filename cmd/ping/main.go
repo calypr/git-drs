@@ -35,7 +35,7 @@ type healthInfo struct {
 }
 
 var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
-	if gc != nil && gc.RemoteType == config.TerraServerType {
+	if gc != nil && gc.IsReadOnly() {
 		serviceInfo, err := pingTerraServiceInfo(ctx, gc.Endpoint)
 		return healthInfo{ServiceInfo: serviceInfo}, err
 	}
@@ -136,16 +136,7 @@ func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *remoterunti
 		Bucket:        gc.BucketName,
 		StoragePrefix: gc.StoragePrefix,
 		AuthMode:      authMode(gc),
-	}
-	switch remoteCfg.(type) {
-	case *config.Gen3Remote:
-		status.RemoteType = string(config.Gen3ServerType)
-	case *config.LocalRemote:
-		status.RemoteType = string(config.LocalServerType)
-	case *config.TerraRemote:
-		status.RemoteType = string(config.TerraServerType)
-	default:
-		status.RemoteType = "unknown"
+		RemoteType:    string(gc.RemoteType),
 	}
 
 	return status, gc, nil

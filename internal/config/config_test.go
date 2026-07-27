@@ -3,8 +3,26 @@ package config
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
+
+func TestLoadConfigIgnoresFormerRepositoryYAMLPath(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git-drs", "config.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("former repository YAML path must not be loaded: %v", err)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("unexpected remotes loaded from former YAML path: %+v", cfg.Remotes)
+	}
+}
 
 func setupTestRepo(t *testing.T) string {
 	t.Helper()

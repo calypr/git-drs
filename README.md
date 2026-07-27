@@ -93,7 +93,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | --- | --- |
 | `git drs install` | Install global `git-drs` filter config |
 | `git drs init` | Explicitly initialize or repair repository-local `git-drs` state |
-| `git drs remote add <endpoint-or-alias>` | Add a DRS remote (built-ins: calypr, terra, synapse, cgc) |
+| `git drs remote add <endpoint-or-alias>` | Add a DRS remote (operational: Calypr/Gen3 and Terra; catalog-only: Synapse and CGC) |
 | `git drs preset list` | List the non-secret presets embedded in this release |
 | `git drs remote list` | List configured remotes |
 | `git drs remote remove <name>` | Remove a configured DRS remote |

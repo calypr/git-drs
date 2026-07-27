@@ -217,20 +217,13 @@ The DRS URI stays canonical. A checksum describes content; it does not identify 
 </div>
 <div>
 
-### Tracked `.git-drs/config.yaml`
+### Repository-local Git configuration
 
-```yaml
-version: 1
-default_remote: anvil
-remotes:
-  anvil:
-    type: terra
-    endpoint: https://data.terra.bio
-    auth: google-adc
-    mode: read-only
+```bash
+git drs remote add anvil terra --checkout hydrate
 ```
 
-Only allowlisted public settings load. Secret-like or unknown sensitive fields fail closed.
+Remote metadata has one authoritative representation in `.git/config`; credentials remain in the provider store.
 </div>
 </div>
 

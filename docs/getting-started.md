@@ -40,7 +40,9 @@ This command:
 - stores only the credential source, not an inline secret
 - bootstraps repo-local `git-drs` wiring when it is missing
 
-The built-in presets are `calypr`, `terra`, `synapse`, and `cgc`. The local
+The built-in presets are `calypr`, `terra`, `synapse`, and `cgc`. Calypr/Gen3
+and Terra have operational runtime adapters; Synapse and CGC are catalog-only
+and execution commands reject them until their adapters are implemented. The local
 remote name is optional: `git drs remote add calypr ...` derives the name
 `calypr`. You can also connect an unlisted HTTPS endpoint directly:
 

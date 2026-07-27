@@ -41,6 +41,10 @@ Add a DRS server with the unified remote command. The built-in aliases are
 `calypr`, `terra`, `synapse`, and `cgc`; inspect their non-secret defaults with
 `git drs preset list` or `git drs preset show <alias>`.
 
+Calypr/Gen3 and Terra currently have operational runtime adapters. Synapse and
+CGC are catalog-only; execution commands reject them explicitly rather than
+constructing a partially authenticated client.
+
 ```bash
 git drs remote add cgc --credential env:CGC_TOKEN
 git drs remote add synapse --credential helper:synapse

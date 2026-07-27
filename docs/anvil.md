@@ -19,24 +19,13 @@ ADC is local user state. Never copy the ADC JSON file into the repository.
 
 ## Configure an AnVIL repository
 
-Create and commit `.git-drs/config.yaml`:
+Configure the remote in repository-local Git config:
 
-```yaml
-version: 1
-default_remote: anvil
-remotes:
-  anvil:
-    type: terra
-    endpoint: https://data.terra.bio
-    auth: google-adc
-    mode: read-only
+```bash
+git drs remote add anvil terra --checkout hydrate
 ```
 
-The tracked schema intentionally permits only the public Terra endpoint,
-Google ADC authentication selection, and read-only mode. Tokens, arbitrary
-headers, credential paths, signed URLs, unknown fields, non-HTTPS endpoints,
-and embedded URL credentials are rejected. Clone-local Git configuration can
-override public settings when an organization uses another trusted resolver.
+The command stores only public remote metadata in `.git/config`. Google ADC remains local user state. Each clone must run the command because `.git/config` is not tracked.
 
 ## Publish one reference
 
@@ -46,7 +35,7 @@ Use the configured remote and choose the path that the data should occupy:
 git drs add-ref --remote anvil \
   drs://<authority>/<object-id> data/sample.cram
 # Run this only after add-ref finishes successfully.
-git add .git-drs/config.yaml .gitattributes data/sample.cram
+git add .gitattributes data/sample.cram
 git commit -m "Reference AnVIL sample"
 git push
 ```
@@ -140,9 +129,6 @@ references. Do not use `git drs push` for a Terra remote.
   access to the controlled dataset. Do not ask another user to share ADC files.
 * `AnVIL DRS object not found`: verify the committed URI and that the configured
   resolver supports its authority.
-* Repository configuration errors are intentionally strict. Remove secret or
-  unknown fields from `.git-drs/config.yaml`; place supported local overrides
-  in Git configuration instead.
 * Do not commit `.git/drs`, `.git/lfs`, Google credential files, bearer tokens,
   request headers, or resolved access URLs. Access URLs are temporary and are
   resolved again at download time.

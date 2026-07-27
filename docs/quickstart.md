@@ -65,7 +65,9 @@ git drs preset list
 git drs preset show calypr
 ```
 
-The built-in aliases are `calypr`, `terra`, `synapse`, and `cgc`. Presets supply
+The built-in aliases are `calypr`, `terra`, `synapse`, and `cgc`. Only
+Calypr/Gen3 and Terra currently have operational runtime adapters; Synapse and
+CGC are catalog-only presets. Presets supply
 the endpoint, provider adapter, and usual authentication method; they never
 contain credentials.
 

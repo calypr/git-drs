@@ -74,6 +74,65 @@ func TestDownloadToCacheUsesAccessURLHeaders(t *testing.T) {
 	}
 }
 
+func TestDownloadToCacheUsesInlineAccessURL(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Inline-Token"); got != "inline-secret" {
+			t.Errorf("unexpected inline access header: %q", got)
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+			t.Errorf("inline access URL should not require an access endpoint request: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"object-1","size":4,"access_methods":[{"type":"https","access_url":{"url":%q,"headers":["X-Inline-Token: inline-secret"]}}]}`, download.URL)
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/object-1":
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"ftp"},{"type":"https","access_id":"a2"}]}`))
+		case "/ga4gh/drs/v1/objects/object-1/access/a2":
+			_, _ = fmt.Fprintf(w, `{"url":%q}`, download.URL)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
 func TestAnVILResolverAcceptsCompactDRSURI(t *testing.T) {
 	const compactURI = "drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

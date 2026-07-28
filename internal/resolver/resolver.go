@@ -36,12 +36,23 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	if err != nil {
 		return err
 	}
-	if len(obj.AccessMethods) == 0 || obj.AccessMethods[0].AccessID == "" {
-		return fmt.Errorf("AnVIL DRS object has no supported access method")
+	var access *ResolvedAccess
+	for _, method := range obj.AccessMethods {
+		switch {
+		case method.AccessURL != nil && strings.TrimSpace(method.AccessURL.URL) != "":
+			access = method.AccessURL
+		case strings.TrimSpace(method.AccessID) != "":
+			access, err = r.GetAccess(ctx, drsURI, method.AccessID)
+			if err != nil {
+				return err
+			}
+		}
+		if access != nil {
+			break
+		}
 	}
-	access, err := r.GetAccess(ctx, drsURI, obj.AccessMethods[0].AccessID)
-	if err != nil {
-		return err
+	if access == nil {
+		return fmt.Errorf("AnVIL DRS object has no supported access method")
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
@@ -97,8 +108,9 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 }
 
 type AccessMethod struct {
-	Type     string `json:"type"`
-	AccessID string `json:"access_id"`
+	Type      string          `json:"type"`
+	AccessID  string          `json:"access_id,omitempty"`
+	AccessURL *ResolvedAccess `json:"access_url,omitempty"`
 }
 
 type ResolvedObject struct {

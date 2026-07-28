@@ -2,10 +2,13 @@ package resolver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -130,6 +133,69 @@ func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "cache", "object-1")
 	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
 		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+func TestDownloadToCacheValidatesSHA256BeforePromotion(t *testing.T) {
+	const body = "data"
+	correctSum := sha256.Sum256([]byte(body))
+	incorrectSum := sha256.Sum256([]byte("oops")) // Same length as body.
+
+	for _, test := range []struct {
+		name        string
+		checksum    string
+		wantErr     bool
+		wantContent string
+	}{
+		{name: "matching", checksum: hex.EncodeToString(correctSum[:]), wantContent: body},
+		{name: "mismatching same-size payload", checksum: hex.EncodeToString(incorrectSum[:]), wantErr: true, wantContent: "previous"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			defer download.Close()
+
+			resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"id":"object-1","size":4,"checksums":[{"type":"sha256","checksum":%q}],"access_methods":[{"type":"https","access_url":{"url":%q}}]}`, test.checksum, download.URL)
+			}))
+			defer resolverServer.Close()
+
+			r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			cacheDir := filepath.Join(t.TempDir(), "cache")
+			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(cacheDir, "object-1")
+			if err := os.WriteFile(destination, []byte("previous"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			err = DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination)
+			if test.wantErr && (err == nil || !strings.Contains(err.Error(), "checksum mismatch")) {
+				t.Fatalf("expected checksum mismatch, got %v", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("DownloadToCache returned error: %v", err)
+			}
+			content, readErr := os.ReadFile(destination)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(content) != test.wantContent {
+				t.Fatalf("cached content = %q, want %q", content, test.wantContent)
+			}
+			if temporary, globErr := filepath.Glob(filepath.Join(cacheDir, ".git-drs-download-*")); globErr != nil || len(temporary) != 0 {
+				t.Fatalf("temporary downloads remain after validation: %v (glob error: %v)", temporary, globErr)
+			}
+		})
 	}
 }
 

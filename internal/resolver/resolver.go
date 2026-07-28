@@ -3,6 +3,9 @@ package resolver
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,7 +90,8 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		tmp.Close()
 		return fmt.Errorf("AnVIL data download returned HTTP %d", resp.StatusCode)
 	}
-	_, copyErr := io.Copy(tmp, resp.Body)
+	hasher := sha256.New()
+	_, copyErr := io.Copy(io.MultiWriter(tmp, hasher), resp.Body)
 	closeErr := tmp.Close()
 	if copyErr != nil {
 		return fmt.Errorf("AnVIL data download interrupted: %w", copyErr)
@@ -102,6 +106,25 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		}
 		if info.Size() != obj.Size {
 			return fmt.Errorf("AnVIL data size mismatch: expected %d, got %d", obj.Size, info.Size())
+		}
+	}
+	for _, checksum := range obj.Checksums {
+		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+		if checksumType != "sha256" && checksumType != "sha-256" {
+			continue
+		}
+		expected := strings.TrimSpace(checksum.Checksum)
+		if prefix, value, ok := strings.Cut(expected, ":"); ok &&
+			(strings.EqualFold(strings.TrimSpace(prefix), "sha256") || strings.EqualFold(strings.TrimSpace(prefix), "sha-256")) {
+			expected = strings.TrimSpace(value)
+		}
+		expectedBytes, decodeErr := hex.DecodeString(expected)
+		if decodeErr != nil || len(expectedBytes) != sha256.Size {
+			return fmt.Errorf("AnVIL DRS object has an invalid %s checksum", checksumType)
+		}
+		actual := hasher.Sum(nil)
+		if subtle.ConstantTimeCompare(actual, expectedBytes) != 1 {
+			return fmt.Errorf("AnVIL data checksum mismatch for %s", checksumType)
 		}
 	}
 	return os.Rename(tmpName, destination)

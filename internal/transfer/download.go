@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -76,6 +77,10 @@ func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitCon
 }
 
 func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string) error {
+	if lfs.IsDRSURI(oid) {
+		return DownloadDRSURIToCachePath(ctx, drsCtx, oid, cachePath)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}

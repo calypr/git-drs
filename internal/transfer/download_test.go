@@ -20,6 +20,38 @@ type downloadRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f downloadRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestDownloadToCachePathDispatchesDRSOIDToURIResolver(t *testing.T) {
+	t.Parallel()
+
+	for _, oid := range []string{"drs://example.test/object-1", "//example.test/object-1"} {
+		oid := oid
+		t.Run(oid, func(t *testing.T) {
+			t.Parallel()
+
+			var requestPath string
+			httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				requestPath = r.URL.Path
+				return nil, io.EOF
+			})}
+			raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+			if err != nil {
+				t.Fatalf("syclient.New: %v", err)
+			}
+
+			err = DownloadToCachePath(context.Background(), &remoteruntime.GitContext{Client: raw.(*syclient.Client)}, oid, filepath.Join(t.TempDir(), "object"))
+			if err == nil {
+				t.Fatal("DownloadToCachePath unexpectedly succeeded")
+			}
+			if strings.Contains(requestPath, "/checksum/") {
+				t.Fatalf("DRS OID was sent to checksum lookup: %s", requestPath)
+			}
+			if !strings.Contains(requestPath, "/objects/drs://example.test/object-1") {
+				t.Fatalf("DRS OID was not sent to URI lookup: %s", requestPath)
+			}
+		})
+	}
+}
+
 func TestBulkAccessURLsForObjects(t *testing.T) {
 	accessID := "s3"
 	methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &accessID}}

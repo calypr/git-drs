@@ -124,6 +124,28 @@ func TestCreateDRSPointerPreservesSourceURI(t *testing.T) {
 	}
 }
 
+func TestAddRefPointerPreservesSourceURIWhenObjectHasSHA256(t *testing.T) {
+	obj := &drsapi.DrsObject{
+		Size:      42,
+		Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: strings.Repeat("a", 64)}},
+	}
+	path := filepath.Join(t.TempDir(), "pointer")
+	if err := createAddRefPointer(obj, path, "drs://source.example/object-1"); err != nil {
+		t.Fatalf("createAddRefPointer error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pointer: %v", err)
+	}
+	want := "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://source.example/object-1\n" +
+		"size 42\n" +
+		"sha256 " + strings.Repeat("a", 64) + "\n"
+	if string(data) != want {
+		t.Fatalf("pointer mismatch:\n got: %q\nwant: %q", data, want)
+	}
+}
+
 func TestAddRefTrackingMakesDRSPointerDiscoverable(t *testing.T) {
 	repo := t.TempDir()
 	runGitCmd(t, repo, "init")

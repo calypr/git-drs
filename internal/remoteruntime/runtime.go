@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -70,7 +73,7 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 		case "terra":
 			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
 		case "gen3":
-			return gen3Client(string(remote), config.Gen3Remote{
+			return gen3ClientWithCredential(string(remote), x.Generic.Credential, config.Gen3Remote{
 				Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(),
 				ProjectID: x.Generic.GetProjectId(), Bucket: x.Generic.GetBucketName(),
 				StoragePrefix: x.Generic.GetStoragePrefix(),
@@ -101,8 +104,12 @@ func terraClient(remote config.TerraRemote, logger *slog.Logger) (*GitContext, e
 }
 
 func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger) (*GitContext, error) {
+	return gen3ClientWithCredential(remoteName, "", remote, logger)
+}
+
+func gen3ClientWithCredential(remoteName, source string, remote config.Gen3Remote, logger *slog.Logger) (*GitContext, error) {
 	manager := calyprconf.NewConfigure(logger)
-	cred, err := manager.Load(remoteName)
+	cred, saveRefreshed, err := resolveGen3Credential(manager, source, remoteName, remote.Endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -111,10 +118,79 @@ func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger
 	if err := credentials.EnsureValidCredential(ctx, cred, logger); err != nil {
 		return nil, WrapCredentialValidationError(remoteName, err)
 	}
-	if err := manager.Save(cred); err != nil {
-		return nil, fmt.Errorf("save refreshed credential for remote %q: %w", remoteName, err)
+	if saveRefreshed {
+		if err := manager.Save(cred); err != nil {
+			return nil, fmt.Errorf("save refreshed credential for remote %q: %w", remoteName, err)
+		}
 	}
 	return newGitContext(*cred, remote, logger)
+}
+
+type gen3CredentialManager interface {
+	Import(filePath, fenceToken string) (*calyprconf.Credential, error)
+	Load(profile string) (*calyprconf.Credential, error)
+}
+
+// resolveGen3Credential turns the clone-local source selector into credential
+// material. The configured remote endpoint remains authoritative: a credential
+// source must not be able to redirect requests to another host.
+func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, endpoint string) (*calyprconf.Credential, bool, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		cred, err := manager.Load(remoteName)
+		return cred, true, err
+	}
+
+	var cred *calyprconf.Credential
+	var err error
+	switch {
+	case strings.HasPrefix(source, "profile:"):
+		profile := strings.TrimSpace(strings.TrimPrefix(source, "profile:"))
+		cred, err = manager.Load(profile)
+		if err == nil {
+			cred.Profile = profile
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("load Gen3 credential profile %q: %w", profile, err)
+		}
+		cred.APIEndpoint = endpoint
+		return cred, true, nil
+	case strings.HasPrefix(source, "file:"):
+		fileName := strings.TrimSpace(strings.TrimPrefix(source, "file:"))
+		if strings.HasPrefix(fileName, "~/") {
+			if home, homeErr := os.UserHomeDir(); homeErr == nil {
+				fileName = filepath.Join(home, strings.TrimPrefix(fileName, "~/"))
+			}
+		}
+		cred, err = manager.Import(fileName, "")
+		if err != nil {
+			return nil, false, fmt.Errorf("import Gen3 credential file %q: %w", fileName, err)
+		}
+	case strings.HasPrefix(source, "env:"):
+		name := strings.TrimSpace(strings.TrimPrefix(source, "env:"))
+		token, ok := os.LookupEnv(name)
+		if !ok || strings.TrimSpace(token) == "" {
+			return nil, false, fmt.Errorf("Gen3 credential environment variable %q is empty or unset", name)
+		}
+		cred = &calyprconf.Credential{AccessToken: strings.TrimSpace(token)}
+	case strings.HasPrefix(source, "helper:"):
+		name := strings.TrimSpace(strings.TrimPrefix(source, "helper:"))
+		output, helperErr := exec.Command(name).Output()
+		if helperErr != nil {
+			return nil, false, fmt.Errorf("run Gen3 credential helper %q: %w", name, helperErr)
+		}
+		token := strings.TrimSpace(string(output))
+		if token == "" {
+			return nil, false, fmt.Errorf("Gen3 credential helper %q returned an empty token", name)
+		}
+		cred = &calyprconf.Credential{AccessToken: token}
+	default:
+		return nil, false, fmt.Errorf("unsupported Gen3 credential source %q", source)
+	}
+
+	cred.Profile = remoteName
+	cred.APIEndpoint = endpoint
+	return cred, false, nil
 }
 
 func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logger) (*GitContext, error) {

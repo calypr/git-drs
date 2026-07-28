@@ -1,8 +1,10 @@
 package remoteruntime
 
 import (
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -10,6 +12,31 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	syconf "github.com/calypr/syfon/client/config"
 )
+
+type fakeGen3CredentialManager struct {
+	importPath string
+	loadName   string
+	imported   *syconf.Credential
+	loaded     *syconf.Credential
+}
+
+func (m *fakeGen3CredentialManager) Import(filePath, _ string) (*syconf.Credential, error) {
+	m.importPath = filePath
+	if m.imported == nil {
+		return nil, errors.New("unexpected import")
+	}
+	copy := *m.imported
+	return &copy, nil
+}
+
+func (m *fakeGen3CredentialManager) Load(profile string) (*syconf.Credential, error) {
+	m.loadName = profile
+	if m.loaded == nil {
+		return nil, errors.New("unexpected load")
+	}
+	copy := *m.loaded
+	return &copy, nil
+}
 
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
@@ -102,6 +129,67 @@ func TestNewGenericTerraUsesProviderAdapter(t *testing.T) {
 	}
 	if gitCtx.RemoteType != config.TerraServerType || !gitCtx.IsReadOnly() || !gitCtx.CanDownload() {
 		t.Fatalf("generic Terra did not resolve through Terra adapter: %+v", gitCtx)
+	}
+}
+
+func TestResolveGen3CredentialUsesSelectedProfile(t *testing.T) {
+	manager := &fakeGen3CredentialManager{loaded: &syconf.Credential{
+		Profile: "research", APIEndpoint: "https://old.example", APIKey: "key",
+	}}
+	cred, save, err := resolveGen3Credential(manager, "profile:research", "production", "https://gen3.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.loadName != "research" || cred.Profile != "research" {
+		t.Fatalf("selected profile was not loaded: name=%q credential=%+v", manager.loadName, cred)
+	}
+	if cred.APIEndpoint != "https://gen3.example" {
+		t.Fatalf("APIEndpoint = %q, want configured remote endpoint", cred.APIEndpoint)
+	}
+	if !save {
+		t.Fatal("a refreshed profile credential should be saved to its source profile")
+	}
+}
+
+func TestResolveGen3CredentialImportsFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	manager := &fakeGen3CredentialManager{imported: &syconf.Credential{APIKey: "key"}}
+	cred, save, err := resolveGen3Credential(manager, "file:~/.gen3/credentials.json", "production", "https://gen3.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath := filepath.Join(os.Getenv("HOME"), ".gen3", "credentials.json")
+	if manager.importPath != wantPath {
+		t.Fatalf("import path = %q, want %q", manager.importPath, wantPath)
+	}
+	if cred.Profile != "production" || cred.APIEndpoint != "https://gen3.example" || save {
+		t.Fatalf("unexpected imported credential: credential=%+v save=%v", cred, save)
+	}
+}
+
+func TestResolveGen3CredentialReadsEnvironment(t *testing.T) {
+	t.Setenv("GEN3_TOKEN", " token-from-env \n")
+	cred, save, err := resolveGen3Credential(&fakeGen3CredentialManager{}, "env:GEN3_TOKEN", "production", "https://gen3.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.AccessToken != "token-from-env" || cred.APIEndpoint != "https://gen3.example" || save {
+		t.Fatalf("unexpected environment credential: credential=%+v save=%v", cred, save)
+	}
+}
+
+func TestResolveGen3CredentialRunsHelper(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "gen3-token-helper")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf 'token-from-helper\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cred, save, err := resolveGen3Credential(&fakeGen3CredentialManager{}, "helper:"+helper, "production", "https://gen3.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.AccessToken != "token-from-helper" || cred.APIEndpoint != "https://gen3.example" || save {
+		t.Fatalf("unexpected helper credential: credential=%+v save=%v", cred, save)
 	}
 }
 

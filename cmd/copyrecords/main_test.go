@@ -17,12 +17,15 @@ import (
 )
 
 type fakeIndexAPI struct {
-	listResp      copyListRecordsResponse
-	listFn        func(opts syservices.ListRecordsOptions) copyListRecordsResponse
-	bulkDocsResp  []copyRecord
-	bulkHashResp  copyBulkHashesResponse
-	createBulkReq []copyBulkCreateRequest
-	createBulkErr error
+	listResp          copyListRecordsResponse
+	listFn            func(opts syservices.ListRecordsOptions) copyListRecordsResponse
+	bulkDocsResp      []copyRecord
+	bulkHashResp      copyBulkHashesResponse
+	createBulkReq     []copyBulkCreateRequest
+	createBulkErr     error
+	overwriteBulkReq  []copyBulkOverwriteRequest
+	overwriteBulkResp copyBulkOverwriteResponse
+	overwriteBulkErr  error
 }
 
 func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error) {
@@ -46,6 +49,17 @@ func (f *fakeIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest
 		return copyListRecordsResponse{}, f.createBulkErr
 	}
 	return copyListRecordsResponse{Records: &req.Records}, nil
+}
+
+func (f *fakeIndexAPI) OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	f.overwriteBulkReq = append(f.overwriteBulkReq, req)
+	if f.overwriteBulkErr != nil {
+		return copyBulkOverwriteResponse{}, f.overwriteBulkErr
+	}
+	if f.overwriteBulkResp.Processed == 0 {
+		return copyBulkOverwriteResponse{Processed: len(req.Records), Created: len(req.Records)}, nil
+	}
+	return f.overwriteBulkResp, nil
 }
 
 func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testing.T) {
@@ -252,6 +266,30 @@ func TestBuildMergedBatch_MergesIntoExistingChecksumSiblingWhenDIDDiffers(t *tes
 		t.Fatalf("expected merged access methods, got %+v", out[0].AccessMethods)
 	}
 	if stats.Created != 0 || stats.Updated != 1 || stats.Unchanged != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestCopyProjectRecordsWithOptions_UsesBulkOverwrite(t *testing.T) {
+	target := &fakeIndexAPI{overwriteBulkResp: copyBulkOverwriteResponse{
+		Processed:       2,
+		Created:         1,
+		Replaced:        1,
+		DIDMatched:      1,
+		ChecksumMatched: 1,
+	}}
+	stats, err := copyProjectRecordsWithOptions(context.Background(), nil, []copyRecord{{Did: "did-1"}, {Did: "did-2"}}, target, "Org", "Project", 5000, false, true)
+	if err != nil {
+		t.Fatalf("copyProjectRecordsWithOptions returned error: %v", err)
+	}
+	if len(target.overwriteBulkReq) != 1 {
+		t.Fatalf("expected one overwrite request, got %d", len(target.overwriteBulkReq))
+	}
+	req := target.overwriteBulkReq[0]
+	if req.Organization != "Org" || req.Project != "Project" || len(req.Records) != 2 {
+		t.Fatalf("unexpected overwrite request: %+v", req)
+	}
+	if stats.Created != 1 || stats.Updated != 1 || stats.Written != 2 || stats.Unchanged != 0 {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }

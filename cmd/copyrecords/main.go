@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	batchSize     int
-	overwriteName bool
+	batchSize         int
+	overwriteName     bool
+	overwriteExisting bool
 )
 
 var (
@@ -38,7 +39,7 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "copy-records [source-remote] <target-remote> <organization/project>",
 	Short: "Copy Syfon records between remotes for one organization/project scope",
-	Long:  "Read source records from either a source remote or the current repo's local DRS metadata and bulk load them into a target Syfon instance or the current repo's local DRS metadata, only merging controlled_access and access_methods for records that already exist on the target. Use `git drs copy-records local <target-remote> <organization/project>` to copy local repo records, or `git drs copy-records <source-remote> local <organization/project>` to copy remote records into local repo metadata.",
+	Long:  "Read source records from either a source remote or the current repo's local DRS metadata and bulk load them into a target Syfon instance or the current repo's local DRS metadata. Existing records merge controlled_access and access_methods by default; --overwrite-existing replaces target metadata with source metadata. Use `git drs copy-records local <target-remote> <organization/project>` to copy local repo records, or `git drs copy-records <source-remote> local <organization/project>` to copy remote records into local repo metadata.",
 	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
@@ -110,7 +111,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("error creating source client: %w", err)
 			}
-			stats, err := copyProjectRecordsFromSourceIndex(
+			stats, err := copyProjectRecordsFromSourceIndexWithOptions(
 				cmd.Context(),
 				logger,
 				newCopyIndexAPI(srcCtx.Client.Requestor()),
@@ -119,6 +120,7 @@ var Cmd = &cobra.Command{
 				proj,
 				batchSize,
 				overwriteName,
+				overwriteExisting,
 			)
 			if err != nil {
 				return err
@@ -138,7 +140,7 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		stats, err := copyProjectRecords(
+		stats, err := copyProjectRecordsWithOptions(
 			cmd.Context(),
 			logger,
 			sourceRecords,
@@ -147,6 +149,7 @@ var Cmd = &cobra.Command{
 			proj,
 			batchSize,
 			overwriteName,
+			overwriteExisting,
 		)
 		if err != nil {
 			return err
@@ -169,6 +172,7 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().IntVar(&batchSize, "batch-size", defaultCopyBatchSize, "records per source page and target bulk write")
 	Cmd.Flags().BoolVar(&overwriteName, "overwrite-name", false, "for existing target records, replace target name with the source value")
+	Cmd.Flags().BoolVar(&overwriteExisting, "overwrite-existing", false, "replace existing target records with source metadata (requires a Syfon target supporting bulk overwrite)")
 }
 
 func isLocalSentinel(remote string) bool {

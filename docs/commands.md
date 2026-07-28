@@ -273,6 +273,11 @@ Merge behavior for existing target records:
 - union `access_methods`
 - preserve existing target metadata otherwise
 
+Use `--overwrite-existing` when the source metadata must replace existing
+target metadata. This mode requires a Syfon target that supports
+`PUT /index/bulk/overwrite`; it matches a checksum sibling only inside the
+requested target project and preserves that target record's DID.
+
 ## Bucket Mapping Commands
 
 These are typically steward/admin setup commands, not normal day-to-day end-user commands.

@@ -59,6 +59,18 @@ func (localIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest) 
 	return copyListRecordsResponse{Records: &written}, nil
 }
 
+func (l localIndexAPI) OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	resp, err := l.CreateBulk(ctx, copyBulkCreateRequest{Records: req.Records})
+	if err != nil {
+		return copyBulkOverwriteResponse{}, err
+	}
+	written := len(req.Records)
+	if resp.Records != nil {
+		written = len(*resp.Records)
+	}
+	return copyBulkOverwriteResponse{Processed: len(req.Records), Created: written}, nil
+}
+
 func localObjectKeyForCopyRecord(rec copyRecord) string {
 	if sha := copyRecordSHA256(rec); isHexSHA256(sha) {
 		return sha

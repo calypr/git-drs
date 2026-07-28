@@ -37,6 +37,20 @@ type copyBulkCreateRequest struct {
 	Records []copyRecord `json:"records"`
 }
 
+type copyBulkOverwriteRequest struct {
+	Organization string       `json:"organization"`
+	Project      string       `json:"project"`
+	Records      []copyRecord `json:"records"`
+}
+
+type copyBulkOverwriteResponse struct {
+	Processed       int `json:"processed"`
+	Created         int `json:"created"`
+	Replaced        int `json:"replaced"`
+	DIDMatched      int `json:"did_matched"`
+	ChecksumMatched int `json:"checksum_matched"`
+}
+
 type copyBulkHashesRequest struct {
 	Hashes []string `json:"hashes"`
 }
@@ -50,6 +64,7 @@ type indexAPI interface {
 	BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error)
 	BulkHashes(ctx context.Context, hashes []string) (copyBulkHashesResponse, error)
 	CreateBulk(ctx context.Context, req copyBulkCreateRequest) (copyListRecordsResponse, error)
+	OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error)
 }
 
 type rawIndexAPI struct {
@@ -109,6 +124,14 @@ func (r *rawIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest)
 	var out copyListRecordsResponse
 	if err := r.requestor.Do(ctx, http.MethodPost, "/index/bulk", req, &out); err != nil {
 		return copyListRecordsResponse{}, err
+	}
+	return out, nil
+}
+
+func (r *rawIndexAPI) OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	var out copyBulkOverwriteResponse
+	if err := r.requestor.Do(ctx, http.MethodPut, "/index/bulk/overwrite", req, &out); err != nil {
+		return copyBulkOverwriteResponse{}, err
 	}
 	return out, nil
 }

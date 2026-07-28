@@ -2,10 +2,13 @@ package copyrecords
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/calypr/syfon/client/request"
 )
 
 const defaultCopyBatchSize = 1000
@@ -19,7 +22,14 @@ type copyStats struct {
 }
 
 func copyProjectRecords(ctx context.Context, logger *slog.Logger, source []copyRecord, dst indexAPI, org, project string, batchSize int, overwriteName bool) (copyStats, error) {
+	return copyProjectRecordsWithOptions(ctx, logger, source, dst, org, project, batchSize, overwriteName, false)
+}
+
+func copyProjectRecordsWithOptions(ctx context.Context, logger *slog.Logger, source []copyRecord, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool) (copyStats, error) {
 	batchSize = normalizeCopyBatchSize(batchSize)
+	if overwriteExisting && batchSize > defaultCopyBatchSize {
+		batchSize = defaultCopyBatchSize
+	}
 
 	stats := copyStats{}
 	fmt.Fprintf(os.Stderr, "copy-records: scanning source records for %s/%s\n", org, project)
@@ -35,7 +45,7 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, source []copyR
 
 		batch := records[start:end]
 		fmt.Fprintf(os.Stderr, "copy-records: reconciling batch %d-%d of %d\n", start+1, end, len(records))
-		if err := reconcileCopyBatch(ctx, logger, &stats, dst, batch, org, project, start, overwriteName); err != nil {
+		if err := reconcileCopyBatchWithOptions(ctx, logger, &stats, dst, batch, org, project, start, overwriteName, overwriteExisting); err != nil {
 			return stats, err
 		}
 	}
@@ -44,7 +54,14 @@ func copyProjectRecords(ctx context.Context, logger *slog.Logger, source []copyR
 }
 
 func copyProjectRecordsFromSourceIndex(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName bool) (copyStats, error) {
+	return copyProjectRecordsFromSourceIndexWithOptions(ctx, logger, src, dst, org, project, batchSize, overwriteName, false)
+}
+
+func copyProjectRecordsFromSourceIndexWithOptions(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool) (copyStats, error) {
 	batchSize = normalizeCopyBatchSize(batchSize)
+	if overwriteExisting && batchSize > defaultCopyBatchSize {
+		batchSize = defaultCopyBatchSize
+	}
 
 	stats := copyStats{}
 	seen := map[string]struct{}{}
@@ -81,7 +98,7 @@ func copyProjectRecordsFromSourceIndex(ctx context.Context, logger *slog.Logger,
 
 		if len(batch) > 0 {
 			fmt.Fprintf(os.Stderr, "copy-records: reconciling source page %d (%d new records)\n", page, len(batch))
-			if err := reconcileCopyBatch(ctx, logger, &stats, dst, batch, org, project, (page-1)*batchSize, overwriteName); err != nil {
+			if err := reconcileCopyBatchWithOptions(ctx, logger, &stats, dst, batch, org, project, (page-1)*batchSize, overwriteName, overwriteExisting); err != nil {
 				return stats, err
 			}
 		}
@@ -96,6 +113,21 @@ func copyProjectRecordsFromSourceIndex(ctx context.Context, logger *slog.Logger,
 }
 
 func reconcileCopyBatch(ctx context.Context, logger *slog.Logger, stats *copyStats, dst indexAPI, batch []copyRecord, org, project string, batchStart int, overwriteName bool) error {
+	return reconcileCopyBatchWithOptions(ctx, logger, stats, dst, batch, org, project, batchStart, overwriteName, false)
+}
+
+func reconcileCopyBatchWithOptions(ctx context.Context, logger *slog.Logger, stats *copyStats, dst indexAPI, batch []copyRecord, org, project string, batchStart int, overwriteName, overwriteExisting bool) error {
+	if overwriteExisting {
+		resp, err := overwriteCopyBatch(ctx, dst, copyBulkOverwriteRequest{Organization: org, Project: project, Records: batch})
+		if err != nil {
+			return fmt.Errorf("target bulk overwrite failed for batch starting at %d: %w", batchStart, err)
+		}
+		stats.Created += resp.Created
+		stats.Updated += resp.Replaced
+		stats.Written += resp.Processed
+		fmt.Fprintf(os.Stderr, "copy-records: batch complete, created=%d updated=%d unchanged=0 written=%d total-written=%d\n", resp.Created, resp.Replaced, resp.Processed, stats.Written)
+		return nil
+	}
 	toWrite, batchStats, err := buildMergedBatch(ctx, dst, batch, overwriteName)
 	if err != nil {
 		return err
@@ -138,6 +170,42 @@ func reconcileCopyBatch(ctx context.Context, logger *slog.Logger, stats *copySta
 		)
 	}
 	return nil
+}
+
+// overwriteCopyBatch retries a rejected payload as smaller atomic requests.
+// Syfon rejects oversized overwrite requests before writing any record.
+func overwriteCopyBatch(ctx context.Context, dst indexAPI, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	resp, err := dst.OverwriteBulk(ctx, req)
+	if err == nil {
+		return resp, nil
+	}
+	var responseErr *request.ResponseError
+	if errors.As(err, &responseErr) && (responseErr.Status == 404 || responseErr.Status == 405) {
+		return copyBulkOverwriteResponse{}, fmt.Errorf("target Syfon does not support bulk overwrite; upgrade the target Syfon instance")
+	}
+	if len(req.Records) <= 1 || !errors.As(err, &responseErr) || responseErr.Status != 413 {
+		return copyBulkOverwriteResponse{}, err
+	}
+	middle := len(req.Records) / 2
+	left := req
+	left.Records = req.Records[:middle]
+	right := req
+	right.Records = req.Records[middle:]
+	leftResp, err := overwriteCopyBatch(ctx, dst, left)
+	if err != nil {
+		return copyBulkOverwriteResponse{}, err
+	}
+	rightResp, err := overwriteCopyBatch(ctx, dst, right)
+	if err != nil {
+		return copyBulkOverwriteResponse{}, err
+	}
+	return copyBulkOverwriteResponse{
+		Processed:       leftResp.Processed + rightResp.Processed,
+		Created:         leftResp.Created + rightResp.Created,
+		Replaced:        leftResp.Replaced + rightResp.Replaced,
+		DIDMatched:      leftResp.DIDMatched + rightResp.DIDMatched,
+		ChecksumMatched: leftResp.ChecksumMatched + rightResp.ChecksumMatched,
+	}, nil
 }
 
 func normalizeCopyBatchSize(batchSize int) int {

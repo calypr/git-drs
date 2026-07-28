@@ -2,6 +2,8 @@ package remoteruntime
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -255,5 +257,35 @@ func TestNewGitContextReadsLFSConcurrentTransfers(t *testing.T) {
 	}
 	if gitCtx.UploadConcurrency != 7 {
 		t.Fatalf("UploadConcurrency = %d, want 7", gitCtx.UploadConcurrency)
+	}
+}
+
+func TestNewGitContextDiscoversBucketForScopeOnlyRemote(t *testing.T) {
+	setupTestRepo(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/data/buckets" {
+			t.Fatalf("request path = %q, want /data/buckets", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("Authorization = %q, want bearer token", got)
+		}
+		_, _ = w.Write([]byte(`{"S3_BUCKETS":{"scope-bucket":{"programs":["/organization/org1/project/proj1"]}}}`))
+	}))
+	defer server.Close()
+
+	gitCtx, err := newGitContext(syconf.Credential{
+		APIEndpoint: server.URL,
+		AccessToken: "token",
+	}, config.Gen3Remote{
+		Endpoint:     server.URL,
+		Organization: "org1",
+		ProjectID:    "proj1",
+	}, drslog.GetLogger())
+	if err != nil {
+		t.Fatalf("newGitContext failed: %v", err)
+	}
+	if gitCtx.BucketName != "scope-bucket" {
+		t.Fatalf("BucketName = %q, want scope-bucket", gitCtx.BucketName)
 	}
 }

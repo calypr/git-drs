@@ -260,7 +260,19 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		remote.GetStoragePrefix(),
 	)
 	if err != nil {
-		return nil, err
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		scope, err = resolveBucketScopeFromServer(
+			ctx,
+			profileConfig.APIEndpoint,
+			profileConfig.AccessToken,
+			remote.GetOrganization(),
+			projectID,
+			remote.GetBucketName(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", remote.GetOrganization(), projectID, err)
+		}
 	}
 
 	raw, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))

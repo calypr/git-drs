@@ -21,3 +21,6 @@ admin/
 # ignore working dirs, files
 attic/
 patch.txt
+.pages-docs/
+_site/
+

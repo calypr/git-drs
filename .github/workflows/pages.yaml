@@ -47,6 +47,7 @@ jobs:
           cp docs/adding-s3-files.md .pages-docs/
           cp docs/remove-files.md .pages-docs/
           cp docs/troubleshooting.md .pages-docs/
+          cp docs/*.png .pages-docs/
 
       - name: Build documentation and presentation
         run: |

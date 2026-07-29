@@ -71,6 +71,7 @@ rm -rf .pages-docs _site
 mkdir .pages-docs
 cp docs/{index,quickstart,getting-started,commands,pointer-files}.md .pages-docs/
 cp docs/{adding-s3-files,remove-files,troubleshooting}.md .pages-docs/
+cp docs/*.png .pages-docs/
 npx --yes @marp-team/marp-cli@4.2.3 \
   docs/anvil-terra-poc-presentation.md \
   --html \

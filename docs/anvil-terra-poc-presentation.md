@@ -161,14 +161,14 @@ git drs pull -I "data/*.cram"
 <div class="columns">
 <div>
 
-### 1. Configure and add [references](https://explore.anvilproject.org/files?filter=%5B%7B%22categoryKey%22%3A%22files.file_format%22%2C%22value%22%3A%5B%22.tsv%22%2C%22.tsv.gz%22%5D%7D%2C%7B%22categoryKey%22%3A%22datasets.title%22%2C%22value%22%3A%5B%2２ANVIL_1000G_PRIMED_data_model%2２%5D%7D%5D) from a [manifest](anvil-data-explorer.png)
+### 1. Configure and add references
 
+Select the dataset in the [AnVIL Data Explorer](https://explore.anvilproject.org/files?filter=%5B%7B%22categoryKey%22%3A%22files.file_format%22%2C%22value%22%3A%5B%22.tsv%22%2C%22.tsv.gz%22%5D%7D%2C%7B%22categoryKey%22%3A%22datasets.title%22%2C%22value%22%3A%5B%22ANVIL_1000G_PRIMED_data_model%22%5D%7D%5D), then download its [manifest](anvil-data-explorer.png).
 
 ```bash
 git init
 git drs remote add anvil terra
 
-# Select a manifest from AnVIL Data Explorer and download it to /tmp.
 # Download the TSV from AnVIL Data Explorer first.
 manifest=/tmp/anvil-manifest-38dc7537.tsv
 scripts/anvil-add-ref-commands.sh "$manifest" \

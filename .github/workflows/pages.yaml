@@ -51,12 +51,25 @@ jobs:
 
       - name: Build documentation and presentation
         run: |
+          mkdir -p .pages-build
           npx --yes @marp-team/marp-cli@4.2.3 \
             docs/anvil-terra-poc-presentation.md \
             --html \
             --template bespoke \
-            --output .pages-docs/anvil-terra-poc-presentation.html
+            --output .pages-build/anvil-terra-poc-presentation.html
           mkdocs build --strict
+          # Keep the standalone Bespoke document byte-for-byte intact. Passing
+          # it through MkDocs is unnecessary for this standalone entry point.
+          cp .pages-build/anvil-terra-poc-presentation.html \
+            _site/anvil-terra-poc-presentation.html
+
+      - name: Verify presentation artifact
+        run: |
+          # A Bespoke deck needs its embedded browser runtime for slide paging.
+          grep -q '<script' _site/anvil-terra-poc-presentation.html
+          grep -q 'bespoke' _site/anvil-terra-poc-presentation.html
+          # Guard code-block contrast against Marp's highlighting stylesheet.
+          grep -q 'pre code.hljs' _site/anvil-terra-poc-presentation.html
 
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3

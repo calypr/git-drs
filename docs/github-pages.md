@@ -6,7 +6,9 @@ the end-user documentation selected in `mkdocs.yml` and renders the
 It publishes both outputs as one GitHub Pages site. Do not edit or commit the
 generated HTML. The Pages build explicitly selects Marp's `bespoke` template;
 that template includes the browser runtime used for slide paging and keyboard
-navigation, unlike the non-interactive `bare` template.
+navigation, unlike the non-interactive `bare` template. It renders the deck to
+a temporary build directory and copies the finished standalone HTML into the
+site after MkDocs runs, preserving the embedded runtime and presentation styles.
 
 ## Enable GitHub Pages
 
@@ -78,8 +80,10 @@ npx --yes @marp-team/marp-cli@4.2.3 \
   docs/anvil-terra-poc-presentation.md \
   --html \
   --template bespoke \
-  --output .pages-docs/anvil-terra-poc-presentation.html
+  --output /tmp/anvil-terra-poc-presentation.html
 mkdocs build --strict
+cp /tmp/anvil-terra-poc-presentation.html \
+  _site/anvil-terra-poc-presentation.html
 python -m http.server --directory _site 8000
 ```
 

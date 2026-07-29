@@ -21,8 +21,8 @@ h2 { font-size: 40px; letter-spacing: -.025em; }
 h3 { color: var(--blue); font-size: 23px; }
 p, li { font-size: 20px; line-height: 1.4; }
 code { background: #e8edf3; }
-pre { background: var(--navy); border-radius: 12px; color: #eaf6ff; padding: 18px 22px; }
-pre code { background: transparent; font-size: 16px; line-height: 1.4; }
+pre { background: #000; border-radius: 12px; color: #fff; padding: 18px 22px; }
+pre code, pre code.hljs { background: #000 !important; color: #fff; font-size: 16px; line-height: 1.4; }
 blockquote { background: #fff7e3; border-left: 7px solid var(--gold); color: #152334; padding: 10px 18px; }
 blockquote p { font-size: 18px; }
 table { width: 100%; }

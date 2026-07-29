@@ -41,13 +41,26 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	}
 	var access *ResolvedAccess
 	for _, method := range obj.AccessMethods {
+		// AnVIL objects commonly advertise a Google Storage (gs://) method
+		// before their HTTPS method. The downloader uses net/http, so selecting
+		// the first non-empty URL can otherwise fail with an opaque transport
+		// error instead of trying the usable signed HTTPS URL.
+		methodType := strings.ToLower(strings.TrimSpace(method.Type))
+		if methodType != "http" && methodType != "https" {
+			continue
+		}
 		switch {
 		case method.AccessURL != nil && strings.TrimSpace(method.AccessURL.URL) != "":
-			access = method.AccessURL
+			if isHTTPAccessURL(method.AccessURL.URL) {
+				access = method.AccessURL
+			}
 		case strings.TrimSpace(method.AccessID) != "":
 			access, err = r.GetAccess(ctx, drsURI, method.AccessID)
 			if err != nil {
 				return err
+			}
+			if !isHTTPAccessURL(access.URL) {
+				access = nil
 			}
 		}
 		if access != nil {
@@ -55,7 +68,7 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		}
 	}
 	if access == nil {
-		return fmt.Errorf("AnVIL DRS object has no supported access method")
+		return fmt.Errorf("AnVIL DRS object has no supported HTTP(S) access method")
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
@@ -128,6 +141,11 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		}
 	}
 	return os.Rename(tmpName, destination)
+}
+
+func isHTTPAccessURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && u.Host != "" && (u.Scheme == "http" || u.Scheme == "https") && u.User == nil
 }
 
 type AccessMethod struct {

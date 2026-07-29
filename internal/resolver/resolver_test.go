@@ -117,7 +117,7 @@ func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
 	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ga4gh/drs/v1/objects/object-1":
-			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"ftp"},{"type":"https","access_id":"a2"}]}`))
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"gs","access_url":{"url":"gs://anvil-bucket/object-1"}},{"type":"https","access_id":"a2"}]}`))
 		case "/ga4gh/drs/v1/objects/object-1/access/a2":
 			_, _ = fmt.Fprintf(w, `{"url":%q}`, download.URL)
 		default:
@@ -134,6 +134,32 @@ func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
 	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
 		t.Fatalf("DownloadToCache returned error: %v", err)
 	}
+}
+
+func TestDownloadToCacheRejectsNonHTTPAccessURLFromHTTPSMethod(t *testing.T) {
+	r := &staticResolver{object: &ResolvedObject{
+		Size: 4,
+		AccessMethods: []AccessMethod{{
+			Type:      "https",
+			AccessURL: &ResolvedAccess{URL: "gs://anvil-bucket/object-1"},
+		}},
+	}}
+	err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", filepath.Join(t.TempDir(), "cache", "object-1"))
+	if err == nil || !strings.Contains(err.Error(), "no supported HTTP(S) access method") {
+		t.Fatalf("expected unsupported access method error, got %v", err)
+	}
+}
+
+type staticResolver struct {
+	object *ResolvedObject
+}
+
+func (r *staticResolver) GetObject(context.Context, string) (*ResolvedObject, error) {
+	return r.object, nil
+}
+
+func (r *staticResolver) GetAccess(context.Context, string, string) (*ResolvedAccess, error) {
+	return nil, errors.New("unexpected GetAccess call")
 }
 
 func TestDownloadToCacheValidatesSHA256BeforePromotion(t *testing.T) {

@@ -99,17 +99,13 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		oid := addRefLocalOID(drsUri, remoteName, &obj)
 		if err := createAddRefPointer(&obj, dstPath, drsUri); err != nil {
 			return err
 		}
 		if _, err := gitrepo.TrackReadOnly(cmd.Context(), args[1]); err != nil {
 			return fmt.Errorf("track add-ref destination %s: %w", args[1], err)
 		}
-		if obj.SelfUri == "" {
-			obj.SelfUri = drsUri
-		}
-		if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &obj, oid); err != nil {
+		if err := persistAddRefObject(&obj, drsUri, remoteName); err != nil {
 			return fmt.Errorf("write source DRS metadata: %w", err)
 		}
 		return nil
@@ -282,9 +278,19 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if _, err := gitrepo.TrackReadOnly(cmd.Context(), e.path); err != nil {
 			return fmt.Errorf("track add-ref destination %s: %w", e.path, err)
 		}
+		if err := persistAddRefObject(&e.object, e.uri, remoteName); err != nil {
+			return fmt.Errorf("write source DRS metadata for %s: %w", e.path, err)
+		}
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%d reference(s) %s\n", len(entries), map[bool]string{true: "validated", false: "added"}[dryRun])
 	return nil
+}
+
+func persistAddRefObject(obj *drsapi.DrsObject, sourceURI string, remoteName config.Remote) error {
+	if obj.SelfUri == "" {
+		obj.SelfUri = sourceURI
+	}
+	return drsobject.WriteObject(gitrepo.DRSObjectsPath, obj, addRefLocalOID(sourceURI, remoteName, obj))
 }
 
 // createAddRefPointer keeps the source authority in Git. The metadata written

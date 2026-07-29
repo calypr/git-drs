@@ -1,6 +1,7 @@
 package addref
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +13,12 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/spf13/cobra"
 )
 
 func TestCreateLfsPointer(t *testing.T) {
@@ -105,6 +108,63 @@ func TestAddRefLocalOIDUsesDerivedSourceWhenSHA256Missing(t *testing.T) {
 	}
 	if oid != derivedSourceOID("drs://example.org/object-1", "source") {
 		t.Fatalf("expected derived source oid, got %s", oid)
+	}
+}
+
+func TestRunManifestPersistsResolvedObjectMetadata(t *testing.T) {
+	const checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const sourceURI = "drs://source.example.org/object-1"
+	var resolvedEndpoint, resolvedObjectID string
+	oldGetter := newSourceDRSGetter
+	newSourceDRSGetter = func(endpoint string) (drsObjectGetter, error) {
+		resolvedEndpoint = endpoint
+		return fakeDRSObjectGetter{obj: drsapi.DrsObject{
+			Id:        "object-1",
+			Size:      42,
+			Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: checksum}},
+		}, gotObjectID: &resolvedObjectID}, nil
+	}
+	t.Cleanup(func() { newSourceDRSGetter = oldGetter })
+
+	repo := t.TempDir()
+	runGitCmd(t, repo, "init")
+	runGitCmd(t, repo, "config", "drs.default-remote", "source")
+	runGitCmd(t, repo, "config", "drs.remote.source.type", "local")
+	runGitCmd(t, repo, "config", "drs.remote.source.endpoint", "https://primary.example.org")
+	manifest := filepath.Join(repo, "references.tsv")
+	if err := os.WriteFile(manifest, []byte("drs_uri\tpath\n"+sourceURI+"\tdata/reference\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	oldRemote, oldDryRun := remote, dryRun
+	remote, dryRun = "", false
+	t.Cleanup(func() { remote, dryRun = oldRemote, oldDryRun })
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	if err := runManifest(cmd, manifest); err != nil {
+		t.Fatalf("runManifest: %v", err)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, checksum)
+	if err != nil {
+		t.Fatalf("read persisted manifest object: %v", err)
+	}
+	if obj.Id != "object-1" || obj.SelfUri != sourceURI {
+		t.Fatalf("unexpected persisted object: %+v", obj)
+	}
+	if resolvedObjectID != "object-1" {
+		t.Fatalf("unexpected resolved object ID: %q", resolvedObjectID)
+	}
+	if resolvedEndpoint != "https://source.example.org" {
+		t.Fatalf("unexpected resolver endpoint: %q", resolvedEndpoint)
 	}
 }
 

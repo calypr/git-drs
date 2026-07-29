@@ -39,6 +39,33 @@ func TestBatchSyncSessionNormalizeFilesDeduplicatesByOID(t *testing.T) {
 	}
 }
 
+func TestBatchSyncSessionNormalizeFilesExcludesDRSURIReferences(t *testing.T) {
+	session := &batchSyncSession{}
+	checksum := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	session.normalizeFiles(map[string]lfs.LfsFileInfo{
+		"data/checksum.dat": {
+			Name: "data/checksum.dat",
+			Oid:  checksum,
+		},
+		"data/parsed-reference.dat": {
+			Name: "data/parsed-reference.dat",
+			Oid:  "//authority.example/object-with-sha256",
+		},
+		"data/canonical-reference.dat": {
+			Name: "data/canonical-reference.dat",
+			Oid:  "drs://authority.example/another-object",
+		},
+	})
+
+	if len(session.oids) != 1 || session.oids[0] != checksum {
+		t.Fatalf("expected only checksum OID in push synchronization, got %+v", session.oids)
+	}
+	if len(session.filesByOID) != 1 {
+		t.Fatalf("expected only checksum file in push synchronization, got %+v", session.filesByOID)
+	}
+}
+
 func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 	t.Chdir(t.TempDir())
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

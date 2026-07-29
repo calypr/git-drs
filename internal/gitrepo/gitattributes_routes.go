@@ -53,7 +53,7 @@ func UpsertDRSRouteLines(gitattributesPath string, mode string, patterns []strin
 	}
 
 	for _, pat := range order {
-		newLine := fmt.Sprintf("%s drs.route=%s", pat, mode)
+		newLine := fmt.Sprintf("%s drs=%s", pat, mode)
 		if idx, ok := seen[pat]; ok {
 			if strings.TrimSpace(lines[idx]) != newLine {
 				lines[idx] = newLine
@@ -96,8 +96,11 @@ func parseRouteLine(line string) (pattern string, mode string, ok bool) {
 
 	pat := parts[0]
 	for _, tok := range parts[1:] {
-		if strings.HasPrefix(tok, "drs.route=") {
-			val := strings.TrimPrefix(tok, "drs.route=")
+		// Accept the former drs.route spelling so existing rules are updated to
+		// the canonical drs attribute rather than duplicated.
+		if strings.HasPrefix(tok, "drs=") || strings.HasPrefix(tok, "drs.route=") {
+			val := strings.TrimPrefix(tok, "drs=")
+			val = strings.TrimPrefix(val, "drs.route=")
 			val = strings.ToLower(strings.TrimSpace(val))
 			if val == "ro" || val == "rw" {
 				return pat, val, true

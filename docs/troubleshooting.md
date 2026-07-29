@@ -72,7 +72,7 @@ Those changes persist in the clone. They are not something you redo per session.
 
 Examples:
 
-- `git drs remote add gen3 ...`
+- `git drs remote add [name] <endpoint-or-alias> ...`
 - `git drs remote remove ...`
 - `git drs init`
 - `git drs track`
@@ -292,13 +292,17 @@ If needed, inspect the detailed logs:
 ls -la .git/drs/
 ```
 
-### `git drs remote add gen3` fails on bucket mapping
+### `git drs remote add` fails on bucket mapping
 
 Current shape:
 
 ```bash
-git drs remote add gen3 [remote-name] <organization/project> [--cred <file> | --token <token>]
+git drs remote add [remote-name] calypr --scope <organization/project> \
+  --credential <source>
 ```
+
+Credential sources use an explicit scheme such as `file:/path/to/key.json`,
+`env:GEN3_TOKEN`, or `profile:production`; inline secrets are not accepted.
 
 If this fails, the likely cause is missing bucket mapping for that scope.
 
@@ -309,7 +313,8 @@ That mapping is usually steward/admin setup, not something the end user invents 
 Refresh by re-adding the remote with a new credential file or token:
 
 ```bash
-git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/new-credentials.json
+git drs remote add production calypr --scope HTAN_INT/BForePC \
+  --credential file:/path/to/new-credentials.json
 ```
 
 You do not need to run `git drs init` again.
@@ -317,14 +322,16 @@ You do not need to run `git drs init` again.
 What `git-drs` does automatically:
 
 - if the stored access token is expired but the stored API key is still valid, `git-drs` will attempt to refresh the access token
-- if the API key itself is expired, revoked, or replaced, you need to re-run `git drs remote add gen3 ...`
+- if the API key itself is expired, revoked, or replaced, re-run the unified
+  `git drs remote add ... --credential <source>` command
 
 How to think about recovery:
 
 - token expired, key still valid:
   - often automatic
 - key expired or replaced:
-  - rerun `git drs remote add gen3 ... --cred ...` or `--token ...`
+  - rerun `git drs remote add ... --credential file:<path>` or use an
+    environment credential source such as `--credential env:GEN3_TOKEN`
 
 How to check what is in use:
 
@@ -336,7 +343,9 @@ And for the underlying Gen3 profile data:
 
 - inspect `~/.gen3/gen3_client_config.ini`
 
-If you want the least surprising fix, just re-run `git drs remote add gen3 ...` with the current credential file. That updates the stored profile and repo token plumbing in one step.
+If you want the least surprising fix, re-run the unified `git drs remote add`
+command with the current `--credential file:<path>`. That updates the stored
+profile and repo token plumbing in one step.
 
 ### `git drs push` fails with upload or register errors
 
@@ -413,7 +422,8 @@ git drs pull -I "*.bam"
    If you want Git DRS to always download and hydrate all file payloads automatically during checkouts (reverting to non-skip behavior), you can:
    - Configure it during remote setup:
      ```bash
-     git drs remote add gen3 public HTAN_INT/BForePC --no-skip-smudge
+     git drs remote add public calypr --scope HTAN_INT/BForePC \
+       --credential file:~/.gen3/credentials.json --checkout hydrate
      ```
    - Or configure it directly in Git settings:
      ```bash

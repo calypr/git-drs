@@ -91,7 +91,12 @@ Each clone configures its remote in the repository-local Git config:
 git drs remote add anvil terra --checkout hydrate
 ```
 
-Repository-local Git config is authoritative. It is not tracked, and credential material remains in the provider credential store.
+Here `anvil` is the local remote name and `terra` is the built-in endpoint
+alias. The alias supplies the Terra provider, production DRS endpoint,
+Google ADC authentication, and read-only behavior; the unified command does
+not use the legacy `terra` subcommand, `--drs-endpoint`, or `--mode` flags.
+Repository-local Git config is authoritative. It is not tracked, and
+credential material remains in the provider credential store.
 
 ### First user: add and publish references
 
@@ -378,6 +383,10 @@ Initial schema:
 ```bash
 git drs remote add anvil terra --checkout hydrate
 ```
+
+This is the unified `[name] <endpoint-or-alias>` form. Do not reverse the
+arguments: `git drs remote add terra anvil` is the deprecated
+provider-specific command shape.
 
 Configuration rules:
 

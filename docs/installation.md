@@ -84,7 +84,7 @@ Then move or copy the built binary somewhere on your `PATH`.
 Installing the binary does not configure a repository. Repository-local setup now normally happens when you run:
 
 ```bash
-git drs remote add gen3 ...
+git drs remote add [name] <endpoint-or-alias> [flags]
 ```
 
 ## Read Next

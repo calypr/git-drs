@@ -25,7 +25,12 @@ Configure the remote in repository-local Git config:
 git drs remote add anvil terra --checkout hydrate
 ```
 
-The command stores only public remote metadata in `.git/config`. Google ADC remains local user state. Each clone must run the command because `.git/config` is not tracked.
+`anvil` is the chosen local name and `terra` is the built-in endpoint alias.
+The alias selects the Terra provider, production endpoint, Google ADC, and
+read-only behavior, so no provider subcommand, `--drs-endpoint`, or `--mode`
+flag is needed. The command stores only public remote metadata in `.git/config`.
+Google ADC remains local user state. Each clone must run the command because
+`.git/config` is not tracked.
 
 ## Publish one reference
 

@@ -57,7 +57,14 @@ However, these pieces do not yet compose into a complete Terra/AnVIL workflow.
 
 ## Decision
 
-Add first-class Terra/AnVIL DRS support as an incremental extension of the existing remote and reference workflows. The primary decision is to introduce `git drs remote add terra ...` so authentication and provider behavior are known at remote configuration time. Once a pointer or reference is associated with a Terra remote, `git-drs` can use a Terra-aware resolver to translate the DRS URI into downloadable access URLs. The main unresolved design decision is how to represent DRS URL identity in pointer files while preserving the existing SHA256-oriented cache and compatibility assumptions.
+Add first-class Terra/AnVIL DRS support as an incremental extension of the
+existing remote and reference workflows. The implemented CLI uses the unified
+`git drs remote add [name] terra ...` form so authentication and provider
+behavior are known at remote configuration time. Once a pointer or reference
+is associated with a Terra remote, `git-drs` can use a Terra-aware resolver to
+translate the DRS URI into downloadable access URLs. The main unresolved
+design decision is how to represent DRS URL identity in pointer files while
+preserving the existing SHA256-oriented cache and compatibility assumptions.
 
 ## Goals
 
@@ -106,11 +113,11 @@ Current remote configuration is centered on Gen3/Syfon remotes with an `organiza
 Example target CLI:
 
 ```bash
-git drs remote add terra anvil \
-  --drs-endpoint https://data.terra.bio \
-  --auth google-adc \
-  --mode read-only
+git drs remote add anvil terra --checkout hydrate
 ```
+
+The `terra` preset pins the production endpoint, `google-adc` authentication,
+and read-only provider behavior.
 
 ### Gap 2: Terra references need a remote-aware `add-ref` path
 
@@ -263,7 +270,7 @@ Gregor/AnVIL repositories reference existing controlled-access data. They should
 Target behavior:
 
 ```bash
-git drs remote add terra anvil ... --mode read-only
+git drs remote add anvil terra --checkout hydrate
 ```
 
 In read-only mode:
@@ -290,7 +297,7 @@ Add documentation covering:
 
 ### Phase 1: Terra remote and resolver
 
-- Add `git drs remote add terra ...`.
+- Add Terra support to the unified `git drs remote add [name] terra ...` path.
 - Wire Terra auth/provider configuration at remote setup time.
 - Add a Terra-aware resolver used by reference creation and hydration.
 - Add provider-specific diagnostics for authorization failures.
@@ -329,7 +336,8 @@ Add documentation covering:
 
 ## Open questions
 
-- Should the canonical command be `git drs remote add terra` or a generic `git drs remote add ga4gh` with Terra-specific auth/resolution options?
+- The canonical command is the unified `git drs remote add [name] terra`
+  preset form; the earlier provider-subcommand alternatives are superseded.
 - Which AnVIL/Terra endpoint should be treated as canonical for Gregor DRS discovery?
 - Should Martha/Terra resolution be implemented directly or invoked through Terra Notebook Utils behavior?
 - What should the default policy be for records that lack checksums?

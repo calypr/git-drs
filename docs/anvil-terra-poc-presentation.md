@@ -162,9 +162,7 @@ git drs pull -I "data/*.cram"
 
 ```bash
 git init
-git drs remote add terra anvil \
-  --drs-endpoint https://data.terra.bio \
-  --auth google-adc --mode read-only
+git drs remote add anvil terra --checkout hydrate
 
 # Download the TSV from AnVIL Data Explorer first.
 manifest=/tmp/anvil-manifest-38dc7537.tsv

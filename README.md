@@ -65,12 +65,14 @@ The cleaned CLI intentionally removed legacy commands:
   - `git drs download`
 - `git drs pull` is hydration-only
 - `git drs ls-files` is the local file inventory command
-- `git drs remote add gen3` takes scope as `organization/project`
+- the unified `git drs remote add` takes scope through
+  `--scope <organization/project>`
 
 Example:
 
 ```bash
-git drs remote add gen3 production HTAN_INT/BForePC --cred /path/to/credentials.json
+git drs remote add production calypr --scope HTAN_INT/BForePC \
+  --credential file:/path/to/credentials.json
 ```
 
 Current command split:

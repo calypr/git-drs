@@ -82,8 +82,7 @@ Reference proof of concept · July 2026
 
 <div class="columns">
 <div>
-
-```bash
+<pre><code class="language-bash">
 gcloud auth application-default login
 
 git drs add-ref --remote anvil \
@@ -96,22 +95,22 @@ git drs add-ref --remote anvil \
 git add .gitattributes data/
 git commit -m "Add AnVIL data references"
 git push
-```
+</code></pre>
 </div>
 <div>
-
-### Published
-
-- Canonical DRS URI pointers
-- Paths and Git history
-- `.gitattributes`
-- Only portable pointer-management state
-
-### Never published
-
-- Payload bytes or cache content
-- Tokens, headers, or ADC files
-- Signed download URLs
+<h3>Published</h3>
+<ul>
+<li>Canonical DRS URI pointers</li>
+<li>Paths and Git history</li>
+<li><code>.gitattributes</code></li>
+<li>Only portable pointer-management state</li>
+</ul>
+<h3>Never published</h3>
+<ul>
+<li>Payload bytes or cache content</li>
+<li>Tokens, headers, or ADC files</li>
+<li>Signed download URLs</li>
+</ul>
 </div>
 </div>
 
@@ -121,12 +120,11 @@ git push
 
 <div class="columns">
 <div>
-
-```bash
+<pre><code class="language-bash">
 gcloud auth application-default login
 
-git clone <git-repository>
-cd <repository>
+git clone &lt;git-repository&gt;
+cd &lt;repository&gt;
 
 # .git/config is not cloned; recreate public remote settings.
 git drs remote add anvil terra --checkout hydrate
@@ -136,19 +134,20 @@ git drs pull
 
 # Or only one dataset slice
 git drs pull -I "data/*.cram"
-```
-
-> No author cache, local Git config, token, or signed URL is transferred.
+</code></pre>
+<blockquote><p>No author cache, local Git config, token, or signed URL is transferred.</p></blockquote>
 </div>
 <div>
-
-| Stage | Action |
-|---|---|
-| **Git** | Clone pointer and `.gitattributes` |
-| **User B** | Configure remote; supply ADC; choose paths |
-| **Resolver** | Fetch current metadata and fresh access |
-| **Cache** | Download, verify, atomically promote |
-| **Worktree** | Hydrate only after validation |
+<table>
+<thead><tr><th>Stage</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td><strong>Git</strong></td><td>Clone pointer and <code>.gitattributes</code></td></tr>
+<tr><td><strong>User B</strong></td><td>Configure remote; supply ADC; choose paths</td></tr>
+<tr><td><strong>Resolver</strong></td><td>Fetch current metadata and fresh access</td></tr>
+<tr><td><strong>Cache</strong></td><td>Download, verify, atomically promote</td></tr>
+<tr><td><strong>Worktree</strong></td><td>Hydrate only after validation</td></tr>
+</tbody>
+</table>
 </div>
 </div>
 
@@ -160,28 +159,23 @@ git drs pull -I "data/*.cram"
 
 <div class="columns">
 <div>
-
-### 1. Configure and add references
-
-Select the dataset in the [AnVIL Data Explorer](https://explore.anvilproject.org/files?filter=%5B%7B%22categoryKey%22%3A%22files.file_format%22%2C%22value%22%3A%5B%22.tsv%22%2C%22.tsv.gz%22%5D%7D%2C%7B%22categoryKey%22%3A%22datasets.title%22%2C%22value%22%3A%5B%22ANVIL_1000G_PRIMED_data_model%22%5D%7D%5D), then download its [manifest](anvil-data-explorer.png).
-
-```bash
+<h3>1. Configure and add references</h3>
+<p>Select the dataset in the <a href="https://explore.anvilproject.org/files?filter=%5B%7B%22categoryKey%22%3A%22files.file_format%22%2C%22value%22%3A%5B%22.tsv%22%2C%22.tsv.gz%22%5D%7D%2C%7B%22categoryKey%22%3A%22datasets.title%22%2C%22value%22%3A%5B%22ANVIL_1000G_PRIMED_data_model%22%5D%7D%5D">AnVIL Data Explorer</a>, then download its <a href="anvil-data-explorer.png">manifest</a>.</p>
+<pre><code class="language-bash">
 git init
 git drs remote add anvil terra
 
 # Download the TSV from AnVIL Data Explorer first.
 manifest=/tmp/anvil-manifest-38dc7537.tsv
 scripts/anvil-add-ref-commands.sh "$manifest" \
-  > /tmp/add-anvil-refs.sh
+  &gt; /tmp/add-anvil-refs.sh
 cat /tmp/add-anvil-refs.sh
 bash /tmp/add-anvil-refs.sh
-```
+</code></pre>
 </div>
 <div>
-
-### 2. Commit, hydrate, and publish
-
-```bash
+<h3>2. Commit, hydrate, and publish</h3>
+<pre><code class="language-bash">
 git add .gitattributes '*.tsv'
 git commit -m "Add references to AnVIL data"
 
@@ -194,7 +188,7 @@ git remote add origin \
   https://github.com/bwalsh/\
 ANVIL_1000G_PRIMED_data_model.git
 git push -u origin main
-```
+</code></pre>
 </div>
 </div>
 
@@ -206,27 +200,21 @@ git push -u origin main
 
 <div class="columns">
 <div>
-
-### Tracked pointer
-
-```text
+<h3>Tracked pointer</h3>
+<pre><code class="language-text">
 version https://calypr.github.io/spec/v1
 oid drs://authority/object-1
 size 987654321
 sha256 8d969eef…
-```
-
-The DRS URI stays canonical. A checksum describes content; it does not identify the AnVIL record.
+</code></pre>
+<p>The DRS URI stays canonical. A checksum describes content; it does not identify the AnVIL record.</p>
 </div>
 <div>
-
-### Repository-local Git configuration
-
-```bash
+<h3>Repository-local Git configuration</h3>
+<pre><code class="language-bash">
 git drs remote add anvil terra --checkout hydrate
-```
-
-Remote metadata lives only in clone-local `.git/config`; every clone must recreate it. Credentials remain in the ADC provider store.
+</code></pre>
+<p>Remote metadata lives only in clone-local <code>.git/config</code>; every clone must recreate it. Credentials remain in the ADC provider store.</p>
 </div>
 </div>
 
@@ -291,24 +279,24 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 <div class="columns">
 <div>
-
-### Implemented
-
-- ADC-backed `AnVILResolver` handles metadata and access.
-- Terra `add-ref` and pull use provider-neutral resolution.
-- Remote config selects behavior; `--remote-type` is deprecated.
-- Terra pointers retain DRS URI, size, and optional SHA256.
-- Cache keys are separate from content checksums.
+<h3>Implemented</h3>
+<ul>
+<li>ADC-backed <code>AnVILResolver</code> handles metadata and access.</li>
+<li>Terra <code>add-ref</code> and pull use provider-neutral resolution.</li>
+<li>Remote config selects behavior; <code>--remote-type</code> is deprecated.</li>
+<li>Terra pointers retain DRS URI, size, and optional SHA256.</li>
+<li>Cache keys are separate from content checksums.</li>
+</ul>
 </div>
 <div>
-
-### Still incomplete
-
-- Every fresh clone must manually recreate the Terra remote in `.git/config`.
-- The production endpoint, OAuth scope, and object/access contracts are not certified end to end.
-- Manifest resolution and downloads lack bounded concurrency and retry.
-- An expired download URL is not re-resolved after an HTTP failure.
-- Independent two-user, denied-user, and credential-leak acceptance remain unverified.
+<h3>Still incomplete</h3>
+<ul>
+<li>Every fresh clone must manually recreate the Terra remote in <code>.git/config</code>.</li>
+<li>The production endpoint, OAuth scope, and object/access contracts are not certified end to end.</li>
+<li>Manifest resolution and downloads lack bounded concurrency and retry.</li>
+<li>An expired download URL is not re-resolved after an HTTP failure.</li>
+<li>Independent two-user, denied-user, and credential-leak acceptance remain unverified.</li>
+</ul>
 </div>
 </div>
 

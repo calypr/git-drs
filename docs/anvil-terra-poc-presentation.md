@@ -88,7 +88,7 @@ gcloud auth application-default login
 git drs add-ref --remote anvil \
   drs://authority/object-1 data/sample.cram
 
-# Validate a batch before writing
+&#35; Validate a batch before writing
 git drs add-ref --remote anvil \
   --manifest references.tsv --dry-run
 
@@ -126,13 +126,13 @@ gcloud auth application-default login
 git clone &lt;git-repository&gt;
 cd &lt;repository&gt;
 
-# .git/config is not cloned; recreate public remote settings.
+&#35; .git/config is not cloned; recreate public remote settings.
 git drs remote add anvil terra --checkout hydrate
 
-# Hydrate every authorized reference
+&#35; Hydrate every authorized reference
 git drs pull
 
-# Or only one dataset slice
+&#35; Or only one dataset slice
 git drs pull -I "data/*.cram"
 </code></pre>
 <blockquote><p>No author cache, local Git config, token, or signed URL is transferred.</p></blockquote>
@@ -165,7 +165,7 @@ git drs pull -I "data/*.cram"
 git init
 git drs remote add anvil terra
 
-# Download the TSV from AnVIL Data Explorer first.
+&#35; Download the TSV from AnVIL Data Explorer first.
 manifest=/tmp/anvil-manifest-38dc7537.tsv
 scripts/anvil-add-ref-commands.sh "$manifest" \
   &gt; /tmp/add-anvil-refs.sh
@@ -179,7 +179,7 @@ bash /tmp/add-anvil-refs.sh
 git add .gitattributes '*.tsv'
 git commit -m "Add references to AnVIL data"
 
-# Materialize only TSVs locally.
+&#35; Materialize only TSVs locally.
 git drs pull -I "*.tsv"
 git status
 

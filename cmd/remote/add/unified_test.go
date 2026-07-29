@@ -70,6 +70,25 @@ func TestUnifiedAddRejectsURLWithoutProviderBeforeInitializing(t *testing.T) {
 	}
 }
 
+func TestUnifiedAddRejectsUnsupportedGen3AuthenticationBeforeInitializing(t *testing.T) {
+	for _, auth := range []string{"auto", "none", "basic", "google-adc", "provider-helper:other"} {
+		t.Run(auth, func(t *testing.T) {
+			repo := testutils.SetupTestGitRepo(t)
+			resetUnifiedFlags(t)
+			providerFlag = "gen3"
+			authFlag = auth
+
+			err := runUnified(Cmd, []string{"https://gen3.example"})
+			if err == nil {
+				t.Fatalf("expected Gen3 authentication method %q to be rejected", auth)
+			}
+			if _, statErr := os.Stat(repo + "/.git-drs"); !os.IsNotExist(statErr) {
+				t.Fatalf("remote validation modified repository state: .git-drs stat error = %v", statErr)
+			}
+		})
+	}
+}
+
 func resetUnifiedFlags(t *testing.T) {
 	old := []string{scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag}
 	scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag = "", "auto", "", "auto", "", ""

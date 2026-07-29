@@ -204,6 +204,22 @@ func TestNewRejectsProviderWithoutOperationalAdapter(t *testing.T) {
 	}
 }
 
+func TestNewGenericGen3RejectsUnsupportedAuthentication(t *testing.T) {
+	for _, auth := range []string{"auto", "none", "basic", "google-adc", "provider-helper:other"} {
+		t.Run(auth, func(t *testing.T) {
+			cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+				"gen3": {Generic: &config.GenericRemote{
+					Endpoint: "https://gen3.example", Provider: "gen3", Auth: auth,
+					Scope: "program/project", Credential: "profile:stored",
+				}},
+			}}
+			if _, err := New(cfg, "gen3", drslog.GetLogger()); err == nil {
+				t.Fatalf("expected Gen3 authentication method %q to fail explicitly", auth)
+			}
+		})
+	}
+}
+
 func TestLocalClientResolvesBucketScopeMappings(t *testing.T) {
 	setupTestRepo(t)
 

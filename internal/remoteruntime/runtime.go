@@ -73,11 +73,16 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 		case "terra":
 			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
 		case "gen3":
-			return gen3ClientWithCredential(string(remote), x.Generic.Credential, config.Gen3Remote{
-				Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(),
-				ProjectID: x.Generic.GetProjectId(), Bucket: x.Generic.GetBucketName(),
-				StoragePrefix: x.Generic.GetStoragePrefix(),
-			}, logger)
+			switch x.Generic.Auth {
+			case "bearer", "provider-helper", "provider-helper:gen3-profile":
+				return gen3ClientWithCredential(string(remote), x.Generic.Credential, config.Gen3Remote{
+					Endpoint: x.Generic.Endpoint, Organization: x.Generic.GetOrganization(),
+					ProjectID: x.Generic.GetProjectId(), Bucket: x.Generic.GetBucketName(),
+					StoragePrefix: x.Generic.GetStoragePrefix(),
+				}, logger)
+			default:
+				return nil, fmt.Errorf("authentication method %q is not supported by the Gen3 remote adapter", x.Generic.Auth)
+			}
 		case "ga4gh", "auto", "cgc", "synapse":
 			return nil, fmt.Errorf("provider %q does not yet have an operational remote adapter", x.Generic.Provider)
 		default:

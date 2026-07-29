@@ -55,6 +55,9 @@ func runUnified(cmd *cobra.Command, args []string) error {
 	if !validAuth(auth) {
 		return fmt.Errorf("unsupported authentication method %q", auth)
 	}
+	if err := validateProviderAuth(provider, auth); err != nil {
+		return err
+	}
 	u, err := url.ParseRequestURI(strings.TrimSpace(endpoint))
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 		return fmt.Errorf("endpoint must be an HTTPS URL without credentials, or a built-in alias")
@@ -130,6 +133,15 @@ func validChoice(v string, choices ...string) bool {
 }
 func validAuth(v string) bool {
 	return validChoice(v, "auto", "none", "bearer", "basic", "google-adc", "provider-helper") || strings.HasPrefix(v, "provider-helper:")
+}
+func validateProviderAuth(provider, auth string) error {
+	if provider != "gen3" {
+		return nil
+	}
+	if validChoice(auth, "bearer", "provider-helper", "provider-helper:gen3-profile") {
+		return nil
+	}
+	return fmt.Errorf("authentication method %q is not supported by the Gen3 remote adapter; use bearer or provider-helper:gen3-profile", auth)
 }
 func validCredentialSource(v string) bool {
 	if v == "stdin" {

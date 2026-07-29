@@ -53,7 +53,7 @@ Reference proof of concept · July 2026
 
 | User A | Git | User B | AnVIL |
 |---|---|---|---|
-| Add references with ADC-authorized metadata validation | Commit canonical DRS URI, size, and checksum | Clone and authenticate with an independent Google identity | Hydrate from a fresh authorized URL and verify bytes |
+| Add references with ADC-authorized metadata validation | Commit canonical DRS URI, size, and checksum | Clone, configure the Terra remote, and authenticate independently | Hydrate from a fresh authorized URL and verify bytes |
 
 <div class="columns3">
 <div class="card"><h3>0 payload bytes</h3><p>committed to Git</p></div>
@@ -93,7 +93,7 @@ git drs add-ref --remote anvil \
 git drs add-ref --remote anvil \
   --manifest references.tsv --dry-run
 
-git add .git-drs/ .gitattributes data/
+git add .gitattributes data/
 git commit -m "Add AnVIL data references"
 git push
 ```
@@ -105,7 +105,7 @@ git push
 - Canonical DRS URI pointers
 - Paths and Git history
 - `.gitattributes`
-- Allowlisted, non-secret remote configuration
+- Only portable pointer-management state
 
 ### Never published
 
@@ -117,7 +117,7 @@ git push
 
 ---
 
-## A clean clone is enough
+## A clean clone plus explicit remote setup
 
 <div class="columns">
 <div>
@@ -127,6 +127,9 @@ gcloud auth application-default login
 
 git clone <git-repository>
 cd <repository>
+
+# .git/config is not cloned; recreate public remote settings.
+git drs remote add anvil terra --checkout hydrate
 
 # Hydrate every authorized reference
 git drs pull
@@ -141,8 +144,8 @@ git drs pull -I "data/*.cram"
 
 | Stage | Action |
 |---|---|
-| **Git** | Clone pointer and safe public config |
-| **User B** | Supply ADC; choose all or include pattern |
+| **Git** | Clone pointer and `.gitattributes` |
+| **User B** | Configure remote; supply ADC; choose paths |
 | **Resolver** | Fetch current metadata and fresh access |
 | **Cache** | Download, verify, atomically promote |
 | **Worktree** | Hydrate only after validation |
@@ -179,7 +182,7 @@ bash /tmp/add-anvil-refs.sh
 ### 2. Commit, hydrate, and publish
 
 ```bash
-git add .git-drs/ .gitattributes '*.tsv'
+git add .gitattributes '*.tsv'
 git commit -m "Add references to AnVIL data"
 
 # Materialize only TSVs locally.
@@ -195,7 +198,7 @@ git push -u origin main
 </div>
 </div>
 
-> **Result:** the worktree contains hydrated TSV data; GitHub contains only DRS pointers and safe public configuration.
+> **Result:** the worktree contains hydrated TSV data; GitHub contains only DRS pointers and `.gitattributes`. Every clone must configure its own Terra remote.
 
 ---
 
@@ -223,7 +226,7 @@ The DRS URI stays canonical. A checksum describes content; it does not identify 
 git drs remote add anvil terra --checkout hydrate
 ```
 
-Remote metadata has one authoritative representation in `.git/config`; credentials remain in the provider store.
+Remote metadata lives only in clone-local `.git/config`; every clone must recreate it. Credentials remain in the ADC provider store.
 </div>
 </div>
 
@@ -268,12 +271,12 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 <!-- _class: small -->
 
-## Good component coverage; one decisive gap
+## Component status: implemented, partial, and missing
 
 <div class="columns3">
-<div class="card"><span class="tag">IMPLEMENTED</span><h3>Focused coverage</h3><ul><li>Resolver contract and errors</li><li>Terra remote and safe config</li><li>Canonical pointer/cache key</li><li>Terra ping and push refusal</li></ul></div>
-<div class="card"><span class="tag">PARTIAL</span><h3>Workflow coverage</h3><ul><li>Manifest validation and dry run</li><li>Pull size/SHA256 checks</li><li>Selective hydration</li><li>Cache reuse behavior</li></ul></div>
-<div class="card"><span class="tag">MISSING</span><h3>POC acceptance</h3><ul><li>Independent User A/User B state</li><li>Real or contract-faithful AnVIL</li><li>Expired URL and retry journey</li><li>Authorization leak audit</li></ul></div>
+<div class="card"><span class="tag">IMPLEMENTED</span><h3>Focused coverage</h3><ul><li>ADC-backed resolver contract</li><li>Canonical pointer and cache key</li><li>Atomic size/SHA256 validation</li><li>Terra ping and push refusal</li></ul></div>
+<div class="card"><span class="tag">PARTIAL</span><h3>Workflow coverage</h3><ul><li>Manifest validation is sequential</li><li>Selective pull is covered in isolation</li><li>Cache reuse is per clone</li><li>Remote setup is clone-local</li></ul></div>
+<div class="card"><span class="tag">MISSING</span><h3>POC acceptance</h3><ul><li>Independent User A/User B journey</li><li>Production AnVIL contract proof</li><li>Expired-URL retry and concurrency</li><li>Denied-user and leak audit</li></ul></div>
 </div>
 
 | Arrange | Act | Assert |
@@ -301,11 +304,11 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 ### Still incomplete
 
-- Compact AnVIL IDs still require the trusted Terra resolver.
-- Service-info does not discover auth, provider, or capabilities.
-- Remote setup retains provider-specific command shapes.
-- Downloads lack bounded concurrency, retry, cancellation, and expired-URL re-resolution.
-- Production and independent two-user acceptance remain unverified.
+- Every fresh clone must manually recreate the Terra remote in `.git/config`.
+- The production endpoint, OAuth scope, and object/access contracts are not certified end to end.
+- Manifest resolution and downloads lack bounded concurrency and retry.
+- An expired download URL is not re-resolved after an HTTP failure.
+- Independent two-user, denied-user, and credential-leak acceptance remain unverified.
 </div>
 </div>
 
@@ -319,8 +322,8 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 <div class="columns3">
 <div class="card"><span class="tag">P0 · VERIFY</span><h3>Prove production fit</h3><ul><li>Confirm endpoint and OAuth scopes</li><li>Certify object/access contracts</li><li>Test slash and compact DRS IDs</li><li>Run clean two-user clone/pull</li><li>Audit logs and history</li></ul></div>
-<div class="card"><span class="tag">P1 · HARDEN</span><h3>Make it resilient</h3><ul><li>Trusted authority routing</li><li>Persist auth discovery</li><li>Expired-URL re-resolution</li><li>Bounded retry and concurrency</li><li>Remote diagnostics and CI</li></ul></div>
-<div class="card"><span class="tag">P2 · GENERALIZE</span><h3>Keep DRS composable</h3><ul><li>Unify `remote add`</li><li>Resolver/auth interfaces</li><li>CGC and Synapse fixtures</li><li>Keep publishing provider-specific</li><li>Defer mutation and copying</li></ul></div>
+<div class="card"><span class="tag">P1 · HARDEN</span><h3>Make it resilient</h3><ul><li>Safe clone setup mechanism</li><li>Expired-URL re-resolution</li><li>Bounded retry and concurrency</li><li>Cancellation and diagnostics</li><li>Clean-environment CI</li></ul></div>
+<div class="card"><span class="tag">P2 · GENERALIZE</span><h3>Keep DRS composable</h3><ul><li>Provider-neutral resolver contract</li><li>CGC and Synapse fixtures</li><li>Capability discovery</li><li>Keep publishing provider-specific</li><li>Defer mutation and copying</li></ul></div>
 </div>
 
 ---
@@ -329,10 +332,10 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 1. Which authoritative AnVIL resolver contract, endpoint, and OAuth scopes will we certify?
 2. What stable test objects cover checksummed, non-checksummed, large, and denied cases?
-3. Is the pointer extension compatible with every parser that must read it?
-4. What is the supported override policy for tracked versus local remote configuration?
+3. Is the DRS-URI pointer extension compatible with every parser that must read it?
+4. Should consumers always run `remote add`, or may a tracked, non-secret bootstrap configure `.git/config`?
 5. Who owns the independent-user acceptance environment and compatibility matrix?
 
 ### Questions?
 
-The maintained design source is [`docs/anvil-terra-poc.md`](anvil-terra-poc.md).
+Detailed design and acceptance criteria are in [`docs/anvil-terra-poc.md`](anvil-terra-poc.md).

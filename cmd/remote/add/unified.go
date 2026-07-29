@@ -49,6 +49,9 @@ func runUnified(cmd *cobra.Command, args []string) error {
 	if !validChoice(provider, "auto", "ga4gh", "gen3", "terra", "cgc", "synapse") {
 		return fmt.Errorf("unsupported provider %q", provider)
 	}
+	if provider == "auto" {
+		return fmt.Errorf("cannot determine provider for endpoint %q; specify --provider", endpoint)
+	}
 	if !validAuth(auth) {
 		return fmt.Errorf("unsupported authentication method %q", auth)
 	}

@@ -63,6 +63,8 @@ are `--scope`, `--auth`, `--provider`, `--storage`, and `--checkout`. Checkout
 mode is `pointers` or `hydrate`.
 
 Provider values are `auto`, `ga4gh`, `gen3`, `terra`, `cgc`, and `synapse`.
+Built-in aliases resolve `auto` to their catalog provider; a raw HTTPS endpoint
+must specify a concrete `--provider` before any repository state is modified.
 Authentication values are `auto`, `none`, `bearer`, `basic`, `google-adc`,
 `provider-helper`, or `provider-helper:<name>`. Presets are
 expanded once and the resolved endpoint, provider, authentication method, and

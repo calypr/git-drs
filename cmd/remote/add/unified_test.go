@@ -2,6 +2,7 @@ package add
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -36,6 +37,7 @@ func TestUnifiedAddDerivesURLNameAndRejectsHTTP(t *testing.T) {
 	if err := runUnified(Cmd, []string{"http://drs.example.org"}); err == nil {
 		t.Fatal("expected HTTP rejection")
 	}
+	providerFlag = "ga4gh"
 	if err := runUnified(Cmd, []string{"https://drs.example.org"}); err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +47,26 @@ func TestUnifiedAddDerivesURLNameAndRejectsHTTP(t *testing.T) {
 	}
 	if cfg.Remotes["drs.example.org"].Generic == nil {
 		t.Fatal("derived remote not persisted")
+	}
+}
+
+func TestUnifiedAddRejectsURLWithoutProviderBeforeInitializing(t *testing.T) {
+	repo := testutils.SetupTestGitRepo(t)
+	resetUnifiedFlags(t)
+
+	err := runUnified(Cmd, []string{"https://drs.example.org"})
+	if err == nil {
+		t.Fatal("expected provider auto rejection")
+	}
+	if _, statErr := os.Stat(repo + "/.git-drs"); !os.IsNotExist(statErr) {
+		t.Fatalf("remote validation modified repository state: .git-drs stat error = %v", statErr)
+	}
+	cfg, loadErr := config.LoadConfig()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("remote validation persisted configuration: %+v", cfg.Remotes)
 	}
 }
 

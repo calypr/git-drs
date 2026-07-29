@@ -4,7 +4,9 @@ The [`Publish documentation`](../.github/workflows/pages.yaml) workflow builds
 the end-user documentation selected in `mkdocs.yml` and renders the
 [`anvil-terra-poc-presentation.md`](anvil-terra-poc-presentation.md) Marp deck.
 It publishes both outputs as one GitHub Pages site. Do not edit or commit the
-generated HTML.
+generated HTML. The Pages build explicitly selects Marp's `bespoke` template;
+that template includes the browser runtime used for slide paging and keyboard
+navigation, unlike the non-interactive `bare` template.
 
 ## Enable GitHub Pages
 
@@ -75,6 +77,7 @@ cp docs/*.png .pages-docs/
 npx --yes @marp-team/marp-cli@4.2.3 \
   docs/anvil-terra-poc-presentation.md \
   --html \
+  --template bespoke \
   --output .pages-docs/anvil-terra-poc-presentation.html
 mkdocs build --strict
 python -m http.server --directory _site 8000

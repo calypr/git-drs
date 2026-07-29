@@ -54,6 +54,7 @@ jobs:
           npx --yes @marp-team/marp-cli@4.2.3 \
             docs/anvil-terra-poc-presentation.md \
             --html \
+            --template bespoke \
             --output .pages-docs/anvil-terra-poc-presentation.html
           mkdocs build --strict
 

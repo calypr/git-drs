@@ -150,8 +150,29 @@ func TestDownloadToCacheRejectsNonHTTPAccessURLFromHTTPSMethod(t *testing.T) {
 	}
 }
 
+func TestDownloadToCacheAcceptsHTTPAccessWithOmittedMethodType(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	r := &staticResolver{
+		object: &ResolvedObject{
+			Size:          int64(len(body)),
+			AccessMethods: []AccessMethod{{AccessID: "access-1"}},
+		},
+		access: &ResolvedAccess{URL: download.URL},
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
 type staticResolver struct {
 	object *ResolvedObject
+	access *ResolvedAccess
 }
 
 func (r *staticResolver) GetObject(context.Context, string) (*ResolvedObject, error) {
@@ -159,6 +180,9 @@ func (r *staticResolver) GetObject(context.Context, string) (*ResolvedObject, er
 }
 
 func (r *staticResolver) GetAccess(context.Context, string, string) (*ResolvedAccess, error) {
+	if r.access != nil {
+		return r.access, nil
+	}
 	return nil, errors.New("unexpected GetAccess call")
 }
 

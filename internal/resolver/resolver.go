@@ -42,13 +42,9 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	var access *ResolvedAccess
 	for _, method := range obj.AccessMethods {
 		// AnVIL objects commonly advertise a Google Storage (gs://) method
-		// before their HTTPS method. The downloader uses net/http, so selecting
-		// the first non-empty URL can otherwise fail with an opaque transport
-		// error instead of trying the usable signed HTTPS URL.
-		methodType := strings.ToLower(strings.TrimSpace(method.Type))
-		if methodType != "http" && methodType != "https" {
-			continue
-		}
+		// before their HTTPS method. Select by the resolved URL scheme rather
+		// than the optional method type: older and test resolvers may omit type,
+		// while the actual URL is authoritative for the net/http downloader.
 		switch {
 		case method.AccessURL != nil && strings.TrimSpace(method.AccessURL.URL) != "":
 			if isHTTPAccessURL(method.AccessURL.URL) {

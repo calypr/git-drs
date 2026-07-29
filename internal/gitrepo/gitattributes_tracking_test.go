@@ -3,6 +3,7 @@ package gitrepo
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,40 @@ func TestTrackPatternsDryRunDoesNotWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".gitattributes")); !os.IsNotExist(err) {
 		t.Fatalf("expected no .gitattributes write in dry-run, stat err=%v", err)
+	}
+}
+
+func TestTrackReadOnlyWritesRootAttributesFromSubdirectory(t *testing.T) {
+	repo := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repo
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	subdir := filepath.Join(repo, "nested")
+	if err := os.Mkdir(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldwd := mustChdirTrackTest(t, subdir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	const path = "data/pointer"
+	if _, err := TrackReadOnly(context.Background(), path); err != nil {
+		t.Fatalf("TrackReadOnly: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(subdir, ".gitattributes")); !os.IsNotExist(err) {
+		t.Fatalf("expected no nested .gitattributes, stat err=%v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(repo, ".gitattributes"))
+	if err != nil {
+		t.Fatalf("read root .gitattributes: %v", err)
+	}
+	got := string(contents)
+	if !strings.Contains(got, "data/pointer filter=drs diff=drs merge=drs -text") {
+		t.Fatalf("root .gitattributes does not track pointer: %q", got)
+	}
+	if !strings.Contains(got, "data/pointer drs=ro") {
+		t.Fatalf("root .gitattributes does not mark pointer read-only: %q", got)
 	}
 }
 

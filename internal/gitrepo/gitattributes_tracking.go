@@ -12,10 +12,14 @@ import (
 )
 
 func TrackPatterns(_ context.Context, patterns []string, verbose bool, dryRun bool) (string, error) {
+	return trackPatternsAtPath(patterns, verbose, dryRun, ".gitattributes")
+}
+
+func trackPatternsAtPath(patterns []string, verbose bool, dryRun bool, attributesPath string) (string, error) {
 	changedAttribLines := make(map[string]string, len(patterns))
 	var output strings.Builder
 
-	attribContents, err := readLocalGitAttributes()
+	attribContents, err := readGitAttributes(attributesPath)
 	if err != nil {
 		return "", fmt.Errorf("git drs track failed: %w", err)
 	}
@@ -43,7 +47,7 @@ func TrackPatterns(_ context.Context, patterns []string, verbose bool, dryRun bo
 	}
 
 	if !dryRun {
-		if err := writeMergedGitAttributes(attribContents, changedAttribLines, false); err != nil {
+		if err := writeMergedGitAttributes(attributesPath, attribContents, changedAttribLines, false); err != nil {
 			return "", fmt.Errorf("git drs track failed: %w", err)
 		}
 	}
@@ -143,16 +147,16 @@ func UntrackPatterns(_ context.Context, patterns []string, _ bool, dryRun bool) 
 }
 
 func TrackReadOnly(ctx context.Context, path string) (bool, error) {
-	if _, err := TrackPatterns(ctx, []string{path}, false, false); err != nil {
-		return false, fmt.Errorf("git lfs track failed: %w", err)
-	}
-
 	repoRoot, err := GitTopLevel()
 	if err != nil {
 		return false, err
 	}
 
 	attrPath := filepath.Join(repoRoot, ".gitattributes")
+	if _, err := trackPatternsAtPath([]string{path}, false, false, attrPath); err != nil {
+		return false, fmt.Errorf("git lfs track failed: %w", err)
+	}
+
 	changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{path})
 	if err != nil {
 		return false, err
@@ -162,7 +166,11 @@ func TrackReadOnly(ctx context.Context, path string) (bool, error) {
 }
 
 func readLocalGitAttributes() ([]byte, error) {
-	data, err := os.ReadFile(".gitattributes")
+	return readGitAttributes(".gitattributes")
+}
+
+func readGitAttributes(attributesPath string) ([]byte, error) {
+	data, err := os.ReadFile(attributesPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -189,7 +197,7 @@ func parseKnownLFSPatterns(content []byte) map[string]string {
 	return known
 }
 
-func writeMergedGitAttributes(existing []byte, changed map[string]string, dryRun bool) error {
+func writeMergedGitAttributes(attributesPath string, existing []byte, changed map[string]string, dryRun bool) error {
 	if dryRun {
 		return nil
 	}
@@ -223,7 +231,7 @@ func writeMergedGitAttributes(existing []byte, changed map[string]string, dryRun
 	if content != "" {
 		content += "\n"
 	}
-	if err := os.WriteFile(".gitattributes", []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(attributesPath, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write .gitattributes: %w", err)
 	}
 	return nil

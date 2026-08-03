@@ -63,7 +63,7 @@ var Cmd = &cobra.Command{
 		if strings.TrimSpace(targetRemote) == "" {
 			return fmt.Errorf("target remote is required")
 		}
-		targetIsLocal := isLocalSentinel(targetRemote)
+		targetIsLocal := isLocalSentinel(cfg, targetRemote)
 		dstRemoteName := config.Remote(strings.TrimSpace(targetRemote))
 
 		org, proj, err := parseScopeArg(scopeArg)
@@ -86,7 +86,7 @@ var Cmd = &cobra.Command{
 			sourceRecords []copyRecord
 			sourceLabel   string
 		)
-		if isLocalSentinel(sourceRemote) {
+		if isLocalSentinel(cfg, sourceRemote) {
 			if targetIsLocal {
 				return fmt.Errorf("source and target cannot both be local")
 			}
@@ -175,8 +175,19 @@ func init() {
 	Cmd.Flags().BoolVar(&overwriteExisting, "overwrite-existing", false, "replace existing target records with source metadata (requires a Syfon target supporting bulk overwrite)")
 }
 
-func isLocalSentinel(remote string) bool {
-	return strings.EqualFold(strings.TrimSpace(remote), "local")
+func isLocalSentinel(cfg *config.Config, remote string) bool {
+	remote = strings.TrimSpace(remote)
+	if strings.EqualFold(remote, "@local") {
+		return true
+	}
+	if !strings.EqualFold(remote, "local") {
+		return false
+	}
+	if cfg == nil {
+		return true
+	}
+	_, configured := cfg.Remotes[config.Remote(remote)]
+	return !configured
 }
 
 func configuredRemoteList(cfg *config.Config) string {

@@ -2,8 +2,12 @@ package copyrecords
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,6 +40,7 @@ func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOpti
 }
 
 func (f *fakeIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {
+	f.bulkDocsReq = append(f.bulkDocsReq, dids)
 	return f.bulkDocsResp, nil
 }
 
@@ -500,8 +505,36 @@ func TestLoadLocalSourceRecords_MissingLocalObjectFailsClearly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if got := err.Error(); !strings.Contains(got, "tracked oid bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb for path data/a.bin is missing local DRS metadata") {
+	if got := err.Error(); !strings.Contains(got, "tracked oid bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb for path data/a.bin is missing local DRS metadata and no matching local payload was found") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadLocalSourceRecords_ReconstructsMissingMetadataFromPayload(t *testing.T) {
+	oldTracked := loadTrackedLfsFiles
+	oldRead := readLocalDRSObject
+	t.Cleanup(func() {
+		loadTrackedLfsFiles = oldTracked
+		readLocalDRSObject = oldRead
+	})
+
+	payload := []byte("local payload")
+	oid := fmt.Sprintf("%x", sha256.Sum256(payload))
+	path := filepath.Join(t.TempDir(), "data.bin")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{path: {Name: path, Oid: "sha256:" + oid, Size: int64(len(payload))}}, nil
+	}
+	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) { return nil, errors.New("not found") }
+
+	records, err := loadLocalSourceRecords("Org", "Proj")
+	if err != nil {
+		t.Fatalf("loadLocalSourceRecords error: %v", err)
+	}
+	if len(records) != 1 || records[0].Did == "" || records[0].Hashes == nil || (*records[0].Hashes)["sha256"] != oid || records[0].Name == nil || *records[0].Name != "data.bin" {
+		t.Fatalf("unexpected reconstructed record: %+v", records)
 	}
 }
 
@@ -627,6 +660,19 @@ func TestCmdRunE_RejectsLocalSourceAndTarget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "source and target cannot both be local") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLocalSentinel_DoesNotShadowRemoteNamedLocal(t *testing.T) {
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"local": {Local: &config.LocalRemote{BaseURL: "http://example.test"}},
+	}}
+
+	if isLocalSentinel(cfg, "local") {
+		t.Fatal("configured remote named local must not be treated as repo-local")
+	}
+	if !isLocalSentinel(cfg, "@local") {
+		t.Fatal("@local must always mean repo-local")
 	}
 }
 

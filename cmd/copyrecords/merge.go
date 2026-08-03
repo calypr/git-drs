@@ -20,10 +20,9 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 	seenHashQueries := make(map[string]struct{}, len(source))
 	for _, rec := range source {
 		did := strings.TrimSpace(rec.Did)
-		if did == "" {
-			continue
+		if did != "" {
+			dids = append(dids, did)
 		}
-		dids = append(dids, did)
 		if sha := copyRecordSHA256(rec); sha != "" {
 			query := "sha256:" + sha
 			if _, ok := seenHashQueries[query]; !ok {
@@ -33,9 +32,13 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 		}
 	}
 
-	existing, err := dst.BulkDocuments(ctx, dids)
-	if err != nil {
-		return nil, stats, fmt.Errorf("target bulk documents failed: %w", err)
+	existing := []copyRecord{}
+	if len(dids) > 0 {
+		var err error
+		existing, err = dst.BulkDocuments(ctx, dids)
+		if err != nil {
+			return nil, stats, fmt.Errorf("target bulk documents failed: %w", err)
+		}
 	}
 	existingByDID := make(map[string]copyRecord, len(existing))
 	for _, rec := range existing {
@@ -98,11 +101,10 @@ func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, ov
 
 func targetRecordForSource(src copyRecord, existingByDID map[string]copyRecord, existingByChecksum map[string][]copyRecord) (copyRecord, bool, error) {
 	did := strings.TrimSpace(src.Did)
-	if did == "" {
-		return copyRecord{}, false, nil
-	}
-	if dstRec, ok := existingByDID[did]; ok {
-		return dstRec, true, nil
+	if did != "" {
+		if dstRec, ok := existingByDID[did]; ok {
+			return dstRec, true, nil
+		}
 	}
 
 	sha := copyRecordSHA256(src)

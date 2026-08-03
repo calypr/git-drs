@@ -254,6 +254,7 @@ Copy Syfon metadata records from one configured remote to another for one scope.
 ```bash
 git drs copy-records prod HTAN_INT/BForePC
 git drs copy-records dev prod HTAN_INT/BForePC
+git drs copy-records @local prod HTAN_INT/BForePC
 ```
 
 Behavior:
@@ -265,6 +266,8 @@ Behavior:
   - first is source
   - second is target
 - copies metadata only, not object bytes
+- `@local` explicitly means the current repository's local records
+- the legacy `local` alias means repository-local only when no configured remote is named `local`
 
 Merge behavior for existing target records:
 

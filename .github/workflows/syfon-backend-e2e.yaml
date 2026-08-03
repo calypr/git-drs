@@ -2,7 +2,6 @@ name: Syfon Backend E2E
 
 on:
   pull_request:
-    branches: [ main, master, develop ]
   workflow_dispatch:
 
 concurrency:
@@ -34,43 +33,39 @@ jobs:
         with:
           go-version-file: git-drs/go.mod
 
-      - name: Resolve Syfon ref from go.mod
+      - name: Resolve Syfon ref from pinned module version
         id: syfon-ref
         working-directory: git-drs
         shell: bash
         run: |
-          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon 2>/dev/null || true)"
+          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon)"
           if [[ -z "$version" || "$version" == "<nil>" ]]; then
-            version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon/client)"
+            echo "error: could not resolve pinned syfon version" >&2
+            exit 1
           fi
+
           ref="$version"
-          if [[ "$version" =~ -([0-9a-f]{12,})$ ]]; then
-            short_ref="${BASH_REMATCH[1]}"
-            ref="$(git ls-remote https://github.com/calypr/syfon.git "refs/heads/*" "refs/tags/*" |
-              awk -v short="$short_ref" 'index($1, short) == 1 && ref == "" { ref = $1 } END { print ref }')"
-            if [[ -z "$ref" ]]; then
-              echo "Could not resolve Syfon pseudo-version commit $short_ref to a full Git SHA" >&2
-              exit 1
-            fi
+          if [[ "$version" =~ -([0-9a-f]{12,40})$ ]]; then
+            ref="${BASH_REMATCH[1]}"
           fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out calypr/syfon ref $ref"
+          echo "Using Syfon module version $version; checking out local ref $ref"
 
       - name: Check out Syfon
         uses: actions/checkout@v4
         with:
           repository: calypr/syfon
-          ref: ${{ steps.syfon-ref.outputs.ref }}
           path: syfon
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: Check out data-client
-        uses: actions/checkout@v4
-        with:
-          repository: calypr/data-client
-          path: data-client
-          fetch-depth: 1
+      - name: Select pinned Syfon commit
+        working-directory: syfon
+        shell: bash
+        run: |
+          git checkout --detach "${{ steps.syfon-ref.outputs.ref }}"
+          git rev-parse --verify HEAD
 
       - name: Install test prerequisites
         working-directory: git-drs

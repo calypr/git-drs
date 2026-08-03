@@ -3,7 +3,6 @@ package query
 import (
 	"testing"
 
-	"github.com/calypr/git-drs/internal/common"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
@@ -27,10 +26,10 @@ func TestChecksumTypeForString(t *testing.T) {
 
 func TestPrintDRSObject(t *testing.T) {
 	obj := drsapi.DrsObject{Id: "test-id"}
-	if err := common.PrintDRSObject(obj, false); err != nil {
-		t.Fatalf("common.PrintDRSObject failed: %v", err)
+	if err := printDRSObject(obj, false); err != nil {
+		t.Fatalf("printDRSObject failed: %v", err)
 	}
-	if err := common.PrintDRSObject(obj, true); err != nil {
-		t.Fatalf("common.PrintDRSObject pretty failed: %v", err)
+	if err := printDRSObject(obj, true); err != nil {
+		t.Fatalf("printDRSObject pretty failed: %v", err)
 	}
 }

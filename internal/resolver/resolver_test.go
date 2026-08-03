@@ -1,0 +1,285 @@
+package resolver
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestAnVILResolverContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/object-1":
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"checksums":[{"type":"sha256","checksum":"abcd"}],"access_methods":[{"type":"https","access_id":"a1"}]}`))
+		case "/ga4gh/drs/v1/objects/object-1/access/a1":
+			_, _ = w.Write([]byte(`{"url":"https://storage.example/signed"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	r, err := NewAnVILWithClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := r.GetObject(context.Background(), "DRS://AUTHORITY.EXAMPLE/object-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obj.DRSURI != "drs://authority.example/object-1" || obj.Size != 4 || obj.AccessMethods[0].AccessID != "a1" {
+		t.Fatalf("unexpected object: %+v", obj)
+	}
+	access, err := r.GetAccess(context.Background(), obj.DRSURI, "a1")
+	if err != nil || access.URL != "https://storage.example/signed" {
+		t.Fatalf("unexpected access result: %+v, %v", access, err)
+	}
+}
+
+func TestDownloadToCacheUsesAccessURLHeaders(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Values("X-Provider-Token"); len(got) != 2 || got[0] != "first" || got[1] != "second:part" {
+			t.Errorf("unexpected provider headers: %q", got)
+			http.Error(w, "missing headers", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/object-1":
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"https","access_id":"a1"}]}`))
+		case "/ga4gh/drs/v1/objects/object-1/access/a1":
+			_, _ = fmt.Fprintf(w, `{"url":%q,"headers":["X-Provider-Token: first","X-Provider-Token: second:part"]}`, download.URL)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+func TestDownloadToCacheUsesInlineAccessURL(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Inline-Token"); got != "inline-secret" {
+			t.Errorf("unexpected inline access header: %q", got)
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+			t.Errorf("inline access URL should not require an access endpoint request: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"object-1","size":4,"access_methods":[{"type":"https","access_url":{"url":%q,"headers":["X-Inline-Token: inline-secret"]}}]}`, download.URL)
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/object-1":
+			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"gs","access_url":{"url":"gs://anvil-bucket/object-1"}},{"type":"https","access_id":"a2"}]}`))
+		case "/ga4gh/drs/v1/objects/object-1/access/a2":
+			_, _ = fmt.Fprintf(w, `{"url":%q}`, download.URL)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer resolverServer.Close()
+
+	r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+func TestDownloadToCacheRejectsNonHTTPAccessURLFromHTTPSMethod(t *testing.T) {
+	r := &staticResolver{object: &ResolvedObject{
+		Size: 4,
+		AccessMethods: []AccessMethod{{
+			Type:      "https",
+			AccessURL: &ResolvedAccess{URL: "gs://anvil-bucket/object-1"},
+		}},
+	}}
+	err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", filepath.Join(t.TempDir(), "cache", "object-1"))
+	if err == nil || !strings.Contains(err.Error(), "no supported HTTP(S) access method") {
+		t.Fatalf("expected unsupported access method error, got %v", err)
+	}
+}
+
+func TestDownloadToCacheAcceptsHTTPAccessWithOmittedMethodType(t *testing.T) {
+	const body = "data"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	defer download.Close()
+
+	r := &staticResolver{
+		object: &ResolvedObject{
+			Size:          int64(len(body)),
+			AccessMethods: []AccessMethod{{AccessID: "access-1"}},
+		},
+		access: &ResolvedAccess{URL: download.URL},
+	}
+	destination := filepath.Join(t.TempDir(), "cache", "object-1")
+	if err := DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination); err != nil {
+		t.Fatalf("DownloadToCache returned error: %v", err)
+	}
+}
+
+type staticResolver struct {
+	object *ResolvedObject
+	access *ResolvedAccess
+}
+
+func (r *staticResolver) GetObject(context.Context, string) (*ResolvedObject, error) {
+	return r.object, nil
+}
+
+func (r *staticResolver) GetAccess(context.Context, string, string) (*ResolvedAccess, error) {
+	if r.access != nil {
+		return r.access, nil
+	}
+	return nil, errors.New("unexpected GetAccess call")
+}
+
+func TestDownloadToCacheValidatesSHA256BeforePromotion(t *testing.T) {
+	const body = "data"
+	correctSum := sha256.Sum256([]byte(body))
+	incorrectSum := sha256.Sum256([]byte("oops")) // Same length as body.
+
+	for _, test := range []struct {
+		name        string
+		checksum    string
+		wantErr     bool
+		wantContent string
+	}{
+		{name: "matching", checksum: hex.EncodeToString(correctSum[:]), wantContent: body},
+		{name: "mismatching same-size payload", checksum: hex.EncodeToString(incorrectSum[:]), wantErr: true, wantContent: "previous"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			defer download.Close()
+
+			resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = fmt.Fprintf(w, `{"id":"object-1","size":4,"checksums":[{"type":"sha256","checksum":%q}],"access_methods":[{"type":"https","access_url":{"url":%q}}]}`, test.checksum, download.URL)
+			}))
+			defer resolverServer.Close()
+
+			r, err := NewAnVILWithClient(resolverServer.URL, resolverServer.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			cacheDir := filepath.Join(t.TempDir(), "cache")
+			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			destination := filepath.Join(cacheDir, "object-1")
+			if err := os.WriteFile(destination, []byte("previous"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			err = DownloadToCache(context.Background(), r, "drs://example.org/object-1", destination)
+			if test.wantErr && (err == nil || !strings.Contains(err.Error(), "checksum mismatch")) {
+				t.Fatalf("expected checksum mismatch, got %v", err)
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("DownloadToCache returned error: %v", err)
+			}
+			content, readErr := os.ReadFile(destination)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(content) != test.wantContent {
+				t.Fatalf("cached content = %q, want %q", content, test.wantContent)
+			}
+			if temporary, globErr := filepath.Glob(filepath.Join(cacheDir, ".git-drs-download-*")); globErr != nil || len(temporary) != 0 {
+				t.Fatalf("temporary downloads remain after validation: %v (glob error: %v)", temporary, globErr)
+			}
+		})
+	}
+}
+
+func TestAnVILResolverAcceptsCompactDRSURI(t *testing.T) {
+	const compactURI = "drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/objects/v2_e68887be-c583-375a-a773-48771192c8fa" {
+			t.Fatalf("unexpected resolver path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"id":"v2_e68887be-c583-375a-a773-48771192c8fa","size":42}`))
+	}))
+	defer server.Close()
+
+	r, err := NewAnVILWithClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := r.GetObject(context.Background(), compactURI)
+	if err != nil {
+		t.Fatalf("compact DRS URI should be valid: %v", err)
+	}
+	if obj.DRSURI != compactURI || obj.ID != "v2_e68887be-c583-375a-a773-48771192c8fa" {
+		t.Fatalf("unexpected object: %+v", obj)
+	}
+}
+
+func TestAnVILResolverRedactsErrorBodiesAndClassifiesAuthorization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "Bearer secret signed=https://secret", http.StatusForbidden)
+	}))
+	defer server.Close()
+	r, _ := NewAnVILWithClient(server.URL, server.Client())
+	_, err := r.GetObject(context.Background(), "drs://example.org/object")
+	if !errors.Is(err, ErrUnauthorized) || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("expected redacted authorization error, got %v", err)
+	}
+}

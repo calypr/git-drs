@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
 func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
@@ -35,12 +37,13 @@ func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
 		t.Fatalf("mkdir oids: %v", err)
 	}
 
+	cache := &precommit_cache.Cache{Root: cacheRoot, PathsDir: pathsDir, OIDsDir: oidsDir}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.txt", now); err != nil {
+	if err := handleUpsert(context.Background(), cache, "data/file.txt", now); err != nil {
 		t.Fatalf("handleUpsert: %v", err)
 	}
 
-	pathEntry := pathEntryFile(pathsDir, "data/file.txt")
+	pathEntry := precommit_cache.PathEntryPath(cache, "data/file.txt")
 	if _, err := os.Stat(pathEntry); !os.IsNotExist(err) {
 		t.Fatalf("expected no cache entry for non-LFS file, got err=%v", err)
 	}
@@ -76,17 +79,18 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 		t.Fatalf("mkdir oids: %v", err)
 	}
 
+	cache := &precommit_cache.Cache{Root: cacheRoot, PathsDir: pathsDir, OIDsDir: oidsDir}
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := handleUpsert(context.Background(), pathsDir, oidsDir, "data/file.bin", now); err != nil {
+	if err := handleUpsert(context.Background(), cache, "data/file.bin", now); err != nil {
 		t.Fatalf("handleUpsert: %v", err)
 	}
 
-	pathEntry := pathEntryFile(pathsDir, "data/file.bin")
+	pathEntry := precommit_cache.PathEntryPath(cache, "data/file.bin")
 	pathData, err := os.ReadFile(pathEntry)
 	if err != nil {
 		t.Fatalf("read path entry: %v", err)
 	}
-	var pathCache PathEntry
+	var pathCache precommit_cache.PathEntry
 	if err := json.Unmarshal(pathData, &pathCache); err != nil {
 		t.Fatalf("unmarshal path entry: %v", err)
 	}
@@ -97,12 +101,12 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 		t.Fatalf("expected lfs oid sha256:deadbeef, got %q", pathCache.LFSOID)
 	}
 
-	oidEntry := oidEntryFile(oidsDir, "sha256:deadbeef")
+	oidEntry := precommit_cache.OIDEntryPath(cache, "sha256:deadbeef")
 	oidData, err := os.ReadFile(oidEntry)
 	if err != nil {
 		t.Fatalf("read oid entry: %v", err)
 	}
-	var oidCache OIDEntry
+	var oidCache precommit_cache.OIDEntry
 	if err := json.Unmarshal(oidData, &oidCache); err != nil {
 		t.Fatalf("unmarshal oid entry: %v", err)
 	}
@@ -111,6 +115,85 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	}
 	if len(oidCache.Paths) != 1 || oidCache.Paths[0] != "data/file.bin" {
 		t.Fatalf("expected oid paths to include data/file.bin, got %v", oidCache.Paths)
+	}
+}
+
+func TestCollectOversizedPlainGitStagedFiles(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	plainPath := filepath.Join(repo, "data", "large.bin")
+	if err := os.MkdirAll(filepath.Dir(plainPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(plainPath, []byte("plain oversized payload"), 0o644); err != nil {
+		t.Fatalf("write plain file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/large.bin")
+
+	pointerPath := filepath.Join(repo, "data", "pointer.bin")
+	lfsPointer := strings.Join([]string{
+		"version https://git-lfs.github.com/spec/v1",
+		"oid sha256:deadbeef",
+		"size 999",
+		"",
+	}, "\n")
+	if err := os.WriteFile(pointerPath, []byte(lfsPointer), 0o644); err != nil {
+		t.Fatalf("write pointer file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/pointer.bin")
+
+	changes, err := stagedChanges(context.Background())
+	if err != nil {
+		t.Fatalf("stagedChanges: %v", err)
+	}
+	files, err := collectOversizedPlainGitStagedFiles(context.Background(), changes, 1)
+	if err != nil {
+		t.Fatalf("collectOversizedPlainGitStagedFiles: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 oversized plain file, got %d: %+v", len(files), files)
+	}
+	if files[0].Path != "data/large.bin" {
+		t.Fatalf("unexpected oversized file path: %+v", files[0])
+	}
+}
+
+func TestRunAbortsWhenOversizedPlainGitCommitIsRejected(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := filepath.Join(repo, "data", "large.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("plain oversized payload"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/large.bin")
+
+	oldThreshold := directCommitWarningThresholdBytes
+	oldPrompt := confirmOversizedDirectGitCommit
+	t.Cleanup(func() {
+		directCommitWarningThresholdBytes = oldThreshold
+		confirmOversizedDirectGitCommit = oldPrompt
+	})
+	directCommitWarningThresholdBytes = 1
+	confirmOversizedDirectGitCommit = func(files []OversizedStagedFile) (bool, error) {
+		if len(files) != 1 || files[0].Path != "data/large.bin" {
+			t.Fatalf("unexpected prompt files: %+v", files)
+		}
+		return false, nil
+	}
+
+	err := run(context.Background())
+	if err == nil {
+		t.Fatal("expected run to abort when oversized file warning is rejected")
+	}
+	if !strings.Contains(err.Error(), "commit aborted") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

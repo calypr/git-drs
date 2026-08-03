@@ -3,11 +3,26 @@ package config
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
-
-	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/gitrepo"
 )
+
+func TestLoadConfigIgnoresFormerRepositoryYAMLPath(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git-drs", "config.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("former repository YAML path must not be loaded: %v", err)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("unexpected remotes loaded from former YAML path: %+v", cfg.Remotes)
+	}
+}
 
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
@@ -160,30 +175,6 @@ func TestConfig_FindRemote(t *testing.T) {
 	}
 }
 
-func TestRemote_Validation(t *testing.T) {
-	// IsValidRemoteType test
-	tests := []struct {
-		name    string
-		mode    string
-		isValid bool
-	}{
-		{"valid gen3", "gen3", true},
-		{"valid local", "local", true},
-		{"invalid", "foo", false},
-		{"empty", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := IsValidRemoteType(tt.mode)
-			valid := err == nil
-			if valid != tt.isValid {
-				t.Errorf("IsValidRemoteType(%q) = %v, want %v", tt.mode, valid, tt.isValid)
-			}
-		})
-	}
-}
-
 func TestConfig_MultipleRemotes(t *testing.T) {
 	cfg := &Config{
 		Remotes: make(map[Remote]RemoteSelect),
@@ -319,67 +310,37 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 	}
 }
 
-func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
-	setupTestRepo(t)
+func TestRemoveRemote_TerraCleansAuthAndMode(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	remoteName := Remote("anvil")
 
-	remoteName := Remote("origin")
 	_, err := UpdateRemote(remoteName, RemoteSelect{
-		Local: &LocalRemote{
-			BaseURL: "http://localhost:8080",
+		Terra: &TerraRemote{
+			Endpoint: "https://data.terra.bio",
+			Auth:     "google-adc",
+			Mode:     "read-only",
 		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateRemote failed: %v", err)
 	}
 
-	if err := gitrepo.SetRemoteBasicAuth("origin", "alice", "secret"); err != nil {
-		t.Fatalf("SetRemoteBasicAuth failed: %v", err)
-	}
-
-	cfg, err := LoadConfig()
+	cfg, err := RemoveRemote(remoteName)
 	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
+		t.Fatalf("RemoveRemote failed: %v", err)
 	}
-	logger := drslog.GetLogger()
-	gitCtx, err := cfg.GetRemoteClient(remoteName, logger)
-	if err != nil {
-		t.Fatalf("GetRemoteClient failed: %v", err)
-	}
-	if gitCtx == nil {
-		t.Fatalf("expected *GitContext, got nil")
-	}
-	if gitCtx.Client == nil {
-		t.Fatalf("expected client to be initialized, got nil")
-	}
-	// Basic auth is baked into the HTTP client during construction;
-	// the test verifies that GetRemoteClient completes without error when
-	// repo credentials are present, and that a usable GitContext is returned.
-}
-
-func TestLocalRemoteGetClientResolvesBucketScopeMappings(t *testing.T) {
-	setupTestRepo(t)
-
-	if err := gitrepo.SetBucketMapping("org-a", "", "mapped-bucket", "program-root"); err != nil {
-		t.Fatalf("SetBucketMapping org: %v", err)
-	}
-	if err := gitrepo.SetBucketMapping("org-a", "proj-1", "mapped-bucket", "project-subpath"); err != nil {
-		t.Fatalf("SetBucketMapping project: %v", err)
+	if _, ok := cfg.Remotes[remoteName]; ok {
+		t.Fatalf("removed Terra remote %q was recreated", remoteName)
 	}
 
-	remote := LocalRemote{
-		BaseURL:      "http://localhost:8080",
-		Organization: "org-a",
-		ProjectID:    "proj-1",
-		Bucket:       "configured-bucket",
-	}
-	gitCtx, err := remote.GetClient("origin", drslog.GetLogger())
-	if err != nil {
-		t.Fatalf("GetClient failed: %v", err)
-	}
-	if gitCtx.BucketName != "mapped-bucket" {
-		t.Fatalf("BucketName = %q, want mapped-bucket", gitCtx.BucketName)
-	}
-	if gitCtx.StoragePrefix != "program-root/project-subpath" {
-		t.Fatalf("StoragePrefix = %q, want program-root/project-subpath", gitCtx.StoragePrefix)
+	for _, key := range []string{
+		"drs.remote.anvil.auth",
+		"drs.remote.anvil.mode",
+	} {
+		cmd := exec.Command("git", "config", "--local", "--get", key)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("expected %s to be unset, got %q", key, string(output))
+		}
 	}
 }

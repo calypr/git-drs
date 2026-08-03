@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/google/uuid"
 )
@@ -53,21 +54,36 @@ func BuildWithPrefix(fileName string, checksum string, size int64, drsID string,
 	})
 }
 
-func ConvertToCandidate(obj *drsapi.DrsObject) drsapi.DrsObjectCandidate {
+func ConvertToInternalRecord(obj *drsapi.DrsObject, organization string, project string) internalapi.InternalRecord {
 	if obj == nil {
-		return drsapi.DrsObjectCandidate{}
+		return internalapi.InternalRecord{}
 	}
-	return drsapi.DrsObjectCandidate{
-		AccessMethods: obj.AccessMethods,
-		Aliases:       obj.Aliases,
-		Checksums:     obj.Checksums,
-		Contents:      obj.Contents,
-		Description:   obj.Description,
-		MimeType:      obj.MimeType,
-		Name:          obj.Name,
-		Size:          obj.Size,
-		Version:       obj.Version,
+	hashes := make(internalapi.HashInfo, len(obj.Checksums))
+	for _, checksum := range obj.Checksums {
+		typ := strings.TrimSpace(checksum.Type)
+		val := strings.TrimSpace(checksum.Checksum)
+		if typ == "" || val == "" {
+			continue
+		}
+		hashes[typ] = val
 	}
+	record := internalapi.InternalRecord{
+		Did:              strings.TrimSpace(obj.Id),
+		AccessMethods:    obj.AccessMethods,
+		ControlledAccess: obj.ControlledAccess,
+		Description:      obj.Description,
+		Name:             obj.Name,
+		Hashes:           &hashes,
+		Size:             &obj.Size,
+		Version:          obj.Version,
+	}
+	if organization = strings.TrimSpace(organization); organization != "" {
+		record.Organization = &organization
+	}
+	if project = strings.TrimSpace(project); project != "" {
+		record.Project = &project
+	}
+	return record
 }
 
 type LocationOptions struct {
@@ -113,11 +129,12 @@ func BuildWithOptions(fileName string, checksum string, size int64, drsID string
 			Url     string    `json:"url"`
 		}{Url: accessURL},
 	}
-	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
-		am.Authorizations = syfoncommon.AccessMethodAuthorizationsFromAuthzMap(authzMap)
-	}
 	ams := []drsapi.AccessMethod{am}
 	obj.AccessMethods = &ams
+	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
+		controlled := syfoncommon.AuthzMapToControlledAccess(authzMap)
+		obj.ControlledAccess = &controlled
+	}
 	return obj, nil
 }
 

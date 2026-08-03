@@ -81,7 +81,11 @@ TEST_STRICT_CLEANUP=true
   - HTTP basic auth via:
     - `TEST_LOCAL_USERNAME` + `TEST_LOCAL_PASSWORD`, or
     - `TEST_ADMIN_AUTH_HEADER="Authorization: Basic <base64(user:pass)>"`
-- `git drs remote add local ... --username ... --password ...` stores local basic auth in repo config for helper/LFS flows.
+- The local-only harness still exercises the hidden, deprecated
+  `git drs remote add local ...` compatibility path because the unified command
+  intentionally accepts HTTPS endpoints only. `--username` and `--password`
+  in this test path store local basic auth for credential-helper flows; they
+  are not the public CLI recommended for new scripts.
 
 ## How wrapper scripts map to the main suites
 
@@ -138,7 +142,7 @@ What it covers:
 
 - `git drs push` metadata register + upload
 - multipart/resume behavior
-- `git drs pull` and `git lfs pull` compatibility checks
+- `git drs pull` hydration and compatibility checks
 - cleanup by DID resolution
 
 ## Local add-url E2E: runbook
@@ -152,7 +156,7 @@ bash tests/e2e-local-addurl.sh
 What it covers:
 
 - known-sha add-url path (`--sha256 <real hash>`)
-- unknown-sha add-url path (sentinel pointer OID)
+- unknown-sha add-url path (placeholder pointer OID)
 - push/register + pull hydration checks
 
 ## Monorepo E2E (remote and local)
@@ -226,7 +230,8 @@ Cause:
 Check:
 
 - `TEST_SERVER_MODE=local`
-- remote configured with `git drs remote add local ...`
+- local test remote configured through the deprecated
+  `git drs remote add local ...` compatibility path described above
 - local auth creds provided if server requires basic auth.
 
 ### `401 Unauthorized` on `/data/upload/...` in local mode

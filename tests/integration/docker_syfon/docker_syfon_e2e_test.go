@@ -65,6 +65,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	runCommand(t, repoDir, nil, "git", "remote", "add", "origin", gogsEnv.repoCloneURL)
 	runCommand(t, repoDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, repoDir, server.url, minioEnv)
+	upsertSyfonBucketScope(t, server.url, minioEnv, dockerE2EOrganization, dockerE2EProjectID, "s3://"+minioEnv.bucket)
 	logRepoSnapshot(t, repoDir, "post-init")
 
 	t.Logf("STEP 5: Uploading tracked files through git-drs push...")
@@ -105,6 +106,7 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 		t.Fatalf("restore git credential store: %v", err)
 	}
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
+	runCommand(t, repoDir, nil, "git", "branch", "--set-upstream-to=origin/main", "main")
 	logRepoSnapshot(t, repoDir, "post-push")
 	querySmall := runCommand(t, repoDir, nil, "git", "drs", "query", "--remote", "origin", "--pretty", smallDid)
 	if !strings.Contains(querySmall, smallDid) {
@@ -169,6 +171,14 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 		t.Fatalf("multipart file checksum lookup mismatch: expected DID %s and hash %s in output %q", largeDid, largeSumHex, largeHashOut)
 	}
 	t.Logf("hash verification complete for source.txt=%s multipart.bin=%s", smallSumHex, largeSumHex)
+
+	t.Logf("STEP 7: Removing a tracked file via git drs rm while retaining its historical DRS object...")
+	runCommand(t, repoDir, nil, "git", "drs", "rm", "data/source.txt")
+	runCommand(t, repoDir, nil, "git", "commit", "-m", "remove source.txt through git drs rm")
+	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
+	logRepoSnapshot(t, repoDir, "post-delete-push")
+	assertMinIOObjectExists(t, minioEnv.s3Client, minioEnv.bucket, smallDid)
+	assertDRSRecordExists(t, server.url, smallDid)
 }
 
 func TestGitDrsDockerAddURLE2E(t *testing.T) {
@@ -296,18 +306,19 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	runCommand(t, cloneDir, nil, "git", "drs", "install")
 	runCommand(t, cloneDir, nil, "git", "drs", "init")
 	configureGitDrsRemote(t, cloneDir, server.url, minioEnv)
-	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin")
-	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
+	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", knownPath)
 
 	gotKnown := mustReadFile(t, cloneDir, knownPath)
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	gotUnknown := mustReadFile(t, cloneDir, unknownPath)
-	if !bytes.Equal(gotUnknown, unknownData) {
-		t.Fatalf("unknown add-url file mismatch: got %q want %q", string(gotUnknown), string(unknownData))
+	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
+		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
+	} else if !strings.Contains(out, "downloaded invalid cached object") || !strings.Contains(out, "does not match expected oid/size") {
+		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
 	}
-	t.Logf("add-url round-trip verification complete")
+	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
+	t.Logf("add-url known-checksum round-trip and unknown-checksum validation failure verified")
 }
 
 func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {
@@ -355,6 +366,7 @@ func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {
 	runCommand(t, repoDir, nil, "git", "drs", "track", "*.bin")
 
 	t.Logf("STEP 5: Adding managed uploads for each bucket scope path case...")
+	upsertSyfonBucketScope(t, server.url, minioEnv, dockerE2EOrganization, dockerE2EProjectID, "s3://"+minioEnv.bucket)
 	defaultOID := addTrackedPayloadCommit(t, repoDir, "data/default-root.bin", []byte("default bucket root payload"), ".gitattributes")
 	defaultKey := defaultOID
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")

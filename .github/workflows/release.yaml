@@ -11,26 +11,49 @@ permissions:
 
 jobs:
   goreleaser:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
-      -
-        name: Checkout
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      -
-        name: Set up Go
+
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      -
-        name: Run GoReleaser
+
+      - name: Import Apple Developer certificate
+        env:
+          APPLE_CERT_DATA: ${{ secrets.APPLE_CERT_DATA }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
+
+          printf '%s' "$APPLE_CERT_DATA" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Release with GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
-          # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          # 'latest', 'nightly', or a semver
-          version: 'latest'
+          version: latest
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERT_DATA: ${{ secrets.APPLE_CERT_DATA }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          APPLE_NOTARY_USER: ${{ secrets.APPLE_NOTARY_USER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

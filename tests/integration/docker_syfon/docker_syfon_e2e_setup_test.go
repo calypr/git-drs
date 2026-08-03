@@ -41,6 +41,7 @@ const (
 
 var gitDrsBinDir string
 var gitDrsTestHomeDir string
+var syfonBinPath string
 
 type minioContainer struct {
 	containerID string
@@ -86,6 +87,11 @@ func TestMain(m *testing.M) {
 		os.Stderr.WriteString(fmt.Sprintf("could not find git-drs root: %v\n", err))
 		os.Exit(2)
 	}
+	syfonRoot, err := resolveSyfonRoot()
+	if err != nil {
+		os.Stderr.WriteString(fmt.Sprintf("could not find syfon root: %v\n", err))
+		os.Exit(2)
+	}
 
 	gitDrsBinDir, err = os.MkdirTemp("", "git-drs-docker-e2e-bin-")
 	if err != nil {
@@ -115,6 +121,21 @@ func TestMain(m *testing.M) {
 		os.Exit(2)
 	}
 
+	if envBin := strings.TrimSpace(os.Getenv("TEST_SYFON_BIN")); envBin != "" {
+		syfonBinPath = envBin
+	} else {
+		syfonBinPath = filepath.Join(gitDrsBinDir, "syfon-docker-e2e")
+		buildSyfon := exec.Command("go", "build", "-o", syfonBinPath, ".")
+		buildSyfon.Dir = syfonRoot
+		os.Stderr.WriteString(fmt.Sprintf("building syfon integration binary into %s from %s\n", syfonBinPath, syfonRoot))
+		if out, err := buildSyfon.CombinedOutput(); err != nil {
+			os.Stderr.Write(out)
+			os.Stderr.WriteString(fmt.Sprintf("syfon build error: %v\n", err))
+			_ = os.RemoveAll(gitDrsBinDir)
+			os.Exit(2)
+		}
+	}
+
 	code := m.Run()
 	_ = os.RemoveAll(gitDrsBinDir)
 	_ = os.RemoveAll(gitDrsTestHomeDir)
@@ -138,4 +159,21 @@ func findGitDrsRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+func resolveSyfonRoot() (string, error) {
+	if root := strings.TrimSpace(os.Getenv("TEST_SYFON_ROOT")); root != "" {
+		return root, nil
+	}
+
+	root, err := findGitDrsRoot()
+	if err != nil {
+		return "", err
+	}
+	candidate := filepath.Join(filepath.Dir(root), "syfon")
+	info, statErr := os.Stat(candidate)
+	if statErr == nil && info.IsDir() {
+		return candidate, nil
+	}
+	return "", fmt.Errorf("could not find syfon checkout at %s", candidate)
 }

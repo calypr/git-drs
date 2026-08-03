@@ -3,7 +3,6 @@ package addurl
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,12 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
 
@@ -75,15 +73,26 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 
 	service := NewAddURLService()
 	resetStubs := stubAddURLDeps(t, service,
-		func(ctx context.Context, in sycloud.ObjectParameters) (*sycloud.ObjectInfo, error) {
-			return &sycloud.ObjectInfo{
-				Bucket:      "bucket",
-				Key:         "path/to/file.bin",
-				Path:        "file.bin",
-				SizeBytes:   int64(11),
-				MetaSHA256:  "",
-				ETag:        "abcd1234",
-				LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+		func(ctx context.Context, drsCtx *remoteruntime.GitContext, in addURLInput) (*inspectedObject, error) {
+			return &inspectedObject{
+				objectURL: "s3://bucket/path/to/file.bin",
+				info: &sycloud.ObjectInfo{
+					Bucket:      "bucket",
+					Key:         "path/to/file.bin",
+					Path:        "file.bin",
+					SizeBytes:   int64(11),
+					MetaSHA256:  "",
+					ETag:        "abcd1234",
+					LastModTime: time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
+				},
+			}, nil
+		},
+		func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
+			return &remoteruntime.GitContext{
+				Organization:  "calypr",
+				ProjectId:     "calypr-dev",
+				BucketName:    "cbds",
+				StoragePrefix: "",
 			}, nil
 		},
 		func(path string) (bool, error) {
@@ -100,9 +109,9 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("service.Run error: %v", err)
 	}
 
-	oid, err := lfs.SyntheticOIDFromETag("abcd1234")
+	oid, err := placeholderOIDForUnknownSHA("abcd1234", "s3://bucket/path/to/file.bin")
 	if err != nil {
-		t.Fatalf("SyntheticOIDFromETag: %v", err)
+		t.Fatalf("placeholderOIDForUnknownSHA: %v", err)
 	}
 
 	pointerPath := filepath.Join(tempDir, "path/to/file.bin")
@@ -120,18 +129,11 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	}
 
 	lfsObject := filepath.Join(lfsRoot, "objects", oid[0:2], oid[2:4], oid)
-	if _, err := os.Stat(lfsObject); err != nil {
-		t.Fatalf("expected LFS object at %s: %v", lfsObject, err)
-	}
-	sentinel, err := os.ReadFile(lfsObject)
-	if err != nil {
-		t.Fatalf("read sentinel: %v", err)
-	}
-	if !lfs.IsAddURLSentinelBytes(sentinel) {
-		t.Fatalf("expected add-url sentinel payload, got: %q", string(sentinel))
+	if _, err := os.Stat(lfsObject); !os.IsNotExist(err) {
+		t.Fatalf("expected no local LFS object payload at %s, got err=%v", lfsObject, err)
 	}
 
-	drsObject, err := drsobject.ReadObject(common.DRS_OBJS_PATH, oid)
+	drsObject, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
 	if err != nil {
 		t.Fatalf("read drs object: %v", err)
 	}
@@ -140,6 +142,29 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	}
 	if got := (*drsObject.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
+	}
+	if len(drsObject.Checksums) != 0 {
+		t.Fatalf("expected unknown sha256 add-url metadata not to fabricate checksums, got %+v", drsObject.Checksums)
+	}
+}
+
+func TestPlaceholderOIDForUnknownSHA(t *testing.T) {
+	oid1, err := placeholderOIDForUnknownSHA("etag-abc", "s3://bucket/key")
+	if err != nil {
+		t.Fatalf("placeholderOIDForUnknownSHA: %v", err)
+	}
+	oid2, err := placeholderOIDForUnknownSHA(`"etag-abc"`, "s3://bucket/key")
+	if err != nil {
+		t.Fatalf("placeholderOIDForUnknownSHA quoted: %v", err)
+	}
+	if oid1 != oid2 {
+		t.Fatalf("expected trimmed etag handling to be stable: %s vs %s", oid1, oid2)
+	}
+	if len(oid1) != 64 {
+		t.Fatalf("expected 64-char oid, got %q", oid1)
+	}
+	if _, err := placeholderOIDForUnknownSHA("", "s3://bucket/key"); err == nil {
+		t.Fatal("expected empty etag error")
 	}
 }
 
@@ -154,32 +179,6 @@ func TestParseAddURLInput_DoesNotRequireAWSFlags(t *testing.T) {
 	}
 	if in.path != "path/to/file.bin" {
 		t.Fatalf("unexpected path: %s", in.path)
-	}
-}
-
-func TestParseAddURLInput_PassesS3EnvHints(t *testing.T) {
-	t.Setenv("TEST_BUCKET_REGION", "us-east-1")
-	t.Setenv("TEST_BUCKET_ENDPOINT", "https://aced-storage.ohsu.edu")
-	t.Setenv("TEST_BUCKET_ACCESS_KEY", "cbds-user")
-	t.Setenv("TEST_BUCKET_SECRET_KEY", "cbds-secret")
-
-	cmd := NewCommand()
-	in, err := parseAddURLInput(cmd, []string{"s3://cbds/path/to/file.bin"})
-	if err != nil {
-		t.Fatalf("parseAddURLInput error: %v", err)
-	}
-	params := buildObjectParameters("s3://cbds/path/to/file.bin", in.path, in.sha256)
-	if params.S3Region != "us-east-1" {
-		t.Fatalf("unexpected S3Region: %s", params.S3Region)
-	}
-	if params.S3Endpoint != "https://aced-storage.ohsu.edu" {
-		t.Fatalf("unexpected S3Endpoint: %s", params.S3Endpoint)
-	}
-	if params.S3AccessKey != "cbds-user" {
-		t.Fatalf("unexpected S3AccessKey: %s", params.S3AccessKey)
-	}
-	if params.S3SecretKey != "cbds-secret" {
-		t.Fatalf("unexpected S3SecretKey: %s", params.S3SecretKey)
 	}
 }
 
@@ -201,38 +200,6 @@ func TestParseAddURLInput_ObjectKeyModeDefaultsPathToKey(t *testing.T) {
 	}
 	if in.scheme != "s3" {
 		t.Fatalf("unexpected scheme: %s", in.scheme)
-	}
-}
-
-func TestResolveObjectURL_UsesConfiguredBucketScopeForObjectKeyMode(t *testing.T) {
-	input := addURLInput{
-		sourceArg: "nested/path/file.bin",
-		scheme:    "s3",
-	}
-	scope := gitrepo.ResolvedBucketScope{
-		Bucket: "mapped-bucket",
-		Prefix: "mapped/prefix",
-	}
-
-	got, err := resolveObjectURL(input, scope)
-	if err != nil {
-		t.Fatalf("resolveObjectURL: %v", err)
-	}
-	if got != "s3://mapped-bucket/mapped/prefix/nested/path/file.bin" {
-		t.Fatalf("unexpected object URL: %s", got)
-	}
-}
-
-func TestResolveObjectURL_RejectsObjectKeyModeWithoutScheme(t *testing.T) {
-	_, err := resolveObjectURL(addURLInput{sourceArg: "nested/path/file.bin"}, gitrepo.ResolvedBucketScope{
-		Bucket: "mapped-bucket",
-		Prefix: "mapped/prefix",
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "requires --scheme") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -280,8 +247,7 @@ func TestUpdatePrecommitCacheWritesEntries(t *testing.T) {
 		t.Fatalf("expected updated_at to be set")
 	}
 
-	oidSum := sha256.Sum256([]byte(oid))
-	oidEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", oidSum[:]))
+	oidEntryFile := precommit_cache.OIDEntryPath(&precommit_cache.Cache{OIDsDir: oidDir}, oid)
 	oidData, err := os.ReadFile(oidEntryFile)
 	if err != nil {
 		t.Fatalf("read oid entry: %v", err)
@@ -331,8 +297,8 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 	cacheRoot := filepath.Join(repo, ".git", "drs", "pre-commit", "v1")
 	oidDir := filepath.Join(cacheRoot, "oids")
 
-	firstSum := sha256.Sum256([]byte(firstOID))
-	firstEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", firstSum[:]))
+	cache := &precommit_cache.Cache{OIDsDir: oidDir}
+	firstEntryFile := precommit_cache.OIDEntryPath(cache, firstOID)
 	firstData, err := os.ReadFile(firstEntryFile)
 	if err != nil {
 		t.Fatalf("read first oid entry: %v", err)
@@ -345,8 +311,7 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 		t.Fatalf("expected old oid entry paths to be empty, got %v", firstEntry.Paths)
 	}
 
-	secondSum := sha256.Sum256([]byte(secondOID))
-	secondEntryFile := filepath.Join(oidDir, fmt.Sprintf("%x.json", secondSum[:]))
+	secondEntryFile := precommit_cache.OIDEntryPath(cache, secondOID)
 	secondData, err := os.ReadFile(secondEntryFile)
 	if err != nil {
 		t.Fatalf("read second oid entry: %v", err)
@@ -363,26 +328,25 @@ func TestUpdatePrecommitCacheContentChanged(t *testing.T) {
 	}
 }
 
-// deprecated test case: now that we always "trust" the client-provided SHA256, this case is not applicable
-//func TestRunAddURL_SHA256Mismatch(t *testing.T) {
-//	...
-//}
-
 func stubAddURLDeps(
 	t *testing.T,
 	service *AddURLService,
-	inspectFn func(context.Context, sycloud.ObjectParameters) (*sycloud.ObjectInfo, error),
+	inspectFn func(context.Context, *remoteruntime.GitContext, addURLInput) (*inspectedObject, error),
+	getRemoteClientFn func(*config.Config, config.Remote, *slog.Logger) (*remoteruntime.GitContext, error),
 	isTrackedFn func(string) (bool, error),
 ) func() {
 	t.Helper()
-	origInspect := service.inspectObject
+	origInspect := service.inspectRemoteObject
+	origGetRemoteClient := service.getRemoteClient
 	origIsTracked := service.isLFSTracked
 
-	service.inspectObject = inspectFn
+	service.inspectRemoteObject = inspectFn
+	service.getRemoteClient = getRemoteClientFn
 	service.isLFSTracked = isTrackedFn
 
 	return func() {
-		service.inspectObject = origInspect
+		service.inspectRemoteObject = origInspect
+		service.getRemoteClient = origGetRemoteClient
 		service.isLFSTracked = origIsTracked
 	}
 }

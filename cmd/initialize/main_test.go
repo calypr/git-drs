@@ -11,28 +11,6 @@ import (
 	"github.com/calypr/git-drs/internal/testutils"
 )
 
-func TestInstallPrePushHook(t *testing.T) {
-	testutils.SetupTestGitRepo(t)
-	logger := drslog.NewNoOpLogger()
-
-	if err := installPrePushHook(logger); err != nil {
-		t.Fatalf("installPrePushHook error: %v", err)
-	}
-
-	hookPath := filepath.Join(".git", "hooks", "pre-push")
-	content, err := os.ReadFile(hookPath)
-	if err != nil {
-		t.Fatalf("read hook: %v", err)
-	}
-	if !strings.Contains(string(content), "git drs pre-push") {
-		t.Fatalf("expected hook to contain git drs pre-push")
-	}
-
-	if err := installPrePushHook(logger); err != nil {
-		t.Fatalf("installPrePushHook second call error: %v", err)
-	}
-}
-
 func TestInstallPreCommitHook(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	logger := drslog.NewNoOpLogger()
@@ -105,4 +83,66 @@ func TestInitConfigValues(t *testing.T) {
 
 	check("lfs.concurrenttransfers", "8")
 	check("lfs.allowincompletepush", "false")
+	check("push.autoSetupRemote", "true")
+	check("filter.drs.clean", "git-drs clean -- %f")
+	check("filter.drs.smudge", "git-drs smudge -- %f")
+	check("filter.drs.process", "git-drs filter")
+	check("filter.drs.required", "true")
+}
+
+func TestEnsureInitialized(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	logger := drslog.NewNoOpLogger()
+
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized error: %v", err)
+	}
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized second call error: %v", err)
+	}
+
+	if _, err := os.Stat(gitrepo.DRSDir); err != nil {
+		t.Fatalf("expected %s to exist: %v", gitrepo.DRSDir, err)
+	}
+	filterProcess, err := gitrepo.GetGitConfigString("filter.drs.process")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.process): %v", err)
+	}
+	if filterProcess != "git-drs filter" {
+		t.Fatalf("unexpected filter.drs.process: %q", filterProcess)
+	}
+	filterClean, err := gitrepo.GetGitConfigString("filter.drs.clean")
+	if err != nil {
+		t.Fatalf("GetGitConfigString(filter.drs.clean): %v", err)
+	}
+	if filterClean != "git-drs clean -- %f" {
+		t.Fatalf("unexpected filter.drs.clean: %q", filterClean)
+	}
+}
+
+func TestEnsureInitializedRemovesLegacyPrePushHook(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	logger := drslog.NewNoOpLogger()
+
+	hookPath := filepath.Join(".git", "hooks", "pre-push")
+	legacyHook := "#!/bin/sh\nexec git drs pre-push-prepare\n"
+	if err := os.WriteFile(hookPath, []byte(legacyHook), 0o755); err != nil {
+		t.Fatalf("write legacy pre-push hook: %v", err)
+	}
+
+	if err := EnsureInitialized(logger); err != nil {
+		t.Fatalf("EnsureInitialized error: %v", err)
+	}
+
+	if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy pre-push hook to be removed, got err=%v", err)
+	}
+
+	matches, err := filepath.Glob(hookPath + ".*")
+	if err != nil {
+		t.Fatalf("glob hook backups: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("expected legacy pre-push hook backup to be created")
+	}
 }

@@ -7,9 +7,11 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -51,19 +53,37 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, config.ErrNoDefaultRemote) {
 			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
-			return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+			return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
 		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
 
-	drsCtx, err := cfg.GetRemoteClient(remote, logger)
+	drsCtx, err := remoteruntime.New(cfg, remote, logger)
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
 
-	return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, func(callCtx context.Context, oid, cachePath string) error {
-		return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
-	})
+	var downloadFn internalfilter.SmudgeDownloadFunc
+	if !internalfilter.ShouldSkipSmudge() {
+		var terraResolver resolver.Resolver
+		if drsCtx.RemoteType == config.TerraServerType {
+			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if err != nil {
+				return fmt.Errorf("smudge: create Terra resolver: %w", err)
+			}
+		}
+		downloadFn = func(callCtx context.Context, oid, cachePath string) error {
+			if terraResolver != nil {
+				if len(oid) >= 2 && oid[:2] == "//" {
+					oid = "drs:" + oid
+				}
+				return resolver.DownloadToCache(callCtx, terraResolver, oid, cachePath)
+			}
+			return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
+		}
+	}
+
+	return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, downloadFn)
 }
 
 func init() {}

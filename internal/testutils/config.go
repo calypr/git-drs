@@ -67,11 +67,26 @@ func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) {
 			setConfig(prefix+".endpoint", remote.Gen3.Endpoint)
 			setConfig(prefix+".project", remote.Gen3.ProjectID)
 			setConfig(prefix+".bucket", remote.Gen3.Bucket)
+			if remote.Gen3.Organization != "" {
+				setConfig(prefix+".organization", remote.Gen3.Organization)
+			}
+		} else if remote.Terra != nil {
+			setConfig(prefix+".type", "terra")
+			setConfig(prefix+".endpoint", remote.Terra.Endpoint)
+			if remote.Terra.Auth != "" {
+				setConfig(prefix+".auth", remote.Terra.Auth)
+			}
+			if remote.Terra.Mode != "" {
+				setConfig(prefix+".mode", remote.Terra.Mode)
+			}
 		} else if remote.Local != nil {
 			setConfig(prefix+".type", "local")
 			setConfig(prefix+".endpoint", remote.Local.BaseURL)
 			setConfig(prefix+".project", remote.Local.ProjectID)
 			setConfig(prefix+".bucket", remote.Local.Bucket)
+			if remote.Local.Organization != "" {
+				setConfig(prefix+".organization", remote.Local.Organization)
+			}
 		}
 	}
 }

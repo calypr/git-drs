@@ -1,0 +1,88 @@
+name: Publish documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/pages.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install documentation builder
+        run: python -m pip install mkdocs-material==9.6.14
+
+      - name: Select end-user documentation
+        run: |
+          mkdir -p .pages-docs
+          cp docs/index.md .pages-docs/
+          cp docs/quickstart.md .pages-docs/
+          cp docs/getting-started.md .pages-docs/
+          cp docs/commands.md .pages-docs/
+          cp docs/pointer-files.md .pages-docs/
+          cp docs/adding-s3-files.md .pages-docs/
+          cp docs/remove-files.md .pages-docs/
+          cp docs/troubleshooting.md .pages-docs/
+          cp docs/*.png .pages-docs/
+
+      - name: Build documentation and presentation
+        run: |
+          mkdir -p .pages-build
+          npx --yes @marp-team/marp-cli@4.2.3 \
+            docs/anvil-terra-poc-presentation.md \
+            --html \
+            --template bespoke \
+            --output .pages-build/anvil-terra-poc-presentation.html
+          mkdocs build --strict
+          # Keep the standalone Bespoke document byte-for-byte intact. Passing
+          # it through MkDocs is unnecessary for this standalone entry point.
+          cp .pages-build/anvil-terra-poc-presentation.html \
+            _site/anvil-terra-poc-presentation.html
+
+      - name: Verify presentation artifact
+        run: |
+          # A Bespoke deck needs its embedded browser runtime for slide paging.
+          grep -q '<script' _site/anvil-terra-poc-presentation.html
+          grep -q 'bespoke' _site/anvil-terra-poc-presentation.html
+          # Guard code-block contrast against Marp's highlighting stylesheet.
+          grep -q 'pre code.hljs' _site/anvil-terra-poc-presentation.html
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -21,6 +21,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	sycommon "github.com/calypr/syfon/client/common"
@@ -93,6 +94,16 @@ var Cmd = &cobra.Command{
 			logg.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
+		var anvil resolver.Resolver
+		if !drsCtx.CanDownload() || !drsCtx.CanResolve() {
+			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
+		}
+		if drsCtx.IsReadOnly() {
+			anvil, err = resolver.NewAnVIL(cmd.Context(), drsCtx.Endpoint)
+			if err != nil {
+				return err
+			}
+		}
 
 		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
 		progress.OnPlan(toPullFiles(pointers))
@@ -110,7 +121,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
-			state, err := inspectCachedObject(cachePath, f.Oid, f.Size)
+			state, err := inspectCachedPointer(cachePath, f)
 			if err == nil && state.complete {
 				continue
 			} else if err != nil {
@@ -126,6 +137,9 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 			for _, oid := range missingOIDs {
+				if isDRSPointerOID(oid) {
+					continue
+				}
 				recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 				if err != nil || len(recs) == 0 {
 					continue
@@ -156,7 +170,7 @@ var Cmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
-				state, err := inspectCachedObject(dstPath, f.Oid, f.Size)
+				state, err := inspectCachedPointer(dstPath, f)
 				if err == nil && state.complete {
 					continue
 				} else if err != nil {
@@ -183,11 +197,22 @@ var Cmd = &cobra.Command{
 						continue
 					}
 				}
-				if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
+				if isDRSPointerOID(f.Oid) {
+					var downloadErr error
+					if anvil != nil {
+						downloadErr = resolver.DownloadToCache(downloadCtx, anvil, normalizeDRSPointerOID(f.Oid), dstPath)
+					} else {
+						downloadErr = internaltransfer.DownloadDRSURIToCachePath(downloadCtx, drsCtx, f.Oid, dstPath)
+					}
+					if downloadErr != nil {
+						debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
+						return fmt.Errorf("failed to download DRS URI %s to %s: %w\npull-debug: %s", f.Oid, dstPath, downloadErr, debugCtx)
+					}
+				} else if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
-				if err := verifyObjectAtPath(dstPath, f.Oid, f.Size); err != nil {
+				if err := verifyPointerAtPath(dstPath, f); err != nil {
 					_ = os.Remove(dstPath)
 					return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 				}
@@ -196,7 +221,8 @@ var Cmd = &cobra.Command{
 			logg.Debug("no missing pointer objects to download")
 		}
 
-		if err := checkoutDownloadedFiles(pointers, progress); err != nil {
+		readOnly := drsCtx.IsReadOnly()
+		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
 			return err
 		}
 		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
@@ -207,10 +233,18 @@ var Cmd = &cobra.Command{
 	},
 }
 
+func normalizeDRSPointerOID(oid string) string {
+	if strings.HasPrefix(oid, "//") {
+		return "drs:" + oid
+	}
+	return oid
+}
+
 type pointerFile struct {
-	Name string
-	Oid  string
-	Size int64
+	Name   string
+	Oid    string
+	Size   int64
+	SHA256 string
 }
 
 func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
@@ -226,9 +260,44 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	files := make([]pointerFile, 0, len(keys))
 	for _, path := range keys {
 		info := inventory[path]
-		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size})
+		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: info.SHA256})
 	}
 	return files
+}
+
+func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {
+	state, err := inspectCachedObject(path, file.Oid, file.Size)
+	if err != nil || !state.complete || file.SHA256 == "" {
+		return state, err
+	}
+	actual, err := calculateFileSHA256(path)
+	if err != nil {
+		return state, err
+	}
+	state.complete = strings.EqualFold(actual, file.SHA256)
+	return state, nil
+}
+
+func verifyPointerAtPath(path string, file pointerFile) error {
+	if err := verifyObjectAtPath(path, file.Oid, file.Size); err != nil {
+		return err
+	}
+	if file.SHA256 == "" {
+		return nil
+	}
+	actual, err := calculateFileSHA256(path)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(actual, file.SHA256) {
+		return fmt.Errorf("sha256 mismatch: expected %s, got %s", file.SHA256, actual)
+	}
+	return nil
+}
+
+func isDRSPointerOID(oid string) bool {
+	oid = strings.TrimSpace(oid)
+	return strings.HasPrefix(oid, "//") || strings.HasPrefix(strings.ToLower(oid), "drs://")
 }
 
 func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {
@@ -295,7 +364,7 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 	if expectedSize <= 0 && info.Size() <= 0 {
 		return state, nil
 	}
-	if strings.TrimSpace(expectedOID) == "" {
+	if strings.TrimSpace(expectedOID) == "" || strings.HasPrefix(strings.TrimSpace(expectedOID), "//") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(expectedOID)), "drs://") {
 		state.complete = true
 		return state, nil
 	}
@@ -374,7 +443,7 @@ func globToRegexp(pattern string) string {
 	return b.String()
 }
 
-func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer) error {
+func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
@@ -396,6 +465,17 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 				src.Close()
 				return fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
 			}
+		}
+		// A previous pull may have made this path read-only. Temporarily restore
+		// owner write permission so that a later pull can safely replace it.
+		if info, statErr := os.Stat(f.Name); statErr == nil {
+			if err := os.Chmod(f.Name, info.Mode().Perm()|0o200); err != nil {
+				src.Close()
+				return fmt.Errorf("failed to make %s writable for checkout: %w", f.Name, err)
+			}
+		} else if !os.IsNotExist(statErr) {
+			src.Close()
+			return fmt.Errorf("failed to inspect checkout path %s: %w", f.Name, statErr)
 		}
 		dst, err := os.OpenFile(f.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
@@ -419,6 +499,11 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
 			}
 			return fmt.Errorf("checked out invalid content for %s: %w", f.Name, err)
+		}
+		if readOnly {
+			if err := os.Chmod(f.Name, 0o444); err != nil {
+				return fmt.Errorf("failed to make pulled file %s read-only: %w", f.Name, err)
+			}
 		}
 		progress.OnCompleted(toPullFile(f))
 	}
@@ -461,6 +546,12 @@ func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.GitContext, oid string) string {
+	if drsCtx == nil {
+		return fmt.Sprintf("oid=%s resolver=unavailable", oid)
+	}
+	if drsCtx.Client == nil {
+		return fmt.Sprintf("oid=%s resolver=%s", oid, drsCtx.RemoteType)
+	}
 	recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
 	if err != nil {
 		return fmt.Sprintf("oid=%s query_error=%v", oid, err)
@@ -489,7 +580,7 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.Gi
 			if am.AccessId != nil {
 				accessID = strings.TrimSpace(*am.AccessId)
 			}
-			methods = append(methods, fmt.Sprintf("{type=%s access_id=%s url_scheme=%s url=%s}", am.Type, accessID, scheme, rawURL))
+			methods = append(methods, fmt.Sprintf("{type=%s access_id=%s url_scheme=%s}", am.Type, accessID, scheme))
 		}
 	}
 	return fmt.Sprintf("oid=%s did=%s size=%d access_methods=%s", oid, strings.TrimSpace(match.Id), match.Size, strings.Join(methods, ", "))

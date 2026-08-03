@@ -3,7 +3,10 @@ package ping
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -27,8 +30,16 @@ type statusInfo struct {
 	AuthMode      string
 }
 
-var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) error {
-	return gc.Client.Health().Ping(ctx)
+type healthInfo struct {
+	ServiceInfo string
+}
+
+var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
+	if gc != nil && gc.IsReadOnly() {
+		serviceInfo, err := pingTerraServiceInfo(ctx, gc.Endpoint)
+		return healthInfo{ServiceInfo: serviceInfo}, err
+	}
+	return healthInfo{}, gc.Client.Health().Ping(ctx)
 }
 
 var pingScopeAccess = func(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
@@ -59,10 +70,14 @@ var Cmd = &cobra.Command{
 		}
 		printStatus(status)
 
-		if err := pingHealth(cmd.Context(), gc); err != nil {
+		health, err := pingHealth(cmd.Context(), gc)
+		if err != nil {
 			return fmt.Errorf("remote health check failed for %q (%s): %w", status.Remote, status.Endpoint, err)
 		}
 		fmt.Println("health: ok")
+		if strings.TrimSpace(health.ServiceInfo) != "" {
+			fmt.Printf("service-info: %s\n", health.ServiceInfo)
+		}
 
 		scopeInfo, err := pingScopeAccess(cmd.Context(), gc)
 		if err != nil {
@@ -121,14 +136,7 @@ func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *remoterunti
 		Bucket:        gc.BucketName,
 		StoragePrefix: gc.StoragePrefix,
 		AuthMode:      authMode(gc),
-	}
-	switch remoteCfg.(type) {
-	case *config.Gen3Remote:
-		status.RemoteType = string(config.Gen3ServerType)
-	case *config.LocalRemote:
-		status.RemoteType = string(config.LocalServerType)
-	default:
-		status.RemoteType = "unknown"
+		RemoteType:    string(gc.RemoteType),
 	}
 
 	return status, gc, nil
@@ -171,17 +179,19 @@ func blankIfEmpty(v string) string {
 }
 
 func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeAccessInfo, error) {
-	if gc == nil || gc.Client == nil {
+	info := scopeAccessInfo{}
+	if gc == nil {
 		return scopeAccessInfo{}, fmt.Errorf("DRS client unavailable")
 	}
-
-	info := scopeAccessInfo{}
 	organization := strings.TrimSpace(gc.Organization)
 	project := strings.TrimSpace(gc.ProjectId)
 	bucket := strings.TrimSpace(gc.BucketName)
 
 	if organization == "" && project == "" && bucket == "" {
 		return info, nil
+	}
+	if gc.Client == nil {
+		return scopeAccessInfo{}, fmt.Errorf("DRS client unavailable")
 	}
 	info.Checked = true
 
@@ -209,6 +219,51 @@ func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeA
 	}
 
 	return info, nil
+}
+
+func pingTerraServiceInfo(ctx context.Context, endpoint string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	serviceInfoURL, err := terraServiceInfoURL(endpoint)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serviceInfoURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	serviceInfo, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("terra DRS service-info returned %s", resp.Status)
+	}
+	if readErr != nil {
+		return "", readErr
+	}
+	return strings.TrimSpace(string(serviceInfo)), nil
+}
+
+func terraServiceInfoURL(endpoint string) (string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "", fmt.Errorf("terra endpoint is empty")
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("terra endpoint must be an absolute URL: %q", endpoint)
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/ga4gh/drs/v1/service-info"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func visibleBucketForScope(ctx context.Context, gc *remoteruntime.GitContext, organization, project string) (string, error) {

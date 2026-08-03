@@ -70,6 +70,15 @@ func CreateTestConfig(t *testing.T, tmpDir string, cfg *config.Config) {
 			if remote.Gen3.Organization != "" {
 				setConfig(prefix+".organization", remote.Gen3.Organization)
 			}
+		} else if remote.Terra != nil {
+			setConfig(prefix+".type", "terra")
+			setConfig(prefix+".endpoint", remote.Terra.Endpoint)
+			if remote.Terra.Auth != "" {
+				setConfig(prefix+".auth", remote.Terra.Auth)
+			}
+			if remote.Terra.Mode != "" {
+				setConfig(prefix+".mode", remote.Terra.Mode)
+			}
 		} else if remote.Local != nil {
 			setConfig(prefix+".type", "local")
 			setConfig(prefix+".endpoint", remote.Local.BaseURL)

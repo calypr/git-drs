@@ -3,8 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -20,6 +21,8 @@ const (
 
 	Gen3ServerType  RemoteType = "gen3"
 	LocalServerType RemoteType = "local"
+	TerraServerType RemoteType = "terra"
+	GA4GHServerType RemoteType = "ga4gh"
 
 	configSection          = "drs"
 	remoteSubsectionPrefix = "remote."
@@ -42,6 +45,10 @@ func (c Config) GetRemote(remote Remote) DRSRemote {
 		return x.Gen3
 	} else if x.Local != nil {
 		return x.Local
+	} else if x.Terra != nil {
+		return x.Terra
+	} else if x.Generic != nil {
+		return x.Generic
 	}
 	return nil
 }
@@ -94,10 +101,6 @@ func getRepo() (*git.Repository, error) {
 	return gitrepo.GetRepo()
 }
 
-func (c Config) ConfigPath() (string, error) {
-	return getConfigPath()
-}
-
 // updates and git adds a Git DRS config file
 // this should handle three cases:
 // 1. create a new config file if it does not exist / is empty
@@ -130,6 +133,15 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		if remote.Gen3.StoragePrefix != "" {
 			remoteSubsection.SetOption("storage_prefix", remote.Gen3.StoragePrefix)
 		}
+	} else if remote.Terra != nil {
+		remoteSubsection.SetOption("type", "terra")
+		remoteSubsection.SetOption("endpoint", remote.Terra.Endpoint)
+		if remote.Terra.Auth != "" {
+			remoteSubsection.SetOption("auth", remote.Terra.Auth)
+		}
+		if remote.Terra.Mode != "" {
+			remoteSubsection.SetOption("mode", remote.Terra.Mode)
+		}
 	} else if remote.Local != nil {
 		remoteSubsection.SetOption("type", "local")
 		remoteSubsection.SetOption("endpoint", remote.Local.BaseURL)
@@ -144,6 +156,20 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		}
 		if remote.Local.StoragePrefix != "" {
 			remoteSubsection.SetOption("storage_prefix", remote.Local.StoragePrefix)
+		}
+	} else if remote.Generic != nil {
+		r := remote.Generic
+		remoteSubsection.SetOption("type", "ga4gh")
+		remoteSubsection.SetOption("endpoint", r.Endpoint)
+		remoteSubsection.SetOption("provider", r.Provider)
+		remoteSubsection.SetOption("auth", r.Auth)
+		for key, value := range map[string]string{"credential": r.Credential, "scope": r.Scope, "storage": r.Storage, "checkout": r.Checkout, "preset": r.Preset, "registry-service-id": r.RegistryServiceID} {
+			if value != "" {
+				remoteSubsection.SetOption(key, value)
+			}
+		}
+		if r.PresetVersion > 0 {
+			remoteSubsection.SetOption("preset-version", fmt.Sprint(r.PresetVersion))
 		}
 	}
 
@@ -162,7 +188,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	return LoadConfig()
 }
 
-func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string) {
+func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string, auth string, mode string) {
 	if !strings.HasPrefix(subsectionName, remoteSubsectionPrefix) {
 		return
 	}
@@ -178,6 +204,12 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 			Organization:  organization,
 			StoragePrefix: storagePrefix,
 		}
+	} else if remoteType == "terra" {
+		rs.Terra = &TerraRemote{
+			Endpoint: endpoint,
+			Auth:     auth,
+			Mode:     mode,
+		}
 	} else if remoteType == "local" {
 		rs.Local = &LocalRemote{
 			BaseURL:       endpoint,
@@ -189,6 +221,78 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 	}
 
 	cfg.Remotes[remoteName] = rs
+}
+
+func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
+	version, _ := strconv.Atoi(opts["preset-version"])
+	cfg.Remotes[name] = RemoteSelect{Generic: &GenericRemote{
+		Endpoint: opts["endpoint"], Provider: opts["provider"], Auth: opts["auth"],
+		Credential: opts["credential"], Scope: opts["scope"], Storage: opts["storage"],
+		Checkout: opts["checkout"], Preset: opts["preset"], PresetVersion: version,
+		RegistryServiceID: opts["registry-service-id"],
+	}}
+}
+
+func loadGitConfigOverrides(cfg *Config) error {
+	cmd := exec.Command("git", "config", "--local", "--get-regexp", `^drs\.`)
+	out, err := cmd.Output()
+	if err != nil {
+		// git config exits non-zero when no matching keys exist. In that case,
+		// the go-git result above is still the complete repository-local config.
+		return nil
+	}
+
+	remoteOptions := make(map[Remote]map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if key == "drs.default-remote" {
+			cfg.DefaultRemote = Remote(value)
+			continue
+		}
+		const prefix = "drs.remote."
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(key, prefix)
+		idx := strings.LastIndex(rest, ".")
+		if idx <= 0 || idx == len(rest)-1 {
+			continue
+		}
+		name := Remote(rest[:idx])
+		option := rest[idx+1:]
+		if remoteOptions[name] == nil {
+			remoteOptions[name] = make(map[string]string)
+		}
+		remoteOptions[name][option] = value
+	}
+
+	for name, opts := range remoteOptions {
+		if opts["type"] == "ga4gh" {
+			addGenericRemote(cfg, name, opts)
+			continue
+		}
+		parseAndAddRemote(
+			cfg,
+			remoteSubsectionPrefix+string(name),
+			opts["type"],
+			opts["endpoint"],
+			opts["project"],
+			opts["bucket"],
+			opts["organization"],
+			opts["storage_prefix"],
+			opts["auth"],
+			opts["mode"],
+		)
+	}
+	return nil
 }
 
 // LoadConfig loads configuration using go-git
@@ -206,7 +310,6 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		Remotes: make(map[Remote]RemoteSelect),
 	}
-
 	// Iterate over all sections to find 'drs' and its subsections
 	for _, section := range conf.Raw.Sections {
 		if section.Name != configSection {
@@ -223,6 +326,14 @@ func LoadConfig() (*Config, error) {
 			if !strings.HasPrefix(subsection.Name, remoteSubsectionPrefix) {
 				continue
 			}
+			if subsection.Option("type") == "ga4gh" {
+				opts := make(map[string]string)
+				for _, key := range []string{"endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id"} {
+					opts[key] = subsection.Option(key)
+				}
+				addGenericRemote(cfg, Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)), opts)
+				continue
+			}
 			parseAndAddRemote(
 				cfg,
 				subsection.Name,
@@ -232,8 +343,14 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("bucket"),
 				subsection.Option("organization"),
 				subsection.Option("storage_prefix"),
+				subsection.Option("auth"),
+				subsection.Option("mode"),
 			)
 		}
+	}
+
+	if err := loadGitConfigOverrides(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
@@ -285,6 +402,16 @@ func RemoveRemote(name Remote) (*Config, error) {
 		fmt.Sprintf("drs.remote.%s.bucket", name),
 		fmt.Sprintf("drs.remote.%s.organization", name),
 		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
+		fmt.Sprintf("drs.remote.%s.auth", name),
+		fmt.Sprintf("drs.remote.%s.mode", name),
+		fmt.Sprintf("drs.remote.%s.provider", name),
+		fmt.Sprintf("drs.remote.%s.credential", name),
+		fmt.Sprintf("drs.remote.%s.scope", name),
+		fmt.Sprintf("drs.remote.%s.storage", name),
+		fmt.Sprintf("drs.remote.%s.checkout", name),
+		fmt.Sprintf("drs.remote.%s.preset", name),
+		fmt.Sprintf("drs.remote.%s.preset-version", name),
+		fmt.Sprintf("drs.remote.%s.registry-service-id", name),
 		fmt.Sprintf("drs.remote.%s.token", name),
 		fmt.Sprintf("drs.remote.%s.username", name),
 		fmt.Sprintf("drs.remote.%s.password", name),
@@ -322,16 +449,4 @@ func firstRemote(cfg *Config) Remote {
 	}
 	sort.Strings(names)
 	return Remote(names[0])
-}
-
-// GetGitConfigInt reads an integer value from git config
-// getGitConfigValue retrieves a value from git config by key
-func getConfigPath() (string, error) {
-	topLevel, err := gitrepo.GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-
-	configPath := filepath.Join(topLevel, gitrepo.DRSDir, gitrepo.ConfigYAML)
-	return configPath, nil
 }

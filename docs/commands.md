@@ -35,37 +35,63 @@ Use this when you want explicit initialization or to repair repo-local hooks/con
 
 ## Remote Configuration
 
-### `git drs remote add gen3 [remote-name] <organization/project>`
+### `git drs remote add [name] <endpoint-or-alias> [flags]`
 
-Add or refresh a Gen3-backed Syfon remote.
+Add a DRS server with the unified remote command. The built-in aliases are
+`calypr`, `terra`, `synapse`, and `cgc`; inspect their non-secret defaults with
+`git drs preset list` or `git drs preset show <alias>`.
 
-```bash
-git drs remote add gen3 [remote-name] <organization/project> --cred <credentials-file>
-git drs remote add gen3 [remote-name] <organization/project> --token <bearer-token>
-```
-
-Notes:
-
-- `remote-name` is optional; if omitted, the default remote name is used
-- scope is always one positional argument: `organization/project`
-- `--cred` imports a Gen3 credential file
-- `--token` uses a temporary bearer token
-- if repo-local `git-drs` setup is missing, this command bootstraps it
-- bucket resolution is scope-driven; users normally do not provide `--bucket`
-
-### `git drs remote add local <remote-name> <url> <organization/project>`
-
-Add or refresh a local Syfon/DRS remote.
+Calypr/Gen3 and Terra currently have operational runtime adapters. Synapse and
+CGC are catalog-only; execution commands reject them explicitly rather than
+constructing a partially authenticated client.
 
 ```bash
-git drs remote add local local-dev http://localhost:8080 HTAN_INT/BForePC
-git drs remote add local local-dev http://localhost:8080 HTAN_INT/BForePC --username drs-user --password drs-pass
+git drs remote add cgc --credential env:CGC_TOKEN
+git drs remote add synapse --credential helper:synapse
+git drs remote add terra --scope my-billing-project/my-workspace
+git drs remote add https://drs.example.org --provider ga4gh --auth none
+git drs remote add research https://gen3.example.org \
+  --provider gen3 --scope PROGRAM/PROJECT \
+  --auth provider-helper:gen3-profile --credential profile:research
 ```
 
-Notes:
+For a preset, its alias becomes the default local name; for a URL, the name is
+derived from the host. Use the two-argument form to choose a name explicitly.
+`--credential` accepts `env:VARIABLE`, `file:PATH`, `helper:NAME`,
+`profile:NAME`, or `stdin`; it never accepts an inline secret. Other options
+are `--scope`, `--auth`, `--provider`, `--storage`, and `--checkout`. Checkout
+mode is `pointers` or `hydrate`.
 
-- local mode can store HTTP basic auth for helper flows
-- repo-local `git-drs` setup is also bootstrapped here when missing
+Provider values are `auto`, `ga4gh`, `gen3`, `terra`, `cgc`, and `synapse`.
+Built-in aliases resolve `auto` to their catalog provider; a raw HTTPS endpoint
+must specify a concrete `--provider` before any repository state is modified.
+Authentication values are `auto`, `none`, `bearer`, `basic`, `google-adc`,
+`provider-helper`, or `provider-helper:<name>`. Presets are
+expanded once and the resolved endpoint, provider, authentication method, and
+catalog version are saved, so a later release cannot silently redirect an
+existing remote. Only HTTPS endpoints without embedded credentials are
+accepted.
+
+The older `gen3`, `local`, and `terra` command shapes are deprecated, hidden
+compatibility forms. New scripts should use the unified command.
+
+### `git drs preset list` / `git drs preset show <alias>`
+
+Display the presets embedded in this release. `list` shows each alias,
+provider, authentication default, endpoint, and catalog version. `show` displays
+the same details vertically and, when present, the registry service ID. Presets
+contain no credential or secret values.
+
+| Alias | Provider | Authentication default |
+| --- | --- | --- |
+| `calypr` | Gen3 | Gen3 profile provider helper |
+| `terra` | Terra | Google Application Default Credentials |
+| `synapse` | Synapse | bearer token |
+| `cgc` | Cancer Genomics Cloud | bearer token |
+
+The legacy provider-specific `remote add gen3`, `remote add local`, and
+`remote add terra` forms remain only as hidden, deprecated compatibility
+commands. Do not use them in new instructions or scripts.
 
 ### `git drs remote list`
 
@@ -74,6 +100,62 @@ List configured `git-drs` remotes.
 ```bash
 git drs remote list
 ```
+
+### `git drs ping [remote-name]`
+
+Show the effective `git-drs` remote configuration and verify that the remote responds.
+
+```bash
+git drs ping
+git drs ping anvil
+```
+
+What it checks:
+
+- prints the selected remote, remote type, endpoint, scope, bucket, storage prefix, and auth mode
+- runs a health check against the selected remote
+- for Terra DRS remotes, pings the GA4GH DRS service-info endpoint at `<endpoint>/ga4gh/drs/v1/service-info`
+- for Terra/AnVIL TDR-hosted data in production, use `https://data.terra.bio` as the endpoint; Terra also uses DRSHub for DRS URI resolution, but DRSHub is a resolver service rather than the GA4GH DRS service-info host
+- for scoped Syfon-style remotes, verifies that the configured organization/project and bucket are visible and readable
+
+Example Terra preset configuration and ping:
+
+```bash
+git drs remote add anvil terra --scope my-billing-project/my-workspace
+git drs ping anvil
+```
+
+Terra credential configuration:
+
+- The `terra` preset selects `google-adc`, which means Application Default Credentials from the local Google Cloud environment.
+- Do not put Google access tokens, refresh tokens, service-account JSON, or other secrets in repo-local Git configuration or in `--credential`.
+- Configure ADC outside `git-drs`, for example with `gcloud auth application-default login` for an interactive user credential or by setting `GOOGLE_APPLICATION_CREDENTIALS` to a service-account key path in automation.
+- At runtime, Terra-aware resolution obtains Google credentials from the ADC provider chain; credential material is not written to committed repository files.
+- `git drs ping` checks the public DRS service-info endpoint without sending the ADC credential. Authenticated object resolution and access requests still use ADC.
+
+A successful Terra ping includes:
+
+```text
+remote: anvil (default)
+type: terra
+endpoint: https://data.terra.bio
+health: ok
+```
+
+Troubleshooting:
+
+- `no remote configuration found`: run `git drs remote list` and pass an existing remote name, or add one with `git drs remote add anvil terra`.
+- endpoint errors: remove the remote and add it again with the `terra` preset or a complete HTTPS URL.
+- `terra DRS service-info returned ...`: verify the server is up and that the base endpoint is correct. You can test the exact URL with `curl -i https://data.terra.bio/ga4gh/drs/v1/service-info`.
+- network, DNS, or TLS errors: check VPN/proxy/firewall settings and retry with `GIT_CURL_VERBOSE=1 git drs ping <remote-name>` for additional HTTP diagnostics from Git-adjacent workflows.
+
+For developers, the live Terra ping integration test is intentionally behind the `integration` build tag because it reaches the public Terra DRS service:
+
+```bash
+go test -tags=integration ./cmd/ping -run TestIntegrationPingTerraDRSServer -count=1
+```
+
+Set `GIT_DRS_TERRA_DRS_ENDPOINT` to point the test at a different Terra DRS deployment. Terra's DRSHub resolver URL follows the `https://drshub.dsde-<env>.broadinstitute.org/api/v4/drs/resolve` pattern used by `terra-notebook-utils`, but `git drs ping` needs the GA4GH DRS service base URL that exposes `/ga4gh/drs/v1/service-info`; for Terra production that service base URL is `https://data.terra.bio`.
 
 ### `git drs remote remove <remote-name>`
 
@@ -93,6 +175,14 @@ Set the default `git-drs` remote.
 ```bash
 git drs remote set production
 ```
+
+### Remote roles: primary and source authorities
+
+A repository can have multiple `git-drs` remotes. The configured default remote, `drs.default-remote`, or an explicit command-level remote is the **primary remote** for repository-scoped operations such as push, registration, checksum lookup, and provider inspection.
+
+A **source DRS authority/resolver** is the DRS service named by a `drs://...` URI or by source metadata recorded for a reference-first object. For `git drs add-ref`, the client resolves the input `drs://...` URI against that source authority/resolver using source credentials. The primary remote does not act as a proxy for other source DRS servers.
+
+When the source authority is also configured as one of the repository remotes, `git-drs` can use that remote's endpoint and credentials for the source request. When the source authority is not configured as a named remote, the source URI itself remains the retrieval identity; adding the reference still does not create or mutate a primary-remote DRS record.
 
 ## Tracking and Local Inventory
 
@@ -190,6 +280,8 @@ Notes:
 
 ## Provider/Object Reference Workflows
 
+For details on pointer file formats and lifecycle state, see [Pointer Files and Reference State](pointer-files.md).
+
 ### `git drs add-url <object-url-or-key> [path]`
 
 Create a pointer plus local DRS metadata for an object that already exists in provider storage.
@@ -205,15 +297,20 @@ Notes:
 - object-key mode resolves against the configured bucket scope
 - explicit provider URL mode remains supported
 - `--scheme` is required for object-key mode
+- when `--sha256` is omitted, the pointer uses a derived local/cache OID and source URL metadata remains the retrieval identity
 - registration happens later on `git drs push`
 
 ### `git drs add-ref <drs-id> <path>`
 
-Add a local pointer file for an existing DRS object.
+Add a local pointer file for an existing DRS object. If the source DRS object has a SHA256 checksum, the pointer can use that checksum; otherwise the pointer preserves the source `drs://...` URI directly so hydration can resolve by DRS identity instead of checksum lookup.
 
 ```bash
 git drs add-ref drs://example/object-id data/object.bin
 ```
+
+`add-ref` also adds an exact read-only `filter=drs` rule for the destination to
+`.gitattributes`. Stage that file together with the pointer so local inventory
+commands such as `git drs ls-files` can discover the reference.
 
 ### `git drs query <drs-id>`
 

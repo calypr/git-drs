@@ -143,6 +143,9 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	if got := (*drsObject.AccessMethods)[0].AccessUrl.Url; got != "s3://bucket/path/to/file.bin" {
 		t.Fatalf("unexpected access URL: %s", got)
 	}
+	if len(drsObject.Checksums) != 0 {
+		t.Fatalf("expected unknown sha256 add-url metadata not to fabricate checksums, got %+v", drsObject.Checksums)
+	}
 }
 
 func TestPlaceholderOIDForUnknownSHA(t *testing.T) {

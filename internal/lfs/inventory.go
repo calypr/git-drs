@@ -10,10 +10,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/drsobject"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	"github.com/calypr/syfon/client/hash"
 )
@@ -28,6 +28,7 @@ type LfsFileInfo struct {
 	OidType    string `json:"oid_type"`
 	Oid        string `json:"oid"`
 	Version    string `json:"version"`
+	SHA256     string `json:"sha256,omitempty"`
 }
 
 func IsLFSTracked(path string) (bool, error) {
@@ -145,6 +146,7 @@ func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 			OidType:   pointer.OidType,
 			Oid:       pointer.Oid,
 			Version:   pointer.Version,
+			SHA256:    pointer.SHA256,
 		}
 	}
 	return files, nil
@@ -214,6 +216,7 @@ func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string,
 			OidType:   pointer.OidType,
 			Oid:       pointer.Oid,
 			Version:   pointer.Version,
+			SHA256:    pointer.SHA256,
 		}
 	}
 
@@ -410,6 +413,7 @@ func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {
 		OidType:   pointer.OidType,
 		Oid:       pointer.Oid,
 		Version:   pointer.Version,
+		SHA256:    pointer.SHA256,
 	}, true
 }
 
@@ -429,11 +433,12 @@ func readIndexPointerInfo(ctx context.Context, repoDir, path string) (LfsFileInf
 		OidType:   pointer.OidType,
 		Oid:       pointer.Oid,
 		Version:   pointer.Version,
+		SHA256:    pointer.SHA256,
 	}, true
 }
 
 func grepPointerPaths(ctx context.Context, repoDir, ref string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "git", "grep", "-z", "-l", "https://git-lfs.github.com/spec/v1", ref, "--")
+	cmd := exec.CommandContext(ctx, "git", "grep", "-z", "-l", "-e", "https://git-lfs.github.com/spec/v1", "-e", "https://calypr.github.io/spec/v1", ref, "--")
 	cmd.Dir = repoDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -489,12 +494,11 @@ type lfsPointer struct {
 	OidType string
 	Oid     string
 	Size    int64
+	SHA256  string
 }
 
 func parseLFSPointer(content string) (lfsPointer, bool) {
 	var p lfsPointer
-	sha256Re := regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
-
 	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -521,13 +525,32 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 				return lfsPointer{}, false
 			}
 			p.Size = sz
+			continue
+		}
+		if strings.HasPrefix(line, "sha256 ") {
+			p.SHA256 = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(line, "sha256 ")))
+			if !sha256OIDRe.MatchString(p.SHA256) {
+				return lfsPointer{}, false
+			}
 		}
 	}
 
 	if p.Version == "" || p.OidType == "" || p.Oid == "" {
 		return lfsPointer{}, false
 	}
-	if p.OidType != "sha256" || !sha256Re.MatchString(p.Oid) {
+	switch strings.ToLower(p.OidType) {
+	case "sha256":
+		p.OidType = "sha256"
+		if !sha256OIDRe.MatchString(p.Oid) {
+			return lfsPointer{}, false
+		}
+		p.Oid = strings.ToLower(p.Oid)
+	case "drs":
+		p.OidType = "drs"
+		if p.Version != "https://calypr.github.io/spec/v1" || !strings.HasPrefix(p.Oid, "//") {
+			return lfsPointer{}, false
+		}
+	default:
 		return lfsPointer{}, false
 	}
 
@@ -551,17 +574,40 @@ func CreateLfsPointer(drsObj *drsapi.DrsObject, dst string) error {
 	if shaSum == "" {
 		return fmt.Errorf("no sha256 checksum found for DRS object")
 	}
+	return CreateLfsPointerWithOID(drsObj, dst, shaSum)
+}
 
-	// create pointer file content
+// CreateLfsPointerWithOID writes a Git LFS pointer using an explicit local/cache
+// oid. The oid may be a real content SHA256 or a derived source-identity key.
+func CreateLfsPointerWithOID(drsObj *drsapi.DrsObject, dst string, oid string) error {
+	oid = strings.TrimPrefix(strings.TrimSpace(oid), "sha256:")
+	if !sha256OIDRe.MatchString(oid) {
+		return fmt.Errorf("oid %q is not a valid sha256-shaped value", oid)
+	}
 	pointerContent := "version https://git-lfs.github.com/spec/v1\n"
-	pointerContent += fmt.Sprintf("oid sha256:%s\n", shaSum)
+	pointerContent += fmt.Sprintf("oid sha256:%s\n", strings.ToLower(oid))
 	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
-
-	// write to file
-	err := os.WriteFile(dst, []byte(pointerContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
 		return fmt.Errorf("failed to write LFS pointer file: %w", err)
 	}
+	return nil
+}
 
+// CreateDRSPointer writes a git-drs pointer that preserves the retrievable DRS URI.
+func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error {
+	drsURI = strings.TrimSpace(drsURI)
+	if !strings.HasPrefix(strings.ToLower(drsURI), "drs://") {
+		return fmt.Errorf("DRS URI %q must start with drs://", drsURI)
+	}
+	pointerOID := "//" + drsURI[len("drs://"):]
+	pointerContent := "version https://calypr.github.io/spec/v1\n"
+	pointerContent += fmt.Sprintf("oid drs:%s\n", pointerOID)
+	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
+	if checksum := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums).SHA256); checksum != "" {
+		pointerContent += fmt.Sprintf("sha256 %s\n", strings.ToLower(checksum))
+	}
+	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
+		return fmt.Errorf("failed to write DRS pointer file: %w", err)
+	}
 	return nil
 }

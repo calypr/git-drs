@@ -198,7 +198,8 @@ They only need:
 Then they can run:
 
 ```bash
-git drs remote add gen3 production HTAN_INT/BForePC --cred ~/.gen3/credentials.json
+git drs remote add production calypr --scope HTAN_INT/BForePC \
+  --credential file:~/.gen3/credentials.json
 ```
 
 That remote setup resolves the bucket mapping from the server-side scope configuration.

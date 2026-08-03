@@ -18,3 +18,9 @@ coverage/unit/
 admin/
 # Ignore any file named .env anywhere in the repository
 .env
+# ignore working dirs, files
+attic/
+patch.txt
+.pages-docs/
+_site/
+

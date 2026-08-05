@@ -132,7 +132,7 @@ func validChoice(v string, choices ...string) bool {
 	return false
 }
 func validAuth(v string) bool {
-	return validChoice(v, "auto", "none", "bearer", "basic", "google-adc", "provider-helper") || strings.HasPrefix(v, "provider-helper:")
+	return validChoice(v, "auto", "none", "bearer", "basic", "google-adc", "globus", "provider-helper") || strings.HasPrefix(v, "provider-helper:")
 }
 func validateProviderAuth(provider, auth string) error {
 	if provider != "gen3" {

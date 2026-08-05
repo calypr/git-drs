@@ -26,5 +26,6 @@ nav:
   - Work with data:
       - Pointer Files and Reference State: pointer-files.md
       - Add Existing S3 Objects: adding-s3-files.md
+      - Globus Access Methods: globus.md
       - Remove Files: remove-files.md
       - Troubleshooting: troubleshooting.md

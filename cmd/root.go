@@ -3,6 +3,7 @@ package cmd
 import (
 	"github.com/calypr/git-drs/cmd/addref"
 	"github.com/calypr/git-drs/cmd/addurl"
+	"github.com/calypr/git-drs/cmd/auth"
 	"github.com/calypr/git-drs/cmd/bucket"
 	"github.com/calypr/git-drs/cmd/clean"
 	"github.com/calypr/git-drs/cmd/copyrecords"
@@ -54,6 +55,7 @@ func init() {
 	RootCmd.AddCommand(preset.Cmd)
 	RootCmd.AddCommand(addref.Cmd)
 	RootCmd.AddCommand(addurl.Cmd)
+	RootCmd.AddCommand(auth.Cmd)
 	RootCmd.AddCommand(deleteCmd.Cmd)
 	RootCmd.AddCommand(deleteproject.Cmd)
 	RootCmd.AddCommand(query.Cmd)

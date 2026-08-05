@@ -3,6 +3,7 @@ package transfer
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
@@ -74,13 +75,43 @@ func bulkAccessRequest(objects []drsapi.DrsObject) (drsapi.BulkObjectAccessId, b
 }
 
 func accessIDForBulkRequest(obj drsapi.DrsObject) string {
-	if obj.AccessMethods == nil {
+	method := selectAccessMethod(obj)
+	if method == nil || method.AccessId == nil {
 		return ""
 	}
-	for _, method := range *obj.AccessMethods {
-		if method.AccessId != nil && strings.TrimSpace(*method.AccessId) != "" {
-			return strings.TrimSpace(*method.AccessId)
+	return strings.TrimSpace(*method.AccessId)
+}
+
+func selectAccessMethod(obj drsapi.DrsObject) *drsapi.AccessMethod {
+	if obj.AccessMethods == nil {
+		return nil
+	}
+	methods := *obj.AccessMethods
+	preferred := strings.TrimSpace(strings.ToLower(os.Getenv("GIT_DRS_ACCESS_METHOD")))
+	if preferred == "" {
+		preferred = strings.TrimSpace(strings.ToLower(os.Getenv("GIT_DRS_TRANSFER_PROVIDER")))
+	}
+	if preferred != "" && preferred != "auto" {
+		for i := range methods {
+			if strings.EqualFold(string(methods[i].Type), preferred) {
+				return &methods[i]
+			}
 		}
 	}
-	return ""
+	for i := range methods {
+		if accessMethodHasLocator(methods[i]) {
+			return &methods[i]
+		}
+	}
+	if len(methods) > 0 {
+		return &methods[0]
+	}
+	return nil
+}
+
+func accessMethodHasLocator(method drsapi.AccessMethod) bool {
+	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
+		return true
+	}
+	return method.AccessId != nil && strings.TrimSpace(*method.AccessId) != ""
 }

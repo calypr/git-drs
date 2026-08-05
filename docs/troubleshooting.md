@@ -171,6 +171,29 @@ Host github.com
     ServerAliveInterval 30
 ```
 
+### Globus-backed pull fails
+
+For `globus://` access URLs, first verify Globus Transfer API authentication:
+
+```bash
+git drs auth globus
+```
+
+Then check that the required environment variables are set:
+
+```bash
+echo "$GIT_DRS_GLOBUS_TRANSFER_TOKEN"
+echo "$GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
+```
+
+The token must include the Globus Transfer API `all` scope and any collection-specific `data_access` dependent scopes. If the DRS object offers multiple access methods, force Globus selection while debugging:
+
+```bash
+GIT_DRS_ACCESS_METHOD=globus git drs pull
+```
+
+See [Globus Access Methods](globus.md) for setup and troubleshooting details.
+
 ## Common Problems
 
 ### `git drs pull` did not update my branch

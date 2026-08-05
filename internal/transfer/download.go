@@ -32,15 +32,15 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 	if match.AccessMethods == nil || len(*match.AccessMethods) == 0 {
 		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", match.Id)
 	}
-	accessType := (*match.AccessMethods)[0].Type
-	if accessType == "" {
-		return nil, nil, fmt.Errorf("no access type found in access method for DRS object %s", match.Id)
+	method := selectAccessMethod(match)
+	if method == nil {
+		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", match.Id)
 	}
-	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, match.Id, string(accessType))
+	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, match.Id, method)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &accessURL, &match, nil
+	return accessURL, &match, nil
 }
 
 func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI string) (*drsapi.AccessURL, *drsapi.DrsObject, error) {
@@ -54,15 +54,33 @@ func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, d
 	if obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
 		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", obj.Id)
 	}
-	accessType := (*obj.AccessMethods)[0].Type
-	if accessType == "" {
-		return nil, nil, fmt.Errorf("no access type found in access method for DRS object %s", obj.Id)
+	method := selectAccessMethod(obj)
+	if method == nil {
+		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", obj.Id)
 	}
-	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, obj.Id, string(accessType))
+	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, obj.Id, method)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &accessURL, &obj, nil
+	return accessURL, &obj, nil
+}
+
+func accessURLForSelectedMethod(ctx context.Context, drsCtx *remoteruntime.GitContext, objectID string, method *drsapi.AccessMethod) (*drsapi.AccessURL, error) {
+	if method == nil {
+		return nil, fmt.Errorf("no access method selected for DRS object %s", objectID)
+	}
+	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
+		return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: strings.TrimSpace(method.AccessUrl.Url)}, nil
+	}
+	accessType := method.Type
+	if accessType == "" {
+		return nil, fmt.Errorf("no access type found in access method for DRS object %s", objectID)
+	}
+	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, objectID, string(accessType))
+	if err != nil {
+		return nil, err
+	}
+	return &accessURL, nil
 }
 
 func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI, cachePath string) error {
@@ -73,7 +91,7 @@ func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitCon
 	if err != nil {
 		return err
 	}
-	return downloadResolved(ctx, drsCtx, drsURI, cachePath, obj, accessURL)
+	return DownloadResolvedToCachePath(ctx, drsCtx, drsURI, cachePath, obj, accessURL)
 }
 
 func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string) error {
@@ -89,7 +107,7 @@ func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 	if err != nil {
 		return err
 	}
-	return downloadResolved(ctx, drsCtx, oid, cachePath, match, accessURL)
+	return DownloadResolvedToCachePath(ctx, drsCtx, oid, cachePath, match, accessURL)
 }
 
 func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
@@ -99,10 +117,16 @@ func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitC
 	if obj == nil || accessURL == nil || accessURL.Url == "" {
 		return DownloadToCachePath(ctx, drsCtx, oid, cachePath)
 	}
+	if isGlobusURL(accessURL.Url) {
+		return transferGlobusToCachePath(ctx, accessURL.Url, cachePath)
+	}
 	return downloadResolved(ctx, drsCtx, oid, cachePath, obj, accessURL)
 }
 
 func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL, opts sydownload.DownloadOptions) error {
+	if accessURL != nil && isGlobusURL(accessURL.Url) {
+		return transferGlobusToCachePath(ctx, accessURL.Url, dstPath)
+	}
 	if drsCtx == nil || drsCtx.Client == nil {
 		return fmt.Errorf("DRS client unavailable")
 	}

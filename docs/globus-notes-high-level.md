@@ -371,3 +371,22 @@ sequenceDiagram
 ```
 
 The first figure is the strongest primary diagram for the one-page summary. The sequence diagram works well as a secondary implementation figure.
+
+## Globus access URLs
+
+git-drs can hydrate objects whose DRS access URL uses the Globus transport form:
+
+```text
+globus://<collection-id>/<path>
+```
+
+Syfon owns the source collection and object path in the DRS access method. The client supplies the destination collection and path for the local checkout/cache transfer.
+
+Before pulling Globus-backed objects:
+
+1. Set `GIT_DRS_GLOBUS_TRANSFER_TOKEN` to a Globus Auth access token with the `urn:globus:auth:scope:transfer.api.globus.org:all` scope (and any collection-specific `data_access` dependent scopes), then verify it with `git drs auth globus`.
+2. Set `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` to the destination collection that is visible from your local environment, such as a Globus Connect Personal collection.
+3. Optionally set `GIT_DRS_GLOBUS_DESTINATION_PATH_PREFIX` to place git-drs cache objects under a collection-relative directory.
+4. If a DRS object advertises multiple access methods and you want Globus specifically, set `GIT_DRS_ACCESS_METHOD=globus` (or `GIT_DRS_TRANSFER_PROVIDER=globus`).
+
+When git-drs receives a `globus://` access URL, it verifies Globus Transfer API authentication with the same check used by `git drs auth globus`, requests a submission ID, submits a transfer task to the Globus Transfer API, polls task status until completion, and then validates the hydrated cache object using the normal size/checksum checks.

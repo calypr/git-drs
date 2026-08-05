@@ -127,11 +127,14 @@ var Cmd = &cobra.Command{
 		}
 		if syncSummary.SkippedUnavailable > 0 {
 			fmt.Fprintf(os.Stdout, "DRS: %d historical object(s) had no local payload and were skipped\n", syncSummary.SkippedUnavailable)
+			fmt.Fprintln(os.Stdout, "DRS: synchronization acknowledgement was not advanced; skipped objects will be retried on the next push")
 		}
-		if err := pushSyncAcknowledgment(ctx, string(remote), state); err != nil {
+		if err := pushSyncAcknowledgment(ctx, string(remote), state, syncSummary.SkippedUnavailable); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stdout, "DRS: synchronized %s at %s\n", state.RemoteRef, state.TargetOID)
+		if syncSummary.SkippedUnavailable == 0 {
+			fmt.Fprintf(os.Stdout, "DRS: synchronized %s at %s\n", state.RemoteRef, state.TargetOID)
+		}
 		return nil
 	},
 }

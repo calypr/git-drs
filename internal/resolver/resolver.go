@@ -45,12 +45,12 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		// before their HTTPS method. Select by the resolved URL scheme rather
 		// than the optional method type: older and test resolvers may omit type,
 		// while the actual URL is authoritative for the net/http downloader.
-		switch {
-		case method.AccessURL != nil && strings.TrimSpace(method.AccessURL.URL) != "":
+		if method.AccessURL != nil && strings.TrimSpace(method.AccessURL.URL) != "" {
 			if isHTTPAccessURL(method.AccessURL.URL) {
 				access = method.AccessURL
 			}
-		case strings.TrimSpace(method.AccessID) != "":
+		}
+		if access == nil && strings.TrimSpace(method.AccessID) != "" {
 			access, err = r.GetAccess(ctx, drsURI, method.AccessID)
 			if err != nil {
 				return err

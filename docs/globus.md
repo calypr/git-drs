@@ -97,6 +97,112 @@ to the same LFS cache consumed by pull and smudge. The collection ID and its
 root mapping are transport configuration; they do not change the file's Git
 path or cache path.
 
+## Encoding a single-file Globus transfer in DRS
+
+The GA4GH DRS [`AccessMethod`](https://github.com/ga4gh/data-repository-service-schemas/blob/master/openapi/components/schemas/AccessMethod.yaml)
+schema can cleanly encode the source half of a Globus transfer, but not a
+complete source-to-destination transfer. This separation is intentional: DRS
+describes how to access an object, while the consuming client chooses where to
+place it.
+
+A direct Globus source can be represented as:
+
+```yaml
+type: globus
+access_url:
+  url: globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/data/sample.bam
+available: true
+```
+
+The fields have these meanings:
+
+- `type` selects the Globus transfer handler.
+- The URL authority is the source Globus collection UUID.
+- The URL path is the source path relative to that collection's root.
+- `available` indicates whether the source is immediately accessible.
+
+For a protected or dynamically resolved source, use an `access_id`:
+
+```yaml
+type: globus
+access_id: globus-primary
+authorizations:
+  supported_types:
+    - BearerAuth
+available: true
+```
+
+The client passes `globus-primary` to the object's DRS `/access` endpoint. A
+successful response supplies the source locator:
+
+```yaml
+url: globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/data/sample.bam
+```
+
+This permits the DRS service to authorize access before disclosing the source
+collection or path. The `authorizations` field describes authorization for the
+DRS `/access` request; it does not authorize calls to the Globus Transfer API.
+
+### Parameter ownership
+
+| Transfer parameter | Appropriate owner |
+| --- | --- |
+| Source collection | DRS `access_url` |
+| Source path | DRS `access_url` |
+| Object size and checksum | Parent DRS object |
+| Destination collection | Client configuration |
+| Destination path | Client-selected cache path |
+| Globus token and dependent scopes | Client credential store |
+| Submission ID | Obtained dynamically from Globus |
+| Label, deadline, and sync level | Client transfer policy |
+| Task ID and status | Returned by Globus |
+
+The corresponding single-file
+[Globus transfer request](https://docs.globus.org/api/transfer/task_submit/)
+resembles:
+
+```json
+{
+  "DATA_TYPE": "transfer",
+  "submission_id": "<obtained-from-globus>",
+  "source_endpoint": "6c54cade-bde5-45c1-bdea-f4bd71dba2cc",
+  "destination_endpoint": "<client-destination-collection>",
+  "sync_level": 3,
+  "DATA": [
+    {
+      "DATA_TYPE": "transfer_item",
+      "source_path": "/data/sample.bam",
+      "destination_path": "/.git/lfs/objects/...",
+      "recursive": false
+    }
+  ]
+}
+```
+
+Do not encode the destination, Globus token, submission ID, or task options in
+`access_id`, `region`, URL query parameters, or `headers`:
+
+- `access_id` is an opaque identifier used to resolve access.
+- `region` is cloud-region metadata, not a collection identifier.
+- `headers` apply when fetching the returned URL; they are not a general
+  credential envelope.
+- The destination belongs to the caller and may differ on every invocation.
+- Tokens, submission IDs, and task IDs are ephemeral or sensitive.
+
+The interoperable responsibility split is therefore:
+
+```text
+DRS AccessMethod = source locator
+DRS object       = object identity, size, checksum
+Client config    = destination and credentials
+Client policy    = transfer options
+Globus API       = submission ID, execution, and task status
+```
+
+Encoding an entire third-party transfer in `AccessMethod` would require a new
+structured transfer schema. Packing those parameters into the existing fields
+would create a private convention rather than interoperable DRS.
+
 ## Troubleshooting
 
 ### `Globus Transfer API token is required`

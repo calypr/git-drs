@@ -103,8 +103,11 @@ func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
 	if err := os.WriteFile(path, []byte("incorrect"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	obj := &drsapi.DrsObject{Size: int64(len("incorrect"))}
-	if err := verifyGlobusDownload(path, hex.EncodeToString(want[:]), obj); err == nil {
+	obj := &drsapi.DrsObject{
+		Size:      int64(len("incorrect")),
+		Checksums: []drsapi.Checksum{{Type: "sha-256", Checksum: hex.EncodeToString(want[:])}},
+	}
+	if err := verifyGlobusDownload(path, "drs://example.org/object", obj); err == nil {
 		t.Fatal("expected checksum mismatch")
 	}
 }

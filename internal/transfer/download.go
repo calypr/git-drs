@@ -169,7 +169,8 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject) error {
 	if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
 		want = ""
 		for _, checksum := range obj.Checksums {
-			if strings.EqualFold(strings.TrimSpace(checksum.Type), "sha256") {
+			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+			if checksumType == "sha256" || checksumType == "sha-256" {
 				want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
 				break
 			}

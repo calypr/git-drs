@@ -255,6 +255,8 @@ Copy Syfon metadata records from one configured remote to another for one scope.
 git drs copy-records prod HTAN_INT/BForePC
 git drs copy-records dev prod HTAN_INT/BForePC
 git drs copy-records @local prod HTAN_INT/BForePC
+git drs copy-records @local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
+git drs copy-records local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
 ```
 
 Behavior:
@@ -268,6 +270,8 @@ Behavior:
 - copies metadata only, not object bytes
 - `@local` explicitly means the current repository's local records
 - the legacy `local` alias means repository-local only when no configured remote is named `local`
+- `--include-path` limits a copy to records matching a file or directory path; repeat it to select multiple paths
+- for indexd/Syfon sources, paths are resolved through the current repository's tracked files and source records are selected by SHA-256
 
 Merge behavior for existing target records:
 

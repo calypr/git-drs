@@ -18,6 +18,7 @@ var (
 	batchSize         int
 	overwriteName     bool
 	overwriteExisting bool
+	includePaths      []string
 )
 
 var (
@@ -30,6 +31,12 @@ var (
 	}
 	loadLocalSource = func(ctx context.Context, org, project string) ([]copyRecord, error) {
 		return loadLocalSourceRecords(org, project)
+	}
+	loadFilteredLocalSource = func(ctx context.Context, org, project string, paths []string) ([]copyRecord, error) {
+		return loadLocalSourceRecordsIncluding(org, project, paths)
+	}
+	loadIncludedLocalSHA256 = func(paths []string) (map[string]struct{}, error) {
+		return includedLocalSHA256(paths)
 	}
 	newLocalTargetAPI = func() indexAPI {
 		return localIndexAPI{}
@@ -90,12 +97,23 @@ var Cmd = &cobra.Command{
 			if targetIsLocal {
 				return fmt.Errorf("source and target cannot both be local")
 			}
-			sourceRecords, err = loadLocalSource(cmd.Context(), org, proj)
+			if len(includePaths) == 0 {
+				sourceRecords, err = loadLocalSource(cmd.Context(), org, proj)
+			} else {
+				sourceRecords, err = loadFilteredLocalSource(cmd.Context(), org, proj, includePaths)
+			}
 			if err != nil {
 				return err
 			}
 			sourceLabel = "local"
 		} else {
+			var includedSHA256 map[string]struct{}
+			if len(includePaths) > 0 {
+				includedSHA256, err = loadIncludedLocalSHA256(includePaths)
+				if err != nil {
+					return err
+				}
+			}
 			srcRemoteName, err := cfg.GetRemoteOrDefault(sourceRemote)
 			if err != nil {
 				return fmt.Errorf("error resolving source remote: %w", err)
@@ -111,7 +129,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("error creating source client: %w", err)
 			}
-			stats, err := copyProjectRecordsFromSourceIndexWithOptions(
+			stats, err := copyProjectRecordsFromSourceIndexWithFilter(
 				cmd.Context(),
 				logger,
 				newCopyIndexAPI(srcCtx.Client.Requestor()),
@@ -121,6 +139,7 @@ var Cmd = &cobra.Command{
 				batchSize,
 				overwriteName,
 				overwriteExisting,
+				includedSHA256,
 			)
 			if err != nil {
 				return err
@@ -173,6 +192,7 @@ func init() {
 	Cmd.Flags().IntVar(&batchSize, "batch-size", defaultCopyBatchSize, "records per source page and target bulk write")
 	Cmd.Flags().BoolVar(&overwriteName, "overwrite-name", false, "for existing target records, replace target name with the source value")
 	Cmd.Flags().BoolVar(&overwriteExisting, "overwrite-existing", false, "replace existing target records with source metadata (requires a Syfon target supporting bulk overwrite)")
+	Cmd.Flags().StringSliceVar(&includePaths, "include-path", nil, "copy only records matching this file or directory path (repeatable)")
 }
 
 func isLocalSentinel(cfg *config.Config, remote string) bool {

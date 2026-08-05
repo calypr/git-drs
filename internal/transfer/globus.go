@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/globusauth"
 )
 
@@ -45,7 +46,12 @@ func globusDestinationForCachePath(cachePath string) (globusLocator, error) {
 	if collection == "" {
 		return globusLocator{}, fmt.Errorf("Globus destination collection is required for globus:// access URLs; set %s and authenticate with `git drs auth globus`", globusDestCollectionEnv)
 	}
-	return globusLocator{Collection: collection, Path: path.Join("/", filepath.ToSlash(filepath.Clean(cachePath)))}, nil
+	clean := filepath.Clean(cachePath)
+	rel, err := filepath.Rel(gitrepo.LFSObjectsPath, clean)
+	if err != nil || filepath.IsAbs(clean) || rel == "." || !filepath.IsLocal(rel) {
+		return globusLocator{}, fmt.Errorf("Globus destination must be inside %s", gitrepo.LFSObjectsPath)
+	}
+	return globusLocator{Collection: collection, Path: path.Join("/", filepath.ToSlash(clean))}, nil
 }
 
 func transferGlobusToCachePath(ctx context.Context, accessURL, cachePath string) error {

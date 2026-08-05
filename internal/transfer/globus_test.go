@@ -47,6 +47,15 @@ func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 	}
 }
 
+func TestGlobusDestinationForCachePathRejectsNonCachePath(t *testing.T) {
+	t.Setenv(globusDestCollectionEnv, "dest-collection")
+	for _, destination := range []string{"file.bin", filepath.Join(t.TempDir(), ".git", "lfs", "objects", "aa")} {
+		if _, err := globusDestinationForCachePath(destination); err == nil {
+			t.Fatalf("expected destination %q to be rejected", destination)
+		}
+	}
+}
+
 func TestIsGlobusURL(t *testing.T) {
 	if !isGlobusURL("globus://collection/path") {
 		t.Fatal("expected globus URL")

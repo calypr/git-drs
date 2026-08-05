@@ -105,6 +105,22 @@ func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 	}
 }
 
+func TestWaitForTaskStopsOnInactiveFatalError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":      "INACTIVE",
+			"nice_status": "Permission denied",
+			"fatal_error": map[string]string{"description": "destination permission denied"},
+		})
+	}))
+	defer server.Close()
+
+	err := (&Client{BaseURL: server.URL, HTTPClient: server.Client(), Token: "token"}).WaitForTask(context.Background(), "task-1", time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "destination permission denied") {
+		t.Fatalf("WaitForTask error = %v", err)
+	}
+}
+
 func TestResponseBodySuffix(t *testing.T) {
 	if got := ResponseBodySuffix([]byte(" failure \n")); !strings.Contains(got, "failure") {
 		t.Fatalf("suffix = %q", got)

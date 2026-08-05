@@ -93,16 +93,24 @@ func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval ti
 			NiceStatus   string `json:"nice_status"`
 			Faults       int    `json:"faults"`
 			SubtasksDone int    `json:"subtasks_succeeded"`
+			FatalError   *struct {
+				Description string `json:"description"`
+			} `json:"fatal_error"`
 		}
 		if err := c.Do(ctx, http.MethodGet, "/task/"+taskID, nil, &task); err != nil {
 			return fmt.Errorf("get Globus transfer task %s: %w", taskID, err)
 		}
-		switch strings.ToUpper(strings.TrimSpace(task.Status)) {
-		case "SUCCEEDED":
+		status := strings.ToUpper(strings.TrimSpace(task.Status))
+		if status == "SUCCEEDED" {
 			return nil
-		case "FAILED":
-			if task.NiceStatus != "" {
-				return fmt.Errorf("Globus transfer task %s failed: %s", taskID, task.NiceStatus)
+		}
+		if status == "FAILED" || status == "INACTIVE" && task.FatalError != nil {
+			detail := strings.TrimSpace(task.NiceStatus)
+			if task.FatalError != nil && strings.TrimSpace(task.FatalError.Description) != "" {
+				detail = strings.TrimSpace(task.FatalError.Description)
+			}
+			if detail != "" {
+				return fmt.Errorf("Globus transfer task %s failed: %s", taskID, detail)
 			}
 			return fmt.Errorf("Globus transfer task %s failed", taskID)
 		}

@@ -71,8 +71,11 @@ func accessURLForSelectedMethod(ctx context.Context, drsCtx *remoteruntime.GitCo
 	if method == nil {
 		return nil, fmt.Errorf("no access method selected for DRS object %s", objectID)
 	}
-	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
-		return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: strings.TrimSpace(method.AccessUrl.Url)}, nil
+	if method.AccessUrl != nil {
+		raw := strings.TrimSpace(method.AccessUrl.Url)
+		if isHTTPURL(raw) || isGlobusURL(raw) {
+			return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: raw}, nil
+		}
 	}
 	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
 		return nil, fmt.Errorf("no access URL or access ID found in access method for DRS object %s", objectID)

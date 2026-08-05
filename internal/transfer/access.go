@@ -109,15 +109,16 @@ func selectAccessMethod(obj drsapi.DrsObject) *drsapi.AccessMethod {
 }
 
 func accessMethodUsable(method drsapi.AccessMethod) bool {
-	if !accessMethodHasLocator(method) {
-		return false
-	}
 	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
 		if isGlobusURL(method.AccessUrl.Url) {
 			return strings.TrimSpace(os.Getenv(globusauth.TransferTokenEnv)) != "" && strings.TrimSpace(os.Getenv(globusDestCollectionEnv)) != ""
 		}
-		u, err := url.Parse(strings.TrimSpace(method.AccessUrl.Url))
-		return err == nil && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
+		if isHTTPURL(method.AccessUrl.Url) {
+			return true
+		}
+	}
+	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
+		return false
 	}
 	if method.Type != drsapi.AccessMethodTypeGlobus {
 		return true
@@ -125,9 +126,7 @@ func accessMethodUsable(method drsapi.AccessMethod) bool {
 	return strings.TrimSpace(os.Getenv(globusauth.TransferTokenEnv)) != "" && strings.TrimSpace(os.Getenv(globusDestCollectionEnv)) != ""
 }
 
-func accessMethodHasLocator(method drsapi.AccessMethod) bool {
-	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
-		return true
-	}
-	return method.AccessId != nil && strings.TrimSpace(*method.AccessId) != ""
+func isHTTPURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
 }

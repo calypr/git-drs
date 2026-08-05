@@ -28,7 +28,9 @@ Before using Globus-backed access methods, you need:
 
 2. A destination Globus collection that can write to the path where your
    repository cache is visible. For a laptop or workstation, this is commonly a
-   Globus Connect Personal collection.
+   Globus Connect Personal collection. This destination is normally specific to
+   each user or execution environment; it is not supplied by the DRS object or
+   shared through the Git repository.
 
 3. A `git-drs` remote that can resolve the DRS object and return a Globus access
    method.
@@ -41,6 +43,14 @@ Export these environment variables before running `git drs pull`:
 export GIT_DRS_GLOBUS_TRANSFER_TOKEN='<globus-transfer-api-access-token>'
 export GIT_DRS_GLOBUS_DESTINATION_COLLECTION='<destination-collection-id>'
 ```
+
+The `globus://<source-collection-id>/<source-path>` URL identifies the source
+collection only. `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` identifies the
+collection that exposes this user's local repository. Each user, workstation,
+runner, or compute environment must configure an accessible destination
+collection. Several users may intentionally share a managed institutional or
+project collection, but that remains environment configuration rather than
+tracked repository metadata.
 
 If a DRS object advertises multiple access methods and you want to prefer the
 Globus method, set one of these:

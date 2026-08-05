@@ -112,6 +112,20 @@ func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
 	}
 }
 
+func TestDownloadGlobusResolvedRemovesPartialTransfer(t *testing.T) {
+	dstPath := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(dstPath, []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := downloadGlobusResolved(context.Background(), "invalid", dstPath, "oid", &drsapi.DrsObject{}); err == nil {
+		t.Fatal("expected transfer failure")
+	}
+	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
+		t.Fatalf("partial destination remains: %v", err)
+	}
+}
+
 func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	t.Parallel()
 

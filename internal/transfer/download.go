@@ -148,6 +148,7 @@ func downloadGlobusResolved(ctx context.Context, accessURL, dstPath, oid string,
 		return fmt.Errorf("resolved DRS object is required")
 	}
 	if err := transferGlobusToCachePath(ctx, accessURL, dstPath); err != nil {
+		_ = os.Remove(dstPath)
 		return err
 	}
 	if err := verifyGlobusDownload(dstPath, oid, obj); err != nil {

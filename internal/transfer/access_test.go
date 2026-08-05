@@ -3,6 +3,7 @@ package transfer
 import (
 	"testing"
 
+	"github.com/calypr/git-drs/internal/globusauth"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
@@ -14,10 +15,28 @@ func TestSelectAccessMethodHonorsGlobusPreference(t *testing.T) {
 		{Type: drsapi.AccessMethodTypeGlobus, AccessId: &globusID},
 	}
 	t.Setenv("GIT_DRS_ACCESS_METHOD", "globus")
+	t.Setenv(globusauth.TransferTokenEnv, "token")
+	t.Setenv(globusDestCollectionEnv, "dest-collection")
 
 	method := selectAccessMethod(drsapi.DrsObject{AccessMethods: &methods})
 	if method == nil || method.AccessId == nil || *method.AccessId != globusID {
 		t.Fatalf("selected method = %+v, want Globus", method)
+	}
+}
+
+func TestSelectAccessMethodSkipsUnconfiguredGlobus(t *testing.T) {
+	httpsID := "https-access"
+	globusID := "globus-access"
+	methods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeGlobus, AccessId: &globusID},
+		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
+	}
+	t.Setenv(globusauth.TransferTokenEnv, "")
+	t.Setenv(globusDestCollectionEnv, "")
+
+	method := selectAccessMethod(drsapi.DrsObject{AccessMethods: &methods})
+	if method == nil || method.AccessId == nil || *method.AccessId != httpsID {
+		t.Fatalf("selected method = %+v, want configured HTTPS", method)
 	}
 }
 
@@ -44,6 +63,8 @@ func TestSelectAccessMethodAcceptsDirectGlobusAccessURL(t *testing.T) {
 		}{Url: "globus://source-collection/path/file.bam"}},
 		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
 	}
+	t.Setenv(globusauth.TransferTokenEnv, "token")
+	t.Setenv(globusDestCollectionEnv, "dest-collection")
 
 	method := selectAccessMethod(drsapi.DrsObject{AccessMethods: &methods})
 	if method == nil || method.AccessUrl == nil || method.AccessUrl.Url != "globus://source-collection/path/file.bam" {

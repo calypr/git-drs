@@ -176,6 +176,9 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 		if r.URL.Path != "/download/object.bin" {
 			return nil, io.EOF
 		}
+		if r.Header.Get("X-Provider-Token") != "secret" {
+			t.Fatalf("missing access URL header: %v", r.Header)
+		}
 		if r.Header.Get("Range") != "" {
 			rangeRequests++
 		}
@@ -204,7 +207,8 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 	}
 
 	obj := &drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload))}
-	accessURL := &drsapi.AccessURL{Url: "https://signed.example/download/object.bin"}
+	headers := []string{"X-Provider-Token: secret"}
+	accessURL := &drsapi.AccessURL{Url: "https://signed.example/download/object.bin", Headers: &headers}
 	err = DownloadResolvedToPath(context.Background(), drsCtx, "obj-1", dstPath, obj, accessURL, sydownload.DownloadOptions{
 		MultipartThreshold: int64(len(payload) + 1),
 		Concurrency:        2,

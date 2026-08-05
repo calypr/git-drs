@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
@@ -93,20 +94,27 @@ func selectAccessMethod(obj drsapi.DrsObject) *drsapi.AccessMethod {
 	}
 	if preferred != "" && preferred != "auto" {
 		for i := range methods {
-			if strings.EqualFold(string(methods[i].Type), preferred) && accessMethodHasLocator(methods[i]) {
+			if strings.EqualFold(string(methods[i].Type), preferred) && accessMethodUsable(methods[i]) {
 				return &methods[i]
 			}
 		}
 	}
 	for i := range methods {
-		if accessMethodHasLocator(methods[i]) {
+		if accessMethodUsable(methods[i]) {
 			return &methods[i]
 		}
 	}
-	if len(methods) > 0 {
-		return &methods[0]
-	}
 	return nil
+}
+
+func accessMethodUsable(method drsapi.AccessMethod) bool {
+	if !accessMethodHasLocator(method) {
+		return false
+	}
+	if method.Type != drsapi.AccessMethodTypeGlobus && (method.AccessUrl == nil || !isGlobusURL(method.AccessUrl.Url)) {
+		return true
+	}
+	return strings.TrimSpace(os.Getenv(globusauth.TransferTokenEnv)) != "" && strings.TrimSpace(os.Getenv(globusDestCollectionEnv)) != ""
 }
 
 func accessMethodHasLocator(method drsapi.AccessMethod) bool {

@@ -137,6 +137,7 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 	src := &resolvedSource{
 		requestor:    drsCtx.Client.Requestor(),
 		accessURL:    strings.TrimSpace(accessURL.Url),
+		headers:      accessURL.Headers,
 		expectedSize: obj.Size,
 	}
 	return sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
@@ -203,7 +204,26 @@ func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid
 type resolvedSource struct {
 	requestor    request.Requester
 	accessURL    string
+	headers      *[]string
 	expectedSize int64
+}
+
+type accessURLRequestor struct {
+	request.Requester
+	headers *[]string
+}
+
+func (r accessURLRequestor) Do(ctx context.Context, method, path string, body, out any, opts ...request.RequestOption) error {
+	if r.headers != nil {
+		for _, header := range *r.headers {
+			key, value, ok := strings.Cut(header, ":")
+			if !ok || strings.TrimSpace(key) == "" {
+				return fmt.Errorf("invalid access URL header")
+			}
+			opts = append(opts, request.WithHeader(strings.TrimSpace(key), strings.TrimSpace(value)))
+		}
+	}
+	return r.Requester.Do(ctx, method, path, body, out, opts...)
 }
 
 func (s *resolvedSource) Name() string {
@@ -235,7 +255,7 @@ func (s *resolvedSource) GetRangeReader(ctx context.Context, guid string, offset
 }
 
 func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.ReadCloser, error) {
-	resp, err := sytransfer.GenericDownload(ctx, s.requestor, s.accessURL, start, end)
+	resp, err := sytransfer.GenericDownload(ctx, accessURLRequestor{Requester: s.requestor, headers: s.headers}, s.accessURL, start, end)
 	if err != nil {
 		return nil, err
 	}

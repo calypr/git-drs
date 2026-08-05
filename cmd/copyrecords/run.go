@@ -58,6 +58,10 @@ func copyProjectRecordsFromSourceIndex(ctx context.Context, logger *slog.Logger,
 }
 
 func copyProjectRecordsFromSourceIndexWithOptions(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool) (copyStats, error) {
+	return copyProjectRecordsFromSourceIndexWithFilter(ctx, logger, src, dst, org, project, batchSize, overwriteName, overwriteExisting, nil)
+}
+
+func copyProjectRecordsFromSourceIndexWithFilter(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool, includedSHA256 map[string]struct{}) (copyStats, error) {
 	batchSize = normalizeCopyBatchSize(batchSize)
 	if overwriteExisting && batchSize > defaultCopyBatchSize {
 		batchSize = defaultCopyBatchSize
@@ -92,6 +96,9 @@ func copyProjectRecordsFromSourceIndexWithOptions(ctx context.Context, logger *s
 				continue
 			}
 			seen[did] = struct{}{}
+			if !copyRecordMatchesIncludedSHA256(rec, includedSHA256) {
+				continue
+			}
 			batch = append(batch, rec)
 		}
 		stats.SourceSeen += len(batch)
@@ -110,6 +117,14 @@ func copyProjectRecordsFromSourceIndexWithOptions(ctx context.Context, logger *s
 
 	fmt.Fprintf(os.Stderr, "copy-records: source scan complete, %d records in scope\n", stats.SourceSeen)
 	return stats, nil
+}
+
+func copyRecordMatchesIncludedSHA256(rec copyRecord, include map[string]struct{}) bool {
+	if include == nil {
+		return true
+	}
+	_, ok := include[strings.ToLower(copyRecordSHA256(rec))]
+	return ok
 }
 
 func reconcileCopyBatch(ctx context.Context, logger *slog.Logger, stats *copyStats, dst indexAPI, batch []copyRecord, org, project string, batchStart int, overwriteName bool) error {

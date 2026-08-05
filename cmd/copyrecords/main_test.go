@@ -40,7 +40,6 @@ func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOpti
 }
 
 func (f *fakeIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {
-	f.bulkDocsReq = append(f.bulkDocsReq, dids)
 	return f.bulkDocsResp, nil
 }
 

@@ -113,6 +113,10 @@ func lastCopyRecordDID(records []copyRecord) string {
 }
 
 func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
+	return loadLocalSourceRecordsIncluding(org, project, nil)
+}
+
+func loadLocalSourceRecordsIncluding(org, project string, include []string) ([]copyRecord, error) {
 	resource, err := sycommon.ResourcePath(org, project)
 	if err != nil {
 		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
@@ -122,10 +126,17 @@ func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load tracked LFS files: %w", err)
 	}
+	include, err = normalizeIncludedPaths(include)
+	if err != nil {
+		return nil, err
+	}
 
 	out := make([]copyRecord, 0, len(inventory))
 	seenOIDs := make(map[string]struct{}, len(inventory))
 	for path, info := range inventory {
+		if !isIncludedLocalPath(path, include) {
+			continue
+		}
 		oid := strings.TrimSpace(strings.TrimPrefix(info.Oid, "sha256:"))
 		if oid == "" {
 			continue
@@ -146,6 +157,65 @@ func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
 		out = append(out, rewriteCopyRecordScope(copyRecordFromLocalObject(obj), org, project, resource))
 	}
 	return out, nil
+}
+
+func includedLocalSHA256(include []string) (map[string]struct{}, error) {
+	include, err := normalizeIncludedPaths(include)
+	if err != nil {
+		return nil, err
+	}
+	inventory, err := loadTrackedLfsFiles(drslog.NewNoOpLogger())
+	if err != nil {
+		return nil, fmt.Errorf("load tracked LFS files for --include-path: %w", err)
+	}
+	hashes := make(map[string]struct{})
+	matchedPaths := 0
+	for path, info := range inventory {
+		if !isIncludedLocalPath(path, include) {
+			continue
+		}
+		matchedPaths++
+		oid := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(info.Oid, "sha256:")))
+		if oid != "" {
+			hashes[oid] = struct{}{}
+		}
+	}
+	if matchedPaths == 0 {
+		return nil, fmt.Errorf("--include-path matched no tracked files in the current repository")
+	}
+	if len(hashes) == 0 {
+		return nil, fmt.Errorf("files matched by --include-path have no SHA-256 OIDs")
+	}
+	return hashes, nil
+}
+
+func normalizeIncludedPaths(paths []string) ([]string, error) {
+	out := make([]string, 0, len(paths))
+	for _, raw := range paths {
+		path := filepath.ToSlash(filepath.Clean(strings.TrimSpace(raw)))
+		path = strings.TrimPrefix(path, "./")
+		if path == "" || path == "." {
+			return nil, fmt.Errorf("invalid --include-path %q: expected a repository-relative file or directory", raw)
+		}
+		if filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
+			return nil, fmt.Errorf("invalid --include-path %q: path must stay within the repository", raw)
+		}
+		out = append(out, strings.TrimSuffix(path, "/"))
+	}
+	return out, nil
+}
+
+func isIncludedLocalPath(path string, include []string) bool {
+	if len(include) == 0 {
+		return true
+	}
+	path = strings.TrimPrefix(filepath.ToSlash(filepath.Clean(path)), "./")
+	for _, prefix := range include {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func localDRSObjectFromPayload(path string, info lfs.LfsFileInfo, oid string) (*drsapi.DrsObject, error) {

@@ -3,6 +3,7 @@ package transfer
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -111,7 +112,14 @@ func accessMethodUsable(method drsapi.AccessMethod) bool {
 	if !accessMethodHasLocator(method) {
 		return false
 	}
-	if method.Type != drsapi.AccessMethodTypeGlobus && (method.AccessUrl == nil || !isGlobusURL(method.AccessUrl.Url)) {
+	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
+		if isGlobusURL(method.AccessUrl.Url) {
+			return strings.TrimSpace(os.Getenv(globusauth.TransferTokenEnv)) != "" && strings.TrimSpace(os.Getenv(globusDestCollectionEnv)) != ""
+		}
+		u, err := url.Parse(strings.TrimSpace(method.AccessUrl.Url))
+		return err == nil && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
+	}
+	if method.Type != drsapi.AccessMethodTypeGlobus {
 		return true
 	}
 	return strings.TrimSpace(os.Getenv(globusauth.TransferTokenEnv)) != "" && strings.TrimSpace(os.Getenv(globusDestCollectionEnv)) != ""

@@ -40,6 +40,22 @@ func TestSelectAccessMethodSkipsUnconfiguredGlobus(t *testing.T) {
 	}
 }
 
+func TestSelectAccessMethodSkipsUnsupportedDirectURL(t *testing.T) {
+	httpsID := "https-access"
+	methods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeS3, AccessUrl: &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "s3://bucket/object"}},
+		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
+	}
+
+	method := selectAccessMethod(drsapi.DrsObject{AccessMethods: &methods})
+	if method == nil || method.AccessId == nil || *method.AccessId != httpsID {
+		t.Fatalf("selected method = %+v, want HTTPS", method)
+	}
+}
+
 func TestSelectAccessMethodFallsBackToFirstResolvableMethod(t *testing.T) {
 	httpsID := "https-access"
 	methods := []drsapi.AccessMethod{

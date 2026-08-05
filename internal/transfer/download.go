@@ -32,11 +32,11 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 	}
 	match := records[0]
 	if match.AccessMethods == nil || len(*match.AccessMethods) == 0 {
-		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", match.Id)
+		return nil, nil, fmt.Errorf("AccessURLForHashScope: no access methods *available* for DRS object %s", match.Id)
 	}
 	method := selectAccessMethod(match)
 	if method == nil {
-		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", match.Id)
+		return nil, nil, fmt.Errorf("AccessURLForHashScope: no access methods *found* for DRS object %s", match.Id)
 	}
 	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, match.Id, method)
 	if err != nil {
@@ -54,11 +54,11 @@ func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, d
 		return nil, nil, err
 	}
 	if obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
-		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", obj.Id)
+		return nil, nil, fmt.Errorf("AccessURLForDRSURI: no access methods *available* for DRS object %s", obj.Id)
 	}
 	method := selectAccessMethod(obj)
 	if method == nil {
-		return nil, nil, fmt.Errorf("no access methods available for DRS object %s", obj.Id)
+		return nil, nil, fmt.Errorf("AccessURLForDRSURI: no access methods *found* for DRS object %s", obj.Id)
 	}
 	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, obj.Id, method)
 	if err != nil {

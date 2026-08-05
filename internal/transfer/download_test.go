@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -94,6 +96,19 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 	}
 }
 
+func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
+	payload := []byte("expected")
+	want := sha256.Sum256(payload)
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("incorrect"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obj := &drsapi.DrsObject{Size: int64(len("incorrect"))}
+	if err := verifyGlobusDownload(path, hex.EncodeToString(want[:]), obj); err == nil {
+		t.Fatal("expected checksum mismatch")
+	}
+}
+
 func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	t.Parallel()
 
@@ -121,7 +136,7 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Request:    r,
 			}, nil
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/obj-project/access/s3":
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/obj-project/access/s3-project":
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/project"}`)),

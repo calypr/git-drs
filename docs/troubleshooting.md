@@ -186,7 +186,11 @@ echo "$GIT_DRS_GLOBUS_TRANSFER_TOKEN"
 echo "$GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
 ```
 
-The token must include the Globus Transfer API `all` scope and any collection-specific `data_access` dependent scopes. If the DRS object offers multiple access methods, force Globus selection while debugging:
+The destination collection root must expose the Git repository so `/.git/lfs/objects/...`
+addresses the repository's local LFS cache. The token must include the Globus
+Transfer API `all` scope and any collection-specific `data_access` dependent
+scopes. If the DRS object offers multiple access methods, prefer Globus selection
+while debugging:
 
 ```bash
 GIT_DRS_ACCESS_METHOD=globus git drs pull

@@ -32,17 +32,16 @@ func TestGlobusDestinationForCachePathRequiresCollection(t *testing.T) {
 	}
 }
 
-func TestGlobusDestinationForCachePathUsesEnvironment(t *testing.T) {
+func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "dest-collection")
-	t.Setenv(globusDestPathPrefixEnv, "/incoming/git-drs")
-	loc, err := globusDestinationForCachePath(filepath.Join(".git", "drs", "objects", "aa", "bb"))
+	loc, err := globusDestinationForCachePath(filepath.Join(".git", "lfs", "objects", "aa", "bb"))
 	if err != nil {
 		t.Fatalf("globusDestinationForCachePath returned error: %v", err)
 	}
 	if loc.Collection != "dest-collection" {
 		t.Fatalf("collection = %q", loc.Collection)
 	}
-	wantSuffix := "/incoming/git-drs/.git/drs/objects/aa/bb"
+	wantSuffix := "/.git/lfs/objects/aa/bb"
 	if loc.Path != wantSuffix {
 		t.Fatalf("path = %q, want %q", loc.Path, wantSuffix)
 	}

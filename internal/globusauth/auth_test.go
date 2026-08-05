@@ -50,6 +50,7 @@ func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
 				SubmissionID        string `json:"submission_id"`
 				SourceEndpoint      string `json:"source_endpoint"`
 				DestinationEndpoint string `json:"destination_endpoint"`
+				SyncLevel           int    `json:"sync_level"`
 				Data                []struct {
 					SourcePath      string `json:"source_path"`
 					DestinationPath string `json:"destination_path"`
@@ -58,7 +59,7 @@ func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("decode payload: %v", err)
 			}
-			if payload.SubmissionID != "submission-1" || payload.SourceEndpoint != "src" || payload.DestinationEndpoint != "dst" {
+			if payload.SubmissionID != "submission-1" || payload.SourceEndpoint != "src" || payload.DestinationEndpoint != "dst" || payload.SyncLevel != 3 {
 				t.Fatalf("unexpected payload: %+v", payload)
 			}
 			if len(payload.Data) != 1 || payload.Data[0].SourcePath != "/src/file" || payload.Data[0].DestinationPath != "/dst/file" {
@@ -80,14 +81,14 @@ func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
 	}
 }
 
-func TestWaitForTaskPollsUntilSucceeded(t *testing.T) {
+func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/task/task-1" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		calls++
-		status := "ACTIVE"
+		status := "INACTIVE"
 		if calls == 2 {
 			status = "SUCCEEDED"
 		}

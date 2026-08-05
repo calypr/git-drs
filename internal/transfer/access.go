@@ -93,7 +93,7 @@ func selectAccessMethod(obj drsapi.DrsObject) *drsapi.AccessMethod {
 	}
 	if preferred != "" && preferred != "auto" {
 		for i := range methods {
-			if strings.EqualFold(string(methods[i].Type), preferred) {
+			if strings.EqualFold(string(methods[i].Type), preferred) && accessMethodHasLocator(methods[i]) {
 				return &methods[i]
 			}
 		}

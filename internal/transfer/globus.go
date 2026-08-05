@@ -12,10 +12,7 @@ import (
 	"github.com/calypr/git-drs/internal/globusauth"
 )
 
-const (
-	globusDestCollectionEnv = "GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
-	globusDestPathPrefixEnv = "GIT_DRS_GLOBUS_DESTINATION_PATH_PREFIX"
-)
+const globusDestCollectionEnv = "GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
 
 type globusLocator struct {
 	Collection string
@@ -48,15 +45,7 @@ func globusDestinationForCachePath(cachePath string) (globusLocator, error) {
 	if collection == "" {
 		return globusLocator{}, fmt.Errorf("Globus destination collection is required for globus:// access URLs; set %s and authenticate with `git drs auth globus`", globusDestCollectionEnv)
 	}
-	prefix := strings.TrimSpace(os.Getenv(globusDestPathPrefixEnv))
-	cleanCache := filepath.ToSlash(filepath.Clean(cachePath))
-	var dstPath string
-	if prefix == "" {
-		dstPath = cleanCache
-	} else {
-		dstPath = path.Join("/"+strings.TrimPrefix(filepath.ToSlash(prefix), "/"), cleanCache)
-	}
-	return globusLocator{Collection: collection, Path: dstPath}, nil
+	return globusLocator{Collection: collection, Path: path.Join("/", filepath.ToSlash(filepath.Clean(cachePath)))}, nil
 }
 
 func transferGlobusToCachePath(ctx context.Context, accessURL, cachePath string) error {

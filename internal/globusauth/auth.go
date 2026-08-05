@@ -64,7 +64,7 @@ func (c *Client) SubmitTransfer(ctx context.Context, srcCollection, srcPath, dst
 		"source_endpoint":      srcCollection,
 		"destination_endpoint": dstCollection,
 		"label":                label,
-		"sync_level":           "checksum",
+		"sync_level":           3,
 		"DATA": []map[string]any{{
 			"DATA_TYPE":        "transfer_item",
 			"source_path":      srcPath,

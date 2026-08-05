@@ -27,6 +27,7 @@ func TestSelectAccessMethodFallsBackToFirstResolvableMethod(t *testing.T) {
 		{Type: drsapi.AccessMethodTypeGlobus},
 		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
 	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "globus")
 
 	method := selectAccessMethod(drsapi.DrsObject{AccessMethods: &methods})
 	if method == nil || method.AccessId == nil || *method.AccessId != httpsID {

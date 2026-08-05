@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -72,11 +74,10 @@ func accessURLForSelectedMethod(ctx context.Context, drsCtx *remoteruntime.GitCo
 	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
 		return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: strings.TrimSpace(method.AccessUrl.Url)}, nil
 	}
-	accessType := method.Type
-	if accessType == "" {
-		return nil, fmt.Errorf("no access type found in access method for DRS object %s", objectID)
+	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
+		return nil, fmt.Errorf("no access URL or access ID found in access method for DRS object %s", objectID)
 	}
-	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, objectID, string(accessType))
+	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, objectID, strings.TrimSpace(*method.AccessId))
 	if err != nil {
 		return nil, err
 	}
@@ -118,14 +119,14 @@ func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitC
 		return DownloadToCachePath(ctx, drsCtx, oid, cachePath)
 	}
 	if isGlobusURL(accessURL.Url) {
-		return transferGlobusToCachePath(ctx, accessURL.Url, cachePath)
+		return downloadGlobusResolved(ctx, accessURL.Url, cachePath, oid, obj)
 	}
 	return downloadResolved(ctx, drsCtx, oid, cachePath, obj, accessURL)
 }
 
 func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL, opts sydownload.DownloadOptions) error {
 	if accessURL != nil && isGlobusURL(accessURL.Url) {
-		return transferGlobusToCachePath(ctx, accessURL.Url, dstPath)
+		return downloadGlobusResolved(ctx, accessURL.Url, dstPath, oid, obj)
 	}
 	if drsCtx == nil || drsCtx.Client == nil {
 		return fmt.Errorf("DRS client unavailable")
@@ -139,6 +140,56 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 		expectedSize: obj.Size,
 	}
 	return sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
+}
+
+func downloadGlobusResolved(ctx context.Context, accessURL, dstPath, oid string, obj *drsapi.DrsObject) error {
+	if obj == nil {
+		return fmt.Errorf("resolved DRS object is required")
+	}
+	if err := transferGlobusToCachePath(ctx, accessURL, dstPath); err != nil {
+		return err
+	}
+	if err := verifyGlobusDownload(dstPath, oid, obj); err != nil {
+		_ = os.Remove(dstPath)
+		return err
+	}
+	return nil
+}
+
+func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject) error {
+	info, err := os.Stat(dstPath)
+	if err != nil {
+		return fmt.Errorf("verify Globus download: %w", err)
+	}
+	if info.Size() != obj.Size {
+		return fmt.Errorf("verify Globus download: size mismatch: expected %d, got %d", obj.Size, info.Size())
+	}
+	want := strings.ToLower(drsobject.NormalizeChecksum(oid))
+	if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
+		want = ""
+		for _, checksum := range obj.Checksums {
+			if strings.EqualFold(strings.TrimSpace(checksum.Type), "sha256") {
+				want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
+				break
+			}
+		}
+	}
+	if want == "" {
+		return nil
+	}
+	f, err := os.Open(dstPath)
+	if err != nil {
+		return fmt.Errorf("verify Globus download: %w", err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("verify Globus download: %w", err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != want {
+		return fmt.Errorf("verify Globus download: sha256 mismatch: expected %s, got %s", want, got)
+	}
+	return nil
 }
 
 func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {

@@ -63,6 +63,25 @@ Then hydrate files normally:
 git drs pull
 ```
 
+From a Git user's perspective, a Globus-backed file behaves like any other
+tracked DRS file. Its pointer stays at the repository path chosen by the user,
+and pull or smudge hydrates that path through the normal LFS cache. There is no
+per-file Globus destination, path prefix, or separate checkout workflow.
+
+The normal file lifecycle is unchanged:
+
+```bash
+git drs track "data/*.bam"
+git add .gitattributes data/sample.bam
+git commit -m "Track sample data"
+git drs push
+git drs pull
+```
+
+Globus is an access method, not a distinct file type or push mode. `track`,
+`ls-files`, `push`, include filters, pointer files, and hydrated worktree paths
+behave the same regardless of the access method later selected by `pull`.
+
 ## How destination paths are built
 
 `git-drs` downloads into its local cache path first, then checks out the hydrated
@@ -74,7 +93,9 @@ is the collection-absolute LFS cache path:
 ```
 
 The destination collection root must expose the repository root so this writes
-to the same LFS cache consumed by pull and smudge.
+to the same LFS cache consumed by pull and smudge. The collection ID and its
+root mapping are transport configuration; they do not change the file's Git
+path or cache path.
 
 ## Troubleshooting
 

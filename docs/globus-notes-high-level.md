@@ -356,12 +356,11 @@ sequenceDiagram
     participant Source as Source Collection
     participant Destination as Destination Collection
 
-    User->>GitDRS: git drs pull --provider globus
+    User->>GitDRS: git drs pull
     GitDRS->>Syfon: GET DRS object
     Syfon-->>GitDRS: Object metadata + source collection/path
 
-    GitDRS->>User: Select configured destination
-    User-->>GitDRS: Destination collection/path
+    Note over GitDRS: Use configured access-method preference and destination collection
 
     GitDRS->>Globus: Submit transfer
     Globus->>Source: Read object

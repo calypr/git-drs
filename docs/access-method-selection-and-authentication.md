@@ -84,10 +84,11 @@ access_method_priority:
   - https
 ```
 
-An explicit command-line option or `GIT_DRS_ACCESS_METHOD` preference will override the configured order when the requested method is available and usable:
+`GIT_DRS_ACCESS_METHOD` overrides the configured order when the requested method
+is available and usable:
 
 ```bash
-git drs pull --access-method globus
+GIT_DRS_ACCESS_METHOD=globus git drs pull
 ```
 
 The preference is evaluated per object. If an object does not advertise the
@@ -201,6 +202,11 @@ For Globus transfers, the configured destination collection root exposes the
 Git repository. The handler submits the repository-relative LFS cache path as a
 collection-absolute destination such as `/.git/lfs/objects/...`; no separate
 Globus path-prefix mapping is maintained.
+
+This transport choice must not alter repository semantics. All handlers receive
+the same cache destination selected by pull or smudge, and callers consume the
+same cached object afterward. Only handler configuration, authentication, and
+transfer execution are protocol-specific.
 
 A useful internal planning record would include the object identifier, candidate methods, selected handler, resolved transfer information, authorization context identifier (not raw credentials), and batch/group identifier. Raw secrets should remain inside the relevant credential/handler implementation and should not be serialized into plans or logs.
 

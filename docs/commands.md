@@ -250,6 +250,8 @@ Important behavior:
 - `git drs pull` does not run `git pull`
 - it only hydrates tracked pointer files already present in the checkout
 - include matching is against repo-relative paths
+- access-method selection does not change pointer paths, cache paths, include
+  matching, or checkout behavior
 
 ### `git drs push [remote-name]`
 
@@ -273,6 +275,8 @@ What it does:
 Notes:
 
 - this is the normal command for tracked data changes
+- there is no provider-specific push command; Globus access methods do not
+  change tracking, registration, upload, or Git push behavior
 - plain `git push` does not trigger `git-drs` registration or upload behavior
 - synchronization is history-derived; pointers deleted from the tip remain covered while reachable from Git history
 - the remote acknowledgment ref allows a later `git drs push` from another clone to recover after plain `git push`

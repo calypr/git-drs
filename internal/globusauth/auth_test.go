@@ -41,6 +41,34 @@ func TestNewClientRequiresStoredOrEnvironmentToken(t *testing.T) {
 	}
 }
 
+func TestCredentialReadinessRecognizesStoredToken(t *testing.T) {
+	t.Setenv(TransferTokenEnv, "")
+	t.Setenv(TokenFileEnv, filepath.Join(t.TempDir(), "tokens.json"))
+	storage, _, err := openStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Store(&tokenDataForTest); err != nil {
+		t.Fatal(err)
+	}
+	storage.Close()
+	if state, reason := CredentialReadiness(); state != Ready {
+		t.Fatalf("readiness = %s (%s)", state, reason)
+	}
+}
+
+func TestCredentialReadinessReportsBrokenStorage(t *testing.T) {
+	t.Setenv(TransferTokenEnv, "")
+	name := filepath.Join(t.TempDir(), "tokens.json")
+	t.Setenv(TokenFileEnv, name)
+	if err := os.WriteFile(name, []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if state, _ := CredentialReadiness(); state != Broken {
+		t.Fatalf("readiness = %s, want broken", state)
+	}
+}
+
 func TestCredentialFilesAreOwnerOnly(t *testing.T) {
 	name := filepath.Join(t.TempDir(), "credentials", "tokens.json")
 	t.Setenv(TokenFileEnv, name)

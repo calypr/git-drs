@@ -22,20 +22,22 @@ import (
 const credentialHelpSuffix = "Refresh credentials with `git drs remote add gen3 <remote-name> <organization/project> --cred <path>` or `--token <token>`. See docs/getting-started.md."
 
 type GitContext struct {
-	Client             *syclient.Client
-	RemoteType         config.RemoteType
-	Endpoint           string
-	Organization       string
-	ProjectId          string
-	BucketName         string
-	StoragePrefix      string
-	Upsert             bool
-	ForceUpload        bool
-	MultiPartThreshold int64
-	UploadConcurrency  int
-	Logger             *slog.Logger
-	Credential         *syconf.Credential
-	Capabilities       Capabilities
+	Client              *syclient.Client
+	RemoteType          config.RemoteType
+	Endpoint            string
+	Organization        string
+	ProjectId           string
+	BucketName          string
+	StoragePrefix       string
+	Upsert              bool
+	ForceUpload         bool
+	MultiPartThreshold  int64
+	UploadConcurrency   int
+	Logger              *slog.Logger
+	Credential          *syconf.Credential
+	Capabilities        Capabilities
+	AccessMethodPolicy  string
+	CommandAccessMethod string
 }
 
 // Capabilities is the command-facing contract for a resolved remote. Commands
@@ -50,11 +52,16 @@ func (g *GitContext) CanUpload() bool   { return g != nil && g.Capabilities.Uplo
 func (g *GitContext) CanRegister() bool { return g != nil && g.Capabilities.Register }
 func (g *GitContext) IsReadOnly() bool  { return g != nil && g.Capabilities.ReadOnly }
 
-func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitContext, error) {
+func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (ctx *GitContext, err error) {
 	x, ok := cfg.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
+	defer func() {
+		if ctx != nil {
+			ctx.AccessMethodPolicy = x.AccessMethod
+		}
+	}()
 	if x.Local != nil {
 		return localClient(string(remote), *x.Local, logger)
 	}

@@ -121,6 +121,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	// Update drs.remote.<name> subsection
 	remoteSubsectionName := fmt.Sprintf("%s%s", remoteSubsectionPrefix, name)
 	remoteSubsection := conf.Raw.Section(configSection).Subsection(remoteSubsectionName)
+	if remote.AccessMethod != "" {
+		remoteSubsection.SetOption("access-method", remote.AccessMethod)
+	}
 
 	if remote.Gen3 != nil {
 		remoteSubsection.SetOption("type", "gen3")
@@ -225,7 +228,7 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 
 func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
 	version, _ := strconv.Atoi(opts["preset-version"])
-	cfg.Remotes[name] = RemoteSelect{Generic: &GenericRemote{
+	cfg.Remotes[name] = RemoteSelect{AccessMethod: opts["access-method"], Generic: &GenericRemote{
 		Endpoint: opts["endpoint"], Provider: opts["provider"], Auth: opts["auth"],
 		Credential: opts["credential"], Scope: opts["scope"], Storage: opts["storage"],
 		Checkout: opts["checkout"], Preset: opts["preset"], PresetVersion: version,
@@ -291,6 +294,9 @@ func loadGitConfigOverrides(cfg *Config) error {
 			opts["auth"],
 			opts["mode"],
 		)
+		remote := cfg.Remotes[name]
+		remote.AccessMethod = opts["access-method"]
+		cfg.Remotes[name] = remote
 	}
 	return nil
 }
@@ -328,7 +334,7 @@ func LoadConfig() (*Config, error) {
 			}
 			if subsection.Option("type") == "ga4gh" {
 				opts := make(map[string]string)
-				for _, key := range []string{"endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id"} {
+				for _, key := range []string{"endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id", "access-method"} {
 					opts[key] = subsection.Option(key)
 				}
 				addGenericRemote(cfg, Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)), opts)
@@ -346,6 +352,10 @@ func LoadConfig() (*Config, error) {
 				subsection.Option("auth"),
 				subsection.Option("mode"),
 			)
+			name := Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix))
+			remote := cfg.Remotes[name]
+			remote.AccessMethod = subsection.Option("access-method")
+			cfg.Remotes[name] = remote
 		}
 	}
 

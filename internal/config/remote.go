@@ -11,10 +11,11 @@ type DRSRemote interface {
 }
 
 type RemoteSelect struct {
-	Gen3    *Gen3Remote
-	Local   *LocalRemote
-	Terra   *TerraRemote
-	Generic *GenericRemote
+	Gen3         *Gen3Remote
+	Local        *LocalRemote
+	Terra        *TerraRemote
+	Generic      *GenericRemote
+	AccessMethod string
 }
 
 // GenericRemote is the compositional configuration produced by the unified

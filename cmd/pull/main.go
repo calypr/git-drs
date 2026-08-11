@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -30,6 +31,7 @@ import (
 
 var includePatterns []string
 var dryRun bool
+var accessMethod string
 
 var (
 	loadCfg         = config.LoadConfig
@@ -94,6 +96,7 @@ var Cmd = &cobra.Command{
 			logg.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
+		drsCtx.CommandAccessMethod = accessMethod
 		var anvil resolver.Resolver
 		if !drsCtx.CanDownload() || !drsCtx.CanResolve() {
 			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
@@ -161,6 +164,8 @@ var Cmd = &cobra.Command{
 				if resolved, err := internaltransfer.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
+				} else if errors.Is(err, internaltransfer.ErrAccessMethodSelection) {
+					return err
 				} else {
 					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
 				}
@@ -589,4 +594,5 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.Gi
 func init() {
 	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list matching pointer files without downloading them")
+	Cmd.Flags().StringVar(&accessMethod, "access-method", "", "require one access method type (for example: globus or https)")
 }

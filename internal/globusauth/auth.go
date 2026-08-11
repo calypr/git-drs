@@ -30,6 +30,51 @@ const (
 
 var ErrMissingToken = fmt.Errorf("Globus authentication is required; run `git drs auth globus login` or set %s", TransferTokenEnv)
 
+type Readiness string
+
+const (
+	Ready    Readiness = "ready"
+	Disabled Readiness = "disabled"
+	Broken   Readiness = "broken"
+)
+
+// CredentialReadiness checks local configuration without contacting Globus.
+func CredentialReadiness() (Readiness, string) {
+	if strings.TrimSpace(os.Getenv(TransferTokenEnv)) != "" {
+		return Ready, "environment token configured"
+	}
+	name, err := tokenFile()
+	if err != nil {
+		return Broken, err.Error()
+	}
+	if _, err := os.Stat(name); errors.Is(err, os.ErrNotExist) {
+		return Disabled, ErrMissingToken.Error()
+	} else if err != nil {
+		return Broken, err.Error()
+	}
+	storage, err := tokenstorage.NewJSONTokenStorageWithNamespace(name, "git-drs")
+	if err != nil {
+		return Broken, err.Error()
+	}
+	defer storage.Close()
+	token, err := storage.Get(transferResource)
+	if err != nil {
+		return Broken, err.Error()
+	}
+	if token == nil {
+		return Disabled, ErrMissingToken.Error()
+	}
+	if token.RefreshToken == "" && token.IsExpired() {
+		return Broken, "stored Globus access token is expired and cannot be refreshed"
+	}
+	if token.RefreshToken != "" {
+		if _, err := configuredClientID(name); err != nil {
+			return Broken, err.Error()
+		}
+	}
+	return Ready, "stored Globus credential configured"
+}
+
 type Client struct {
 	transfer *transfer.Client
 	storage  tokenstorage.TokenStorage

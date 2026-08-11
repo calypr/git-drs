@@ -59,7 +59,7 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	setupTestRepo(t)
 
 	remote := RemoteSelect{
-		Gen3: &Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"},
+		Gen3: &Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"}, AccessMethod: "prefer:globus",
 	}
 	cfg, err := UpdateRemote(Remote("origin"), remote)
 	if err != nil {
@@ -75,6 +75,9 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	}
 	if _, ok := loaded.Remotes[Remote("origin")]; !ok {
 		t.Fatalf("expected remote in loaded config")
+	}
+	if got := loaded.Remotes[Remote("origin")].AccessMethod; got != "prefer:globus" {
+		t.Fatalf("access method policy = %q", got)
 	}
 }
 

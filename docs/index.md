@@ -20,8 +20,8 @@ resolve common problems.
   commits in place of large payloads.
 - [Add Existing S3 Objects](adding-s3-files.md) — create references for data
   that is already in provider storage.
-- [Globus Access Methods](globus.md) — configure Globus Transfer API tokens,
-  destination collections, and Globus-backed hydration.
+- [Globus Access Methods](globus.md) — log in with Globus Auth, configure a
+  destination collection, and use Globus-backed hydration.
 - [Remove Files](remove-files.md) — remove tracked files and understand remote
   reconciliation behavior.
 - [Troubleshooting](troubleshooting.md) — diagnose setup, authentication,

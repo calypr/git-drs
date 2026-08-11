@@ -118,6 +118,31 @@ What it checks:
 - for Terra/AnVIL TDR-hosted data in production, use `https://data.terra.bio` as the endpoint; Terra also uses DRSHub for DRS URI resolution, but DRSHub is a resolver service rather than the GA4GH DRS service-info host
 - for scoped Syfon-style remotes, verifies that the configured organization/project and bucket are visible and readable
 
+### `git drs auth globus [login|status|logout]`
+
+Manage the Globus Transfer API credential used for `globus://` access methods.
+The Globus CLI is not required; `git-drs` uses `globus-go-sdk` directly.
+
+```bash
+export GIT_DRS_GLOBUS_CLIENT_ID='<native-application-client-id>'
+git drs auth globus login
+git drs auth globus status
+git drs auth globus logout
+```
+
+`login` uses OAuth authorization code with PKCE, requests a refresh token, and
+stores the resulting credentials in the user configuration directory. Access
+tokens are refreshed automatically. Supply collection-dependent consent scopes
+when required:
+
+```bash
+git drs auth globus login --scope \
+  'https://auth.globus.org/scopes/<collection-id>/data_access'
+```
+
+For noninteractive automation, `GIT_DRS_GLOBUS_TRANSFER_TOKEN` supplies a
+non-persistent access token and takes precedence over stored credentials.
+
 Example Terra preset configuration and ping:
 
 ```bash

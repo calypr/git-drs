@@ -176,21 +176,21 @@ Host github.com
 For `globus://` access URLs, first verify Globus Transfer API authentication:
 
 ```bash
-git drs auth globus
+git drs auth globus status
 ```
 
-Then check that the required environment variables are set:
+Then check the destination collection:
 
 ```bash
-echo "$GIT_DRS_GLOBUS_TRANSFER_TOKEN"
 echo "$GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
 ```
 
 The destination collection root must expose the Git repository so `/.git/lfs/objects/...`
-addresses the repository's local LFS cache. The token must include the Globus
-Transfer API `all` scope and any collection-specific `data_access` dependent
-scopes. If the DRS object offers multiple access methods, prefer Globus selection
-while debugging:
+addresses the repository's local LFS cache. The stored credential must include
+the Globus Transfer API `all` scope and any collection-specific `data_access`
+dependent scopes. Rerun `git drs auth globus login --scope <scope>` when Globus
+reports missing consent. If the DRS object offers multiple access methods,
+prefer Globus selection while debugging:
 
 ```bash
 GIT_DRS_ACCESS_METHOD=globus git drs pull

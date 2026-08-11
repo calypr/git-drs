@@ -16,15 +16,21 @@ to the repository's LFS cache path.
 
 Before using Globus-backed access methods, you need:
 
-1. A Globus Auth access token for the Globus Transfer API scope:
+1. A registered Globus native application client ID. Configure its redirect URL
+   as `https://auth.globus.org/v2/web/auth-code`. `git-drs` requests the Globus
+   Transfer API scope:
 
    ```text
    urn:globus:auth:scope:transfer.api.globus.org:all
    ```
 
    Some collections also require collection-specific `data_access` dependent
-   scopes. If Globus returns a consent or required-scope error, request a token
-   that includes the scopes named in the error response.
+   scopes. If Globus returns a consent or required-scope error, repeat login
+   with each scope named in the error response:
+
+   ```bash
+   git drs auth globus login --scope '<required-scope>'
+   ```
 
 2. A destination Globus collection that can write to the path where your
    repository cache is visible. For a laptop or workstation, this is commonly a
@@ -37,12 +43,58 @@ Before using Globus-backed access methods, you need:
 
 ## Configure Globus for `git drs pull`
 
-Export these environment variables before running `git drs pull`:
+Log in once and configure the destination collection:
+
+```bash
+export GIT_DRS_GLOBUS_CLIENT_ID='<native-application-client-id>'
+git drs auth globus login
+export GIT_DRS_GLOBUS_DESTINATION_COLLECTION='<destination-collection-id>'
+```
+
+The login command prints an authorization URL. Open it, approve access, and
+paste the returned authorization code. Credentials are stored with owner-only
+permissions in the user configuration directory and refreshed automatically.
+Use `git drs auth globus status` to verify them and
+`git drs auth globus logout` to remove them.
+
+`git-drs` calls Globus Auth and Transfer directly through `globus-go-sdk`; the
+separate Globus CLI does not need to be installed.
+
+Automation may instead provide a non-persistent access-token override:
 
 ```bash
 export GIT_DRS_GLOBUS_TRANSFER_TOKEN='<globus-transfer-api-access-token>'
-export GIT_DRS_GLOBUS_DESTINATION_COLLECTION='<destination-collection-id>'
 ```
+
+## Credential sources and storage
+
+Credential selection is deterministic:
+
+1. `GIT_DRS_GLOBUS_TRANSFER_TOKEN`, when non-empty, is used as a static token.
+2. Otherwise, `git-drs` loads the credential saved by
+   `git drs auth globus login`.
+
+The static environment token is not stored or refreshed. Stored login
+credentials include a refresh token; the SDK refreshes the access token before
+expiry and saves the replacement token for later commands.
+
+By default, credentials are stored under the operating system's user
+configuration directory in `git-drs/globus-tokens.json`. The directory is mode
+`0700` and the credential file is mode `0600`. Set
+`GIT_DRS_GLOBUS_TOKEN_FILE` to use a different local path. Never place that
+file inside a repository or commit it.
+
+| Variable | Purpose |
+| --- | --- |
+| `GIT_DRS_GLOBUS_CLIENT_ID` | Native application client ID used during first login and saved locally for refresh. |
+| `GIT_DRS_GLOBUS_CLIENT_SECRET` | Optional confidential-client secret; native applications leave it unset. |
+| `GIT_DRS_GLOBUS_TRANSFER_TOKEN` | Static, non-persistent override for automation; no automatic refresh. |
+| `GIT_DRS_GLOBUS_TOKEN_FILE` | Optional path override for SDK token storage. |
+| `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` | Destination collection used for transfers; not an authentication secret. |
+
+For a confidential client, `GIT_DRS_GLOBUS_CLIENT_SECRET` must remain available
+when a refresh occurs. Prefer a native/public client for interactive desktop or
+command-line use so no client secret is required.
 
 The `globus://<source-collection-id>/<source-path>` URL identifies the source
 collection only. `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` identifies the
@@ -61,10 +113,10 @@ export GIT_DRS_ACCESS_METHOD=globus
 export GIT_DRS_TRANSFER_PROVIDER=globus
 ```
 
-Verify the token before pulling:
+Verify authentication before pulling:
 
 ```bash
-git drs auth globus
+git drs auth globus status
 ```
 
 Then hydrate files normally:
@@ -215,19 +267,22 @@ would create a private convention rather than interoperable DRS.
 
 ## Troubleshooting
 
-### `Globus Transfer API token is required`
+### `Globus authentication is required`
 
-Set `GIT_DRS_GLOBUS_TRANSFER_TOKEN` to a Globus Auth access token for the
-Transfer API `all` scope, then rerun:
+Run the interactive login:
 
 ```bash
-git drs auth globus
+export GIT_DRS_GLOBUS_CLIENT_ID='<native-application-client-id>'
+git drs auth globus login
 ```
+
+For automation, set `GIT_DRS_GLOBUS_TRANSFER_TOKEN` to a pre-issued Globus Auth
+access token with the Transfer API `all` scope.
 
 ### `Globus Transfer API authentication failed`
 
-The token is missing, expired, revoked, or does not have the right Transfer API
-scope. Refresh the token and include:
+The token is revoked or does not have the right Transfer API scope. Log in
+again and include:
 
 ```text
 urn:globus:auth:scope:transfer.api.globus.org:all

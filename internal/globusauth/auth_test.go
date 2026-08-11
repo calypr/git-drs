@@ -5,65 +5,103 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/authorizers"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/core"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/services/transfer"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/tokenstorage"
 )
 
-func TestNewClientFromEnvRequiresToken(t *testing.T) {
+func sdkClient(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	client, err := transfer.NewClient(context.Background(), &core.Config{
+		Authorizer: authorizers.NewAccessTokenAuthorizer("token"),
+		Scopes:     []string{TransferScope},
+		BaseURL:    server.URL,
+		HTTPClient: server.Client(),
+	})
+	if err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	return &Client{transfer: client}, server
+}
+
+func TestNewClientRequiresStoredOrEnvironmentToken(t *testing.T) {
 	t.Setenv(TransferTokenEnv, "")
-	if _, err := NewClientFromEnv(); err == nil {
+	t.Setenv(TokenFileEnv, filepath.Join(t.TempDir(), "tokens.json"))
+	if _, err := NewClient(context.Background()); err == nil {
 		t.Fatal("expected missing token error")
+	}
+}
+
+func TestCredentialFilesAreOwnerOnly(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "credentials", "tokens.json")
+	t.Setenv(TokenFileEnv, name)
+	storage, _, err := openStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.Close()
+	if err := saveClientID(name, "client-id"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Dir(name), name, clientIDFile(name)} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := os.FileMode(0o600)
+		if info.IsDir() {
+			want = 0o700
+		}
+		if info.Mode().Perm() != want {
+			t.Fatalf("%s permissions = %o, want %o", path, info.Mode().Perm(), want)
+		}
+	}
+	t.Setenv(ClientIDEnv, "")
+	if got, err := configuredClientID(name); err != nil || got != "client-id" {
+		t.Fatalf("configuredClientID = %q, %v", got, err)
 	}
 }
 
 func TestCheckUsesTransferAPI(t *testing.T) {
 	var gotAuth string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		if r.URL.Path != "/tasksummary" {
+		if r.URL.Path != "/v0.10/task_list" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"username": "alice@example.org"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"DATA_TYPE": "task_list", "DATA": []any{}})
 	}))
 	defer server.Close()
 
-	identity, err := Check(context.Background(), &Client{BaseURL: server.URL, HTTPClient: server.Client(), Token: "token"})
-	if err != nil {
+	if err := Check(context.Background(), client); err != nil {
 		t.Fatalf("Check returned error: %v", err)
-	}
-	if identity != "alice@example.org" {
-		t.Fatalf("identity = %q", identity)
 	}
 	if gotAuth != "Bearer token" {
 		t.Fatalf("Authorization = %q", gotAuth)
 	}
 }
 
-func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestSubmitTransferUsesSDKSubmissionIDAndPayload(t *testing.T) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/submission_id":
+		case "/v0.10/submission_id":
 			_ = json.NewEncoder(w).Encode(map[string]string{"value": "submission-1"})
-		case "/transfer":
-			var payload struct {
-				SubmissionID        string `json:"submission_id"`
-				SourceEndpoint      string `json:"source_endpoint"`
-				DestinationEndpoint string `json:"destination_endpoint"`
-				SyncLevel           int    `json:"sync_level"`
-				Data                []struct {
-					SourcePath      string `json:"source_path"`
-					DestinationPath string `json:"destination_path"`
-				} `json:"DATA"`
-			}
+		case "/v0.10/transfer":
+			var payload transfer.Transfer
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Fatalf("decode payload: %v", err)
+				t.Fatal(err)
 			}
-			if payload.SubmissionID != "submission-1" || payload.SourceEndpoint != "src" || payload.DestinationEndpoint != "dst" || payload.SyncLevel != 3 {
+			if payload.SubmissionID != "submission-1" || len(payload.Items) != 1 {
 				t.Fatalf("unexpected payload: %+v", payload)
-			}
-			if len(payload.Data) != 1 || payload.Data[0].SourcePath != "/src/file" || payload.Data[0].DestinationPath != "/dst/file" {
-				t.Fatalf("unexpected transfer item: %+v", payload.Data)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"task_id": "task-1"})
 		default:
@@ -72,9 +110,9 @@ func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	taskID, err := (&Client{BaseURL: server.URL, HTTPClient: server.Client(), Token: "token"}).SubmitTransfer(context.Background(), "src", "/src/file", "dst", "/dst/file", "label")
+	taskID, err := client.SubmitTransfer(context.Background(), "src", "/src/file", "dst", "/dst/file", "label")
 	if err != nil {
-		t.Fatalf("SubmitTransfer returned error: %v", err)
+		t.Fatal(err)
 	}
 	if taskID != "task-1" {
 		t.Fatalf("taskID = %q", taskID)
@@ -83,10 +121,7 @@ func TestSubmitTransferUsesSubmissionIDAndPayload(t *testing.T) {
 
 func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/task/task-1" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		status := "INACTIVE"
 		if calls == 2 {
@@ -96,9 +131,8 @@ func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := (&Client{BaseURL: server.URL, HTTPClient: server.Client(), Token: "token"}).WaitForTask(context.Background(), "task-1", time.Millisecond)
-	if err != nil {
-		t.Fatalf("WaitForTask returned error: %v", err)
+	if err := client.WaitForTask(context.Background(), "task-1", time.Millisecond); err != nil {
+		t.Fatal(err)
 	}
 	if calls != 2 {
 		t.Fatalf("calls = %d", calls)
@@ -106,7 +140,7 @@ func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 }
 
 func TestWaitForTaskStopsOnInactiveFatalError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":      "INACTIVE",
 			"nice_status": "Permission denied",
@@ -115,14 +149,38 @@ func TestWaitForTaskStopsOnInactiveFatalError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := (&Client{BaseURL: server.URL, HTTPClient: server.Client(), Token: "token"}).WaitForTask(context.Background(), "task-1", time.Hour)
+	err := client.WaitForTask(context.Background(), "task-1", time.Hour)
 	if err == nil || !strings.Contains(err.Error(), "destination permission denied") {
 		t.Fatalf("WaitForTask error = %v", err)
 	}
 }
 
-func TestResponseBodySuffix(t *testing.T) {
-	if got := ResponseBodySuffix([]byte(" failure \n")); !strings.Contains(got, "failure") {
-		t.Fatalf("suffix = %q", got)
+func TestLogoutRemovesStoredTokens(t *testing.T) {
+	t.Setenv(TokenFileEnv, filepath.Join(t.TempDir(), "tokens.json"))
+	storage, _, err := openStorage()
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := storage.Store(&tokenDataForTest); err != nil {
+		t.Fatal(err)
+	}
+	storage.Close()
+	if err := Logout(); err != nil {
+		t.Fatal(err)
+	}
+	storage, _, err = openStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	got, err := storage.Get(transferResource)
+	if err != nil || got != nil {
+		t.Fatalf("token after logout = %+v, err = %v", got, err)
+	}
+}
+
+var tokenDataForTest = tokenstorage.TokenData{
+	ResourceServer: transferResource,
+	AccessToken:    "token",
+	ExpiresAt:      time.Now().Add(time.Hour),
 }

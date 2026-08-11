@@ -44,7 +44,7 @@ func parseGlobusURL(raw string) (globusLocator, error) {
 func globusDestinationForCachePath(cachePath string) (globusLocator, error) {
 	collection := strings.TrimSpace(os.Getenv(globusDestCollectionEnv))
 	if collection == "" {
-		return globusLocator{}, fmt.Errorf("Globus destination collection is required for globus:// access URLs; set %s and authenticate with `git drs auth globus`", globusDestCollectionEnv)
+		return globusLocator{}, fmt.Errorf("Globus destination collection is required for globus:// access URLs; set %s and authenticate with `git drs auth globus login`", globusDestCollectionEnv)
 	}
 	clean := filepath.Clean(cachePath)
 	rel, err := filepath.Rel(gitrepo.LFSObjectsPath, clean)
@@ -63,11 +63,12 @@ func transferGlobusToCachePath(ctx context.Context, accessURL, cachePath string)
 	if err != nil {
 		return err
 	}
-	client, err := globusauth.NewClientFromEnv()
+	client, err := globusauth.NewClient(ctx)
 	if err != nil {
 		return err
 	}
-	if _, err := globusauth.Check(ctx, client); err != nil {
+	defer client.Close()
+	if err := globusauth.Check(ctx, client); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {

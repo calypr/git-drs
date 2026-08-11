@@ -1,86 +1,283 @@
 package globusauth
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/authorizers"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/core"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/login"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/services/transfer"
+	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/tokenstorage"
 )
 
 const (
-	TransferAPIBaseURL = "https://transfer.api.globus.org/v0.10"
-	TransferScope      = "urn:globus:auth:scope:transfer.api.globus.org:all"
-	TransferTokenEnv   = "GIT_DRS_GLOBUS_TRANSFER_TOKEN"
+	TransferScope       = "urn:globus:auth:scope:transfer.api.globus.org:all"
+	TransferTokenEnv    = "GIT_DRS_GLOBUS_TRANSFER_TOKEN"
+	ClientIDEnv         = "GIT_DRS_GLOBUS_CLIENT_ID"
+	ClientSecretEnv     = "GIT_DRS_GLOBUS_CLIENT_SECRET"
+	TokenFileEnv        = "GIT_DRS_GLOBUS_TOKEN_FILE"
+	transferResource    = "transfer.api.globus.org"
+	defaultTokenFile    = "globus-tokens.json"
+	defaultClientIDFile = "globus-client.json"
 )
 
-var ErrMissingToken = fmt.Errorf("Globus Transfer API token is required; set %s to a Globus Auth access token scoped for %s", TransferTokenEnv, TransferScope)
+var ErrMissingToken = fmt.Errorf("Globus authentication is required; run `git drs auth globus login` or set %s", TransferTokenEnv)
 
 type Client struct {
-	BaseURL    string
-	HTTPClient *http.Client
-	Token      string
+	transfer *transfer.Client
+	storage  tokenstorage.TokenStorage
 }
 
-func NewClientFromEnv() (*Client, error) {
-	token := strings.TrimSpace(os.Getenv(TransferTokenEnv))
-	if token == "" {
-		return nil, ErrMissingToken
+func tokenFile() (string, error) {
+	if name := strings.TrimSpace(os.Getenv(TokenFileEnv)); name != "" {
+		return name, nil
 	}
-	return &Client{BaseURL: TransferAPIBaseURL, HTTPClient: http.DefaultClient, Token: token}, nil
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("find user config directory: %w", err)
+	}
+	return filepath.Join(dir, "git-drs", defaultTokenFile), nil
 }
 
-func Check(ctx context.Context, client *Client) (string, error) {
-	if client == nil {
-		var err error
-		client, err = NewClientFromEnv()
-		if err != nil {
-			return "", err
+func openStorage() (tokenstorage.TokenStorage, string, error) {
+	name, err := tokenFile()
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
+		return nil, "", fmt.Errorf("create Globus credential directory: %w", err)
+	}
+	if err := os.Chmod(filepath.Dir(name), 0o700); err != nil {
+		return nil, "", fmt.Errorf("secure Globus credential directory: %w", err)
+	}
+	storage, err := tokenstorage.NewJSONTokenStorageWithNamespace(name, "git-drs")
+	if err != nil {
+		return nil, "", fmt.Errorf("open Globus token storage: %w", err)
+	}
+	if err := os.Chmod(name, 0o600); err != nil {
+		storage.Close()
+		return nil, "", fmt.Errorf("secure Globus token storage: %w", err)
+	}
+	return storage, name, nil
+}
+
+func clientIDFile(tokenName string) string {
+	return filepath.Join(filepath.Dir(tokenName), defaultClientIDFile)
+}
+
+func configuredClientID(tokenName string) (string, error) {
+	if id := strings.TrimSpace(os.Getenv(ClientIDEnv)); id != "" {
+		return id, nil
+	}
+	data, err := os.ReadFile(clientIDFile(tokenName))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("Globus native application client ID is required; set %s", ClientIDEnv)
+	}
+	if err != nil {
+		return "", fmt.Errorf("read Globus client configuration: %w", err)
+	}
+	var config struct {
+		ClientID string `json:"client_id"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return "", fmt.Errorf("parse Globus client configuration: %w", err)
+	}
+	if strings.TrimSpace(config.ClientID) == "" {
+		return "", fmt.Errorf("Globus client configuration has no client ID; set %s", ClientIDEnv)
+	}
+	return strings.TrimSpace(config.ClientID), nil
+}
+
+func saveClientID(tokenName, clientID string) error {
+	data, err := json.Marshal(struct {
+		ClientID string `json:"client_id"`
+	}{ClientID: clientID})
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(clientIDFile(tokenName), append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("save Globus client configuration: %w", err)
+	}
+	return nil
+}
+
+// Login runs the SDK's PKCE command-line OAuth flow and stores refreshable
+// tokens. Additional scopes may include collection data_access scopes.
+func Login(ctx context.Context, additionalScopes []string) (string, error) {
+	storage, tokenName, err := openStorage()
+	if err != nil {
+		return "", err
+	}
+	defer storage.Close()
+	clientID, err := configuredClientID(tokenName)
+	if err != nil {
+		return "", err
+	}
+	manager := login.NewCommandLineLoginFlowManager(clientID, strings.TrimSpace(os.Getenv(ClientSecretEnv)))
+	scopes := append([]string{TransferScope}, additionalScopes...)
+	result, err := manager.RunLoginFlow(ctx, login.AuthParams{Scopes: scopes, RequestRefresh: true})
+	if err != nil {
+		return "", err
+	}
+	for _, token := range result.Tokens {
+		if err := storage.Store(token); err != nil {
+			return "", fmt.Errorf("store Globus token for %s: %w", token.ResourceServer, err)
 		}
 	}
-	var summary struct {
-		Username string `json:"username"`
+	if err := saveClientID(tokenName, clientID); err != nil {
+		return "", err
 	}
-	if err := client.Do(ctx, http.MethodGet, "/tasksummary", nil, &summary); err != nil {
-		return "", fmt.Errorf("Globus Transfer API authentication failed: %w", err)
+	return tokenName, nil
+}
+
+func Logout() error {
+	storage, _, err := openStorage()
+	if err != nil {
+		return err
 	}
-	return strings.TrimSpace(summary.Username), nil
+	defer storage.Close()
+	tokens, err := storage.GetAll()
+	if err != nil {
+		return err
+	}
+	for _, token := range tokens {
+		if err := storage.Remove(token.ResourceServer); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func NewClient(ctx context.Context) (*Client, error) {
+	return newClient(ctx, true)
+}
+
+func newClient(ctx context.Context, allowEnvironmentToken bool) (*Client, error) {
+	var (
+		authorizer core.Authorizer
+		storage    tokenstorage.TokenStorage
+	)
+	if token := strings.TrimSpace(os.Getenv(TransferTokenEnv)); allowEnvironmentToken && token != "" {
+		authorizer = authorizers.NewAccessTokenAuthorizer(token)
+	} else {
+		var tokenName string
+		var err error
+		storage, tokenName, err = openStorage()
+		if err != nil {
+			return nil, err
+		}
+		token, err := storage.Get(transferResource)
+		if err != nil {
+			storage.Close()
+			return nil, fmt.Errorf("load Globus Transfer token: %w", err)
+		}
+		if token == nil {
+			storage.Close()
+			return nil, ErrMissingToken
+		}
+		if token.RefreshToken == "" {
+			if token.IsExpired() {
+				storage.Close()
+				return nil, ErrMissingToken
+			}
+			authorizer = authorizers.NewAccessTokenAuthorizer(token.AccessToken)
+		} else {
+			clientID, err := configuredClientID(tokenName)
+			if err != nil {
+				storage.Close()
+				return nil, err
+			}
+			authorizer = authorizers.NewRefreshTokenAuthorizer(
+				token.RefreshToken,
+				clientID,
+				strings.TrimSpace(os.Getenv(ClientSecretEnv)),
+				authorizers.WithInitialAccessToken(token.AccessToken, token.ExpiresAt),
+				authorizers.WithOnRefresh(func(accessToken, refreshToken string, expiresAt time.Time) {
+					token.AccessToken = accessToken
+					token.RefreshToken = refreshToken
+					token.ExpiresAt = expiresAt
+					_ = storage.Store(token)
+				}),
+			)
+		}
+	}
+
+	sdkClient, err := transfer.NewClient(ctx, &core.Config{Authorizer: authorizer, Scopes: []string{TransferScope}})
+	if err != nil {
+		if storage != nil {
+			storage.Close()
+		}
+		return nil, err
+	}
+	return &Client{transfer: sdkClient, storage: storage}, nil
+}
+
+func CheckStored(ctx context.Context) error {
+	client, err := newClient(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	return Check(ctx, client)
+}
+
+func (c *Client) Close() error {
+	if c == nil {
+		return nil
+	}
+	if c.storage != nil {
+		defer c.storage.Close()
+	}
+	if c.transfer != nil {
+		return c.transfer.Close()
+	}
+	return nil
+}
+
+func Check(ctx context.Context, client *Client) error {
+	owned := client == nil
+	if owned {
+		var err error
+		client, err = NewClient(ctx)
+		if err != nil {
+			return err
+		}
+		defer client.Close()
+	}
+	if client == nil || client.transfer == nil {
+		return fmt.Errorf("nil Globus client")
+	}
+	if _, err := client.transfer.ListTasks(ctx, &transfer.ListTasksOptions{Limit: 1}); err != nil {
+		return fmt.Errorf("Globus Transfer API authentication failed: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) SubmitTransfer(ctx context.Context, srcCollection, srcPath, dstCollection, dstPath, label string) (string, error) {
-	var sub struct {
-		Value string `json:"value"`
-	}
-	if err := c.Do(ctx, http.MethodGet, "/submission_id", nil, &sub); err != nil {
-		return "", fmt.Errorf("get Globus submission id: %w", err)
-	}
-	payload := map[string]any{
-		"DATA_TYPE":            "transfer",
-		"submission_id":        sub.Value,
-		"source_endpoint":      srcCollection,
-		"destination_endpoint": dstCollection,
-		"label":                label,
-		"sync_level":           3,
-		"DATA": []map[string]any{{
-			"DATA_TYPE":        "transfer_item",
-			"source_path":      srcPath,
-			"destination_path": dstPath,
+	response, err := c.transfer.SubmitTransfer(ctx, &transfer.Transfer{
+		SourceEndpoint:      srcCollection,
+		DestinationEndpoint: dstCollection,
+		Label:               label,
+		SyncLevel:           3,
+		Items: []transfer.TransferItem{{
+			SourcePath:      srcPath,
+			DestinationPath: dstPath,
 		}},
-	}
-	var out struct {
-		TaskID string `json:"task_id"`
-	}
-	if err := c.Do(ctx, http.MethodPost, "/transfer", payload, &out); err != nil {
+	})
+	if err != nil {
 		return "", fmt.Errorf("submit Globus transfer: %w", err)
 	}
-	if strings.TrimSpace(out.TaskID) == "" {
+	if strings.TrimSpace(response.TaskID) == "" {
 		return "", fmt.Errorf("submit Globus transfer returned an empty task id")
 	}
-	return strings.TrimSpace(out.TaskID), nil
+	return strings.TrimSpace(response.TaskID), nil
 }
 
 func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval time.Duration) error {
@@ -88,23 +285,20 @@ func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval ti
 		pollInterval = 5 * time.Second
 	}
 	for {
-		var task struct {
-			Status       string `json:"status"`
-			NiceStatus   string `json:"nice_status"`
-			Faults       int    `json:"faults"`
-			SubtasksDone int    `json:"subtasks_succeeded"`
-			FatalError   *struct {
-				Description string `json:"description"`
-			} `json:"fatal_error"`
-		}
-		if err := c.Do(ctx, http.MethodGet, "/task/"+taskID, nil, &task); err != nil {
+		task, err := c.transfer.GetTask(ctx, taskID)
+		if err != nil {
 			return fmt.Errorf("get Globus transfer task %s: %w", taskID, err)
 		}
 		status := strings.ToUpper(strings.TrimSpace(task.Status))
-		if status == "SUCCEEDED" {
+		switch status {
+		case "SUCCEEDED":
 			return nil
-		}
-		if status == "FAILED" || status == "INACTIVE" && task.FatalError != nil {
+		case "FAILED":
+			fallthrough
+		case "INACTIVE":
+			if status == "INACTIVE" && task.FatalError == nil {
+				break
+			}
 			detail := strings.TrimSpace(task.NiceStatus)
 			if task.FatalError != nil && strings.TrimSpace(task.FatalError.Description) != "" {
 				detail = strings.TrimSpace(task.FatalError.Description)
@@ -120,61 +314,4 @@ func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval ti
 		case <-time.After(pollInterval):
 		}
 	}
-}
-
-func (c *Client) Do(ctx context.Context, method, apiPath string, in, out any) error {
-	if c == nil {
-		return fmt.Errorf("nil Globus client")
-	}
-	base := strings.TrimRight(c.BaseURL, "/")
-	if base == "" {
-		base = TransferAPIBaseURL
-	}
-	var body io.Reader
-	if in != nil {
-		buf, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(buf)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, base+"/"+strings.TrimLeft(apiPath, "/"), body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.Token))
-	req.Header.Set("Accept", "application/json")
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	hc := c.HTTPClient
-	if hc == nil {
-		hc = http.DefaultClient
-	}
-	resp, err := hc.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	data, readErr := io.ReadAll(resp.Body)
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("%s %s returned %d%s", method, apiPath, resp.StatusCode, ResponseBodySuffix(data))
-	}
-	if readErr != nil {
-		return readErr
-	}
-	if out != nil && len(bytes.TrimSpace(data)) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func ResponseBodySuffix(body []byte) string {
-	trimmed := strings.TrimSpace(string(body))
-	if trimmed == "" {
-		return ""
-	}
-	return ": " + trimmed
 }

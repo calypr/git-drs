@@ -193,8 +193,20 @@ reports missing consent. If the DRS object offers multiple access methods,
 prefer Globus selection while debugging:
 
 ```bash
-GIT_DRS_ACCESS_METHOD=globus git drs pull
+GIT_DRS_ACCESS_METHOD=prefer:globus git drs pull
 ```
+
+If HTTPS fallback hides the Globus readiness error, require Globus for that
+pull:
+
+```bash
+git drs pull --access-method globus
+```
+
+Selection diagnostics classify a candidate as `disabled` when it is
+unavailable or not configured, and `broken` when configured credentials are
+invalid or expired without refresh. Selection may fall back only before a DRS
+`/access` request or transfer starts.
 
 See [Globus Access Methods](globus.md) for setup and troubleshooting details.
 

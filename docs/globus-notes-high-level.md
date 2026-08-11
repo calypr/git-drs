@@ -391,6 +391,6 @@ Before pulling Globus-backed objects:
 1. Set `GIT_DRS_GLOBUS_CLIENT_ID` to a registered native application client ID, run `git drs auth globus login`, and request any collection-specific `data_access` dependent scopes with `--scope`. Automation may instead set `GIT_DRS_GLOBUS_TRANSFER_TOKEN`.
 2. Set `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` to the destination collection that is visible from your local environment, such as a Globus Connect Personal collection.
 3. Configure the destination collection root to expose the repository root so transfers write directly to `.git/lfs/objects`.
-4. If a DRS object advertises multiple access methods and you prefer Globus, set `GIT_DRS_ACCESS_METHOD=globus` (or `GIT_DRS_TRANSFER_PROVIDER=globus`).
+4. If a DRS object advertises multiple access methods and you prefer Globus, set `GIT_DRS_ACCESS_METHOD=prefer:globus`. Use `git drs pull --access-method globus` when Globus is a strict requirement.
 
 When git-drs receives a `globus://` access URL, it loads and refreshes the stored Globus credential, verifies Transfer API authentication with the same check used by `git drs auth globus status`, requests a submission ID, submits a transfer task to the Globus Transfer API, polls task status until completion, and then validates the hydrated cache object using the normal size/checksum checks.

@@ -104,14 +104,26 @@ collection. Several users may intentionally share a managed institutional or
 project collection, but that remains environment configuration rather than
 tracked repository metadata.
 
-If a DRS object advertises multiple access methods and you want to prefer the
-Globus method, set one of these:
+If a DRS object advertises multiple access methods, choose whether Globus is a
+preference or a requirement:
 
 ```bash
-export GIT_DRS_ACCESS_METHOD=globus
-# or, for compatibility with older examples:
-export GIT_DRS_TRANSFER_PROVIDER=globus
+# Prefer Globus, but use another ready method when Globus is unavailable.
+export GIT_DRS_ACCESS_METHOD=prefer:globus
+
+# Or require Globus for one pull, with no fallback.
+git drs pull --access-method globus
 ```
+
+For a persistent, non-secret preference on one repository remote:
+
+```bash
+git config --local drs.remote.research.access-method prefer:globus
+```
+
+`GIT_DRS_ACCESS_METHOD=require:globus` is the strict environment form. A bare
+`globus` value and the legacy `GIT_DRS_TRANSFER_PROVIDER=globus` still mean
+`prefer:globus`, but the explicit form is recommended.
 
 Verify authentication before pulling:
 
@@ -315,5 +327,11 @@ Check these items:
 If the DRS object has multiple access methods, prefer Globus selection:
 
 ```bash
-GIT_DRS_ACCESS_METHOD=globus git drs pull
+GIT_DRS_ACCESS_METHOD=prefer:globus git drs pull
+```
+
+To diagnose why Globus is unavailable without silently selecting HTTPS, use:
+
+```bash
+git drs pull --access-method globus
 ```

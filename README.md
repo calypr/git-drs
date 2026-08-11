@@ -116,6 +116,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 - [Documentation Home](docs/index.md)
 - [Getting Started](docs/getting-started.md)
 - [Commands Reference](docs/commands.md)
+- [Access-Method Selection](docs/access-method-selection-and-authentication.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Publishing documentation with GitHub Pages](docs/github-pages.md)

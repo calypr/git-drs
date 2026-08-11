@@ -99,6 +99,18 @@ Most work reduces to this loop:
    git drs pull -I "*.vcf.gz"
    ```
 
+   If objects offer several transfer methods, normal pulls select one
+   automatically. To prefer Globus while allowing fallback, or to require it
+   for a single pull:
+
+   ```bash
+   GIT_DRS_ACCESS_METHOD=prefer:globus git drs pull
+   git drs pull --access-method globus
+   ```
+
+   See [Access-Method Selection](access-method-selection-and-authentication.md)
+   for persistent per-remote preferences and diagnostics.
+
 3. edit or add files normally
 
    ```bash

@@ -43,6 +43,8 @@ jobs:
           cp docs/quickstart.md .pages-docs/
           cp docs/getting-started.md .pages-docs/
           cp docs/commands.md .pages-docs/
+          cp docs/access-method-selection-and-authentication.md .pages-docs/
+          cp docs/globus.md .pages-docs/
           cp docs/pointer-files.md .pages-docs/
           cp docs/adding-s3-files.md .pages-docs/
           cp docs/remove-files.md .pages-docs/

@@ -22,6 +22,9 @@ resolve common problems.
   that is already in provider storage.
 - [Globus Access Methods](globus.md) — log in with Globus Auth, configure a
   destination collection, and use Globus-backed hydration.
+- [Access-Method Selection](access-method-selection-and-authentication.md) —
+  choose automatic, preferred, or required transfer methods and understand
+  fallback and readiness diagnostics.
 - [Remove Files](remove-files.md) — remove tracked files and understand remote
   reconciliation behavior.
 - [Troubleshooting](troubleshooting.md) — diagnose setup, authentication,

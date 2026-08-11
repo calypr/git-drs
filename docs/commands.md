@@ -268,7 +268,26 @@ git drs pull
 git drs pull -I "*.bam"
 git drs pull -I "data/**" -I "results/*.txt"
 git drs pull --dry-run -I "results/**"
+git drs pull research --access-method globus
 ```
+
+Access-method policy:
+
+- `auto` is the default. It selects the first ready method in the deterministic
+  order HTTPS, S3, GS, Globus, then other method names lexically.
+- `--access-method <type>` strictly requires that type for this pull. It does
+  not fall back.
+- `GIT_DRS_ACCESS_METHOD=prefer:<type>` prefers a type but falls back to another
+  ready method.
+- `GIT_DRS_ACCESS_METHOD=require:<type>` requires a type for commands that do
+  not expose the flag as well as for `pull`.
+- A repository can set a per-remote default with
+  `git config --local drs.remote.<name>.access-method prefer:<type>`.
+
+The precedence is command flag, `GIT_DRS_ACCESS_METHOD`, legacy
+`GIT_DRS_TRANSFER_PROVIDER`, remote Git configuration, then `auto`. Bare method
+names in environment and Git configuration remain compatible aliases for
+`prefer:<type>`.
 
 Important behavior:
 
@@ -277,6 +296,11 @@ Important behavior:
 - include matching is against repo-relative paths
 - access-method selection does not change pointer paths, cache paths, include
   matching, or checkout behavior
+- fallback occurs only during selection; git-drs does not switch providers
+  after `/access` resolution or transfer execution starts
+
+See [Client Access-Method Selection Policy](access-method-selection-and-authentication.md)
+for readiness states and diagnostics.
 
 ### `git drs push [remote-name]`
 

@@ -35,6 +35,19 @@ Use this when you want explicit initialization or to repair repo-local hooks/con
 
 ## Remote Configuration
 
+Repositories may commit canonical remote defaults in
+`.git-drs/drs-policies.yaml`. Clone-local `drs.remote.<name>.*` Git
+configuration overrides its endpoint and selection preference; local Globus
+routing is never accepted from the shared file. Before credentials are sent to
+an authenticated committed endpoint, confirm it with:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+See [Client Access-Method Selection Policy](access-method-selection-and-authentication.md)
+for the strict versioned schema.
+
 ### `git drs remote add [name] <endpoint-or-alias> [flags]`
 
 Add a DRS server with the unified remote command. The built-in aliases are
@@ -273,8 +286,8 @@ git drs pull research --access-method globus
 
 Access-method policy:
 
-- `auto` is the default. It selects the first ready method in the deterministic
-  order HTTPS, S3, GS, Globus, then other method names lexically.
+- `auto` is the default. It prefers HTTPS, then Globus among implemented
+  data-plane handlers. S3 or GS access IDs may resolve to HTTPS.
 - `--access-method <type>` strictly requires that type for this pull. It does
   not fall back.
 - `GIT_DRS_ACCESS_METHOD=prefer:<type>` prefers a type but falls back to another
@@ -296,8 +309,10 @@ Important behavior:
 - include matching is against repo-relative paths
 - access-method selection does not change pointer paths, cache paths, include
   matching, or checkout behavior
-- fallback occurs only during selection; git-drs does not switch providers
-  after `/access` resolution or transfer execution starts
+- `/access` resolution is planning, so a preferred candidate may fall back
+  when resolution or destination routing fails
+- git-drs does not switch providers after the first byte request or Globus task
+  submission
 
 See [Client Access-Method Selection Policy](access-method-selection-and-authentication.md)
 for readiness states and diagnostics.

@@ -63,6 +63,17 @@ git drs remote add production calypr --scope <organization/project> \
 git drs pull
 ```
 
+If the repository includes `.git-drs/drs-policies.yaml`, its canonical remote
+and access-method default are loaded automatically. An authenticated committed
+endpoint must be reviewed once before git-drs sends credentials:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+Clone-local remote configuration overrides the committed endpoint. Globus
+destination routing and credentials are never read from the committed policy.
+
 ### New Repository
 
 ```bash

@@ -15,9 +15,9 @@ define new DRS metadata, credential exchange, or bulk transfer grouping.
 
 git-drs supports three policies:
 
-- `auto`: choose the first ready method in the built-in order `https`, `s3`,
-  `gs`, `globus`, then other method names lexically. Server array order is not
-  preference.
+- `auto`: prefer HTTPS, then Globus among implemented data-plane handlers.
+  S3 or GS access IDs remain usable when DRS resolves them to HTTPS. Server
+  array order is not preference.
 - `prefer:<type>`: try the named type first, then fall back using the built-in
   order.
 - `require:<type>`: use only the named type and fail during planning if it is
@@ -35,13 +35,48 @@ The first configured source wins:
 2. `GIT_DRS_ACCESS_METHOD`, then the legacy
    `GIT_DRS_TRANSFER_PROVIDER` environment variable;
 3. repository-local remote configuration;
-4. the built-in `auto` policy.
+4. committed `.git-drs/drs-policies.yaml` policy;
+5. the built-in `auto` policy.
 
 Configure a remote without storing credentials in Git:
 
 ```bash
 git config --local drs.remote.research.access-method prefer:globus
 ```
+
+Repositories may commit a canonical endpoint and shared default:
+
+```yaml
+version: 1
+remotes:
+  research:
+    endpoint: https://drs.example.org
+    provider: gen3
+    auth: bearer
+    scope: organization/project
+    selection:
+      access_method: prefer:globus
+    transfer:
+      globus:
+        allowed_source_collections:
+          - 11111111-1111-1111-1111-111111111111
+```
+
+The source list is a repository constraint, not a trust anchor: missing means
+no additional restriction, while an empty list disables every Globus source.
+It cannot contain destination routing or credentials. Unknown fields and
+unsupported policy versions fail before transfer planning.
+
+A local endpoint and selection value override the committed defaults. Before
+credentials can be sent to an authenticated committed endpoint, review and
+trust the exact endpoint locally:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+This confirmation is unnecessary when the endpoint itself is configured
+locally. Globus destinations, routes, paths, and all credentials remain local.
 
 Examples:
 
@@ -61,18 +96,20 @@ Each candidate receives one local planning state:
 - `broken`: configuration exists but is invalid, expired without refresh, or
   the method has no usable URL or access ID.
 
-HTTPS URLs and resolvable DRS access IDs are locally ready. Globus readiness
-requires a destination collection plus either
+HTTPS URLs are ready. DRS access IDs are resolved during planning and the
+returned URL is then evaluated. Globus readiness requires a routed destination
+collection plus either
 `GIT_DRS_GLOBUS_TRANSFER_TOKEN` or credentials stored by
 `git drs auth globus login`. Readiness is local; a credential can still be
 rejected when it is used.
 
 ### Fallback boundary
 
-Fallback occurs only while selecting a ready method. Once git-drs starts a DRS
-`/access` request or a byte transfer, failure is returned for that selected
-method. It does not silently switch providers after execution begins or after a
-partial transfer.
+DRS `/access` resolution is part of planning because it may reveal the Globus
+source collection needed for destination routing. A preferred candidate may
+fall back when `/access` resolution, URL validation, or routing fails. Once the
+first byte request or Globus task submission begins, git-drs does not silently
+switch providers.
 
 ### Aggregate diagnostics
 
@@ -81,7 +118,7 @@ returning them. Each diagnostic includes the object ID and each considered
 method's readiness state and reason. For example:
 
 ```text
-object one: no usable access method for require: globus=disabled (GIT_DRS_GLOBUS_DESTINATION_COLLECTION is not configured)
+object one: no usable access method for require: globus=disabled (destination_collection_unmapped)
 object two: no usable access method for require: globus=broken (stored Globus access token is expired and cannot be refreshed)
 ```
 

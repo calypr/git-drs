@@ -98,11 +98,22 @@ command-line use so no client secret is required.
 
 The `globus://<source-collection-id>/<source-path>` URL identifies the source
 collection only. `GIT_DRS_GLOBUS_DESTINATION_COLLECTION` identifies the
-collection that exposes this user's local repository. Each user, workstation,
-runner, or compute environment must configure an accessible destination
-collection. Several users may intentionally share a managed institutional or
-project collection, but that remains environment configuration rather than
-tracked repository metadata.
+operation-wide destination collection. Alternatively, configure one default
+destination or exact source routes in repository-local Git configuration:
+
+```bash
+git config --local \
+  drs.remote.research.globus-default-destination \
+  '<destination-collection-id>'
+
+git config --local --add \
+  drs.remote.research.globus-collection \
+  '<source-collection-id>=<destination-collection-id>'
+```
+
+The environment override wins, followed by an exact case-normalized source
+route, then the default destination. Conflicting duplicate routes are errors.
+The source map is optional; one default destination is the normal case.
 
 If a DRS object advertises multiple access methods, choose whether Globus is a
 preference or a requirement:
@@ -120,6 +131,12 @@ For a persistent, non-secret preference on one repository remote:
 ```bash
 git config --local drs.remote.research.access-method prefer:globus
 ```
+
+A repository may instead commit that default and optionally restrict permitted
+source collections in `.git-drs/drs-policies.yaml`. Destination collections and
+paths must still be configured locally. See
+[Access-Method Selection](access-method-selection-and-authentication.md#preference-precedence)
+for the schema and precedence rules.
 
 `GIT_DRS_ACCESS_METHOD=require:globus` is the strict environment form. A bare
 `globus` value and the legacy `GIT_DRS_TRANSFER_PROVIDER=globus` still mean
@@ -140,7 +157,7 @@ git drs pull
 From a Git user's perspective, a Globus-backed file behaves like any other
 tracked DRS file. Its pointer stays at the repository path chosen by the user,
 and pull or smudge hydrates that path through the normal LFS cache. There is no
-per-file Globus destination, path prefix, or separate checkout workflow.
+per-file destination or separate checkout workflow.
 
 The normal file lifecycle is unchanged:
 
@@ -160,16 +177,25 @@ behave the same regardless of the access method later selected by `pull`.
 
 `git-drs` downloads into its local cache path first, then checks out the hydrated
 file from that cache. For Globus transfers, the destination path sent to Globus
-is the collection-absolute LFS cache path:
+is the configured repository path followed by the LFS cache path:
 
 ```text
-/.git/lfs/objects/<oid path>
+<repository-path>/.git/lfs/objects/<oid path>
 ```
 
-The destination collection root must expose the repository root so this writes
-to the same LFS cache consumed by pull and smudge. The collection ID and its
-root mapping are transport configuration; they do not change the file's Git
-path or cache path.
+The repository path defaults to `/`, meaning the destination collection is
+rooted at the repository. Institutional collections can configure a path:
+
+```bash
+git config --local --add \
+  drs.remote.research.globus-destination-path \
+  '<destination-collection-id>=/projects/research/repository>'
+```
+
+Paths must be collection-absolute and cannot contain traversal. DRS `/access`
+resolution remains part of planning: an unmapped preferred Globus source may
+fall back to HTTPS. Fallback ends with the first byte request or Globus task
+submission.
 
 ## Encoding a single-file Globus transfer in DRS
 

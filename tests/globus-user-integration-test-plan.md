@@ -16,7 +16,8 @@ browser login, real collections, and a DRS server with controlled fixtures.
 - Git and Git LFS. The separate `globus-cli` utility is not required.
 - A registered Globus native application client ID.
 - A readable source collection and a writable destination collection.
-- The destination collection root must expose the root of the test repository.
+- The destination collection must expose the test repository, either at its
+  root or at a configured `globus-destination-path`.
 - A DRS remote and test repository prepared with the fixture objects below.
 - A user authorized to discover and resolve every fixture object.
 

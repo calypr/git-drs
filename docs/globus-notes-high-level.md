@@ -394,3 +394,44 @@ Before pulling Globus-backed objects:
 4. If a DRS object advertises multiple access methods and you prefer Globus, set `GIT_DRS_ACCESS_METHOD=prefer:globus`. Use `git drs pull --access-method globus` when Globus is a strict requirement.
 
 When git-drs receives a `globus://` access URL, it loads and refreshes the stored Globus credential, verifies Transfer API authentication with the same check used by `git drs auth globus status`, requests a submission ID, submits a transfer task to the Globus Transfer API, polls task status until completion, and then validates the hydrated cache object using the normal size/checksum checks.
+
+## Importing a Globus collection tree
+
+Materialize a collection subtree as individual, immutable DRS objects with
+`add-url --recursive`. The command intentionally requires a versioned,
+authoritative TSV manifest because Globus directory listings provide paths and
+sizes, not authoritative SHA-256 values.
+
+```text
+path\tsize\tsha256
+reads/a.fastq\t1234\t<64-character SHA-256>
+reads/b.fastq\t5678\t<64-character SHA-256>
+```
+
+Validate first, then materialize:
+
+```bash
+git drs add-url globus://<source-collection>/release-1/ data/release-1 \
+  --recursive --manifest release-1.tsv --dry-run
+git drs add-url globus://<source-collection>/release-1/ data/release-1 \
+  --recursive --manifest release-1.tsv
+git add data/release-1 .gitattributes release-1.tsv
+git commit -m "add release 1 Globus references"
+git drs push
+```
+
+The live collection must contain exactly the manifest paths and sizes. The
+writer does not download the data and does not derive hashes from the live
+listing. It creates one pointer and local DRS record per manifest row and one
+`data/release-1/** drs=ro` tree rule. An existing conflicting read-write tree
+rule is rejected. Member paths and SHA-256 values must be unique.
+
+The manifest freezes the publication at write time. Later collection changes
+do not change committed DRS objects; publish a new manifest and commit to create
+a new version.
+
+On pull, git-drs uses the explicit member paths stored in those DRS objects. It
+never re-lists the source collection. Compatible members are submitted together
+in one multi-item Globus task per source collection, destination collection,
+destination root, and credential context. Every downloaded cache object is then
+checked locally against its DRS size and SHA-256.

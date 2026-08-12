@@ -358,6 +358,10 @@ Create a pointer plus local DRS metadata for an object that already exists in pr
 git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
 git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
 git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin --sha256 <hex>
+git drs add-url globus://<collection-id>/project/ data/project \
+  --recursive --manifest project.tsv --dry-run
+git drs add-url globus://<collection-id>/project/ data/project \
+  --recursive --manifest project.tsv
 ```
 
 Notes:
@@ -366,6 +370,13 @@ Notes:
 - explicit provider URL mode remains supported
 - `--scheme` is required for object-key mode
 - when `--sha256` is omitted, the pointer uses a derived local/cache OID and source URL metadata remains the retrieval identity
+- recursive Globus import requires an authoritative tab-separated manifest with
+  `path`, `size`, and `sha256` columns; Globus supplies the live paths and sizes
+  used to validate it, but is not treated as the checksum authority
+- `--dry-run` validates and prints the planned Globus members without changing
+  the worktree; `--remote` selects the DRS registration scope
+- recursive import writes one DRS pointer and local DRS object per member, plus
+  one `destination/**` read-only rule in `.gitattributes`
 - registration happens later on `git drs push`
 
 ### `git drs add-ref <drs-id> <path>`

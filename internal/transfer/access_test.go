@@ -3,6 +3,7 @@ package transfer
 import (
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,6 +57,7 @@ func TestAccessMethodPolicyModes(t *testing.T) {
 	}
 	obj := drsapi.DrsObject{Id: "object-1", AccessMethods: &methods}
 	t.Setenv(globusauth.TransferTokenEnv, "")
+	t.Setenv(globusauth.TokenFileEnv, filepath.Join(t.TempDir(), "missing-tokens.json"))
 	t.Setenv(globusDestCollectionEnv, "")
 
 	if got, err := selectAccessMethodWithPolicy(obj, "auto"); err != nil || got.AccessId == nil || *got.AccessId != httpsID {

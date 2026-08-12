@@ -30,7 +30,7 @@ func sdkClient(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
 		server.Close()
 		t.Fatal(err)
 	}
-	return &Client{transfer: client}, server
+	return &Client{transfer: client, authorizer: authorizers.NewAccessTokenAuthorizer("token"), httpClient: server.Client(), baseURL: server.URL}, server
 }
 
 func TestNewClientRequiresStoredOrEnvironmentToken(t *testing.T) {
@@ -171,7 +171,7 @@ func TestSubmitTransferItemsBatchesFilesAndChecksums(t *testing.T) {
 func TestListFilesRecursesAndSorts(t *testing.T) {
 	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("path") == "/root/" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "b", "type": "file", "size": 2}, {"name": "sub", "type": "dir"}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "b", "type": "file", "size": 2, "last_modified": "2026-08-12 19:08:37+00:00"}, {"name": "sub", "type": "dir", "last_modified": "2026-08-12 19:08:37+00:00"}}})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "a", "type": "file", "size": 1}}})

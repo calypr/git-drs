@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -77,8 +80,11 @@ func CredentialReadiness() (Readiness, string) {
 }
 
 type Client struct {
-	transfer *transfer.Client
-	storage  tokenstorage.TokenStorage
+	transfer   *transfer.Client
+	storage    tokenstorage.TokenStorage
+	authorizer core.Authorizer
+	httpClient *http.Client
+	baseURL    string
 }
 
 type TransferItem struct {
@@ -264,14 +270,15 @@ func newClient(ctx context.Context, allowEnvironmentToken bool) (*Client, error)
 		}
 	}
 
-	sdkClient, err := transfer.NewClient(ctx, &core.Config{Authorizer: authorizer, Scopes: []string{TransferScope}})
+	config := &core.Config{Authorizer: authorizer, Scopes: []string{TransferScope}}
+	sdkClient, err := transfer.NewClient(ctx, config)
 	if err != nil {
 		if storage != nil {
 			storage.Close()
 		}
 		return nil, err
 	}
-	return &Client{transfer: sdkClient, storage: storage}, nil
+	return &Client{transfer: sdkClient, storage: storage, authorizer: authorizer, httpClient: http.DefaultClient, baseURL: "https://transfer.api.globus.org"}, nil
 }
 
 func CheckStored(ctx context.Context) error {
@@ -355,11 +362,11 @@ func (c *Client) ListFiles(ctx context.Context, collection, root string) ([]File
 	for len(queue) > 0 {
 		dir := queue[0]
 		queue = queue[1:]
-		listing, err := c.transfer.ListDirectory(ctx, collection, dir, &transfer.ListDirectoryOptions{ShowHidden: true})
+		listing, err := c.listDirectory(ctx, collection, dir)
 		if err != nil {
 			return nil, fmt.Errorf("list Globus directory %s:%s: %w", collection, dir, err)
 		}
-		for _, entry := range listing.Data {
+		for _, entry := range listing {
 			itemPath := strings.TrimRight(dir, "/") + "/" + entry.Name
 			switch entry.Type {
 			case "file":
@@ -373,6 +380,48 @@ func (c *Client) ListFiles(ctx context.Context, collection, root string) ([]File
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return files, nil
+}
+
+type directoryEntry struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+}
+
+func (c *Client) listDirectory(ctx context.Context, collection, dir string) ([]directoryEntry, error) {
+	query := url.Values{"path": {dir}, "show_hidden": {"1"}}
+	rawURL := strings.TrimRight(c.baseURL, "/") + "/v0.10/operation/endpoint/" + url.PathEscape(collection) + "/ls?" + query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.authorizer != nil {
+		header, err := c.authorizer.GetAuthorizationHeader(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", header)
+	}
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("Globus directory listing returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var listing struct {
+		Data []directoryEntry `json:"DATA"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
+		return nil, fmt.Errorf("decode Globus directory listing: %w", err)
+	}
+	return listing.Data, nil
 }
 
 func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval time.Duration) error {

@@ -1,13 +1,52 @@
 package transfer
 
 import (
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	syclient "github.com/calypr/syfon/client"
 )
+
+func TestPlanAccessURLFallsBackAfterGlobusAccessResolution(t *testing.T) {
+	globusID := "globus-access"
+	httpsURL := &struct {
+		Headers *[]string `json:"headers,omitempty"`
+		Url     string    `json:"url"`
+	}{Url: "https://public.example/object"}
+	methods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeGlobus, AccessId: &globusID},
+		{Type: drsapi.AccessMethodTypeHttps, AccessUrl: httpsURL},
+	}
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"url":"globus://source-a/object"}`)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Request:    r,
+		}, nil
+	})}
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(globusauth.TransferTokenEnv, "token")
+	t.Setenv(globusDestCollectionEnv, "")
+	drsCtx := &remoteruntime.GitContext{Client: raw.(*syclient.Client), AccessMethodPolicy: "prefer:globus"}
+
+	got, err := planAccessURL(t.Context(), drsCtx, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
+	if err != nil || got.Url != httpsURL.Url {
+		t.Fatalf("planned URL = %+v, %v; want HTTPS fallback", got, err)
+	}
+	drsCtx.AccessMethodPolicy = "require:globus"
+	if _, err := planAccessURL(t.Context(), drsCtx, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods}); err == nil || !strings.Contains(err.Error(), "destination_collection_unmapped") {
+		t.Fatalf("required Globus error = %v", err)
+	}
+}
 
 func TestAccessMethodPolicyModes(t *testing.T) {
 	httpsID, globusID := "https-access", "globus-access"
@@ -61,16 +100,25 @@ func TestAccessPolicyPrecedence(t *testing.T) {
 }
 
 func TestBulkAccessRequestAggregatesSelectionDiagnostics(t *testing.T) {
-	id := "globus-access"
-	objects := []drsapi.DrsObject{
-		{Id: "one", AccessMethods: &[]drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeGlobus, AccessId: &id}}},
-		{Id: "two", AccessMethods: &[]drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeGlobus, AccessId: &id}}},
+	globusURL := func(source string) *struct {
+		Headers *[]string `json:"headers,omitempty"`
+		Url     string    `json:"url"`
+	} {
+		return &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "globus://" + source + "/object"}
 	}
-	t.Setenv(globusauth.TransferTokenEnv, "")
+	objects := []drsapi.DrsObject{
+		{Id: "one", AccessMethods: &[]drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeGlobus, AccessUrl: globusURL("source-one")}}},
+		{Id: "two", AccessMethods: &[]drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeGlobus, AccessUrl: globusURL("source-two")}}},
+	}
+	t.Setenv(globusauth.TransferTokenEnv, "token")
 	t.Setenv(globusDestCollectionEnv, "")
-	_, ok, err := bulkAccessRequest(objects, "require:globus")
-	if ok || err == nil || !strings.Contains(err.Error(), "object one") || !strings.Contains(err.Error(), "object two") {
-		t.Fatalf("ok=%v error=%v", ok, err)
+	drsCtx := &remoteruntime.GitContext{Client: &syclient.Client{}, AccessMethodPolicy: "require:globus"}
+	_, err := BulkAccessURLsForObjects(t.Context(), drsCtx, objects)
+	if err == nil || !strings.Contains(err.Error(), "object one") || !strings.Contains(err.Error(), "object two") {
+		t.Fatalf("error=%v", err)
 	}
 }
 

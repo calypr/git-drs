@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,105 @@ func TestLoadConfigIgnoresFormerRepositoryYAMLPath(t *testing.T) {
 	}
 	if len(cfg.Remotes) != 0 {
 		t.Fatalf("unexpected remotes loaded from former YAML path: %+v", cfg.Remotes)
+	}
+}
+
+func TestLoadConfigMergesSharedPolicyWithLocalOverrides(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	policy := `version: 1
+remotes:
+  research:
+    endpoint: https://drs.example.org
+    provider: gen3
+    auth: bearer
+    selection:
+      access_method: prefer:globus
+    transfer:
+      globus:
+        allowed_source_collections: [SOURCE-A]
+`
+	if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"config", "drs.remote.research.type", "ga4gh"},
+		{"config", "drs.remote.research.endpoint", "https://internal.example.org"},
+		{"config", "drs.remote.research.provider", "gen3"},
+		{"config", "drs.remote.research.auth", "bearer"},
+		{"config", "drs.remote.research.access-method", "require:https"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := cfg.Remotes[Remote("research")]
+	if cfg.DefaultRemote != "research" {
+		t.Fatalf("default remote = %q", cfg.DefaultRemote)
+	}
+	if remote.Generic == nil || remote.Generic.Endpoint != "https://internal.example.org" || remote.AccessMethod != "require:https" {
+		t.Fatalf("effective remote = %+v", remote)
+	}
+	if len(remote.AllowedGlobusSources) != 1 || remote.AllowedGlobusSources[0] != "source-a" {
+		t.Fatalf("allowed sources = %v", remote.AllowedGlobusSources)
+	}
+}
+
+func TestLoadConfigSharedPolicyValidation(t *testing.T) {
+	for name, policy := range map[string]string{
+		"unsupported version": "version: 2\nremotes: {}\n",
+		"unknown field":       "version: 1\nunknown: true\nremotes: {}\n",
+		"invalid mode":        "version: 1\nremotes:\n  r:\n    selection:\n      access_method: sometimes\n",
+		"local routing":       "version: 1\nremotes:\n  r:\n    globus:\n      default_destination: x\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := setupTestRepo(t)
+			if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(); err == nil {
+				t.Fatal("expected invalid shared policy to fail")
+			}
+		})
+	}
+}
+
+func TestLoadConfigDistinguishesMissingAndEmptySourceConstraint(t *testing.T) {
+	for name, test := range map[string]struct {
+		globus  string
+		wantNil bool
+	}{
+		"missing": {globus: "", wantNil: true},
+		"empty":   {globus: "    transfer:\n      globus:\n        allowed_source_collections: []\n", wantNil: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := setupTestRepo(t)
+			if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			policy := "version: 1\nremotes:\n  research:\n" + test.globus
+			if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotNil := cfg.Remotes[Remote("research")].AllowedGlobusSources == nil; gotNil != test.wantNil {
+				t.Fatalf("nil = %v, want %v", gotNil, test.wantNil)
+			}
+		})
 	}
 }
 
@@ -78,6 +178,58 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	}
 	if got := loaded.Remotes[Remote("origin")].AccessMethod; got != "prefer:globus" {
 		t.Fatalf("access method policy = %q", got)
+	}
+}
+
+func TestLoadConfigPreservesGlobusRouteMaps(t *testing.T) {
+	dir := setupTestRepo(t)
+	commands := [][]string{
+		{"config", "drs.remote.research.type", "local"},
+		{"config", "drs.remote.research.endpoint", "http://localhost:8080"},
+		{"config", "drs.remote.research.globus-default-destination", "destination-default"},
+		{"config", "--add", "drs.remote.research.globus-collection", "SOURCE-A=destination-west"},
+		{"config", "--add", "drs.remote.research.globus-collection", "source-b=destination-east"},
+		{"config", "--add", "drs.remote.research.globus-destination-path", "destination-west=/projects/research"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := cfg.Remotes[Remote("research")]
+	if remote.GlobusDefaultDestination != "destination-default" || remote.GlobusCollections["source-a"] != "destination-west" || remote.GlobusCollections["source-b"] != "destination-east" {
+		t.Fatalf("Globus routing = %+v", remote)
+	}
+	if remote.GlobusDestinationPaths["destination-west"] != "/projects/research" {
+		t.Fatalf("Globus destination paths = %+v", remote.GlobusDestinationPaths)
+	}
+}
+
+func TestLoadConfigRejectsConflictingGlobusRoutes(t *testing.T) {
+	dir := setupTestRepo(t)
+	for _, value := range []string{"source-a=destination-one", "source-a=destination-two"} {
+		cmd := exec.Command("git", "config", "--add", "drs.remote.research.globus-collection", value)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, out)
+		}
+	}
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "conflicting globus-collection") {
+		t.Fatalf("LoadConfig error = %v", err)
+	}
+}
+
+func TestParseConfigMapRejectsMalformedValues(t *testing.T) {
+	for _, value := range []string{"missing-separator", "source=", "=destination", "source=destination=extra"} {
+		if _, err := parseConfigMap("globus-collection", []string{value}); err == nil {
+			t.Fatalf("expected %q to fail", value)
+		}
 	}
 }
 

@@ -11,11 +11,18 @@ type DRSRemote interface {
 }
 
 type RemoteSelect struct {
-	Gen3         *Gen3Remote
-	Local        *LocalRemote
-	Terra        *TerraRemote
-	Generic      *GenericRemote
-	AccessMethod string
+	Gen3                     *Gen3Remote
+	Local                    *LocalRemote
+	Terra                    *TerraRemote
+	Generic                  *GenericRemote
+	AccessMethod             string
+	GlobusDefaultDestination string
+	GlobusCollections        map[string]string
+	GlobusDestinationPaths   map[string]string
+	// AllowedGlobusSources is nil when shared policy imposes no restriction.
+	// A non-nil empty slice intentionally disables every Globus source.
+	AllowedGlobusSources []string
+	EndpointFromShared   bool
 }
 
 // GenericRemote is the compositional configuration produced by the unified

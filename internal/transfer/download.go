@@ -34,11 +34,7 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 	if match.AccessMethods == nil || len(*match.AccessMethods) == 0 {
 		return nil, nil, fmt.Errorf("AccessURLForHashScope: no access methods *available* for DRS object %s", match.Id)
 	}
-	method, err := selectAccessMethodWithPolicy(match, accessPolicyFor(drsCtx))
-	if err != nil {
-		return nil, nil, err
-	}
-	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, match.Id, method)
+	accessURL, err := planAccessURL(ctx, drsCtx, match)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -56,35 +52,11 @@ func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, d
 	if obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
 		return nil, nil, fmt.Errorf("AccessURLForDRSURI: no access methods *available* for DRS object %s", obj.Id)
 	}
-	method, err := selectAccessMethodWithPolicy(obj, accessPolicyFor(drsCtx))
-	if err != nil {
-		return nil, nil, err
-	}
-	accessURL, err := accessURLForSelectedMethod(ctx, drsCtx, obj.Id, method)
+	accessURL, err := planAccessURL(ctx, drsCtx, obj)
 	if err != nil {
 		return nil, nil, err
 	}
 	return accessURL, &obj, nil
-}
-
-func accessURLForSelectedMethod(ctx context.Context, drsCtx *remoteruntime.GitContext, objectID string, method *drsapi.AccessMethod) (*drsapi.AccessURL, error) {
-	if method == nil {
-		return nil, fmt.Errorf("no access method selected for DRS object %s", objectID)
-	}
-	if method.AccessUrl != nil {
-		raw := strings.TrimSpace(method.AccessUrl.Url)
-		if isHTTPURL(raw) || isGlobusURL(raw) {
-			return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: raw}, nil
-		}
-	}
-	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
-		return nil, fmt.Errorf("no access URL or access ID found in access method for DRS object %s", objectID)
-	}
-	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, objectID, strings.TrimSpace(*method.AccessId))
-	if err != nil {
-		return nil, err
-	}
-	return &accessURL, nil
 }
 
 func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI, cachePath string) error {
@@ -122,14 +94,14 @@ func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitC
 		return DownloadToCachePath(ctx, drsCtx, oid, cachePath)
 	}
 	if isGlobusURL(accessURL.Url) {
-		return downloadGlobusResolved(ctx, accessURL.Url, cachePath, oid, obj)
+		return downloadGlobusResolved(ctx, drsCtx, accessURL.Url, cachePath, oid, obj)
 	}
 	return downloadResolved(ctx, drsCtx, oid, cachePath, obj, accessURL)
 }
 
 func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL, opts sydownload.DownloadOptions) error {
 	if accessURL != nil && isGlobusURL(accessURL.Url) {
-		return downloadGlobusResolved(ctx, accessURL.Url, dstPath, oid, obj)
+		return downloadGlobusResolved(ctx, drsCtx, accessURL.Url, dstPath, oid, obj)
 	}
 	if drsCtx == nil || drsCtx.Client == nil {
 		return fmt.Errorf("DRS client unavailable")
@@ -146,11 +118,11 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 	return sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
 }
 
-func downloadGlobusResolved(ctx context.Context, accessURL, dstPath, oid string, obj *drsapi.DrsObject) error {
+func downloadGlobusResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, dstPath, oid string, obj *drsapi.DrsObject) error {
 	if obj == nil {
 		return fmt.Errorf("resolved DRS object is required")
 	}
-	if err := transferGlobusToCachePath(ctx, accessURL, dstPath); err != nil {
+	if err := transferGlobusToCachePath(ctx, drsCtx, accessURL, dstPath); err != nil {
 		_ = os.Remove(dstPath)
 		return err
 	}

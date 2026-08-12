@@ -44,6 +44,22 @@ func GetGitConfigString(key string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// GetGitConfigStrings reads every value from all Git configuration scopes.
+func GetGitConfigStrings(key string) ([]string, error) {
+	cmd := exec.Command("git", "config", "--get-all", key)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	var values []string
+	for _, value := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values, nil
+}
+
 // GetGitConfigInt reads an integer value from git config
 func GetGitConfigInt(key string, defaultValue int64) int64 {
 	valStr, err := GetGitConfigString(key)

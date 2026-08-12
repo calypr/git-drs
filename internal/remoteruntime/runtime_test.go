@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -64,6 +65,20 @@ func setupTestRepo(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.Chdir(cwd) })
 	return tmpDir
+}
+
+func TestNewRequiresTrustForAuthenticatedCommittedEndpoint(t *testing.T) {
+	setupTestRepo(t)
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"research": {
+			Generic:            &config.GenericRemote{Endpoint: "https://drs.example.org", Provider: "gen3", Auth: "bearer"},
+			EndpointFromShared: true,
+		},
+	}}
+	_, err := New(cfg, "research", drslog.GetLogger())
+	if err == nil || !strings.Contains(err.Error(), "not trusted for credentials") {
+		t.Fatalf("New error = %v", err)
+	}
 }
 
 func TestNewLocalIncludesRepoBasicAuth(t *testing.T) {

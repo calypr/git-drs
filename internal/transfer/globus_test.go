@@ -3,7 +3,10 @@ package transfer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/calypr/git-drs/internal/remoteruntime"
 )
 
 func TestParseGlobusURL(t *testing.T) {
@@ -27,14 +30,14 @@ func TestParseGlobusURLRejectsMissingPath(t *testing.T) {
 
 func TestGlobusDestinationForCachePathRequiresCollection(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "")
-	if _, err := globusDestinationForCachePath(filepath.Join(".git", "drs", "objects", "aa")); err == nil {
+	if _, err := globusDestinationForCachePath(nil, "source", filepath.Join(".git", "drs", "objects", "aa")); err == nil {
 		t.Fatal("expected missing destination collection to fail")
 	}
 }
 
 func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "dest-collection")
-	loc, err := globusDestinationForCachePath(filepath.Join(".git", "lfs", "objects", "aa", "bb"))
+	loc, err := globusDestinationForCachePath(nil, "source", filepath.Join(".git", "lfs", "objects", "aa", "bb"))
 	if err != nil {
 		t.Fatalf("globusDestinationForCachePath returned error: %v", err)
 	}
@@ -50,8 +53,44 @@ func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 func TestGlobusDestinationForCachePathRejectsNonCachePath(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "dest-collection")
 	for _, destination := range []string{"file.bin", filepath.Join(t.TempDir(), ".git", "lfs", "objects", "aa")} {
-		if _, err := globusDestinationForCachePath(destination); err == nil {
+		if _, err := globusDestinationForCachePath(nil, "source", destination); err == nil {
 			t.Fatalf("expected destination %q to be rejected", destination)
+		}
+	}
+}
+
+func TestGlobusDestinationUsesSourceRouteAndRepositoryPath(t *testing.T) {
+	t.Setenv(globusDestCollectionEnv, "")
+	ctx := &remoteruntime.GitContext{
+		GlobusCollections:      map[string]string{"source-a": "destination-west"},
+		GlobusDestinationPaths: map[string]string{"destination-west": "/projects/research/repository"},
+	}
+	loc, err := globusDestinationForCachePath(ctx, "SOURCE-A", filepath.Join(".git", "lfs", "objects", "aa", "bb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loc.Collection != "destination-west" || loc.Path != "/projects/research/repository/.git/lfs/objects/aa/bb" {
+		t.Fatalf("destination = %+v", loc)
+	}
+}
+
+func TestGlobusDestinationEnforcesSharedSourceConstraint(t *testing.T) {
+	ctx := &remoteruntime.GitContext{
+		AllowedGlobusSources:     []string{"source-a"},
+		GlobusDefaultDestination: "destination",
+	}
+	if _, _, err := resolveGlobusDestination(ctx, "source-b"); err == nil || !strings.Contains(err.Error(), "source_collection_disallowed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if destination, _, err := resolveGlobusDestination(ctx, "SOURCE-A"); err != nil || destination != "destination" {
+		t.Fatalf("allowed source: destination=%q error=%v", destination, err)
+	}
+}
+
+func TestNormalizeGlobusRepositoryPathRejectsTraversal(t *testing.T) {
+	for _, value := range []string{"relative/path", "/repo/../other", `C:\\repo`} {
+		if _, err := normalizeGlobusRepositoryPath(value); err == nil {
+			t.Fatalf("expected %q to fail", value)
 		}
 	}
 }

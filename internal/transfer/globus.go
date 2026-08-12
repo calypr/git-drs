@@ -11,6 +11,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/globusauth"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 )
 
 const globusDestCollectionEnv = "GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
@@ -41,25 +42,81 @@ func parseGlobusURL(raw string) (globusLocator, error) {
 	return globusLocator{Collection: u.Host, Path: decodedPath}, nil
 }
 
-func globusDestinationForCachePath(cachePath string) (globusLocator, error) {
-	collection := strings.TrimSpace(os.Getenv(globusDestCollectionEnv))
-	if collection == "" {
-		return globusLocator{}, fmt.Errorf("Globus destination collection is required for globus:// access URLs; set %s and authenticate with `git drs auth globus login`", globusDestCollectionEnv)
+func globusDestinationForCachePath(drsCtx *remoteruntime.GitContext, sourceCollection, cachePath string) (globusLocator, error) {
+	collection, repositoryPath, err := resolveGlobusDestination(drsCtx, sourceCollection)
+	if err != nil {
+		return globusLocator{}, err
 	}
 	clean := filepath.Clean(cachePath)
 	rel, err := filepath.Rel(gitrepo.LFSObjectsPath, clean)
 	if err != nil || filepath.IsAbs(clean) || rel == "." || !filepath.IsLocal(rel) {
 		return globusLocator{}, fmt.Errorf("Globus destination must be inside %s", gitrepo.LFSObjectsPath)
 	}
-	return globusLocator{Collection: collection, Path: path.Join("/", filepath.ToSlash(clean))}, nil
+	return globusLocator{Collection: collection, Path: path.Join(repositoryPath, filepath.ToSlash(clean))}, nil
 }
 
-func transferGlobusToCachePath(ctx context.Context, accessURL, cachePath string) error {
+func resolveGlobusDestination(drsCtx *remoteruntime.GitContext, sourceCollection string) (string, string, error) {
+	if drsCtx != nil && drsCtx.AllowedGlobusSources != nil {
+		source := strings.ToLower(strings.TrimSpace(sourceCollection))
+		allowed := false
+		for _, candidate := range drsCtx.AllowedGlobusSources {
+			if source == candidate {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return "", "", fmt.Errorf("source_collection_disallowed: Globus source collection %q is not permitted by repository policy", sourceCollection)
+		}
+	}
+	collection := strings.TrimSpace(os.Getenv(globusDestCollectionEnv))
+	if collection == "" {
+		if drsCtx != nil {
+			collection = drsCtx.GlobusCollections[strings.ToLower(strings.TrimSpace(sourceCollection))]
+			if collection == "" {
+				collection = drsCtx.GlobusDefaultDestination
+			}
+		}
+		if strings.TrimSpace(collection) == "" {
+			return "", "", fmt.Errorf("destination_collection_unmapped: no Globus destination configured for source collection %q; set %s, globus-collection, or globus-default-destination", sourceCollection, globusDestCollectionEnv)
+		}
+	}
+	collection = strings.TrimSpace(collection)
+	repositoryPath := "/"
+	if drsCtx != nil {
+		if configured := strings.TrimSpace(drsCtx.GlobusDestinationPaths[strings.ToLower(collection)]); configured != "" {
+			repositoryPath = configured
+		}
+	}
+	repositoryPath, err := normalizeGlobusRepositoryPath(repositoryPath)
+	if err != nil {
+		return "", "", err
+	}
+	return collection, repositoryPath, nil
+}
+
+func normalizeGlobusRepositoryPath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "/", nil
+	}
+	if !strings.HasPrefix(raw, "/") || strings.Contains(raw, "\\") {
+		return "", fmt.Errorf("destination_repository_path_invalid: Globus repository path %q must be collection-absolute", raw)
+	}
+	for _, part := range strings.Split(raw, "/") {
+		if part == ".." {
+			return "", fmt.Errorf("destination_repository_path_invalid: Globus repository path %q contains traversal", raw)
+		}
+	}
+	return path.Clean(raw), nil
+}
+
+func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, cachePath string) error {
 	src, err := parseGlobusURL(accessURL)
 	if err != nil {
 		return err
 	}
-	dst, err := globusDestinationForCachePath(cachePath)
+	dst, err := globusDestinationForCachePath(drsCtx, src.Collection, cachePath)
 	if err != nil {
 		return err
 	}
@@ -68,9 +125,6 @@ func transferGlobusToCachePath(ctx context.Context, accessURL, cachePath string)
 		return err
 	}
 	defer client.Close()
-	if err := globusauth.Check(ctx, client); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}

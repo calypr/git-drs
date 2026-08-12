@@ -65,11 +65,9 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 		header.Set("Content-Type", "application/json")
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body: io.NopCloser(strings.NewReader(
-				`{"resolved_drs_object_access_urls":[{"drs_object_id":"obj-1","drs_access_id":"s3","url":"https://signed.example/obj-1"}]}`,
-			)),
-			Header:  header,
-			Request: r,
+			Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/obj-1"}`)),
+			Header:     header,
+			Request:    r,
 		}, nil
 	})}
 
@@ -85,10 +83,10 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BulkAccessURLsForObjects returned error: %v", err)
 	}
-	if gotMethod != http.MethodPost {
-		t.Fatalf("expected POST, got %s", gotMethod)
+	if gotMethod != http.MethodGet {
+		t.Fatalf("expected GET, got %s", gotMethod)
 	}
-	if gotPath != "/ga4gh/drs/v1/objects/access" {
+	if gotPath != "/ga4gh/drs/v1/objects/obj-1/access/s3" {
 		t.Fatalf("unexpected path: %s", gotPath)
 	}
 	if got["obj-1"].Url != "https://signed.example/obj-1" {
@@ -118,7 +116,7 @@ func TestDownloadGlobusResolvedRemovesPartialTransfer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := downloadGlobusResolved(context.Background(), "invalid", dstPath, "oid", &drsapi.DrsObject{}); err == nil {
+	if err := downloadGlobusResolved(context.Background(), nil, "invalid", dstPath, "oid", &drsapi.DrsObject{}); err == nil {
 		t.Fatal("expected transfer failure")
 	}
 	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {

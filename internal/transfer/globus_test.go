@@ -1,13 +1,31 @@
 package transfer
 
 import (
+	"context"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
+
+type fakeGlobusClient struct{ batches [][]globusauth.TransferItem }
+
+func (f *fakeGlobusClient) SubmitTransfer(context.Context, string, string, string, string, string) (string, error) {
+	return "task", nil
+}
+func (f *fakeGlobusClient) SubmitTransferItems(_ context.Context, _, _ string, items []globusauth.TransferItem, _ string) (string, error) {
+	f.batches = append(f.batches, items)
+	return fmt.Sprintf("task-%d", len(f.batches)), nil
+}
+func (*fakeGlobusClient) WaitForTask(context.Context, string, time.Duration) error { return nil }
+func (*fakeGlobusClient) Close() error                                             { return nil }
 
 func TestParseGlobusURL(t *testing.T) {
 	loc, err := parseGlobusURL("globus://01234567-89ab-cdef-0123-456789abcdef/data/sample.bam")
@@ -101,5 +119,39 @@ func TestIsGlobusURL(t *testing.T) {
 	}
 	if isGlobusURL("https://example.test/path") || isGlobusURL(os.DevNull) {
 		t.Fatal("expected non-globus URL to be rejected")
+	}
+}
+
+func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
+	repo := t.TempDir()
+	oldWD, _ := os.Getwd()
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	t.Setenv(globusDestCollectionEnv, "destination")
+	fake := &fakeGlobusClient{}
+	old := newGlobusClient
+	newGlobusClient = func(context.Context) (globusClient, error) { return fake, nil }
+	t.Cleanup(func() { newGlobusClient = old })
+	var downloads []GlobusDownload
+	for i, source := range []string{"source-a", "source-a", "source-b"} {
+		payload := []byte(fmt.Sprintf("file-%d", i))
+		sum := fmt.Sprintf("%x", sha256.Sum256(payload))
+		cachePath := filepath.Join(".git", "lfs", "objects", sum[:2], sum[2:4], sum)
+		if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		obj := &drsapi.DrsObject{Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: sum}}}
+		downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://" + source + "/file"})
+	}
+	if err := DownloadGlobusBatch(t.Context(), nil, downloads); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.batches) != 2 {
+		t.Fatalf("submitted %d batches, want 2", len(fake.batches))
 	}
 }

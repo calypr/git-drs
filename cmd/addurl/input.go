@@ -15,6 +15,10 @@ type addURLInput struct {
 	path      string
 	sha256    string
 	scheme    string
+	recursive bool
+	dryRun    bool
+	manifest  string
+	remote    string
 }
 
 // parseAddURLInput parses CLI args and flags into an addURLInput.
@@ -34,12 +38,20 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag scheme: %w", err)
 	}
+	recursive, _ := cmd.Flags().GetBool("recursive")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	manifest, _ := cmd.Flags().GetString("manifest")
+	remote, _ := cmd.Flags().GetString("remote")
 
 	return addURLInput{
 		sourceArg: sourceArg,
 		path:      pathArg,
 		sha256:    sha256Param,
 		scheme:    strings.ToLower(strings.TrimSpace(scheme)),
+		recursive: recursive,
+		dryRun:    dryRun,
+		manifest:  strings.TrimSpace(manifest),
+		remote:    strings.TrimSpace(remote),
 	}, nil
 }
 
@@ -68,7 +80,7 @@ func looksLikeCloudURL(raw string) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
-	case "s3", "gs", "gcs", "azblob", "http", "https":
+	case "s3", "gs", "gcs", "azblob", "http", "https", "globus":
 		return strings.TrimSpace(u.Host) != ""
 	default:
 		return false

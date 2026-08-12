@@ -17,10 +17,86 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
+
+type fakeGlobusLister struct{ files []globusauth.File }
+
+func (f *fakeGlobusLister) ListFiles(context.Context, string, string) ([]globusauth.File, error) {
+	return f.files, nil
+}
+func (*fakeGlobusLister) Close() error { return nil }
+
+func TestRecursiveGlobusImportMaterializesMembers(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	for _, args := range [][]string{
+		{"config", "drs.default-remote", "research"},
+		{"config", "drs.remote.research.type", "gen3"},
+		{"config", "drs.remote.research.endpoint", "https://drs.example.org"},
+		{"config", "drs.remote.research.project", "project"},
+		{"config", "drs.remote.research.bucket", "bucket"},
+	} {
+		cmd := exec.Command("git", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	shaA := strings.Repeat("a", 64)
+	shaB := strings.Repeat("b", 64)
+	manifest := filepath.Join(repo, "manifest.tsv")
+	if err := os.WriteFile(manifest, []byte("path\tsize\tsha256\na.bam\t10\t"+shaA+"\nsub/b.bai\t20\t"+shaB+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldLister := newGlobusLister
+	newGlobusLister = func(context.Context) (globusLister, error) {
+		return &fakeGlobusLister{files: []globusauth.File{{Path: "/release/a.bam", Size: 10}, {Path: "/release/sub/b.bai", Size: 20}}}, nil
+	}
+	t.Cleanup(func() { newGlobusLister = oldLister })
+	service := NewAddURLService()
+	dryRun := NewCommand()
+	_ = dryRun.Flags().Set("recursive", "true")
+	_ = dryRun.Flags().Set("dry-run", "true")
+	_ = dryRun.Flags().Set("manifest", manifest)
+	if err := service.Run(dryRun, []string{"globus://source/release/", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat("data/study/a.bam"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote a pointer: %v", err)
+	}
+	cmd := NewCommand()
+	_ = cmd.Flags().Set("recursive", "true")
+	_ = cmd.Flags().Set("manifest", manifest)
+	if err := service.Run(cmd, []string{"globus://source/release/", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"data/study/a.bam", "data/study/sub/b.bai"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("missing pointer %s: %v", path, err)
+		}
+	}
+	attrs, _ := os.ReadFile(".gitattributes")
+	if !strings.Contains(string(attrs), "data/study/** filter=drs") || !strings.Contains(string(attrs), "data/study/** drs=ro") {
+		t.Fatalf(".gitattributes = %s", attrs)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, shaA)
+	if err != nil || obj.AccessMethods == nil || string((*obj.AccessMethods)[0].Type) != "globus" {
+		t.Fatalf("Globus DRS object = %+v, %v", obj, err)
+	}
+}
+
+func TestRecursiveGlobusManifestRejectsDuplicateContent(t *testing.T) {
+	manifest := filepath.Join(t.TempDir(), "manifest.tsv")
+	sha := strings.Repeat("a", 64)
+	_ = os.WriteFile(manifest, []byte("path\tsize\tsha256\na\t1\t"+sha+"\nb\t1\t"+sha+"\n"), 0o644)
+	if _, err := readGlobusManifest(manifest, "source", "/root", "data"); err == nil || !strings.Contains(err.Error(), "repeats sha256") {
+		t.Fatalf("error = %v", err)
+	}
+}
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	tempDir := t.TempDir()

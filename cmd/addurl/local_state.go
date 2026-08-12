@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,15 +61,20 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 	}
 
 	if objectPath != "" {
+		methodType := drsapi.AccessMethodTypeS3
+		if u, parseErr := url.Parse(objectPath); parseErr == nil && strings.EqualFold(u.Scheme, "globus") {
+			methodType = drsapi.AccessMethodType("globus")
+		}
 		if drsObj.AccessMethods != nil && len(*drsObj.AccessMethods) > 0 {
 			am := &(*drsObj.AccessMethods)[0]
+			am.Type = methodType
 			am.AccessUrl = &struct {
 				Headers *[]string `json:"headers,omitempty"`
 				Url     string    `json:"url"`
 			}{Url: objectPath}
 		} else {
 			drsObj.AccessMethods = &[]drsapi.AccessMethod{{
-				Type: drsapi.AccessMethodTypeS3,
+				Type: methodType,
 				AccessUrl: &struct {
 					Headers *[]string `json:"headers,omitempty"`
 					Url     string    `json:"url"`

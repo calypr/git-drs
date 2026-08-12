@@ -38,6 +38,10 @@ func addFlags(cmd *cobra.Command) {
 		"",
 		"Storage scheme for object-key mode (for example: s3 or gs)",
 	)
+	cmd.Flags().Bool("recursive", false, "Import every file in a Globus collection subtree")
+	cmd.Flags().Bool("dry-run", false, "Validate a recursive Globus import without writing files")
+	cmd.Flags().String("manifest", "", "Authoritative TSV manifest with path, size, and sha256 columns")
+	cmd.Flags().StringP("remote", "r", "", "Target DRS remote")
 }
 
 // runAddURL is the Cobra RunE wrapper that delegates execution to the service.

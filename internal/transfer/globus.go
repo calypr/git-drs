@@ -8,10 +8,12 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 const globusDestCollectionEnv = "GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
@@ -20,6 +22,21 @@ type globusLocator struct {
 	Collection string
 	Path       string
 }
+
+type GlobusDownload struct {
+	OID, CachePath string
+	Object         *drsapi.DrsObject
+	AccessURL      string
+}
+
+type globusClient interface {
+	SubmitTransfer(context.Context, string, string, string, string, string) (string, error)
+	SubmitTransferItems(context.Context, string, string, []globusauth.TransferItem, string) (string, error)
+	WaitForTask(context.Context, string, time.Duration) error
+	Close() error
+}
+
+var newGlobusClient = func(ctx context.Context) (globusClient, error) { return globusauth.NewClient(ctx) }
 
 func isGlobusURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
@@ -120,7 +137,7 @@ func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitCon
 	if err != nil {
 		return err
 	}
-	client, err := globusauth.NewClient(ctx)
+	client, err := newGlobusClient(ctx)
 	if err != nil {
 		return err
 	}
@@ -134,6 +151,62 @@ func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitCon
 	}
 	if err := client.WaitForTask(ctx, taskID, 0); err != nil {
 		return err
+	}
+	return nil
+}
+
+func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, downloads []GlobusDownload) error {
+	type groupKey struct{ source, destination string }
+	type group struct {
+		items     []globusauth.TransferItem
+		downloads []GlobusDownload
+	}
+	groups := map[groupKey]*group{}
+	for _, download := range downloads {
+		src, err := parseGlobusURL(download.AccessURL)
+		if err != nil {
+			return err
+		}
+		dst, err := globusDestinationForCachePath(drsCtx, src.Collection, download.CachePath)
+		if err != nil {
+			return err
+		}
+		key := groupKey{source: src.Collection, destination: dst.Collection}
+		if groups[key] == nil {
+			groups[key] = &group{}
+		}
+		// Globus collection checksum capabilities are not advertised here, so rely
+		// on Globus verification in transit and authoritative DRS checks locally.
+		groups[key].items = append(groups[key].items, globusauth.TransferItem{SourcePath: src.Path, DestinationPath: dst.Path})
+		groups[key].downloads = append(groups[key].downloads, download)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	client, err := newGlobusClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	for key, group := range groups {
+		for _, download := range group.downloads {
+			if err := os.MkdirAll(filepath.Dir(download.CachePath), 0o755); err != nil {
+				return err
+			}
+		}
+		taskID, err := client.SubmitTransferItems(ctx, key.source, key.destination, group.items, "git-drs pull")
+		if err != nil {
+			return err
+		}
+		if err := client.WaitForTask(ctx, taskID, 0); err != nil {
+			return err
+		}
+		for _, download := range group.downloads {
+			if err := verifyGlobusDownload(download.CachePath, download.OID, download.Object); err != nil {
+				_ = os.Remove(download.CachePath)
+				return err
+			}
+		}
 	}
 	return nil
 }

@@ -147,6 +147,45 @@ func TestSubmitTransferUsesSDKSubmissionIDAndPayload(t *testing.T) {
 	}
 }
 
+func TestSubmitTransferItemsBatchesFilesAndChecksums(t *testing.T) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v0.10/submission_id":
+			_ = json.NewEncoder(w).Encode(map[string]string{"value": "submission-1"})
+		case "/v0.10/transfer":
+			var payload transfer.Transfer
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if len(payload.Items) != 2 || payload.Items[0].ExternalChecksum != "abc" || payload.Items[0].ChecksumAlgorithm != "SHA256" || !payload.VerifyChecksum {
+				t.Fatalf("unexpected payload: %+v", payload)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"task_id": "task-1"})
+		}
+	}))
+	defer server.Close()
+	_, err := client.SubmitTransferItems(t.Context(), "src", "dst", []TransferItem{{SourcePath: "/a", DestinationPath: "/x", SHA256: "abc"}, {SourcePath: "/b", DestinationPath: "/y"}}, "label")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestListFilesRecursesAndSorts(t *testing.T) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("path") == "/root/" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "b", "type": "file", "size": 2}, {"name": "sub", "type": "dir"}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "a", "type": "file", "size": 1}}})
+	}))
+	defer server.Close()
+	files, err := client.ListFiles(t.Context(), "collection", "/root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Path != "/root/b" || files[1].Path != "/root/sub/a" {
+		t.Fatalf("files = %+v", files)
+	}
+}
+
 func TestWaitForTaskRecoversFromInactiveStatus(t *testing.T) {
 	calls := 0
 	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

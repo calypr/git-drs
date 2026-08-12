@@ -141,6 +141,12 @@ var Cmd = &cobra.Command{
 			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 			for _, oid := range missingOIDs {
 				if isDRSPointerOID(oid) {
+					if anvil == nil {
+						obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
+						if err == nil {
+							prefetched[oid] = obj
+						}
+					}
 					continue
 				}
 				recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
@@ -169,6 +175,27 @@ var Cmd = &cobra.Command{
 				} else {
 					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
 				}
+			}
+			var globusDownloads []internaltransfer.GlobusDownload
+			for _, f := range pointers {
+				obj, ok := prefetched[f.Oid]
+				if !ok {
+					continue
+				}
+				accessURL, ok := prefetchedAccess[obj.Id]
+				if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(accessURL.Url)), "globus://") {
+					continue
+				}
+				cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+				if err != nil {
+					return err
+				}
+				objCopy := obj
+				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: accessURL.Url})
+				progress.OnDownloadStart(toPullFile(f))
+			}
+			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
+				return fmt.Errorf("Globus batch download failed: %w", err)
 			}
 			for _, f := range pointers {
 				dstPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)

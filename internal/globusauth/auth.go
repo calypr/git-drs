@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -78,6 +79,15 @@ func CredentialReadiness() (Readiness, string) {
 type Client struct {
 	transfer *transfer.Client
 	storage  tokenstorage.TokenStorage
+}
+
+type TransferItem struct {
+	SourcePath, DestinationPath, SHA256 string
+}
+
+type File struct {
+	Path string
+	Size int64
 }
 
 func tokenFile() (string, error) {
@@ -306,15 +316,28 @@ func Check(ctx context.Context, client *Client) error {
 }
 
 func (c *Client) SubmitTransfer(ctx context.Context, srcCollection, srcPath, dstCollection, dstPath, label string) (string, error) {
+	return c.SubmitTransferItems(ctx, srcCollection, dstCollection, []TransferItem{{SourcePath: srcPath, DestinationPath: dstPath}}, label)
+}
+
+func (c *Client) SubmitTransferItems(ctx context.Context, srcCollection, dstCollection string, items []TransferItem, label string) (string, error) {
+	if len(items) == 0 {
+		return "", fmt.Errorf("submit Globus transfer: no items")
+	}
+	sdkItems := make([]transfer.TransferItem, len(items))
+	for i, item := range items {
+		sdkItems[i] = transfer.TransferItem{DATA_TYPE: "transfer_item", SourcePath: item.SourcePath, DestinationPath: item.DestinationPath}
+		if item.SHA256 != "" {
+			sdkItems[i].ExternalChecksum = item.SHA256
+			sdkItems[i].ChecksumAlgorithm = "SHA256"
+		}
+	}
 	response, err := c.transfer.SubmitTransfer(ctx, &transfer.Transfer{
 		SourceEndpoint:      srcCollection,
 		DestinationEndpoint: dstCollection,
 		Label:               label,
 		SyncLevel:           3,
-		Items: []transfer.TransferItem{{
-			SourcePath:      srcPath,
-			DestinationPath: dstPath,
-		}},
+		VerifyChecksum:      true,
+		Items:               sdkItems,
 	})
 	if err != nil {
 		return "", fmt.Errorf("submit Globus transfer: %w", err)
@@ -323,6 +346,33 @@ func (c *Client) SubmitTransfer(ctx context.Context, srcCollection, srcPath, dst
 		return "", fmt.Errorf("submit Globus transfer returned an empty task id")
 	}
 	return strings.TrimSpace(response.TaskID), nil
+}
+
+func (c *Client) ListFiles(ctx context.Context, collection, root string) ([]File, error) {
+	root = strings.TrimRight(root, "/") + "/"
+	queue := []string{root}
+	var files []File
+	for len(queue) > 0 {
+		dir := queue[0]
+		queue = queue[1:]
+		listing, err := c.transfer.ListDirectory(ctx, collection, dir, &transfer.ListDirectoryOptions{ShowHidden: true})
+		if err != nil {
+			return nil, fmt.Errorf("list Globus directory %s:%s: %w", collection, dir, err)
+		}
+		for _, entry := range listing.Data {
+			itemPath := strings.TrimRight(dir, "/") + "/" + entry.Name
+			switch entry.Type {
+			case "file":
+				files = append(files, File{Path: itemPath, Size: entry.Size})
+			case "dir":
+				queue = append(queue, itemPath+"/")
+			case "symlink":
+				return nil, fmt.Errorf("Globus collection import does not support symlink %s", itemPath)
+			}
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, nil
 }
 
 func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval time.Duration) error {

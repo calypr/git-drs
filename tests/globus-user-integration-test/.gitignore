@@ -1,0 +1,3 @@
+.env
+fixtures/checksums.env
+fixtures/release.tsv

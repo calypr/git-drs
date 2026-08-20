@@ -16,8 +16,13 @@ to the repository's LFS cache path.
 
 Before using Globus-backed access methods, you need:
 
-1. A registered Globus native application client ID. Configure its redirect URL
-   as `https://auth.globus.org/v2/web/auth-code`. `git-drs` requests the Globus
+1. A registered Globus native application client ID. Create or select a
+   **Thick Client** in
+   [Globus Developer Settings](https://app.globus.org/settings/developers), and
+   configure its redirect URL as `https://auth.globus.org/v2/web/auth-code`.
+   Native clients do not use a client secret. See the official
+   [application-registration guide](https://docs.globus.org/api/auth/developer-guide/#register-app).
+   `git-drs` requests the Globus
    Transfer API scope:
 
    ```text
@@ -34,14 +39,25 @@ Before using Globus-backed access methods, you need:
 
 2. A destination Globus collection that can write to the path where your
    repository cache is visible. For a laptop or workstation, this is commonly a
-   Globus Connect Personal collection. This destination is normally specific to
-   each user or execution environment; it is not supplied by the DRS object or
-   shared through the Git repository.
+   [Globus Connect Personal](https://docs.globus.org/globus-connect-personal/install/)
+   collection. Configure its accessible folders for read/write access to the
+   repository and permit hidden `.git` paths. Find and test the collection in
+   [Globus File Manager](https://app.globus.org/file-manager), then copy its
+   UUID. This destination is normally specific to each user or execution
+   environment; it is not supplied by the DRS object or shared through Git.
 
 3. A `git-drs` remote that can resolve the DRS object and return a Globus access
    method.
 
 ## Configure Globus for `git drs pull`
+
+The user must configure three things locally:
+
+| Setting | Required value |
+| --- | --- |
+| `GIT_DRS_GLOBUS_CLIENT_ID` | Globus Thick Client UUID |
+| Destination collection | Writable collection UUID, using the environment or repository-local configuration below |
+| Destination repository path | Collection-absolute path when the collection is not rooted at the repository |
 
 Log in once and configure the destination collection:
 
@@ -59,6 +75,13 @@ Use `git drs auth globus status` to verify them and
 
 `git-drs` calls Globus Auth and Transfer directly through `globus-go-sdk`; the
 separate Globus CLI does not need to be installed.
+
+If a collection reports `ConsentRequired`, request the exact scope returned in
+its `required_scopes` field. Do not construct or guess a destination
+`data_access` scope: `unknown scopes` means that scope is not defined for that
+collection. See Globus's
+[data-access consent documentation](https://docs.globus.org/api/transfer/overview/#data-access-consent)
+and [clients, scopes, and consents overview](https://docs.globus.org/guides/overviews/clients-scopes-and-consents/).
 
 Automation may instead provide a non-persistent access-token override:
 
@@ -347,6 +370,14 @@ Check these items:
 4. The token includes any source/destination collection `data_access` scopes
    required by Globus.
 5. Retry with the same environment after correcting token or collection access.
+
+Use [Globus File Manager](https://app.globus.org/file-manager) to verify paths
+and [Globus Activity](https://app.globus.org/activity) to inspect the task event
+log. For Globus Connect Personal, confirm that the application is running, the
+repository is an accessible read/write folder, and hidden `.git` paths are not
+denied. The official troubleshooting guide covers
+[`Path not allowed`](https://docs.globus.org/globus-connect-personal/troubleshooting-guide/#path-not-allowed)
+and network failures.
 
 ### Pull selected HTTPS instead of Globus
 

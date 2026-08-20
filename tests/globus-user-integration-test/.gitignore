@@ -1,3 +1,2 @@
 .env
-fixtures/checksums.env
-fixtures/release.tsv
+git-drs-globus.tutorial.*

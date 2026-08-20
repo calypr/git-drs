@@ -4,8 +4,8 @@ Developer test suites for `git-drs` (local and remote integration). These are in
 
 See also: [E2E Modes + Local Setup](../docs/e2e-modes-and-local-setup.md)
 
-For a browser-driven test against real Globus Auth and Transfer services, see
-the [Globus User-Driven Integration Test Plan](globus-user-integration-test-plan.md).
+For a user-driven test against real Globus Auth and Transfer services, see the
+[Globus tutorial integration test](globus-user-integration-test/README.md).
 
 ## Prerequisites
 

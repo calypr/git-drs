@@ -32,7 +32,7 @@ var GlobusCmd = &cobra.Command{
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Globus login successful; credentials stored in %s\n", name)
 			return err
 		case "status":
-			if err := globusauth.Check(cmd.Context(), nil); err != nil {
+			if err := globusauth.CheckStored(cmd.Context()); err != nil {
 				return err
 			}
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), "Globus Transfer API authentication OK")

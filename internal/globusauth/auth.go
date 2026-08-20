@@ -182,7 +182,7 @@ func Login(ctx context.Context, additionalScopes []string) (string, error) {
 		return "", err
 	}
 	manager := login.NewCommandLineLoginFlowManager(clientID, strings.TrimSpace(os.Getenv(ClientSecretEnv)))
-	scopes := append([]string{TransferScope}, additionalScopes...)
+	scopes := loginScopes(additionalScopes)
 	result, err := manager.RunLoginFlow(ctx, login.AuthParams{Scopes: scopes, RequestRefresh: true})
 	if err != nil {
 		return "", err
@@ -196,6 +196,23 @@ func Login(ctx context.Context, additionalScopes []string) (string, error) {
 		return "", err
 	}
 	return tokenName, nil
+}
+
+func loginScopes(additional []string) []string {
+	var dependent, other []string
+	for _, scope := range additional {
+		scope = strings.TrimSpace(scope)
+		if strings.HasPrefix(scope, "https://auth.globus.org/scopes/") && strings.HasSuffix(scope, "/data_access") {
+			dependent = append(dependent, "*"+scope)
+		} else if scope != "" && scope != TransferScope {
+			other = append(other, scope)
+		}
+	}
+	transfer := TransferScope
+	if len(dependent) != 0 {
+		transfer += "[" + strings.Join(dependent, " ") + "]"
+	}
+	return append([]string{transfer}, other...)
 }
 
 func Logout() error {
@@ -287,7 +304,22 @@ func CheckStored(ctx context.Context) error {
 		return err
 	}
 	defer client.Close()
-	return Check(ctx, client)
+	if err := Check(ctx, client); err != nil {
+		return fmt.Errorf("%w (%s; if HTTP 401, the token may be expired, revoked, inactive, or issued for the wrong Globus client or resource server)", err, storedTokenDiagnostic(client.storage))
+	}
+	return nil
+}
+
+func storedTokenDiagnostic(storage tokenstorage.TokenStorage) string {
+	name, err := tokenFile()
+	if err != nil {
+		return "stored token metadata unavailable"
+	}
+	token, err := storage.Get(transferResource)
+	if err != nil || token == nil {
+		return fmt.Sprintf("token file %s; expiry unavailable", name)
+	}
+	return fmt.Sprintf("token file %s; recorded expiry %s", name, token.ExpiresAt.UTC().Format(time.RFC3339))
 }
 
 func (c *Client) Close() error {

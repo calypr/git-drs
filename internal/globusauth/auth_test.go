@@ -57,6 +57,16 @@ func TestCredentialReadinessRecognizesStoredToken(t *testing.T) {
 	}
 }
 
+func TestLoginScopesMakesDataAccessDependentOnTransfer(t *testing.T) {
+	a := "https://auth.globus.org/scopes/a/data_access"
+	b := "https://auth.globus.org/scopes/b/data_access"
+	got := loginScopes([]string{a, "openid", b})
+	want := TransferScope + "[*" + a + " *" + b + "]"
+	if len(got) != 2 || got[0] != want || got[1] != "openid" {
+		t.Fatalf("loginScopes = %#v, want [%q %q]", got, want, "openid")
+	}
+}
+
 func TestCredentialReadinessReportsBrokenStorage(t *testing.T) {
 	t.Setenv(TransferTokenEnv, "")
 	name := filepath.Join(t.TempDir(), "tokens.json")
@@ -115,6 +125,25 @@ func TestCheckUsesTransferAPI(t *testing.T) {
 	}
 	if gotAuth != "Bearer token" {
 		t.Fatalf("Authorization = %q", gotAuth)
+	}
+}
+
+func TestStoredTokenDiagnosticReportsPathAndExpiry(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "tokens.json")
+	t.Setenv(TokenFileEnv, name)
+	storage, _, err := openStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer storage.Close()
+	token := tokenDataForTest
+	token.ExpiresAt = time.Date(2026, 8, 17, 20, 0, 0, 0, time.UTC)
+	if err := storage.Store(&token); err != nil {
+		t.Fatal(err)
+	}
+	want := "token file " + name + "; recorded expiry 2026-08-17T20:00:00Z"
+	if got := storedTokenDiagnostic(storage); got != want {
+		t.Fatalf("storedTokenDiagnostic = %q, want %q", got, want)
 	}
 }
 

@@ -15,7 +15,10 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
-type fakeGlobusClient struct{ batches [][]globusauth.TransferItem }
+type fakeGlobusClient struct {
+	batches [][]globusauth.TransferItem
+	waitErr error
+}
 
 func (f *fakeGlobusClient) SubmitTransfer(context.Context, string, string, string, string, string) (string, error) {
 	return "task", nil
@@ -24,8 +27,10 @@ func (f *fakeGlobusClient) SubmitTransferItems(_ context.Context, _, _ string, i
 	f.batches = append(f.batches, items)
 	return fmt.Sprintf("task-%d", len(f.batches)), nil
 }
-func (*fakeGlobusClient) WaitForTask(context.Context, string, time.Duration) error { return nil }
-func (*fakeGlobusClient) Close() error                                             { return nil }
+func (f *fakeGlobusClient) WaitForTask(context.Context, string, time.Duration) error {
+	return f.waitErr
+}
+func (*fakeGlobusClient) Close() error { return nil }
 
 func TestParseGlobusURL(t *testing.T) {
 	loc, err := parseGlobusURL("globus://01234567-89ab-cdef-0123-456789abcdef/data/sample.bam")
@@ -153,5 +158,58 @@ func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
 	}
 	if len(fake.batches) != 2 {
 		t.Fatalf("submitted %d batches, want 2", len(fake.batches))
+	}
+}
+
+func TestDownloadGlobusBatchRemovesFailedGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		waitErr error
+		corrupt bool
+	}{
+		{name: "task failure", waitErr: fmt.Errorf("transfer failed")},
+		{name: "verification failure", corrupt: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := t.TempDir()
+			oldWD, _ := os.Getwd()
+			if err := os.Chdir(repo); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chdir(oldWD) })
+			t.Setenv(globusDestCollectionEnv, "destination")
+			fake := &fakeGlobusClient{waitErr: tc.waitErr}
+			old := newGlobusClient
+			newGlobusClient = func(context.Context) (globusClient, error) { return fake, nil }
+			t.Cleanup(func() { newGlobusClient = old })
+
+			var downloads []GlobusDownload
+			for i := range 2 {
+				payload := []byte(fmt.Sprintf("file-%d", i))
+				sum := fmt.Sprintf("%x", sha256.Sum256(payload))
+				cachePath := filepath.Join(".git", "lfs", "objects", sum[:2], sum[2:4], sum)
+				if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				contents := payload
+				if tc.corrupt && i == 1 {
+					contents = []byte("broken")
+				}
+				if err := os.WriteFile(cachePath, contents, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				obj := &drsapi.DrsObject{Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: sum}}}
+				downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://source/file"})
+			}
+
+			if err := DownloadGlobusBatch(t.Context(), nil, downloads); err == nil {
+				t.Fatal("expected batch failure")
+			}
+			for _, download := range downloads {
+				if _, err := os.Stat(download.CachePath); !os.IsNotExist(err) {
+					t.Fatalf("incomplete batch destination remains at %s: %v", download.CachePath, err)
+				}
+			}
+		})
 	}
 }

@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -197,17 +198,26 @@ func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 		}
 		taskID, err := client.SubmitTransferItems(ctx, key.source, key.destination, group.items, "git-drs pull")
 		if err != nil {
-			return err
+			return errors.Join(err, removeGlobusDownloads(group.downloads))
 		}
 		if err := client.WaitForTask(ctx, taskID, 0); err != nil {
-			return err
+			return errors.Join(err, removeGlobusDownloads(group.downloads))
 		}
 		for _, download := range group.downloads {
 			if err := verifyGlobusDownload(download.CachePath, download.OID, download.Object, download.Placeholder); err != nil {
-				_ = os.Remove(download.CachePath)
-				return err
+				return errors.Join(err, removeGlobusDownloads(group.downloads))
 			}
 		}
 	}
 	return nil
+}
+
+func removeGlobusDownloads(downloads []GlobusDownload) error {
+	var errs []error
+	for _, download := range downloads {
+		if err := os.Remove(download.CachePath); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("remove incomplete Globus download %s: %w", download.CachePath, err))
+		}
+	}
+	return errors.Join(errs...)
 }

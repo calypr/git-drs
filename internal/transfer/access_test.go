@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -82,6 +83,18 @@ func TestAccessMethodReadinessHonorsUnavailable(t *testing.T) {
 	state, reason := accessMethodReadiness(drsapi.AccessMethod{Type: drsapi.AccessMethodTypeHttps, AccessId: &id, Available: &available})
 	if state != globusauth.Disabled || !strings.Contains(reason, "unavailable") {
 		t.Fatalf("readiness = %s (%s)", state, reason)
+	}
+}
+
+func TestResolvedAccessReadinessAllowsFilesystemOnlyForLocalRemote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	local := &remoteruntime.GitContext{RemoteType: config.LocalServerType}
+	if state, _ := resolvedAccessReadiness(local, path); state != globusauth.Ready {
+		t.Fatalf("local filesystem readiness = %s, want ready", state)
+	}
+	remote := &remoteruntime.GitContext{RemoteType: config.Gen3ServerType}
+	if state, _ := resolvedAccessReadiness(remote, path); state != globusauth.Disabled {
+		t.Fatalf("remote filesystem readiness = %s, want disabled", state)
 	}
 }
 

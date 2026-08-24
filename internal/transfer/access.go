@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
@@ -177,6 +179,12 @@ func resolvedAccessReadiness(drsCtx *remoteruntime.GitContext, rawURL string) (g
 		}
 		return globusauth.CredentialReadiness()
 	}
+	if isLocalFileURL(rawURL) {
+		if drsCtx != nil && drsCtx.RemoteType == config.LocalServerType {
+			return globusauth.Ready, "local file handler available"
+		}
+		return globusauth.Disabled, "filesystem access is allowed only for local remotes"
+	}
 	return globusauth.Disabled, fmt.Sprintf("no handler for resolved URL %q", rawURL)
 }
 
@@ -238,4 +246,10 @@ func accessMethodReadiness(method drsapi.AccessMethod) (globusauth.Readiness, st
 func isHTTPURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	return err == nil && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
+}
+
+func isLocalFileURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	return err == nil && filepath.IsAbs(u.Path) && (u.Scheme == "" || strings.EqualFold(u.Scheme, "file"))
 }

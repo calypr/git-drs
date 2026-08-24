@@ -7,12 +7,13 @@ load_env
 export TUTORIAL_SYFON_ENDPOINT="${TUTORIAL_SYFON_ENDPOINT:-http://localhost:8080}"
 export TUTORIAL_SYFON_SCOPE="${TUTORIAL_SYFON_SCOPE:-example/tutorial}"
 export TUTORIAL_SYFON_BUCKET="${TUTORIAL_SYFON_BUCKET:-local-bucket}"
+export TUTORIAL_SYFON_STORAGE_PREFIX="${TUTORIAL_SYFON_STORAGE_PREFIX:-tmp}"
 export TUTORIAL_SYFON_USERNAME="${TUTORIAL_SYFON_USERNAME:-drs-user}"
 export TUTORIAL_SYFON_PASSWORD="${TUTORIAL_SYFON_PASSWORD:-drs-pass}"
 require_tools
 require_vars TEST_REMOTE WORK_ROOT GLOBUS_DESTINATION_ROOT_PATH \
   GIT_DRS_GLOBUS_DESTINATION_COLLECTION TUTORIAL_SYFON_ENDPOINT \
-  TUTORIAL_SYFON_SCOPE
+  TUTORIAL_SYFON_SCOPE TUTORIAL_SYFON_STORAGE_PREFIX
 
 test_bin_dir="$(mktemp -d)"
 trap 'rm -rf "$test_bin_dir"' EXIT
@@ -26,6 +27,7 @@ print_git_drs_version
 repo="$(new_tutorial_repo)"
 cd "$repo"
 verification_file="$test_bin_dir/verification.tsv"
+local_verification_file="$test_bin_dir/local-verification.tsv"
 git drs add-url \
   'globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/home/share/godata/file*.txt' \
   tutorial --remote "$TEST_REMOTE"
@@ -43,9 +45,20 @@ while IFS= read -r file; do
   printf '\n--- %s (%s) ---\n' "$file" "$temporary_oid"
   jq . "$record_path"
 done < <(find tutorial -type f | sort)
-git add .gitattributes tutorial
+
+mkdir -p local
+run_id="$(basename "$(dirname "$repo")")"
+printf 'sample\tvalue\none\t%s\n' "$run_id" >local/table1.tsv
+printf 'sample\tvalue\ntwo\t%s\n' "$run_id" >local/table2.tsv
+printf 'sample\tvalue\nthree\t%s\n' "$run_id" >local/table3.tsv
+git drs track 'local/*.tsv'
+for file in local/*.tsv; do
+  printf '%s\t%s\n' "$file" "$(sha256_file "$file")" >>"$local_verification_file"
+done
+
+git add .gitattributes tutorial local
 git -c user.name=git-drs-test -c user.email=git-drs-test@example.invalid \
-  commit --quiet -m "test: add Globus tutorial pointers"
+  commit --quiet -m "test: add Globus and local tutorial data"
 git drs push "$TEST_REMOTE"
 echo "pointer files before hydration:"
 while IFS= read -r file; do
@@ -77,7 +90,32 @@ while IFS= read -r file; do
   printf 'PASS 3 Syfon kept unsigned Globus URL: %s url=%s\n' "$file" "$globus_url"
   printf '%s\t%s\t%s\n' "$file" "$temporary_oid" "$did" >>"$verification_file"
 done < <(find tutorial -type f | sort)
-git drs pull "$TEST_REMOTE" --include 'tutorial/**' --access-method globus
+
+echo "local-file Syfon records after push:"
+while IFS=$'\t' read -r file expected_oid; do
+  pointer="$(git show "HEAD:$file")"
+  pointer_oid="$(printf '%s\n' "$pointer" | awk '/^oid sha256:/{sub(/^oid sha256:/, ""); print; exit}')"
+  [[ "$pointer_oid" == "$expected_oid" ]] || {
+    echo "local pointer oid mismatch for $file: $pointer_oid != $expected_oid" >&2
+    exit 1
+  }
+  object_json="$(git drs query --remote "$TEST_REMOTE" --checksum "$expected_oid")"
+  printf '\n--- %s (%s) ---\n' "$file" "$expected_oid"
+  printf '%s\n' "$object_json" | jq .
+  printf '%s\n' "$object_json" | jq -e -s --arg oid "$expected_oid" \
+    'any(.[]; any(.checksums[]?; .type == "sha256" and .checksum == $oid))' >/dev/null || {
+      echo "Syfon did not save local sha256 $expected_oid for $file" >&2
+      exit 1
+    }
+  printf 'PASS local file pushed to Syfon: %s sha256=%s\n' "$file" "$expected_oid"
+done <"$local_verification_file"
+
+for file in tutorial/file{1..3}.txt local/table{1..3}.tsv; do
+  pointer="$(git show "HEAD:$file")"
+  oid="$(printf '%s\n' "$pointer" | awk '/^oid sha256:/{sub(/^oid sha256:/, ""); print; exit}')"
+  rm -f ".git/lfs/objects/${oid:0:2}/${oid:2:2}/$oid" "$file"
+done
+git drs pull "$TEST_REMOTE"
 
 echo "hydrated file checksums and Syfon verification:"
 while IFS=$'\t' read -r file temporary_oid did; do
@@ -102,4 +140,10 @@ while IFS=$'\t' read -r file temporary_oid did; do
   printf 'PASS 2 downloaded sha256 saved to Syfon: %s sha256=%s\n' "$file" "$real_oid"
 done <"$verification_file"
 
-echo "tutorial collection pointers created and hydrated in $repo"
+while IFS=$'\t' read -r file expected_oid; do
+  assert_sha256 "$file" "$expected_oid"
+  printf 'PASS local file restored from Syfon: %s sha256=%s\n' "$file" "$expected_oid"
+done <"$local_verification_file"
+printf 'PASS one project pushed and pulled three Globus and three local files\n'
+
+echo "mixed-source tutorial project created and hydrated in $repo"

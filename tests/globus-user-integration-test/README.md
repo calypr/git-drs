@@ -2,11 +2,11 @@
 
 This user-driven test creates DRS pointer files for the three public files in
 [Globus Tutorial Collection 1](https://docs.globus.org/guides/tutorials/manage-files/transfer-files/),
-registers their DRS records in a local Syfon server, downloads them with one
-Globus task, verifies hydration and sizes, and prints their SHA-256 checksums
-for inspection. It builds `git-drs` from the current checkout and requires Go,
-Git LFS, and `jq`; it does not require `globus-cli` or a private source
-collection.
+creates three local TSV files, and pushes all six through one project. It then
+clears both payload types, pulls them from Syfon and Globus, verifies their
+checksums, and prints their DRS records for inspection. It builds `git-drs`
+from the current checkout and requires Go, Git LFS, and `jq`; it does not
+require `globus-cli` or a private source collection.
 
 ## What you must provide
 
@@ -102,8 +102,8 @@ go run . serve --config local.yaml
 ```
 
 Keep Syfon running at `http://localhost:8080`. The supplied configuration uses
-scope `example/tutorial`, bucket `local-bucket`, and basic credentials
-`drs-user` / `drs-pass`, matching `.env.example`.
+scope `example/tutorial`, bucket `local-bucket`, file-provider storage beneath
+`/tmp`, and basic credentials `drs-user` / `drs-pass`, matching `.env.example`.
 
 ## 5. Authorize git-drs with Globus
 
@@ -151,13 +151,16 @@ The script:
    `WORK_ROOT`;
 3. imports `file*.txt` with a quoted Globus wildcard and verifies the exact
    three matched paths;
-4. resolves the three temporary OIDs in one Syfon checksum batch during push;
-5. prints the local DRS records, then prints and verifies the Syfon records
+4. creates and tracks three local TSV files in the same commit;
+5. pushes the local payloads and registers all six records in Syfon;
+6. resolves all OIDs in one Syfon checksum batch during push;
+7. prints the local DRS records, then prints and verifies the Syfon records
    containing each temporary pointer OID;
-6. verifies that Syfon preserves each inline `globus://` URL without signing it;
-7. downloads all three objects in one Globus batch; and
-8. calculates each downloaded SHA-256, prints the updated Syfon records,
-   verifies that Syfon stores it, and leaves the repository for inspection.
+8. verifies that Syfon preserves each inline `globus://` URL without signing it;
+9. clears the worktree and cache, then restores the three local files from
+   Syfon and the three external files through one Globus batch; and
+10. verifies all six downloaded SHA-256 values and leaves the repository for
+    inspection.
 
 View submitted tasks in [Globus Activity](https://app.globus.org/activity).
 

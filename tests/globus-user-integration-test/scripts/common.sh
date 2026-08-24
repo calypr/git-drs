@@ -78,6 +78,8 @@ configure_local_syfon_remote() {
   git -C "$repo_path" config --local "drs.remote.$TEST_REMOTE.organization" "$organization"
   git -C "$repo_path" config --local "drs.remote.$TEST_REMOTE.project" "$project"
   git -C "$repo_path" config --local "drs.remote.$TEST_REMOTE.bucket" "$TUTORIAL_SYFON_BUCKET"
+  git -C "$repo_path" config --local "drs.bucketmap.projects.$organization.$project.bucket" "$TUTORIAL_SYFON_BUCKET"
+  git -C "$repo_path" config --local "drs.bucketmap.projects.$organization.$project.prefix" "$TUTORIAL_SYFON_STORAGE_PREFIX"
   git -C "$repo_path" config --local "remote.$TEST_REMOTE.lfsurl" "${TUTORIAL_SYFON_ENDPOINT%/}/info/lfs"
   [[ -z "${TUTORIAL_SYFON_USERNAME:-}" ]] || git -C "$repo_path" config --local "drs.remote.$TEST_REMOTE.username" "$TUTORIAL_SYFON_USERNAME"
   [[ -z "${TUTORIAL_SYFON_PASSWORD:-}" ]] || git -C "$repo_path" config --local "drs.remote.$TEST_REMOTE.password" "$TUTORIAL_SYFON_PASSWORD"

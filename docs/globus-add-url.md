@@ -106,6 +106,29 @@ member URLs; it does not re-list the collection or re-evaluate the original
 wildcard. Push and pull resolve the selected OIDs together with Syfon's bulk
 checksum endpoint instead of issuing one lookup per pointer.
 
+## Mix Globus and local files
+
+A repository can combine metadata-first Globus objects with local files that
+git-drs uploads to the primary remote:
+
+```bash
+git drs track 'local/*.tsv'
+git drs add-url \
+  'globus://<collection-id>/project/release/*.bam' \
+  data/release
+git add .gitattributes local data/release
+git commit -m 'Add local tables and external reads'
+git drs push
+git drs pull
+```
+
+`push` uploads the tracked local payloads and registers the Globus records
+without copying their bytes. A normal `pull` chooses an available access method
+per object, so local payloads and Globus objects hydrate together. Do not use
+`--access-method globus` for a mixed pull: that flag requires every selected
+object to advertise Globus. Use the default automatic selection, or set
+`GIT_DRS_ACCESS_METHOD=prefer:globus` to prefer Globus with fallback.
+
 ## Design decisions
 
 The retired `tests/globus-user-integration-test/cmd/tutorial-manifest` helper

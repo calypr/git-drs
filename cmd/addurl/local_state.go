@@ -210,8 +210,18 @@ func writePointerFile(pathArg, oid string, sizeBytes int64, placeholder bool) er
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(safePath, []byte(pointer), 0o644); err != nil {
+	f, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", safePath, err)
+	}
+	if _, err := f.WriteString(pointer); err != nil {
+		_ = f.Close()
+		_ = os.Remove(safePath)
 		return fmt.Errorf("write %s: %w", safePath, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(safePath)
+		return fmt.Errorf("close %s: %w", safePath, err)
 	}
 
 	if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil {

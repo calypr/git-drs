@@ -173,6 +173,24 @@ func TestRecursiveGlobusManifestRejectsDuplicateContent(t *testing.T) {
 	}
 }
 
+func TestWritePointerFileRejectsFilesystemCollision(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "A.bam")
+	firstOID := strings.Repeat("a", 64)
+	if err := writePointerFile(destination, firstOID, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePointerFile(destination, strings.Repeat("b", 64), 2, false); err == nil {
+		t.Fatal("expected existing destination to be rejected")
+	}
+	pointer, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pointer), firstOID) {
+		t.Fatalf("existing pointer was overwritten: %s", pointer)
+	}
+}
+
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	tempDir := t.TempDir()
 	lfsRoot := filepath.Join(tempDir, ".git", "lfs")

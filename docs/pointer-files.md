@@ -76,11 +76,14 @@ Example pointer when SHA256 is unknown:
 
 ```text
 version https://git-lfs.github.com/spec/v1
+ext-0-gitdrsplaceholder sha256:<derived-local-oid>
 oid sha256:<derived-local-oid>
 size 123456
 ```
 
-In that case, `<derived-local-oid>` is a local/cache identifier, not a payload checksum.
+In that case, `<derived-local-oid>` is a local/cache identifier, not a payload
+checksum. The extension marker prevents pull and clean-filter validation from
+treating it as one.
 
 ### `git drs pull`
 

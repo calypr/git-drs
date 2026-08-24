@@ -138,6 +138,22 @@ The environment override wins, followed by an exact case-normalized source
 route, then the default destination. Conflicting duplicate routes are errors.
 The source map is optional; one default destination is the normal case.
 
+## Add existing Globus files
+
+`git drs add-url` detects `globus://` inputs directly. It can add one file, a
+directory tree, or a quoted wildcard selection without downloading the source
+or requiring a checksum manifest:
+
+```bash
+git drs add-url globus://<collection-id>/release/ data/release
+git drs add-url 'globus://<collection-id>/release/**/*.bam' data/bam --dry-run
+```
+
+When Globus does not publish SHA-256, git-drs marks a source-derived placeholder
+OID explicitly and validates hydrated content by size. See
+[Adding Globus Objects](globus-add-url.md) for CLI examples, wildcard semantics,
+optional manifests, and the identity design.
+
 If a DRS object advertises multiple access methods, choose whether Globus is a
 preference or a requirement:
 

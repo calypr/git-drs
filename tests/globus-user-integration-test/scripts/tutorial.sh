@@ -27,9 +27,15 @@ repo="$(new_tutorial_repo)"
 cd "$repo"
 verification_file="$test_bin_dir/verification.tsv"
 git drs add-url \
-  globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/home/share/godata/ \
+  'globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/home/share/godata/file*.txt' \
   tutorial --remote "$TEST_REMOTE"
-[[ "$(find tutorial -type f | wc -l | tr -d ' ')" == 3 ]]
+tutorial_files="$(find tutorial -type f | sort)"
+expected_files="$(printf '%s\n' tutorial/file1.txt tutorial/file2.txt tutorial/file3.txt)"
+[[ "$tutorial_files" == "$expected_files" ]] || {
+  printf 'wildcard selected unexpected files:\n%s\n' "$tutorial_files" >&2
+  exit 1
+}
+printf 'PASS wildcard selected the three tutorial files\n'
 echo "local DRS records after add-url:"
 while IFS= read -r file; do
   temporary_oid="$(awk '/^oid sha256:/{sub(/^oid sha256:/, ""); print; exit}' "$file")"

@@ -149,7 +149,8 @@ The script:
 1. builds and uses `git-drs` from the current checkout;
 2. creates a disposable repository and local bare Git remote beneath
    `WORK_ROOT`;
-3. discovers the public tutorial collection directly with `git drs add-url`;
+3. imports `file*.txt` with a quoted Globus wildcard and verifies the exact
+   three matched paths;
 4. resolves the three temporary OIDs in one Syfon checksum batch during push;
 5. prints the local DRS records, then prints and verifies the Syfon records
    containing each temporary pointer OID;

@@ -91,7 +91,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 				}
 				// DRS URI pointers already carry their durable lookup identity. The
 				// SHA256-keyed sidecar map is only applicable to SHA256 pointers.
-				if !lfs.IsDRSURI(pointerOID) {
+				if !lfs.IsDRSURI(pointerOID) && !lfs.IsPlaceholderPointer(data) {
 					if mapErr := writeDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
 						logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
 					}
@@ -141,7 +141,8 @@ func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte,
 		return nil, false
 	}
 	pointerOID, pointerSize, ok := lfs.ParseLFSPointer(pointer)
-	if !ok || !lfs.IsDRSURI(pointerOID) || pointerSize != size {
+	placeholder := lfs.IsPlaceholderPointer(pointer)
+	if !ok || (!lfs.IsDRSURI(pointerOID) && !placeholder) || pointerSize != size {
 		return nil, false
 	}
 	// Some DRS services do not publish a SHA256 checksum. In that case compare

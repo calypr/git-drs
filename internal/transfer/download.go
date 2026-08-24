@@ -126,14 +126,14 @@ func downloadGlobusResolved(ctx context.Context, drsCtx *remoteruntime.GitContex
 		_ = os.Remove(dstPath)
 		return err
 	}
-	if err := verifyGlobusDownload(dstPath, oid, obj); err != nil {
+	if err := verifyGlobusDownload(dstPath, oid, obj, false); err != nil {
 		_ = os.Remove(dstPath)
 		return err
 	}
 	return nil
 }
 
-func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject) error {
+func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholder bool) error {
 	info, err := os.Stat(dstPath)
 	if err != nil {
 		return fmt.Errorf("verify Globus download: %w", err)
@@ -141,14 +141,17 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject) error {
 	if info.Size() != obj.Size {
 		return fmt.Errorf("verify Globus download: size mismatch: expected %d, got %d", obj.Size, info.Size())
 	}
-	want := strings.ToLower(drsobject.NormalizeChecksum(oid))
-	if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
-		want = ""
-		for _, checksum := range obj.Checksums {
-			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
-			if checksumType == "sha256" || checksumType == "sha-256" {
-				want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
-				break
+	want := ""
+	if !placeholder {
+		want = strings.ToLower(drsobject.NormalizeChecksum(oid))
+		if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
+			want = ""
+			for _, checksum := range obj.Checksums {
+				checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+				if checksumType == "sha256" || checksumType == "sha-256" {
+					want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
+					break
+				}
 			}
 		}
 	}

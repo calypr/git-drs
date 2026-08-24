@@ -27,6 +27,7 @@ type GlobusDownload struct {
 	OID, CachePath string
 	Object         *drsapi.DrsObject
 	AccessURL      string
+	Placeholder    bool
 }
 
 type globusClient interface {
@@ -202,7 +203,7 @@ func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 			return err
 		}
 		for _, download := range group.downloads {
-			if err := verifyGlobusDownload(download.CachePath, download.OID, download.Object); err != nil {
+			if err := verifyGlobusDownload(download.CachePath, download.OID, download.Object, download.Placeholder); err != nil {
 				_ = os.Remove(download.CachePath)
 				return err
 			}

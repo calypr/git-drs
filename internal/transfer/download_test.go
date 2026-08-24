@@ -14,6 +14,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syclient "github.com/calypr/syfon/client"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -105,8 +106,19 @@ func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
 		Size:      int64(len("incorrect")),
 		Checksums: []drsapi.Checksum{{Type: "sha-256", Checksum: hex.EncodeToString(want[:])}},
 	}
-	if err := verifyGlobusDownload(path, "drs://example.org/object", obj); err == nil {
+	if err := verifyGlobusDownload(path, "drs://example.org/object", obj, false); err == nil {
 		t.Fatal("expected checksum mismatch")
+	}
+}
+
+func TestVerifyGlobusDownloadWithoutChecksumUsesSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obj := &drsapi.DrsObject{Size: int64(len("payload"))}
+	if err := verifyGlobusDownload(path, strings.Repeat("a", 64), obj, true); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -137,10 +149,13 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	orgMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &orgAccessID}}
 	projectControlled := []string{"/organization/org1/project/proj1"}
 	orgControlled := []string{"/organization/org1"}
-	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
-		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
-		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
-	}}
+	abcHashes := internalapi.HashInfo{"sha256": "abc"}
+	checksumResponse := struct {
+		Results map[string][]internalapi.InternalRecord `json:"results"`
+	}{Results: map[string][]internalapi.InternalRecord{"abc": {
+		{Did: "obj-project", ControlledAccess: &projectControlled, Hashes: &abcHashes, AccessMethods: &projectMethods},
+		{Did: "obj-org", ControlledAccess: &orgControlled, Hashes: &abcHashes, AccessMethods: &orgMethods},
+	}}}
 	checksumBody, err := json.Marshal(checksumResponse)
 	if err != nil {
 		t.Fatalf("marshal checksum response: %v", err)
@@ -148,7 +163,7 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 
 	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/abc":
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk/hashes":
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(string(checksumBody))),

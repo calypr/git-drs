@@ -23,14 +23,21 @@ import (
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
 
-type fakeGlobusLister struct{ files []globusauth.File }
+type fakeGlobusLister struct {
+	files []globusauth.File
+	stat  globusauth.File
+}
 
 func (f *fakeGlobusLister) ListFiles(context.Context, string, string) ([]globusauth.File, error) {
 	return f.files, nil
 }
+func (f *fakeGlobusLister) StatFile(_ context.Context, _ string, path string) (globusauth.File, error) {
+	f.stat.Path = path
+	return f.stat, nil
+}
 func (*fakeGlobusLister) Close() error { return nil }
 
-func TestRecursiveGlobusImportMaterializesMembers(t *testing.T) {
+func TestGlobusDirectoryImportMaterializesMembersWithoutChecksums(t *testing.T) {
 	repo := setupGitRepo(t)
 	oldwd := mustChdir(t, repo)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
@@ -46,22 +53,15 @@ func TestRecursiveGlobusImportMaterializesMembers(t *testing.T) {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
 	}
-	shaA := strings.Repeat("a", 64)
-	shaB := strings.Repeat("b", 64)
-	manifest := filepath.Join(repo, "manifest.tsv")
-	if err := os.WriteFile(manifest, []byte("path\tsize\tsha256\na.bam\t10\t"+shaA+"\nsub/b.bai\t20\t"+shaB+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	modified := "2026-08-12 19:08:37+00:00"
 	oldLister := newGlobusLister
 	newGlobusLister = func(context.Context) (globusLister, error) {
-		return &fakeGlobusLister{files: []globusauth.File{{Path: "/release/a.bam", Size: 10}, {Path: "/release/sub/b.bai", Size: 20}}}, nil
+		return &fakeGlobusLister{files: []globusauth.File{{Path: "/release/a.bam", Size: 10, LastModified: modified}, {Path: "/release/sub/b.bai", Size: 20, LastModified: modified}}}, nil
 	}
 	t.Cleanup(func() { newGlobusLister = oldLister })
 	service := NewAddURLService()
 	dryRun := NewCommand()
-	_ = dryRun.Flags().Set("recursive", "true")
 	_ = dryRun.Flags().Set("dry-run", "true")
-	_ = dryRun.Flags().Set("manifest", manifest)
 	if err := service.Run(dryRun, []string{"globus://source/release/", "data/study"}); err != nil {
 		t.Fatal(err)
 	}
@@ -69,8 +69,6 @@ func TestRecursiveGlobusImportMaterializesMembers(t *testing.T) {
 		t.Fatalf("dry-run wrote a pointer: %v", err)
 	}
 	cmd := NewCommand()
-	_ = cmd.Flags().Set("recursive", "true")
-	_ = cmd.Flags().Set("manifest", manifest)
 	if err := service.Run(cmd, []string{"globus://source/release/", "data/study"}); err != nil {
 		t.Fatal(err)
 	}
@@ -83,9 +81,86 @@ func TestRecursiveGlobusImportMaterializesMembers(t *testing.T) {
 	if !strings.Contains(string(attrs), "data/study/** filter=drs") || !strings.Contains(string(attrs), "data/study/** drs=ro") {
 		t.Fatalf(".gitattributes = %s", attrs)
 	}
-	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, shaA)
+	sourceURL := "globus://source/release/a.bam"
+	oid, err := placeholderOIDForUnknownSHA("last_modified="+modified+";size=10", sourceURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
 	if err != nil || obj.AccessMethods == nil || string((*obj.AccessMethods)[0].Type) != "globus" {
 		t.Fatalf("Globus DRS object = %+v, %v", obj, err)
+	}
+	if len(obj.Checksums) != 0 || (*obj.AccessMethods)[0].AccessUrl.Url != sourceURL {
+		t.Fatalf("checksum-less Globus DRS object = %+v", obj)
+	}
+}
+
+func TestGlobusWildcardSupportsDoubleStar(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	oldLister := newGlobusLister
+	newGlobusLister = func(context.Context) (globusLister, error) {
+		return &fakeGlobusLister{files: []globusauth.File{
+			{Path: "/release/a.bam", Size: 10, LastModified: "2026-08-12 19:08:37+00:00"},
+			{Path: "/release/sub/b.bam", Size: 20, LastModified: "2026-08-12 19:08:37+00:00"},
+			{Path: "/release/sub/b.bai", Size: 2, LastModified: "2026-08-12 19:08:37+00:00"},
+		}}, nil
+	}
+	t.Cleanup(func() { newGlobusLister = oldLister })
+
+	cmd := NewCommand()
+	_ = cmd.Flags().Set("dry-run", "true")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := NewAddURLService().Run(cmd, []string{"globus://source/release/**/*.bam", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "/release/a.bam") || !strings.Contains(got, "/release/sub/b.bam") || strings.Contains(got, ".bai") {
+		t.Fatalf("wildcard output = %q", got)
+	}
+}
+
+func TestMatchGlobusPath(t *testing.T) {
+	for _, test := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"/release/*.bam", "/release/a.bam", true},
+		{"/release/*.bam", "/release/sub/a.bam", false},
+		{"/release/a?.bam", "/release/a1.bam", true},
+		{"/release/[ab].bam", "/release/b.bam", true},
+		{"/release/**/*.bam", "/release/a.bam", true},
+		{"/release/**/*.bam", "/release/sub/a.bam", true},
+	} {
+		got, err := matchGlobusPath(test.pattern, test.name)
+		if err != nil || got != test.want {
+			t.Fatalf("matchGlobusPath(%q, %q) = %v, %v; want %v", test.pattern, test.name, got, err, test.want)
+		}
+	}
+}
+
+func TestParseGlobusSourceRejectsInvalidWildcard(t *testing.T) {
+	if _, err := parseGlobusSource("globus://source/release/[.bam"); err == nil {
+		t.Fatal("expected invalid wildcard error")
+	}
+}
+
+func TestGlobusExactFileUsesExplicitDestination(t *testing.T) {
+	source, err := parseGlobusSource("globus://source/release/a.bam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, files, err := discoverGlobusFiles(t.Context(), &fakeGlobusLister{stat: globusauth.File{Size: 10, LastModified: "2026-08-12 19:08:37+00:00"}}, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := globusEntries(files, source, "data/a.bam", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].destination != "data/a.bam" || entries[0].sha256 != "" || len(entries[0].oid) != 64 {
+		t.Fatalf("entries = %+v", entries)
 	}
 }
 
@@ -196,7 +271,8 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("read pointer file: %v", err)
 	}
 	expectedPointer := fmt.Sprintf(
-		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
+		"version https://git-lfs.github.com/spec/v1\next-0-gitdrsplaceholder sha256:%s\noid sha256:%s\nsize %d\n",
+		oid,
 		oid,
 		11,
 	)

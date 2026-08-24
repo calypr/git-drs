@@ -38,9 +38,10 @@ func addFlags(cmd *cobra.Command) {
 		"",
 		"Storage scheme for object-key mode (for example: s3 or gs)",
 	)
-	cmd.Flags().Bool("recursive", false, "Import every file in a Globus collection subtree")
-	cmd.Flags().Bool("dry-run", false, "Validate a recursive Globus import without writing files")
-	cmd.Flags().String("manifest", "", "Authoritative TSV manifest with path, size, and sha256 columns")
+	cmd.Flags().Bool("recursive", false, "Deprecated: Globus directories and wildcards are detected automatically")
+	_ = cmd.Flags().MarkDeprecated("recursive", "Globus directories and wildcards are detected automatically")
+	cmd.Flags().Bool("dry-run", false, "List and validate matching Globus objects without writing files")
+	cmd.Flags().String("manifest", "", "Optional TSV manifest supplying path, size, and sha256 for Globus collections")
 	cmd.Flags().StringP("remote", "r", "", "Target DRS remote")
 }
 

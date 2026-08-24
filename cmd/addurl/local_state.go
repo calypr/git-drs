@@ -194,11 +194,12 @@ func repoRelativePath(pathArg string) (string, error) {
 	return filepath.ToSlash(clean), nil
 }
 
-func writePointerFile(pathArg, oid string, sizeBytes int64) error {
-	pointer := fmt.Sprintf(
-		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		oid, sizeBytes,
-	)
+func writePointerFile(pathArg, oid string, sizeBytes int64, placeholder bool) error {
+	pointer := "version https://git-lfs.github.com/spec/v1\n"
+	if placeholder {
+		pointer += fmt.Sprintf("ext-0-gitdrsplaceholder sha256:%s\n", oid)
+	}
+	pointer += fmt.Sprintf("oid sha256:%s\nsize %d\n", oid, sizeBytes)
 	if pathArg == "" {
 		return fmt.Errorf("empty worktree path")
 	}

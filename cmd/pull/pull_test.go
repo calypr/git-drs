@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +25,9 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	syclient "github.com/calypr/syfon/client"
 )
 
 func resetPullFlagsForTest() {
@@ -44,6 +50,67 @@ func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
 	}
 	if files[0].Name != "data/a.bin" || files[1].Name != "data/b.bin" {
 		t.Fatalf("unexpected file order: %+v", files)
+	}
+}
+
+func TestPlaceholderPointerValidationUsesSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := pointerFile{Name: "data/file.bin", Oid: strings.Repeat("a", 64), Size: int64(len("payload")), Placeholder: true}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.complete {
+		t.Fatalf("state = %+v, err = %v", state, err)
+	}
+}
+
+func TestSavePlaceholderChecksumsUpdatesSyfon(t *testing.T) {
+	t.Chdir(t.TempDir())
+	payload := []byte("downloaded without a published checksum")
+	temporaryOID := strings.Repeat("a", 64)
+	realSum := sha256.Sum256(payload)
+	realOID := hex.EncodeToString(realSum[:])
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, temporaryOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var request internalapi.InternalRecord
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/index/object-1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(internalapi.InternalRecordResponse{Did: request.Did, Hashes: request.Hashes})
+	}))
+	t.Cleanup(server.Close)
+	rawClient, err := syclient.New(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := rawClient.(*syclient.Client)
+	drsCtx := &remoteruntime.GitContext{Client: client, Capabilities: remoteruntime.Capabilities{Register: true}}
+	files := []pointerFile{{Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true}}
+	objects := map[string]drsapi.DrsObject{temporaryOID: {Id: "object-1"}}
+	if err := savePlaceholderChecksums(t.Context(), drsCtx, files, objects); err != nil {
+		t.Fatal(err)
+	}
+	if request.Hashes == nil || (*request.Hashes)["sha256"] != realOID {
+		t.Fatalf("saved hashes = %+v; want sha256 %s", request.Hashes, realOID)
 	}
 }
 

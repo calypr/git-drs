@@ -25,6 +25,7 @@ import (
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
 )
@@ -137,8 +138,9 @@ var Cmd = &cobra.Command{
 			missingOIDs = append(missingOIDs, f.Oid)
 		}
 
+		prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 		if len(missingOIDs) > 0 {
-			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
+			checksumOIDs := make([]string, 0, len(missingOIDs))
 			for _, oid := range missingOIDs {
 				if isDRSPointerOID(oid) {
 					if anvil == nil {
@@ -149,11 +151,14 @@ var Cmd = &cobra.Command{
 					}
 					continue
 				}
-				recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
-				if err != nil || len(recs) == 0 {
-					continue
+				checksumOIDs = append(checksumOIDs, oid)
+			}
+			if recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs); err == nil {
+				for _, oid := range checksumOIDs {
+					if recs := recsByOID[oid]; len(recs) > 0 {
+						prefetched[oid] = recs[0]
+					}
 				}
-				prefetched[oid] = recs[0]
 			}
 			if len(prefetched) > 0 {
 				logg.Debug(fmt.Sprintf("prefetched %d objects for pull", len(prefetched)))
@@ -191,7 +196,7 @@ var Cmd = &cobra.Command{
 					return err
 				}
 				objCopy := obj
-				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: accessURL.Url})
+				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: accessURL.Url, Placeholder: f.Placeholder})
 				progress.OnDownloadStart(toPullFile(f))
 			}
 			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
@@ -252,6 +257,9 @@ var Cmd = &cobra.Command{
 		} else {
 			logg.Debug("no missing pointer objects to download")
 		}
+		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched); err != nil {
+			return err
+		}
 
 		readOnly := drsCtx.IsReadOnly()
 		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
@@ -273,10 +281,11 @@ func normalizeDRSPointerOID(oid string) string {
 }
 
 type pointerFile struct {
-	Name   string
-	Oid    string
-	Size   int64
-	SHA256 string
+	Name        string
+	Oid         string
+	Size        int64
+	SHA256      string
+	Placeholder bool
 }
 
 func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
@@ -292,12 +301,15 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	files := make([]pointerFile, 0, len(keys))
 	for _, path := range keys {
 		info := inventory[path]
-		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: info.SHA256})
+		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: info.SHA256, Placeholder: info.Placeholder})
 	}
 	return files
 }
 
 func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {
+	if file.Placeholder {
+		return inspectCachedObject(path, "", file.Size)
+	}
 	state, err := inspectCachedObject(path, file.Oid, file.Size)
 	if err != nil || !state.complete || file.SHA256 == "" {
 		return state, err
@@ -311,7 +323,11 @@ func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, err
 }
 
 func verifyPointerAtPath(path string, file pointerFile) error {
-	if err := verifyObjectAtPath(path, file.Oid, file.Size); err != nil {
+	expectedOID := file.Oid
+	if file.Placeholder {
+		expectedOID = ""
+	}
+	if err := verifyObjectAtPath(path, expectedOID, file.Size); err != nil {
 		return err
 	}
 	if file.SHA256 == "" {
@@ -437,6 +453,59 @@ func calculateFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
+func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject) error {
+	if drsCtx == nil || drsCtx.Client == nil || !drsCtx.CanRegister() {
+		return nil
+	}
+	saved := make(map[string]struct{})
+	for _, file := range files {
+		if !file.Placeholder {
+			continue
+		}
+		if _, ok := saved[file.Oid]; ok {
+			continue
+		}
+		saved[file.Oid] = struct{}{}
+		cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, file.Oid)
+		if err != nil {
+			return err
+		}
+		actual, err := calculateFileSHA256(cachePath)
+		if err != nil {
+			return fmt.Errorf("calculate sha256 for placeholder oid %s: %w", file.Oid, err)
+		}
+		obj, ok := objects[file.Oid]
+		if !ok {
+			records, err := lookup.ObjectsByHashForScope(ctx, drsCtx, file.Oid)
+			if err != nil {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: %w", file.Oid, err)
+			}
+			if len(records) == 0 {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: no matching Syfon record", file.Oid)
+			}
+			obj = records[0]
+		}
+		alreadySaved := false
+		for _, checksum := range obj.Checksums {
+			if strings.EqualFold(checksum.Type, "sha256") && strings.EqualFold(checksum.Checksum, actual) {
+				alreadySaved = true
+			}
+		}
+		if alreadySaved {
+			continue
+		}
+		hashes := internalapi.HashInfo{"sha256": actual}
+		updated, err := drsCtx.Client.Index().Update(ctx, obj.Id, internalapi.InternalRecord{Did: obj.Id, Hashes: &hashes})
+		if err != nil {
+			return fmt.Errorf("save sha256 for placeholder oid %s: %w", file.Oid, err)
+		}
+		if updated.Hashes == nil || (*updated.Hashes)["sha256"] != actual {
+			return fmt.Errorf("Syfon did not save sha256 %s for placeholder oid %s", actual, file.Oid)
+		}
+	}
+	return nil
+}
+
 func matchesPattern(path, pattern string) bool {
 	pattern = filepath.ToSlash(filepath.Clean(pattern))
 	if !strings.ContainsAny(pattern, "*?[") {
@@ -484,7 +553,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
-		if err := verifyObjectAtPath(srcPath, f.Oid, f.Size); err != nil {
+		if err := verifyPointerAtPath(srcPath, f); err != nil {
 			return fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
 		}
 		src, err := os.Open(srcPath)
@@ -526,7 +595,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err := src.Close(); err != nil {
 			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
 		}
-		if err := verifyObjectAtPath(f.Name, f.Oid, f.Size); err != nil {
+		if err := verifyPointerAtPath(f.Name, f); err != nil {
 			if removeErr := os.Remove(f.Name); removeErr != nil && !os.IsNotExist(removeErr) {
 				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
 			}

@@ -73,6 +73,24 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	}
 }
 
+func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	oid := strings.Repeat("a", 64)
+	pointer := "version https://git-lfs.github.com/spec/v1\next-0-gitdrsplaceholder sha256:" + oid + "\noid sha256:" + oid + "\nsize 7\n"
+	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{Size: 7}, oid); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := CleanContent(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", strings.NewReader(pointer), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	if err != nil || len(obj.Checksums) != 0 {
+		t.Fatalf("object = %+v, err = %v", obj, err)
+	}
+}
+
 func TestCleanContentPreservesIndexedDRSPointerForHydratedPayload(t *testing.T) {
 	repo := t.TempDir()
 	payload := []byte("hydrated population data\n")

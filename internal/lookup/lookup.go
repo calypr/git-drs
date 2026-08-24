@@ -3,12 +3,15 @@ package lookup
 import (
 	"context"
 	"fmt"
-	"sync"
+	"net/http"
+	"path"
+	"strings"
 
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	"golang.org/x/sync/errgroup"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	syfoncommon "github.com/calypr/syfon/common"
 )
 
 func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {
@@ -19,11 +22,11 @@ func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checks
 	if checksum == "" {
 		return nil, nil
 	}
-	page, err := drsCtx.Client.DRS().BatchGetObjectsByHash(ctx, []string{checksum})
+	objects, err := ObjectsByHashes(ctx, drsCtx, []string{checksum})
 	if err != nil {
 		return nil, err
 	}
-	return page.DrsObjects, nil
+	return objects[checksum], nil
 }
 
 func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {
@@ -47,63 +50,59 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 		return map[string][]drsapi.DrsObject{}, nil
 	}
 
-	var mu sync.Mutex
-	drsObjects := make([]drsapi.DrsObject, 0)
-	concurrency := 20
-	sem := make(chan struct{}, concurrency)
-	g, gCtx := errgroup.WithContext(ctx)
-
-	for _, checksum := range queryChecksums {
-		checksum := checksum
-		g.Go(func() error {
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			resp, err := drsCtx.Client.DRSAPI().GetObjectsByChecksumWithResponse(gCtx, drsapi.ChecksumParameter(checksum))
-			if err != nil {
-				return fmt.Errorf("get objects by checksum %s: %w", checksum, err)
-			}
-			if resp.JSON200 == nil || resp.JSON200.ResolvedDrsObject == nil {
-				return fmt.Errorf("get objects by checksum %s failed: unexpected response: %d", checksum, resp.StatusCode())
-			}
-
-			mu.Lock()
-			drsObjects = append(drsObjects, *resp.JSON200.ResolvedDrsObject...)
-			mu.Unlock()
-			return nil
-		})
+	var response struct {
+		Results map[string][]internalapi.InternalRecord `json:"results"`
 	}
-
-	if err := g.Wait(); err != nil {
-		return nil, err
+	if err := drsCtx.Client.Requestor().Do(ctx, http.MethodPost, "/index/bulk/hashes", internalapi.BulkHashesRequest{Hashes: queryChecksums}, &response); err != nil {
+		return nil, fmt.Errorf("batch objects by checksum: %w", err)
 	}
 
 	results := make(map[string][]drsapi.DrsObject, len(normalizedToOriginal))
 	for normalized, original := range normalizedToOriginal {
-		results[original] = nil
-		results[normalized] = nil
-	}
-	for _, obj := range drsObjects {
-		for _, checksum := range obj.Checksums {
-			if checksum.Type == "" || checksum.Checksum == "" {
-				continue
-			}
-			normalized := drsobject.NormalizeChecksum(fmt.Sprintf("%s:%s", checksum.Type, checksum.Checksum))
-			if normalized == "" {
-				continue
-			}
-			original, ok := normalizedToOriginal[normalized]
-			if !ok {
-				continue
-			}
-			results[original] = append(results[original], obj)
-			if original != normalized {
-				results[normalized] = append(results[normalized], obj)
-			}
+		objects := make([]drsapi.DrsObject, 0, len(response.Results[normalized]))
+		for _, record := range response.Results[normalized] {
+			objects = append(objects, internalRecordToDRSObject(record))
+		}
+		results[original] = objects
+		if original != normalized {
+			results[normalized] = objects
 		}
 	}
 
 	return results, nil
+}
+
+func internalRecordToDRSObject(record internalapi.InternalRecord) drsapi.DrsObject {
+	obj := drsapi.DrsObject{Id: record.Did, SelfUri: "drs://" + record.Did}
+	if record.Size != nil {
+		obj.Size = *record.Size
+	}
+	name := record.FileName
+	if name == nil {
+		name = record.Name
+	}
+	if name != nil {
+		base := path.Base(strings.TrimSpace(*name))
+		if base == "." || base == "/" || base == "" {
+			base = strings.TrimSpace(*name)
+		}
+		obj.Name = &base
+	}
+	if record.Hashes != nil {
+		obj.Checksums = make([]drsapi.Checksum, 0, len(*record.Hashes))
+		for typ, checksum := range *record.Hashes {
+			obj.Checksums = append(obj.Checksums, drsapi.Checksum{Type: typ, Checksum: checksum})
+		}
+	}
+	if record.ControlledAccess != nil {
+		controlled := syfoncommon.NormalizeAccessResources(*record.ControlledAccess)
+		obj.ControlledAccess = &controlled
+	}
+	if record.AccessMethods != nil {
+		methods := append([]drsapi.AccessMethod(nil), (*record.AccessMethods)...)
+		obj.AccessMethods = &methods
+	}
+	return obj
 }
 
 func ObjectsByHashForScope(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {

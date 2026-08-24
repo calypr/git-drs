@@ -92,8 +92,9 @@ type TransferItem struct {
 }
 
 type File struct {
-	Path string
-	Size int64
+	Path, LastModified string
+	Size               int64
+	Directory          bool
 }
 
 func tokenFile() (string, error) {
@@ -402,7 +403,7 @@ func (c *Client) ListFiles(ctx context.Context, collection, root string) ([]File
 			itemPath := strings.TrimRight(dir, "/") + "/" + entry.Name
 			switch entry.Type {
 			case "file":
-				files = append(files, File{Path: itemPath, Size: entry.Size})
+				files = append(files, File{Path: itemPath, Size: entry.Size, LastModified: entry.LastModified})
 			case "dir":
 				queue = append(queue, itemPath+"/")
 			case "symlink":
@@ -415,9 +416,47 @@ func (c *Client) ListFiles(ctx context.Context, collection, root string) ([]File
 }
 
 type directoryEntry struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Size int64  `json:"size"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Size         int64  `json:"size"`
+	LastModified string `json:"last_modified"`
+}
+
+func (c *Client) StatFile(ctx context.Context, collection, itemPath string) (File, error) {
+	query := url.Values{"path": {itemPath}}
+	rawURL := strings.TrimRight(c.baseURL, "/") + "/v0.10/operation/endpoint/" + url.PathEscape(collection) + "/stat?" + query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return File{}, err
+	}
+	if c.authorizer != nil {
+		header, err := c.authorizer.GetAuthorizationHeader(ctx)
+		if err != nil {
+			return File{}, err
+		}
+		req.Header.Set("Authorization", header)
+	}
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return File{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return File{}, fmt.Errorf("Globus stat returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var entry directoryEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entry); err != nil {
+		return File{}, fmt.Errorf("decode Globus stat: %w", err)
+	}
+	if entry.Type != "file" && entry.Type != "dir" {
+		return File{}, fmt.Errorf("Globus path %s has unsupported type %q", itemPath, entry.Type)
+	}
+	return File{Path: itemPath, Size: entry.Size, LastModified: entry.LastModified, Directory: entry.Type == "dir"}, nil
 }
 
 func (c *Client) listDirectory(ctx context.Context, collection, dir string) ([]directoryEntry, error) {

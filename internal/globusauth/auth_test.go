@@ -210,8 +210,25 @@ func TestListFilesRecursesAndSorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].Path != "/root/b" || files[1].Path != "/root/sub/a" {
+	if len(files) != 2 || files[0].Path != "/root/b" || files[0].LastModified != "2026-08-12 19:08:37+00:00" || files[1].Path != "/root/sub/a" {
 		t.Fatalf("files = %+v", files)
+	}
+}
+
+func TestStatFile(t *testing.T) {
+	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0.10/operation/endpoint/collection/stat" || r.URL.Query().Get("path") != "/root/a" {
+			t.Fatalf("request = %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "file", "size": 12, "last_modified": "2026-08-12 19:08:37+00:00"})
+	}))
+	defer server.Close()
+	file, err := client.StatFile(t.Context(), "collection", "/root/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Path != "/root/a" || file.Size != 12 || file.LastModified == "" || file.Directory {
+		t.Fatalf("file = %+v", file)
 	}
 }
 

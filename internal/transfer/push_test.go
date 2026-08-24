@@ -100,3 +100,20 @@ func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 		t.Fatal("add-url metadata must be registered without scheduling a local payload upload")
 	}
 }
+
+func TestPlaceholderMetadataUsesTemporaryChecksumType(t *testing.T) {
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	session := &batchSyncSession{
+		rt:         &pushRuntime{Scope: pushScope{Organization: "example", Project: "tutorial"}},
+		filesByOID: map[string]lfs.LfsFileInfo{oid: {Oid: oid, Placeholder: true}},
+	}
+	record := session.metadataRecordForOID(oid, &drsapi.DrsObject{
+		Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
+	})
+	if record.Hashes == nil || (*record.Hashes)["git-drs-placeholder"] != oid {
+		t.Fatalf("placeholder hashes = %+v", record.Hashes)
+	}
+	if _, mislabeled := (*record.Hashes)["sha256"]; mislabeled {
+		t.Fatalf("temporary oid was labeled as a real sha256: %+v", *record.Hashes)
+	}
+}

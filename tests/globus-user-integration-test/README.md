@@ -154,8 +154,9 @@ The script:
 4. creates and tracks three local TSV files in the same commit;
 5. pushes the local payloads and registers all six records in Syfon;
 6. resolves all OIDs in one Syfon checksum batch during push;
-7. prints the local DRS records, then prints and verifies the Syfon records
-   containing each temporary pointer OID;
+7. prints the local DRS records for both the Globus imports and tracked TSVs,
+   then prints and verifies the Syfon records containing each temporary
+   pointer OID;
 8. verifies that Syfon preserves each inline `globus://` URL without signing it;
 9. clears the worktree and cache, then restores the three local files from
    Syfon and the three external files through one Globus batch; and

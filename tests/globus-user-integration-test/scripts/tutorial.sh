@@ -38,7 +38,7 @@ expected_files="$(printf '%s\n' tutorial/file1.txt tutorial/file2.txt tutorial/f
   exit 1
 }
 printf 'PASS wildcard selected the three tutorial files\n'
-echo "local DRS records after add-url:"
+echo "Globus local DRS records after add-url:"
 while IFS= read -r file; do
   temporary_oid="$(awk '/^oid sha256:/{sub(/^oid sha256:/, ""); print; exit}' "$file")"
   record_path=".git/drs/lfs/objects/${temporary_oid:0:2}/${temporary_oid:2:2}/$temporary_oid"
@@ -59,6 +59,12 @@ done
 git add .gitattributes tutorial local
 git -c user.name=git-drs-test -c user.email=git-drs-test@example.invalid \
   commit --quiet -m "test: add Globus and local tutorial data"
+echo "tracked local-file DRS records before push:"
+while IFS=$'\t' read -r file expected_oid; do
+  record_path=".git/drs/lfs/objects/${expected_oid:0:2}/${expected_oid:2:2}/$expected_oid"
+  printf '\n--- %s (%s) ---\n' "$file" "$expected_oid"
+  jq . "$record_path"
+done <"$local_verification_file"
 git drs push "$TEST_REMOTE"
 echo "pointer files before hydration:"
 while IFS= read -r file; do

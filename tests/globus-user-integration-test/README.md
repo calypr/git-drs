@@ -3,8 +3,10 @@
 This user-driven test creates DRS pointer files for the three public files in
 [Globus Tutorial Collection 1](https://docs.globus.org/guides/tutorials/manage-files/transfer-files/),
 registers their DRS records in a local Syfon server, downloads them with one
-Globus task, and verifies their SHA-256 checksums. It does not require
-`globus-cli` or a private source collection.
+Globus task, verifies hydration and sizes, and prints their SHA-256 checksums
+for inspection. It builds `git-drs` from the current checkout and requires Go,
+Git LFS, and `jq`; it does not require `globus-cli` or a private source
+collection.
 
 ## What you must provide
 
@@ -117,16 +119,20 @@ git drs auth globus login \
 git drs auth globus status
 ```
 
-Open the URL printed by `login`, sign in, approve the requested Transfer and
-tutorial-collection consent, then paste the authorization code back into the
-terminal. The tutorial collection UUID and files are documented in the
+The `--scope` value above belongs to **Globus Tutorial Collection 1**, the
+source collection used by this test. `git-drs` combines it with the Globus
+Transfer API scope. Open the URL printed by `login`, sign in, approve both
+requests, and paste the new, one-time authorization code into the terminal.
+The source collection UUID and tutorial files are documented in the
 [official Globus transfer tutorial](https://docs.globus.org/guides/tutorials/manage-files/transfer-files/).
 
-Do not invent a `data_access` scope for the destination. If Globus returns
-`ConsentRequired`, rerun login using the exact `required_scopes` value reported
-by Globus. An `unknown scopes` response means that the requested scope does not
-exist for that collection. Globus explains collection-dependent consent in the
-[Transfer API overview](https://docs.globus.org/api/transfer/overview/#data-access-consent).
+Do not construct a `data_access` scope from the destination collection UUID.
+If a later command returns `ConsentRequired`, copy each
+`https://auth.globus.org/scopes/.../data_access` scope from the error's
+`required_scopes` value and repeat `--scope` for each one when logging in again.
+An `unknown scopes` response means the requested collection does not define
+that scope; recheck the value instead of guessing another one. See Globus's
+[data-access consent documentation](https://docs.globus.org/api/transfer/overview/#data-access-consent).
 
 git-drs stores the resulting refresh credential in the operating system's user
 configuration directory and refreshes access tokens automatically. It does not
@@ -140,20 +146,28 @@ scripts/tutorial.sh
 
 The script:
 
-1. creates a disposable repository and local bare Git remote beneath
+1. builds and uses `git-drs` from the current checkout;
+2. creates a disposable repository and local bare Git remote beneath
    `WORK_ROOT`;
-2. stages the public tutorial files into the destination collection;
-3. creates and registers one DRS object per file;
-4. prints the pointer files and DRS records before hydration;
-5. downloads all three objects in one Globus batch; and
-6. verifies their checksums and leaves the repository for inspection.
+3. discovers the public tutorial collection directly with `git drs add-url`;
+4. resolves the three temporary OIDs in one Syfon checksum batch during push;
+5. prints the local DRS records, then prints and verifies the Syfon records
+   containing each temporary pointer OID;
+6. verifies that Syfon preserves each inline `globus://` URL without signing it;
+7. downloads all three objects in one Globus batch; and
+8. calculates each downloaded SHA-256, prints the updated Syfon records,
+   verifies that Syfon stores it, and leaves the repository for inspection.
 
 View submitted tasks in [Globus Activity](https://app.globus.org/activity).
 
 ## Common failures
 
+- `tokenstorage: parse .../globus-tokens.json`: the saved credential file is
+  not valid JSON. Move the exact file named in the error to a secure backup
+  outside the repository, then rerun `login` and use the newly generated
+  authorization code. `logout` cannot repair a token file it cannot parse.
 - `ConsentRequired`: repeat `git drs auth globus login --scope ...` with the
-  exact scope in the error.
+  collection `data_access` scope or scopes reported in `required_scopes`.
 - `Path not allowed`: expose `WORK_ROOT` and permit hidden `.git` paths in
   Globus Connect Personal.
 - `Not authorized for that endpoint`: verify the destination collection UUID,

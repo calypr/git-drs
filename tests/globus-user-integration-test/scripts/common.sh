@@ -27,10 +27,9 @@ require_vars() {
 
 require_tools() {
   local tool
-  for tool in git mktemp; do
+  for tool in git go jq mktemp; do
     command -v "$tool" >/dev/null || { echo "$tool is required" >&2; exit 2; }
   done
-  git drs version >/dev/null
   git lfs version >/dev/null
 }
 

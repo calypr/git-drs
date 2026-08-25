@@ -98,6 +98,7 @@ func TestGlobusDestinationUsesSourceRouteAndRepositoryPath(t *testing.T) {
 }
 
 func TestGlobusDestinationEnforcesSharedSourceConstraint(t *testing.T) {
+	t.Setenv(globusDestCollectionEnv, "")
 	ctx := &remoteruntime.GitContext{
 		AllowedGlobusSources:     []string{"source-a"},
 		GlobusDefaultDestination: "destination",

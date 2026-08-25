@@ -164,7 +164,12 @@ func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 		downloads []GlobusDownload
 	}
 	groups := map[groupKey]*group{}
+	seen := make(map[string]struct{}, len(downloads))
 	for _, download := range downloads {
+		if _, ok := seen[download.CachePath]; ok {
+			continue
+		}
+		seen[download.CachePath] = struct{}{}
 		src, err := parseGlobusURL(download.AccessURL)
 		if err != nil {
 			return err

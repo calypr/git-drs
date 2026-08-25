@@ -200,17 +200,21 @@ func TestSubmitTransferItemsBatchesFilesAndChecksums(t *testing.T) {
 func TestListFilesRecursesAndSorts(t *testing.T) {
 	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("path") == "/root/" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "b", "type": "file", "size": 2, "last_modified": "2026-08-12 19:08:37+00:00"}, {"name": "sub", "type": "dir", "last_modified": "2026-08-12 19:08:37+00:00"}}})
+			if r.URL.Query().Get("offset") == "2" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "c", "type": "file", "size": 3}}, "total": 3})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "b", "type": "file", "size": 2, "last_modified": "2026-08-12 19:08:37+00:00"}, {"name": "sub", "type": "dir", "last_modified": "2026-08-12 19:08:37+00:00"}}, "total": 3})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "a", "type": "file", "size": 1}}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"DATA": []map[string]any{{"name": "a", "type": "file", "size": 1}}, "total": 1})
 	}))
 	defer server.Close()
 	files, err := client.ListFiles(t.Context(), "collection", "/root")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 || files[0].Path != "/root/b" || files[0].LastModified != "2026-08-12 19:08:37+00:00" || files[1].Path != "/root/sub/a" {
+	if len(files) != 3 || files[0].Path != "/root/b" || files[0].LastModified != "2026-08-12 19:08:37+00:00" || files[1].Path != "/root/c" || files[2].Path != "/root/sub/a" {
 		t.Fatalf("files = %+v", files)
 	}
 }

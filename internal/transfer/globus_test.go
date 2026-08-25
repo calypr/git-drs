@@ -154,11 +154,19 @@ func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
 		obj := &drsapi.DrsObject{Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: sum}}}
 		downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://" + source + "/file"})
 	}
+	downloads = append(downloads, downloads[0])
 	if err := DownloadGlobusBatch(t.Context(), nil, downloads); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.batches) != 2 {
 		t.Fatalf("submitted %d batches, want 2", len(fake.batches))
+	}
+	items := 0
+	for _, batch := range fake.batches {
+		items += len(batch)
+	}
+	if items != 3 {
+		t.Fatalf("submitted %d transfer items, want 3 unique cache destinations", items)
 	}
 }
 

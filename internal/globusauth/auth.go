@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -460,39 +461,52 @@ func (c *Client) StatFile(ctx context.Context, collection, itemPath string) (Fil
 }
 
 func (c *Client) listDirectory(ctx context.Context, collection, dir string) ([]directoryEntry, error) {
-	query := url.Values{"path": {dir}, "show_hidden": {"1"}}
-	rawURL := strings.TrimRight(c.baseURL, "/") + "/v0.10/operation/endpoint/" + url.PathEscape(collection) + "/ls?" + query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	if c.authorizer != nil {
-		header, err := c.authorizer.GetAuthorizationHeader(ctx)
+	var entries []directoryEntry
+	for offset := 0; ; {
+		query := url.Values{"path": {dir}, "show_hidden": {"1"}}
+		if offset > 0 {
+			query.Set("offset", strconv.Itoa(offset))
+		}
+		rawURL := strings.TrimRight(c.baseURL, "/") + "/v0.10/operation/endpoint/" + url.PathEscape(collection) + "/ls?" + query.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", header)
+		if c.authorizer != nil {
+			header, err := c.authorizer.GetAuthorizationHeader(ctx)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("Authorization", header)
+		}
+		httpClient := c.httpClient
+		if httpClient == nil {
+			httpClient = http.DefaultClient
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var listing struct {
+			Data  []directoryEntry `json:"DATA"`
+			Total int              `json:"total"`
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+			return nil, fmt.Errorf("Globus directory listing returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("decode Globus directory listing: %w", err)
+		}
+		resp.Body.Close()
+		entries = append(entries, listing.Data...)
+		offset += len(listing.Data)
+		if len(listing.Data) == 0 || offset >= listing.Total {
+			return entries, nil
+		}
 	}
-	httpClient := c.httpClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("Globus directory listing returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var listing struct {
-		Data []directoryEntry `json:"DATA"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
-		return nil, fmt.Errorf("decode Globus directory listing: %w", err)
-	}
-	return listing.Data, nil
 }
 
 func (c *Client) WaitForTask(ctx context.Context, taskID string, pollInterval time.Duration) error {

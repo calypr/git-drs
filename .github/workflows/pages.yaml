@@ -45,6 +45,7 @@ jobs:
           cp docs/commands.md .pages-docs/
           cp docs/access-method-selection-and-authentication.md .pages-docs/
           cp docs/globus.md .pages-docs/
+          cp docs/globus-add-url.md .pages-docs/
           cp docs/pointer-files.md .pages-docs/
           cp docs/adding-s3-files.md .pages-docs/
           cp docs/remove-files.md .pages-docs/
@@ -53,16 +54,14 @@ jobs:
 
       - name: Build documentation and presentation
         run: |
-          mkdir -p .pages-build
           npx --yes @marp-team/marp-cli@4.2.3 \
             docs/anvil-terra-poc-presentation.md \
             --html \
             --template bespoke \
-            --output .pages-build/anvil-terra-poc-presentation.html
+            --output .pages-docs/anvil-terra-poc-presentation.html
           mkdocs build --strict
-          # Keep the standalone Bespoke document byte-for-byte intact. Passing
-          # it through MkDocs is unnecessary for this standalone entry point.
-          cp .pages-build/anvil-terra-poc-presentation.html \
+          # Keep the standalone Bespoke document byte-for-byte intact.
+          cp .pages-docs/anvil-terra-poc-presentation.html \
             _site/anvil-terra-poc-presentation.html
 
       - name: Verify presentation artifact

@@ -90,7 +90,7 @@ func loadSharedPolicy(cfg *Config) error {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("%s: remote name must not be empty", sharedPolicyPath)
 		}
-		remote := RemoteSelect{AccessMethod: strings.TrimSpace(shared.Selection.AccessMethod)}
+		remote := RemoteSelect{AccessMethod: strings.TrimSpace(shared.Selection.AccessMethod), FromSharedPolicy: true}
 		if remote.AccessMethod != "" {
 			if _, err := parseSharedAccessPolicy(remote.AccessMethod); err != nil {
 				return fmt.Errorf("%s: remotes.%s.selection.access_method: %w", sharedPolicyPath, name, err)
@@ -492,6 +492,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 			remote.AccessMethod = shared.AccessMethod
 		}
 		remote.AllowedGlobusSources = shared.AllowedGlobusSources
+		remote.FromSharedPolicy = shared.FromSharedPolicy
 		if localEndpoint {
 			remote.EndpointFromShared = false
 		}
@@ -570,6 +571,7 @@ func LoadConfig() (*Config, error) {
 				remote.AccessMethod = shared.AccessMethod
 			}
 			remote.AllowedGlobusSources = shared.AllowedGlobusSources
+			remote.FromSharedPolicy = shared.FromSharedPolicy
 			if localEndpoint {
 				remote.EndpointFromShared = false
 			}

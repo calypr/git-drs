@@ -23,6 +23,7 @@ type RemoteSelect struct {
 	// A non-nil empty slice intentionally disables every Globus source.
 	AllowedGlobusSources []string
 	EndpointFromShared   bool
+	FromSharedPolicy     bool
 }
 
 // GenericRemote is the compositional configuration produced by the unified

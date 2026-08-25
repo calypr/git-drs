@@ -67,6 +67,9 @@ remotes:
 	if remote.Generic == nil || remote.Generic.Endpoint != "https://internal.example.org" || remote.Generic.Provider != "gen3" || remote.Generic.Auth != "bearer" || remote.Generic.Scope != "example/tutorial" || remote.AccessMethod != "require:https" {
 		t.Fatalf("effective remote = %+v", remote)
 	}
+	if !remote.FromSharedPolicy {
+		t.Fatal("shared provenance was lost after applying local overrides")
+	}
 	if len(remote.AllowedGlobusSources) != 1 || remote.AllowedGlobusSources[0] != "source-a" {
 		t.Fatalf("allowed sources = %v", remote.AllowedGlobusSources)
 	}

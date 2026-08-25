@@ -312,13 +312,21 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
-		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
-	} else if !strings.Contains(out, "downloaded invalid cached object") || !strings.Contains(out, "does not match expected oid/size") {
-		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
+	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath)
+	gotUnknown := mustReadFile(t, cloneDir, unknownPath)
+	if !bytes.Equal(gotUnknown, unknownData) {
+		t.Fatalf("unknown-checksum add-url file mismatch: got %q want %q", string(gotUnknown), string(unknownData))
 	}
+	unknownRecordPath := filepath.Join(".git", "drs", "lfs", "objects", unknownPointerOID[:2], unknownPointerOID[2:4], unknownPointerOID)
+	unknownRecord := mustReadFile(t, cloneDir, unknownRecordPath)
+	if !bytes.Contains(unknownRecord, []byte(unknownOID)) {
+		t.Fatalf("local DRS record did not learn sha256 %s:\n%s", unknownOID, unknownRecord)
+	}
+	runCommand(t, cloneDir, nil, "git", "drs", "push", "origin")
+	refinedQuery := runCommand(t, cloneDir, nil, "git", "drs", "query", "--remote", "origin", "--checksum", "--pretty", unknownOID)
+	assertAccessURL(t, refinedQuery, "s3://"+minioEnv.bucket+"/"+unknownKey)
 	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
-	t.Logf("add-url known-checksum round-trip and unknown-checksum validation failure verified")
+	t.Logf("add-url known- and unknown-checksum round-trips verified")
 }
 
 func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {

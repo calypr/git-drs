@@ -129,3 +129,38 @@ func TestPlaceholderMetadataUsesTemporaryChecksumType(t *testing.T) {
 		t.Fatal("learned sha256 synchronization detection failed")
 	}
 }
+
+func TestClonedPlaceholderKeepsRemoteMetadata(t *testing.T) {
+	t.Chdir(t.TempDir())
+	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	realOID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	controlled := []string{"/organization/example/project/tutorial"}
+	methods := []drsapi.AccessMethod{{
+		Type: drsapi.AccessMethodTypeGlobus,
+		AccessUrl: &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "globus://source/data/file.dat"},
+	}}
+	match := drsapi.DrsObject{
+		Id:               "remote-object",
+		Size:             10,
+		Checksums:        []drsapi.Checksum{{Type: "git-drs-placeholder", Checksum: oid}, {Type: "sha256", Checksum: realOID}},
+		ControlledAccess: &controlled,
+		AccessMethods:    &methods,
+	}
+	session := &batchSyncSession{
+		rt:             &pushRuntime{Scope: pushScope{Organization: "example", Project: "tutorial", Bucket: "target"}},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/file.dat", Size: 10, Placeholder: true}},
+		oids:           []string{oid},
+		drsObjByOID:    make(map[string]*drsapi.DrsObject),
+		existingByHash: map[string][]drsapi.DrsObject{oid: {match}},
+		uploadRequired: make(map[string]bool),
+	}
+	if err := session.ensureMetadataRegistered(); err != nil {
+		t.Fatal(err)
+	}
+	if got := session.drsObjByOID[oid]; got == nil || got.Id != match.Id || firstAccessURL(got) != firstAccessURL(&match) {
+		t.Fatalf("remote placeholder metadata was not retained: %+v", got)
+	}
+}

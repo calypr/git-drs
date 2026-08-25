@@ -141,6 +141,7 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholde
 	if info.Size() != obj.Size {
 		return fmt.Errorf("verify Globus download: size mismatch: expected %d, got %d", obj.Size, info.Size())
 	}
+	placeholder = placeholder || hasPlaceholderChecksum(obj, oid)
 	want := ""
 	if !placeholder {
 		want = strings.ToLower(drsobject.NormalizeChecksum(oid))
@@ -173,6 +174,18 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholde
 		return fmt.Errorf("verify Globus download: sha256 mismatch: expected %s, got %s", want, got)
 	}
 	return nil
+}
+
+func hasPlaceholderChecksum(obj *drsapi.DrsObject, oid string) bool {
+	if obj == nil {
+		return false
+	}
+	for _, checksum := range obj.Checksums {
+		if strings.EqualFold(strings.TrimSpace(checksum.Type), "git-drs-placeholder") && strings.EqualFold(drsobject.NormalizeChecksum(checksum.Checksum), drsobject.NormalizeChecksum(oid)) {
+			return true
+		}
+	}
+	return false
 }
 
 func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {

@@ -114,13 +114,14 @@ func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
 	}
 }
 
-func TestVerifyGlobusDownloadWithoutChecksumUsesSize(t *testing.T) {
+func TestVerifyGlobusDownloadDetectsPlaceholderChecksum(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "object")
 	if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	obj := &drsapi.DrsObject{Size: int64(len("payload"))}
-	if err := verifyGlobusDownload(path, strings.Repeat("a", 64), obj, true); err != nil {
+	oid := strings.Repeat("a", 64)
+	obj := &drsapi.DrsObject{Size: int64(len("payload")), Checksums: []drsapi.Checksum{{Type: "git-drs-placeholder", Checksum: oid}}}
+	if err := verifyGlobusDownload(path, oid, obj, false); err != nil {
 		t.Fatal(err)
 	}
 }

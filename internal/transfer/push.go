@@ -204,17 +204,19 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// example one created by add-url) is an intentional metadata change,
 			// however, and must be propagated even when the server can already
 			// resolve the object by checksum.
+			localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+			localSHA256 := objectSHA256(obj)
+			if s.filesByOID[oid].Placeholder && readErr != nil && (localSHA256 == "" || strings.EqualFold(localSHA256, oid)) {
+				s.drsObjByOID[oid] = match
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+				continue
+			}
 			localURL := firstAccessURL(obj)
-			if localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); readErr == nil {
+			if readErr == nil && localObj != nil {
 				localURL = firstAccessURL(localObj)
 			}
-			placeholderRegistered := !s.filesByOID[oid].Placeholder
-			for _, checksum := range match.Checksums {
-				if strings.EqualFold(checksum.Type, "git-drs-placeholder") && localdrsobject.NormalizeOid(checksum.Checksum) == oid {
-					placeholderRegistered = true
-				}
-			}
-			localSHA256, remoteSHA256 := objectSHA256(obj), objectSHA256(match)
+			placeholderRegistered := !s.filesByOID[oid].Placeholder || hasPlaceholderChecksum(match, oid)
+			remoteSHA256 := objectSHA256(match)
 			if localSHA256 != "" && remoteSHA256 != "" && !strings.EqualFold(localSHA256, remoteSHA256) {
 				return fmt.Errorf("local sha256 %s conflicts with remote sha256 %s for placeholder oid %s", localSHA256, remoteSHA256, oid)
 			}

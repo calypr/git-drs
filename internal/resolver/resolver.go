@@ -53,10 +53,14 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		if access == nil && strings.TrimSpace(method.AccessID) != "" {
 			access, err = r.GetAccess(ctx, drsURI, method.AccessID)
 			if err != nil {
-				return err
-			}
-			if !isHTTPAccessURL(access.URL) {
+				// Treat per-method access resolution failures as non-fatal and continue
+				// to the next access method so that fallback methods (e.g. HTTPS)
+				// can still be used when an earlier access-id fails (e.g. broken gs://).
 				access = nil
+			} else {
+				if !isHTTPAccessURL(access.URL) {
+					access = nil
+				}
 			}
 		}
 		if access != nil {

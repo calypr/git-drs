@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
@@ -77,10 +78,8 @@ func internalRecordToDRSObject(record internalapi.InternalRecord) drsapi.DrsObje
 	if record.Size != nil {
 		obj.Size = *record.Size
 	}
-	name := record.FileName
-	if name == nil {
-		name = record.Name
-	}
+	// Prefer a provided name.
+	name := record.Name
 	if name != nil {
 		base := path.Base(strings.TrimSpace(*name))
 		if base == "." || base == "/" || base == "" {
@@ -101,6 +100,23 @@ func internalRecordToDRSObject(record internalapi.InternalRecord) drsapi.DrsObje
 	if record.AccessMethods != nil {
 		methods := append([]drsapi.AccessMethod(nil), (*record.AccessMethods)...)
 		obj.AccessMethods = &methods
+	}
+	// Preserve representable metadata fields from the internal record.
+	if record.Description != nil {
+		obj.Description = record.Description
+	}
+	if record.Version != nil {
+		obj.Version = record.Version
+	}
+	if record.CreatedTime != nil {
+		if t, err := time.Parse(time.RFC3339, *record.CreatedTime); err == nil {
+			obj.CreatedTime = t
+		}
+	}
+	if record.UpdatedTime != nil {
+		if t, err := time.Parse(time.RFC3339, *record.UpdatedTime); err == nil {
+			obj.UpdatedTime = &t
+		}
 	}
 	return obj
 }

@@ -214,7 +214,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 					placeholderRegistered = true
 				}
 			}
-			if localURL != "" && localURL != firstAccessURL(match) || !placeholderRegistered {
+			localSHA256, remoteSHA256 := objectSHA256(obj), objectSHA256(match)
+			if localSHA256 != "" && remoteSHA256 != "" && !strings.EqualFold(localSHA256, remoteSHA256) {
+				return fmt.Errorf("local sha256 %s conflicts with remote sha256 %s for placeholder oid %s", localSHA256, remoteSHA256, oid)
+			}
+			if (localURL != "" && localURL != firstAccessURL(match)) || !placeholderRegistered || missingSHA256Checksum(obj, match) {
 				s.drsObjByOID[oid] = obj
 				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
@@ -307,9 +311,35 @@ func (s *batchSyncSession) metadataRecordForOID(oid string, obj *drsapi.DrsObjec
 	record := localdrsobject.ConvertToInternalRecord(obj, s.rt.Scope.Organization, s.rt.Scope.Project)
 	if s.filesByOID[oid].Placeholder {
 		hashes := internalapi.HashInfo{"git-drs-placeholder": oid}
+		if record.Hashes != nil {
+			for checksumType, checksum := range *record.Hashes {
+				if strings.EqualFold(checksumType, "sha256") && localdrsobject.NormalizeOid(checksum) == oid {
+					continue
+				}
+				hashes[checksumType] = checksum
+			}
+		}
 		record.Hashes = &hashes
 	}
 	return record
+}
+
+func missingSHA256Checksum(local, remote *drsapi.DrsObject) bool {
+	want := objectSHA256(local)
+	return want != "" && objectSHA256(remote) == ""
+}
+
+func objectSHA256(obj *drsapi.DrsObject) string {
+	if obj == nil {
+		return ""
+	}
+	for _, checksum := range obj.Checksums {
+		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+		if checksumType == "sha256" || checksumType == "sha-256" {
+			return localdrsobject.NormalizeChecksum(checksum.Checksum)
+		}
+	}
+	return ""
 }
 
 func (s *batchSyncSession) findReusableRecord(records []drsapi.DrsObject) *drsapi.DrsObject {
@@ -404,6 +434,7 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 	}
 
 	obj.Aliases = existing.Aliases
+	obj.Checksums = existing.Checksums
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description
 	obj.MimeType = existing.MimeType

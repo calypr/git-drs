@@ -28,6 +28,7 @@ repo="$(new_tutorial_repo)"
 cd "$repo"
 verification_file="$test_bin_dir/verification.tsv"
 local_verification_file="$test_bin_dir/local-verification.tsv"
+hydrated_verification_file="$test_bin_dir/hydrated-verification.tsv"
 git drs add-url \
   'globus://6c54cade-bde5-45c1-bdea-f4bd71dba2cc/home/share/godata/file*.txt' \
   tutorial --remote "$TEST_REMOTE"
@@ -123,7 +124,7 @@ for file in tutorial/file{1..3}.txt local/table{1..3}.tsv; do
 done
 git drs pull "$TEST_REMOTE"
 
-echo "hydrated file checksums and Syfon verification:"
+echo "hydrated file checksums and local DRS records:"
 while IFS=$'\t' read -r file temporary_oid did; do
   grep -q '^version https://git-lfs.github.com/spec/v1$' "$file" && {
     echo "$file was not hydrated" >&2
@@ -134,17 +135,32 @@ while IFS=$'\t' read -r file temporary_oid did; do
     echo "$file still uses its temporary oid after download" >&2
     exit 1
   }
+  record_path=".git/drs/lfs/objects/${temporary_oid:0:2}/${temporary_oid:2:2}/$temporary_oid"
+  printf '\n--- local DRS record after download: %s (%s) ---\n' "$file" "$temporary_oid"
+  jq . "$record_path"
+  jq -e --arg oid "$real_oid" \
+    'any(.checksums[]?; .type == "sha256" and .checksum == $oid)' "$record_path" >/dev/null || {
+      echo "local DRS record did not save real sha256 $real_oid for $file" >&2
+      exit 1
+    }
+  printf '%s  %s\n' "$real_oid" "$file"
+  printf 'PASS 2 downloaded sha256 saved locally: %s sha256=%s\n' "$file" "$real_oid"
+  printf '%s\t%s\t%s\t%s\n' "$file" "$temporary_oid" "$did" "$real_oid" >>"$hydrated_verification_file"
+done <"$verification_file"
+
+git drs push "$TEST_REMOTE"
+echo "Syfon DRS records after checksum refinement push:"
+while IFS=$'\t' read -r file temporary_oid did real_oid; do
   object_json="$(git drs query --remote "$TEST_REMOTE" --checksum "$real_oid")"
-  printf '\n--- Syfon DRS record after download: %s (%s) ---\n' "$file" "$real_oid"
+  printf '\n--- Syfon DRS record after refinement: %s (%s) ---\n' "$file" "$real_oid"
   printf '%s\n' "$object_json" | jq .
   printf '%s\n' "$object_json" | jq -e -s --arg did "$did" --arg oid "$real_oid" \
     'any(.[]; .id == $did and any(.checksums[]?; .type == "sha256" and .checksum == $oid))' >/dev/null || {
       echo "Syfon did not save real sha256 $real_oid for $file" >&2
       exit 1
     }
-  printf '%s  %s\n' "$real_oid" "$file"
-  printf 'PASS 2 downloaded sha256 saved to Syfon: %s sha256=%s\n' "$file" "$real_oid"
-done <"$verification_file"
+  printf 'PASS 2 pushed downloaded sha256 to Syfon: %s sha256=%s\n' "$file" "$real_oid"
+done <"$hydrated_verification_file"
 
 while IFS=$'\t' read -r file expected_oid; do
   assert_sha256 "$file" "$expected_oid"

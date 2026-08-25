@@ -18,6 +18,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
@@ -25,7 +26,6 @@ import (
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
 )
@@ -227,7 +227,7 @@ var Cmd = &cobra.Command{
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
-						if err := verifyObjectAtPath(dstPath, f.Oid, f.Size); err != nil {
+						if err := verifyPointerAtPath(dstPath, f); err != nil {
 							_ = os.Remove(dstPath)
 							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 						}
@@ -301,16 +301,23 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	files := make([]pointerFile, 0, len(keys))
 	for _, path := range keys {
 		info := inventory[path]
-		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: info.SHA256, Placeholder: info.Placeholder})
+		sha256 := info.SHA256
+		if info.Placeholder && sha256 == "" {
+			if obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, info.Oid); err == nil {
+				sha256 = objectSHA256(obj)
+			}
+		}
+		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: sha256, Placeholder: info.Placeholder})
 	}
 	return files
 }
 
 func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {
+	expectedOID := file.Oid
 	if file.Placeholder {
-		return inspectCachedObject(path, "", file.Size)
+		expectedOID = ""
 	}
-	state, err := inspectCachedObject(path, file.Oid, file.Size)
+	state, err := inspectCachedObject(path, expectedOID, file.Size)
 	if err != nil || !state.complete || file.SHA256 == "" {
 		return state, err
 	}
@@ -453,19 +460,34 @@ func calculateFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject) error {
-	if drsCtx == nil || drsCtx.Client == nil || !drsCtx.CanRegister() {
-		return nil
+func objectSHA256(obj *drsapi.DrsObject) string {
+	if obj == nil {
+		return ""
 	}
-	saved := make(map[string]struct{})
-	for _, file := range files {
+	for _, checksum := range obj.Checksums {
+		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+		if checksumType != "sha256" && checksumType != "sha-256" {
+			continue
+		}
+		sha256 := strings.ToLower(localdrsobject.NormalizeChecksum(checksum.Checksum))
+		if len(sha256) == 64 && strings.Trim(sha256, "0123456789abcdef") == "" {
+			return sha256
+		}
+	}
+	return ""
+}
+
+func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject) error {
+	saved := make(map[string]string)
+	for i := range files {
+		file := &files[i]
 		if !file.Placeholder {
 			continue
 		}
-		if _, ok := saved[file.Oid]; ok {
+		if actual, ok := saved[file.Oid]; ok {
+			file.SHA256 = actual
 			continue
 		}
-		saved[file.Oid] = struct{}{}
 		cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, file.Oid)
 		if err != nil {
 			return err
@@ -474,8 +496,16 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 		if err != nil {
 			return fmt.Errorf("calculate sha256 for placeholder oid %s: %w", file.Oid, err)
 		}
-		obj, ok := objects[file.Oid]
-		if !ok {
+		file.SHA256 = actual
+		saved[file.Oid] = actual
+
+		var obj drsapi.DrsObject
+		local, localErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, file.Oid)
+		if localErr == nil {
+			obj = *local
+		}
+		prefetched, remoteFound := objects[file.Oid]
+		if !remoteFound && objectSHA256(&obj) == "" && drsCtx != nil && drsCtx.Client != nil {
 			records, err := lookup.ObjectsByHashForScope(ctx, drsCtx, file.Oid)
 			if err != nil {
 				return fmt.Errorf("resolve placeholder oid %s before saving sha256: %w", file.Oid, err)
@@ -483,24 +513,32 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 			if len(records) == 0 {
 				return fmt.Errorf("resolve placeholder oid %s before saving sha256: no matching Syfon record", file.Oid)
 			}
-			obj = records[0]
+			prefetched, remoteFound = records[0], true
 		}
-		alreadySaved := false
-		for _, checksum := range obj.Checksums {
-			if strings.EqualFold(checksum.Type, "sha256") && strings.EqualFold(checksum.Checksum, actual) {
-				alreadySaved = true
+		if localErr != nil {
+			if !remoteFound {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: metadata unavailable", file.Oid)
+			}
+			obj = prefetched
+		}
+		if expected := objectSHA256(&obj); expected != "" && !strings.EqualFold(expected, actual) {
+			return fmt.Errorf("downloaded placeholder oid %s has sha256 %s, expected %s", file.Oid, actual, expected)
+		}
+		if remoteFound {
+			if expected := objectSHA256(&prefetched); expected != "" && !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("downloaded placeholder oid %s has sha256 %s, expected %s", file.Oid, actual, expected)
 			}
 		}
-		if alreadySaved {
-			continue
+		checksums := make([]drsapi.Checksum, 0, len(obj.Checksums)+1)
+		for _, checksum := range obj.Checksums {
+			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+			if checksumType != "sha256" && checksumType != "sha-256" {
+				checksums = append(checksums, checksum)
+			}
 		}
-		hashes := internalapi.HashInfo{"sha256": actual}
-		updated, err := drsCtx.Client.Index().Update(ctx, obj.Id, internalapi.InternalRecord{Did: obj.Id, Hashes: &hashes})
-		if err != nil {
+		obj.Checksums = append(checksums, drsapi.Checksum{Type: "sha256", Checksum: actual})
+		if err := localdrsobject.WriteObject(gitrepo.DRSObjectsPath, &obj, file.Oid); err != nil {
 			return fmt.Errorf("save sha256 for placeholder oid %s: %w", file.Oid, err)
-		}
-		if updated.Hashes == nil || (*updated.Hashes)["sha256"] != actual {
-			return fmt.Errorf("Syfon did not save sha256 %s for placeholder oid %s", actual, file.Oid)
 		}
 	}
 	return nil

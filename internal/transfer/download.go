@@ -146,12 +146,14 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholde
 		want = strings.ToLower(drsobject.NormalizeChecksum(oid))
 		if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
 			want = ""
-			for _, checksum := range obj.Checksums {
-				checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
-				if checksumType == "sha256" || checksumType == "sha-256" {
-					want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
-					break
-				}
+		}
+	}
+	if want == "" {
+		for _, checksum := range obj.Checksums {
+			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+			if checksumType == "sha256" || checksumType == "sha-256" {
+				want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
+				break
 			}
 		}
 	}

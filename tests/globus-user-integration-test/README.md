@@ -159,8 +159,10 @@ The script:
    pointer OID;
 8. verifies that Syfon preserves each inline `globus://` URL without signing it;
 9. clears the worktree and cache, then restores the three local files from
-   Syfon and the three external files through one Globus batch; and
-10. verifies all six downloaded SHA-256 values and leaves the repository for
+   Syfon and the three external files through one Globus batch;
+10. saves each learned Globus SHA-256 in the local DRS record, then publishes
+    those metadata refinements with an explicit second push; and
+11. verifies all six downloaded SHA-256 values and leaves the repository for
     inspection.
 
 View submitted tasks in [Globus Activity](https://app.globus.org/activity).

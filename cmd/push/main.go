@@ -85,6 +85,13 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
+		if state.AckOID != "" && !pushForceUpload {
+			currentFiles, err := getReachablePointerFilesForRefFn(state.TargetOID, myLogger)
+			if err != nil {
+				return fmt.Errorf("failed to discover placeholder files to push: %w", err)
+			}
+			includeReachablePlaceholders(lfsFiles, currentFiles)
+		}
 		uniqueOIDs := countUniqueOIDs(lfsFiles)
 		if state.AckOID == "" {
 			fmt.Fprintf(os.Stdout, "DRS: no synchronization baseline for %s; bootstrapping full Git history and checking %d unique object(s)\n", state.RemoteRef, uniqueOIDs)
@@ -178,6 +185,14 @@ func countUniqueOIDs(files map[string]lfs.LfsFileInfo) int {
 		seen[oid] = struct{}{}
 	}
 	return len(seen)
+}
+
+func includeReachablePlaceholders(files, current map[string]lfs.LfsFileInfo) {
+	for path, info := range current {
+		if info.Placeholder {
+			files[path] = info
+		}
+	}
 }
 
 func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {

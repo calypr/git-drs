@@ -67,7 +67,11 @@ The pointer marks this value with the Git LFS extension
 `ext-0-gitdrsplaceholder`. The value is a source-version identity and cache key,
 not a content checksum. Local DRS metadata therefore leaves `checksums` empty.
 During hydration, git-drs checks the declared size and relies on Globus transfer
-verification; it does not compare downloaded bytes with the placeholder.
+verification; it does not compare downloaded bytes with the placeholder. It
+calculates the downloaded SHA-256 and saves it in the local DRS record. Later
+pulls use that learned checksum to reject same-sized cache corruption. Pull
+does not require metadata-write permission: run `git drs push` explicitly to
+publish the learned checksum to Syfon.
 
 If Globus omits `last_modified`, checksum-less import stops instead of creating
 an identity that cannot detect a same-size replacement.
@@ -120,6 +124,7 @@ git add .gitattributes local data/release
 git commit -m 'Add local tables and external reads'
 git drs push
 git drs pull
+git drs push # publish checksums learned while hydrating placeholders
 ```
 
 `push` uploads the tracked local payloads and registers the Globus records

@@ -109,6 +109,9 @@ func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
 	if err := verifyGlobusDownload(path, "drs://example.org/object", obj, false); err == nil {
 		t.Fatal("expected checksum mismatch")
 	}
+	if err := verifyGlobusDownload(path, strings.Repeat("a", 64), obj, true); err == nil {
+		t.Fatal("expected placeholder download to use the published checksum")
+	}
 }
 
 func TestVerifyGlobusDownloadWithoutChecksumUsesSize(t *testing.T) {

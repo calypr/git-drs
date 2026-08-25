@@ -358,6 +358,13 @@ func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
 	}}
 }
 
+func withGenericEndpoint(remote RemoteSelect, endpoint string) RemoteSelect {
+	generic := *remote.Generic
+	generic.Endpoint = endpoint
+	remote.Generic = &generic
+	return remote
+}
+
 func configMapEntries(values map[string]string) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -461,6 +468,8 @@ func loadGitConfigOverrides(cfg *Config) error {
 		localEndpoint := scalars["type"] != "" || scalars["endpoint"] != ""
 		if scalars["type"] == "ga4gh" {
 			addGenericRemote(cfg, name, scalars)
+		} else if scalars["type"] == "" && scalars["endpoint"] != "" && shared.Generic != nil {
+			cfg.Remotes[name] = withGenericEndpoint(shared, scalars["endpoint"])
 		} else if scalars["type"] != "" || scalars["endpoint"] != "" {
 			parseAndAddRemote(
 				cfg,
@@ -537,6 +546,8 @@ func LoadConfig() (*Config, error) {
 					opts[key] = subsection.Option(key)
 				}
 				addGenericRemote(cfg, Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)), opts)
+			} else if subsection.Option("type") == "" && subsection.Option("endpoint") != "" && shared.Generic != nil {
+				cfg.Remotes[name] = withGenericEndpoint(shared, subsection.Option("endpoint"))
 			} else if subsection.Option("type") != "" || subsection.Option("endpoint") != "" {
 				parseAndAddRemote(
 					cfg,

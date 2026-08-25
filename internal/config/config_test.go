@@ -36,6 +36,7 @@ remotes:
     endpoint: https://drs.example.org
     provider: gen3
     auth: bearer
+    scope: example/tutorial
     selection:
       access_method: prefer:globus
     transfer:
@@ -46,10 +47,7 @@ remotes:
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"config", "drs.remote.research.type", "ga4gh"},
 		{"config", "drs.remote.research.endpoint", "https://internal.example.org"},
-		{"config", "drs.remote.research.provider", "gen3"},
-		{"config", "drs.remote.research.auth", "bearer"},
 		{"config", "drs.remote.research.access-method", "require:https"},
 	} {
 		cmd := exec.Command("git", args...)
@@ -66,7 +64,7 @@ remotes:
 	if cfg.DefaultRemote != "research" {
 		t.Fatalf("default remote = %q", cfg.DefaultRemote)
 	}
-	if remote.Generic == nil || remote.Generic.Endpoint != "https://internal.example.org" || remote.AccessMethod != "require:https" {
+	if remote.Generic == nil || remote.Generic.Endpoint != "https://internal.example.org" || remote.Generic.Provider != "gen3" || remote.Generic.Auth != "bearer" || remote.Generic.Scope != "example/tutorial" || remote.AccessMethod != "require:https" {
 		t.Fatalf("effective remote = %+v", remote)
 	}
 	if len(remote.AllowedGlobusSources) != 1 || remote.AllowedGlobusSources[0] != "source-a" {

@@ -117,9 +117,6 @@ func openStorage() (tokenstorage.TokenStorage, string, error) {
 	if err := os.MkdirAll(filepath.Dir(name), 0o700); err != nil {
 		return nil, "", fmt.Errorf("create Globus credential directory: %w", err)
 	}
-	if err := os.Chmod(filepath.Dir(name), 0o700); err != nil {
-		return nil, "", fmt.Errorf("secure Globus credential directory: %w", err)
-	}
 	storage, err := tokenstorage.NewJSONTokenStorageWithNamespace(name, "git-drs")
 	if err != nil {
 		return nil, "", fmt.Errorf("open Globus token storage: %w", err)

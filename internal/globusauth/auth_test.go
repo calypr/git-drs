@@ -109,6 +109,29 @@ func TestCredentialFilesAreOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestOpenStoragePreservesExistingDirectoryPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "shared")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(TokenFileEnv, filepath.Join(dir, "tokens.json"))
+	storage, _, err := openStorage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage.Close()
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("directory permissions = %o, want 755", info.Mode().Perm())
+	}
+}
+
 func TestCheckUsesTransferAPI(t *testing.T) {
 	var gotAuth string
 	client, server := sdkClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

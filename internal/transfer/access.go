@@ -245,7 +245,7 @@ func accessMethodReadiness(method drsapi.AccessMethod) (globusauth.Readiness, st
 
 func isHTTPURL(raw string) bool {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	return err == nil && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
+	return err == nil && u.Host != "" && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https"))
 }
 
 func isLocalFileURL(raw string) bool {

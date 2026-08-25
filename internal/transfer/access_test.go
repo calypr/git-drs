@@ -50,6 +50,51 @@ func TestPlanAccessURLFallsBackAfterGlobusAccessResolution(t *testing.T) {
 	}
 }
 
+func TestPlanAccessURLRejectsHostlessHTTP(t *testing.T) {
+	t.Run("resolve access ID", func(t *testing.T) {
+		accessID := "signed"
+		methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeHttps, AccessId: &accessID, AccessUrl: &struct {
+			Headers *[]string `json:"headers,omitempty"`
+			Url     string    `json:"url"`
+		}{Url: "https:///object"}}}
+		var requestPath string
+		httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			requestPath = r.URL.Path
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/object"}`)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		})}
+		raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := planAccessURL(t.Context(), &remoteruntime.GitContext{Client: raw.(*syclient.Client)}, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
+		if err != nil || got.Url != "https://signed.example/object" || requestPath != "/ga4gh/drs/v1/objects/object-1/access/signed" {
+			t.Fatalf("planned URL = %+v, path = %q, error = %v", got, requestPath, err)
+		}
+	})
+
+	t.Run("try next method", func(t *testing.T) {
+		methods := []drsapi.AccessMethod{
+			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: "https:///object"}},
+			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &struct {
+				Headers *[]string `json:"headers,omitempty"`
+				Url     string    `json:"url"`
+			}{Url: "https://public.example/object"}},
+		}
+		got, err := planAccessURL(t.Context(), &remoteruntime.GitContext{}, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
+		if err != nil || got.Url != "https://public.example/object" {
+			t.Fatalf("planned URL = %+v, error = %v", got, err)
+		}
+	})
+}
+
 func TestAccessMethodPolicyModes(t *testing.T) {
 	httpsID, globusID := "https-access", "globus-access"
 	methods := []drsapi.AccessMethod{

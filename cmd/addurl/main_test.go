@@ -146,6 +146,16 @@ func TestParseGlobusSourceRejectsInvalidWildcard(t *testing.T) {
 	}
 }
 
+func TestParseGlobusSourcePreservesRawQuestionWildcard(t *testing.T) {
+	source, err := parseGlobusSource("globus://source/release/file?.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.collection != "source" || source.root != "/release" || source.pattern != "/release/file?.txt" || !source.tree {
+		t.Fatalf("source = %+v", source)
+	}
+}
+
 func TestGlobusExactFileUsesExplicitDestination(t *testing.T) {
 	source, err := parseGlobusSource("globus://source/release/a.bam")
 	if err != nil {

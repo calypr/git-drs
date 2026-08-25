@@ -125,7 +125,14 @@ func (s *AddURLService) runGlobus(ctx context.Context, cmd *cobra.Command, logge
 }
 
 func parseGlobusSource(raw string) (globusSource, error) {
-	u, err := url.Parse(raw)
+	parseRaw := raw
+	if schemeEnd := strings.Index(parseRaw, "://"); schemeEnd >= 0 {
+		if pathStart := strings.Index(parseRaw[schemeEnd+3:], "/"); pathStart >= 0 {
+			pathStart += schemeEnd + 3
+			parseRaw = parseRaw[:pathStart] + strings.ReplaceAll(parseRaw[pathStart:], "?", "%3F")
+		}
+	}
+	u, err := url.Parse(parseRaw)
 	if err != nil || !strings.EqualFold(u.Scheme, "globus") || u.Host == "" || u.Path == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return globusSource{}, fmt.Errorf("invalid Globus URL %q; expected globus://<collection-id>/<path>", raw)
 	}

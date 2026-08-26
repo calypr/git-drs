@@ -1,6 +1,9 @@
 package push
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestReadRemoteSyncRefs(t *testing.T) {
 	gotRemote, gotAck, err := readRemoteSyncRefsOutput(
@@ -14,5 +17,18 @@ func TestReadRemoteSyncRefs(t *testing.T) {
 	}
 	if gotRemote != "1111111111111111111111111111111111111111" || gotAck != "2222222222222222222222222222222222222222" {
 		t.Fatalf("unexpected refs: remote=%s ack=%s", gotRemote, gotAck)
+	}
+}
+
+func TestPushSyncAcknowledgmentSkipsAdvanceWhenObjectsWereUnavailable(t *testing.T) {
+	old := gitOutputFn
+	gitOutputFn = func(context.Context, ...string) (string, error) {
+		t.Fatal("synchronization acknowledgement was advanced")
+		return "", nil
+	}
+	t.Cleanup(func() { gitOutputFn = old })
+
+	if err := pushSyncAcknowledgment(context.Background(), "origin", syncRefState{}, 1); err != nil {
+		t.Fatal(err)
 	}
 }

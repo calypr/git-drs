@@ -35,6 +35,19 @@ Use this when you want explicit initialization or to repair repo-local hooks/con
 
 ## Remote Configuration
 
+Repositories may commit canonical remote defaults in
+`.git-drs/drs-policies.yaml`. Clone-local `drs.remote.<name>.*` Git
+configuration overrides its endpoint and selection preference; local Globus
+routing is never accepted from the shared file. Before credentials are sent to
+an authenticated committed endpoint, confirm it with:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+See [Client Access-Method Selection Policy](access-method-selection-and-authentication.md)
+for the strict versioned schema.
+
 ### `git drs remote add [name] <endpoint-or-alias> [flags]`
 
 Add a DRS server with the unified remote command. The built-in aliases are
@@ -117,6 +130,31 @@ What it checks:
 - for Terra DRS remotes, pings the GA4GH DRS service-info endpoint at `<endpoint>/ga4gh/drs/v1/service-info`
 - for Terra/AnVIL TDR-hosted data in production, use `https://data.terra.bio` as the endpoint; Terra also uses DRSHub for DRS URI resolution, but DRSHub is a resolver service rather than the GA4GH DRS service-info host
 - for scoped Syfon-style remotes, verifies that the configured organization/project and bucket are visible and readable
+
+### `git drs auth globus [login|status|logout]`
+
+Manage the Globus Transfer API credential used for `globus://` access methods.
+The Globus CLI is not required; `git-drs` uses `globus-go-sdk` directly.
+
+```bash
+export GIT_DRS_GLOBUS_CLIENT_ID='<native-application-client-id>'
+git drs auth globus login
+git drs auth globus status
+git drs auth globus logout
+```
+
+`login` uses OAuth authorization code with PKCE, requests a refresh token, and
+stores the resulting credentials in the user configuration directory. Access
+tokens are refreshed automatically. Supply collection-dependent consent scopes
+when required:
+
+```bash
+git drs auth globus login --scope \
+  'https://auth.globus.org/scopes/<collection-id>/data_access'
+```
+
+For noninteractive automation, `GIT_DRS_GLOBUS_TRANSFER_TOKEN` supplies a
+non-persistent access token and takes precedence over stored credentials.
 
 Example Terra preset configuration and ping:
 
@@ -243,13 +281,41 @@ git drs pull
 git drs pull -I "*.bam"
 git drs pull -I "data/**" -I "results/*.txt"
 git drs pull --dry-run -I "results/**"
+git drs pull research --access-method globus
 ```
+
+Access-method policy:
+
+- `auto` is the default. It prefers HTTPS, then Globus among implemented
+  data-plane handlers. S3 or GS access IDs may resolve to HTTPS.
+- `--access-method <type>` strictly requires that type for this pull. It does
+  not fall back.
+- `GIT_DRS_ACCESS_METHOD=prefer:<type>` prefers a type but falls back to another
+  ready method.
+- `GIT_DRS_ACCESS_METHOD=require:<type>` requires a type for commands that do
+  not expose the flag as well as for `pull`.
+- A repository can set a per-remote default with
+  `git config --local drs.remote.<name>.access-method prefer:<type>`.
+
+The precedence is command flag, `GIT_DRS_ACCESS_METHOD`, legacy
+`GIT_DRS_TRANSFER_PROVIDER`, remote Git configuration, then `auto`. Bare method
+names in environment and Git configuration remain compatible aliases for
+`prefer:<type>`.
 
 Important behavior:
 
 - `git drs pull` does not run `git pull`
 - it only hydrates tracked pointer files already present in the checkout
 - include matching is against repo-relative paths
+- access-method selection does not change pointer paths, cache paths, include
+  matching, or checkout behavior
+- `/access` resolution is planning, so a preferred candidate may fall back
+  when resolution or destination routing fails
+- git-drs does not switch providers after the first byte request or Globus task
+  submission
+
+See [Client Access-Method Selection Policy](access-method-selection-and-authentication.md)
+for readiness states and diagnostics.
 
 ### `git drs push [remote-name]`
 
@@ -273,6 +339,8 @@ What it does:
 Notes:
 
 - this is the normal command for tracked data changes
+- there is no provider-specific push command; Globus access methods do not
+  change tracking, registration, upload, or Git push behavior
 - plain `git push` does not trigger `git-drs` registration or upload behavior
 - synchronization is history-derived; pointers deleted from the tip remain covered while reachable from Git history
 - the remote acknowledgment ref allows a later `git drs push` from another clone to recover after plain `git push`
@@ -290,6 +358,9 @@ Create a pointer plus local DRS metadata for an object that already exists in pr
 git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
 git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
 git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin --sha256 <hex>
+git drs add-url globus://<collection-id>/project/sample.bam data/sample.bam
+git drs add-url globus://<collection-id>/project/ data/project
+git drs add-url 'globus://<collection-id>/project/**/*.bam' data/bam --dry-run
 ```
 
 Notes:
@@ -298,7 +369,22 @@ Notes:
 - explicit provider URL mode remains supported
 - `--scheme` is required for object-key mode
 - when `--sha256` is omitted, the pointer uses a derived local/cache OID and source URL metadata remains the retrieval identity
+- `globus://` URLs are detected automatically; a directory or wildcard import
+  does not require `--recursive` or `--manifest`
+- `--recursive` is deprecated and accepted only for compatibility
+- quote wildcard URLs; `*`, `?`, `[...]`, and recursive `**` are supported
+- Globus files without SHA-256 use a marked placeholder derived from URL, size,
+  and `last_modified`; hydration validates size rather than treating it as a
+  content hash
+- `--manifest` optionally supplies authoritative `path`, `size`, and `sha256`
+  values for a directory or wildcard selection
+- `--dry-run` prints planned Globus members without changing the worktree;
+  `--remote` selects the DRS registration scope
+- collection import writes one DRS pointer and local DRS object per member, plus
+  one `destination/**` read-only rule in `.gitattributes`
 - registration happens later on `git drs push`
+
+See [Adding Globus Objects](globus-add-url.md) for wildcard and identity details.
 
 ### `git drs add-ref <drs-id> <path>`
 

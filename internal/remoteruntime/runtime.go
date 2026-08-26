@@ -22,20 +22,26 @@ import (
 const credentialHelpSuffix = "Refresh credentials with `git drs remote add gen3 <remote-name> <organization/project> --cred <path>` or `--token <token>`. See docs/getting-started.md."
 
 type GitContext struct {
-	Client             *syclient.Client
-	RemoteType         config.RemoteType
-	Endpoint           string
-	Organization       string
-	ProjectId          string
-	BucketName         string
-	StoragePrefix      string
-	Upsert             bool
-	ForceUpload        bool
-	MultiPartThreshold int64
-	UploadConcurrency  int
-	Logger             *slog.Logger
-	Credential         *syconf.Credential
-	Capabilities       Capabilities
+	Client                   *syclient.Client
+	RemoteType               config.RemoteType
+	Endpoint                 string
+	Organization             string
+	ProjectId                string
+	BucketName               string
+	StoragePrefix            string
+	Upsert                   bool
+	ForceUpload              bool
+	MultiPartThreshold       int64
+	UploadConcurrency        int
+	Logger                   *slog.Logger
+	Credential               *syconf.Credential
+	Capabilities             Capabilities
+	AccessMethodPolicy       string
+	CommandAccessMethod      string
+	GlobusDefaultDestination string
+	GlobusCollections        map[string]string
+	GlobusDestinationPaths   map[string]string
+	AllowedGlobusSources     []string
 }
 
 // Capabilities is the command-facing contract for a resolved remote. Commands
@@ -50,11 +56,20 @@ func (g *GitContext) CanUpload() bool   { return g != nil && g.Capabilities.Uplo
 func (g *GitContext) CanRegister() bool { return g != nil && g.Capabilities.Register }
 func (g *GitContext) IsReadOnly() bool  { return g != nil && g.Capabilities.ReadOnly }
 
-func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitContext, error) {
+func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (ctx *GitContext, err error) {
 	x, ok := cfg.Remotes[remote]
 	if !ok {
 		return nil, fmt.Errorf("GetRemoteClient no remote configuration found for current remote: %s", remote)
 	}
+	defer func() {
+		if ctx != nil {
+			ctx.AccessMethodPolicy = x.AccessMethod
+			ctx.GlobusDefaultDestination = x.GlobusDefaultDestination
+			ctx.GlobusCollections = x.GlobusCollections
+			ctx.GlobusDestinationPaths = x.GlobusDestinationPaths
+			ctx.AllowedGlobusSources = x.AllowedGlobusSources
+		}
+	}()
 	if x.Local != nil {
 		return localClient(string(remote), *x.Local, logger)
 	}
@@ -69,6 +84,22 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*GitCon
 		return terraClient(*x.Terra, logger)
 	}
 	if x.Generic != nil {
+		if x.EndpointFromShared && x.Generic.Auth != "" && x.Generic.Auth != "none" {
+			trusted, err := gitrepo.GetGitConfigStrings("drs.trusted-endpoint")
+			if err != nil {
+				return nil, err
+			}
+			allowed := false
+			for _, endpoint := range trusted {
+				if strings.TrimRight(endpoint, "/") == strings.TrimRight(x.Generic.Endpoint, "/") {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return nil, fmt.Errorf("committed endpoint %q is not trusted for credentials; review it, then run `git config --local --add drs.trusted-endpoint %s`", x.Generic.Endpoint, x.Generic.Endpoint)
+			}
+		}
 		switch x.Generic.Provider {
 		case "terra":
 			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)

@@ -30,7 +30,8 @@ var RemoveCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		if _, ok := cfg.Remotes[remoteName]; !ok {
+		remote, ok := cfg.Remotes[remoteName]
+		if !ok {
 			availableRemotes := make([]string, 0, len(cfg.Remotes))
 			for name := range cfg.Remotes {
 				availableRemotes = append(availableRemotes, string(name))
@@ -41,6 +42,9 @@ var RemoveCmd = &cobra.Command{
 				remoteName,
 				availableRemotes,
 			)
+		}
+		if remote.FromSharedPolicy {
+			return fmt.Errorf("remote %q cannot be removed because it is defined in .git-drs/drs-policies.yaml; edit the shared policy to remove it", remoteName)
 		}
 
 		updated, err := config.RemoveRemote(remoteName)

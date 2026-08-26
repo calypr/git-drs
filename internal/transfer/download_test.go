@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syclient "github.com/calypr/syfon/client"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -63,11 +66,9 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 		header.Set("Content-Type", "application/json")
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Body: io.NopCloser(strings.NewReader(
-				`{"resolved_drs_object_access_urls":[{"drs_object_id":"obj-1","drs_access_id":"s3","url":"https://signed.example/obj-1"}]}`,
-			)),
-			Header:  header,
-			Request: r,
+			Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/obj-1"}`)),
+			Header:     header,
+			Request:    r,
 		}, nil
 	})}
 
@@ -83,14 +84,59 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BulkAccessURLsForObjects returned error: %v", err)
 	}
-	if gotMethod != http.MethodPost {
-		t.Fatalf("expected POST, got %s", gotMethod)
+	if gotMethod != http.MethodGet {
+		t.Fatalf("expected GET, got %s", gotMethod)
 	}
-	if gotPath != "/ga4gh/drs/v1/objects/access" {
+	if gotPath != "/ga4gh/drs/v1/objects/obj-1/access/s3" {
 		t.Fatalf("unexpected path: %s", gotPath)
 	}
 	if got["obj-1"].Url != "https://signed.example/obj-1" {
 		t.Fatalf("unexpected resolved URL: %+v", got)
+	}
+}
+
+func TestVerifyGlobusDownloadRejectsWrongContent(t *testing.T) {
+	payload := []byte("expected")
+	want := sha256.Sum256(payload)
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("incorrect"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obj := &drsapi.DrsObject{
+		Size:      int64(len("incorrect")),
+		Checksums: []drsapi.Checksum{{Type: "sha-256", Checksum: hex.EncodeToString(want[:])}},
+	}
+	if err := verifyGlobusDownload(path, "drs://example.org/object", obj, false); err == nil {
+		t.Fatal("expected checksum mismatch")
+	}
+	if err := verifyGlobusDownload(path, strings.Repeat("a", 64), obj, true); err == nil {
+		t.Fatal("expected placeholder download to use the published checksum")
+	}
+}
+
+func TestVerifyGlobusDownloadDetectsPlaceholderChecksum(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oid := strings.Repeat("a", 64)
+	obj := &drsapi.DrsObject{Size: int64(len("payload")), Checksums: []drsapi.Checksum{{Type: "git-drs-placeholder", Checksum: oid}}}
+	if err := verifyGlobusDownload(path, oid, obj, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDownloadGlobusResolvedRemovesPartialTransfer(t *testing.T) {
+	dstPath := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(dstPath, []byte("partial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := downloadGlobusResolved(context.Background(), nil, "invalid", dstPath, "oid", &drsapi.DrsObject{}); err == nil {
+		t.Fatal("expected transfer failure")
+	}
+	if _, err := os.Stat(dstPath); !os.IsNotExist(err) {
+		t.Fatalf("partial destination remains: %v", err)
 	}
 }
 
@@ -100,13 +146,20 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &projectAccessID}}
+	projectMethods[0].AccessUrl = &struct {
+		Headers *[]string `json:"headers,omitempty"`
+		Url     string    `json:"url"`
+	}{Url: "s3://bucket/object"}
 	orgMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &orgAccessID}}
 	projectControlled := []string{"/organization/org1/project/proj1"}
 	orgControlled := []string{"/organization/org1"}
-	checksumResponse := drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{
-		{Id: "obj-project", ControlledAccess: &projectControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &projectMethods},
-		{Id: "obj-org", ControlledAccess: &orgControlled, Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: "abc"}}, AccessMethods: &orgMethods},
-	}}
+	abcHashes := internalapi.HashInfo{"sha256": "abc"}
+	checksumResponse := struct {
+		Results map[string][]internalapi.InternalRecord `json:"results"`
+	}{Results: map[string][]internalapi.InternalRecord{"abc": {
+		{Did: "obj-project", ControlledAccess: &projectControlled, Hashes: &abcHashes, AccessMethods: &projectMethods},
+		{Did: "obj-org", ControlledAccess: &orgControlled, Hashes: &abcHashes, AccessMethods: &orgMethods},
+	}}}
 	checksumBody, err := json.Marshal(checksumResponse)
 	if err != nil {
 		t.Fatalf("marshal checksum response: %v", err)
@@ -114,14 +167,14 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 
 	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/abc":
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk/hashes":
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(string(checksumBody))),
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Request:    r,
 			}, nil
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/obj-project/access/s3":
+		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/obj-project/access/s3-project":
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(`{"url":"https://signed.example/project"}`)),
@@ -161,6 +214,9 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 		if r.URL.Path != "/download/object.bin" {
 			return nil, io.EOF
 		}
+		if r.Header.Get("X-Provider-Token") != "secret" {
+			t.Fatalf("missing access URL header: %v", r.Header)
+		}
 		if r.Header.Get("Range") != "" {
 			rangeRequests++
 		}
@@ -189,7 +245,8 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 	}
 
 	obj := &drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload))}
-	accessURL := &drsapi.AccessURL{Url: "https://signed.example/download/object.bin"}
+	headers := []string{"X-Provider-Token: secret"}
+	accessURL := &drsapi.AccessURL{Url: "https://signed.example/download/object.bin", Headers: &headers}
 	err = DownloadResolvedToPath(context.Background(), drsCtx, "obj-1", dstPath, obj, accessURL, sydownload.DownloadOptions{
 		MultipartThreshold: int64(len(payload) + 1),
 		Concurrency:        2,

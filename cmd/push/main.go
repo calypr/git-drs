@@ -85,6 +85,13 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to discover LFS files to push: %w", err)
 		}
+		if state.AckOID != "" && !pushForceUpload {
+			currentFiles, err := getReachablePointerFilesForRefFn(state.TargetOID, myLogger)
+			if err != nil {
+				return fmt.Errorf("failed to discover placeholder files to push: %w", err)
+			}
+			includeReachablePlaceholders(lfsFiles, currentFiles)
+		}
 		uniqueOIDs := countUniqueOIDs(lfsFiles)
 		if state.AckOID == "" {
 			fmt.Fprintf(os.Stdout, "DRS: no synchronization baseline for %s; bootstrapping full Git history and checking %d unique object(s)\n", state.RemoteRef, uniqueOIDs)
@@ -127,11 +134,14 @@ var Cmd = &cobra.Command{
 		}
 		if syncSummary.SkippedUnavailable > 0 {
 			fmt.Fprintf(os.Stdout, "DRS: %d historical object(s) had no local payload and were skipped\n", syncSummary.SkippedUnavailable)
+			fmt.Fprintln(os.Stdout, "DRS: synchronization acknowledgement was not advanced; skipped objects will be retried on the next push")
 		}
-		if err := pushSyncAcknowledgment(ctx, string(remote), state); err != nil {
+		if err := pushSyncAcknowledgment(ctx, string(remote), state, syncSummary.SkippedUnavailable); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stdout, "DRS: synchronized %s at %s\n", state.RemoteRef, state.TargetOID)
+		if syncSummary.SkippedUnavailable == 0 {
+			fmt.Fprintf(os.Stdout, "DRS: synchronized %s at %s\n", state.RemoteRef, state.TargetOID)
+		}
 		return nil
 	},
 }
@@ -175,6 +185,14 @@ func countUniqueOIDs(files map[string]lfs.LfsFileInfo) int {
 		seen[oid] = struct{}{}
 	}
 	return len(seen)
+}
+
+func includeReachablePlaceholders(files, current map[string]lfs.LfsFileInfo) {
+	for path, info := range current {
+		if info.Placeholder {
+			files[path] = info
+		}
+	}
 }
 
 func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {

@@ -238,10 +238,35 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 }
 
 func shortOID(oid string) string {
-	if len(oid) <= 10 {
-		return oid
+	trimmed := strings.TrimSpace(oid)
+	if strings.HasPrefix(trimmed, "//") {
+		return shortDRSOID(trimmed[2:])
 	}
-	return oid[:10]
+	if len(trimmed) >= len("drs://") && strings.EqualFold(trimmed[:len("drs://")], "drs://") {
+		return shortDRSOID(trimmed[len("drs://"):])
+	}
+	if len(trimmed) <= 10 {
+		return trimmed
+	}
+	return trimmed[:10]
+}
+
+func shortDRSOID(id string) string {
+	i := strings.IndexByte(id, '/')
+	if i < 0 {
+		i = strings.IndexByte(id, ':')
+	}
+	if i >= 0 {
+		end := i + 1 + 11
+		if end > len(id) {
+			end = len(id)
+		}
+		return id[:end]
+	}
+	if len(id) > 18 {
+		return id[:18]
+	}
+	return id
 }
 
 func matchesAnyPattern(path string, patterns []string) bool {

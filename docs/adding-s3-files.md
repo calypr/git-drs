@@ -74,9 +74,11 @@ If SHA256 is unknown, omit `--sha256`.
 Behavior:
 
 1. `add-url` performs object metadata lookup (HEAD/attributes).
-2. A deterministic placeholder/local OID is derived from remote object metadata.
+2. A deterministic placeholder/local OID is derived from remote object metadata
+   and marked with `ext-0-gitdrsplaceholder` in the pointer.
 3. A pointer file and local DRS metadata are written; the placeholder is not recorded as a content checksum.
-4. The provider URL/source metadata remains the retrieval identity until content is downloaded.
+4. The provider URL/source metadata remains the retrieval identity until content is downloaded;
+   the placeholder is not used to validate payload bytes.
 5. `git drs push` performs metadata registration.
 
 ```bash

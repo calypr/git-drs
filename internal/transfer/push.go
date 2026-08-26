@@ -17,7 +17,6 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/client/drs"
 	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
-	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -130,21 +129,14 @@ func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
 	batches := chunkStrings(s.oids, metadataLookupBatchSize)
 	for idx, batch := range batches {
-		fmt.Fprintf(os.Stdout, "DRS: checking remote metadata batch %d/%d (%d object(s))\n", idx+1, len(batches), len(batch))
+		fmt.Fprintf(os.Stdout, "DRS: checking remote metadata batch %d/%d (%d checksum(s), one Syfon request)\n", idx+1, len(batches), len(batch))
 		s.debug("metadata lookup batch", "batch", idx+1, "batches", len(batches), "size", len(batch))
 		objectsByHash, err := lookup.ObjectsByHashes(s.ctx, s.rt.API, batch)
 		if err != nil {
 			return fmt.Errorf("batch hash lookup failed: %w", err)
 		}
 		for _, oid := range batch {
-			objects := objectsByHash[oid]
-			for _, obj := range objects {
-				objOID := localdrsobject.NormalizeOid(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
-				if objOID == "" {
-					continue
-				}
-				s.existingByHash[objOID] = append(s.existingByHash[objOID], obj)
-			}
+			s.existingByHash[oid] = append(s.existingByHash[oid], objectsByHash[oid]...)
 		}
 	}
 	return nil
@@ -212,11 +204,23 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// example one created by add-url) is an intentional metadata change,
 			// however, and must be propagated even when the server can already
 			// resolve the object by checksum.
+			localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+			localSHA256 := objectSHA256(obj)
+			if s.filesByOID[oid].Placeholder && readErr != nil && (localSHA256 == "" || strings.EqualFold(localSHA256, oid)) {
+				s.drsObjByOID[oid] = match
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+				continue
+			}
 			localURL := firstAccessURL(obj)
-			if localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); readErr == nil {
+			if readErr == nil && localObj != nil {
 				localURL = firstAccessURL(localObj)
 			}
-			if localURL != "" && localURL != firstAccessURL(match) {
+			placeholderRegistered := !s.filesByOID[oid].Placeholder || hasPlaceholderChecksum(match, oid)
+			remoteSHA256 := objectSHA256(match)
+			if localSHA256 != "" && remoteSHA256 != "" && !strings.EqualFold(localSHA256, remoteSHA256) {
+				return fmt.Errorf("local sha256 %s conflicts with remote sha256 %s for placeholder oid %s", localSHA256, remoteSHA256, oid)
+			}
+			if (localURL != "" && localURL != firstAccessURL(match)) || !placeholderRegistered || missingSHA256Checksum(obj, match) {
 				s.drsObjByOID[oid] = obj
 				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
 				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
@@ -306,7 +310,38 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 }
 
 func (s *batchSyncSession) metadataRecordForOID(oid string, obj *drsapi.DrsObject) internalapi.InternalRecord {
-	return localdrsobject.ConvertToInternalRecord(obj, s.rt.Scope.Organization, s.rt.Scope.Project)
+	record := localdrsobject.ConvertToInternalRecord(obj, s.rt.Scope.Organization, s.rt.Scope.Project)
+	if s.filesByOID[oid].Placeholder {
+		hashes := internalapi.HashInfo{"git-drs-placeholder": oid}
+		if record.Hashes != nil {
+			for checksumType, checksum := range *record.Hashes {
+				if strings.EqualFold(checksumType, "sha256") && localdrsobject.NormalizeOid(checksum) == oid {
+					continue
+				}
+				hashes[checksumType] = checksum
+			}
+		}
+		record.Hashes = &hashes
+	}
+	return record
+}
+
+func missingSHA256Checksum(local, remote *drsapi.DrsObject) bool {
+	want := objectSHA256(local)
+	return want != "" && objectSHA256(remote) == ""
+}
+
+func objectSHA256(obj *drsapi.DrsObject) string {
+	if obj == nil {
+		return ""
+	}
+	for _, checksum := range obj.Checksums {
+		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+		if checksumType == "sha256" || checksumType == "sha-256" {
+			return localdrsobject.NormalizeChecksum(checksum.Checksum)
+		}
+	}
+	return ""
 }
 
 func (s *batchSyncSession) findReusableRecord(records []drsapi.DrsObject) *drsapi.DrsObject {
@@ -401,6 +436,7 @@ func scopedDRSObjectForPush(rt *pushRuntime, oid string, path string, size int64
 	}
 
 	obj.Aliases = existing.Aliases
+	obj.Checksums = existing.Checksums
 	obj.Contents = existing.Contents
 	obj.Description = existing.Description
 	obj.MimeType = existing.MimeType

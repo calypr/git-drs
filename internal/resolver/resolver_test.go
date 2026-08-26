@@ -160,7 +160,7 @@ func TestDownloadToCacheAcceptsHTTPAccessWithOmittedMethodType(t *testing.T) {
 	r := &staticResolver{
 		object: &ResolvedObject{
 			Size:          int64(len(body)),
-			AccessMethods: []AccessMethod{{AccessID: "access-1"}},
+			AccessMethods: []AccessMethod{{AccessURL: &ResolvedAccess{URL: "gs://anvil-bucket/object-1"}, AccessID: "access-1"}},
 		},
 		access: &ResolvedAccess{URL: download.URL},
 	}

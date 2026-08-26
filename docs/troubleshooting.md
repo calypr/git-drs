@@ -171,6 +171,68 @@ Host github.com
     ServerAliveInterval 30
 ```
 
+### Globus-backed pull fails
+
+For `globus://` access URLs, first verify Globus Transfer API authentication:
+
+```bash
+git drs auth globus status
+```
+
+Then check the destination collection:
+
+```bash
+echo "$GIT_DRS_GLOBUS_DESTINATION_COLLECTION"
+```
+
+By default the destination collection root must expose the Git repository so
+`/.git/lfs/objects/...` addresses its local cache. For an institutional
+collection, configure the repository path:
+
+```bash
+git config --local --add \
+  drs.remote.<remote-name>.globus-destination-path \
+  '<destination-collection-id>=/projects/repository>'
+```
+
+The stored credential must include
+the Globus Transfer API `all` scope and any collection-specific `data_access`
+dependent scopes. Rerun `git drs auth globus login --scope <scope>` when Globus
+reports missing consent. If the DRS object offers multiple access methods,
+prefer Globus selection while debugging:
+
+```bash
+GIT_DRS_ACCESS_METHOD=prefer:globus git drs pull
+```
+
+If HTTPS fallback hides the Globus readiness error, require Globus for that
+pull:
+
+```bash
+git drs pull --access-method globus
+```
+
+Selection diagnostics classify a candidate as `disabled` when it is
+unavailable or not configured, and `broken` when configuration is invalid or a
+credential is expired without refresh. DRS `/access` resolution is planning;
+fallback ends when the first byte request or Globus task submission starts.
+
+See [Globus Access Methods](globus.md) for setup and troubleshooting details.
+
+### Committed DRS endpoint is not trusted for credentials
+
+`git-drs` does not treat repository content as permission to send credentials.
+Review `.git-drs/drs-policies.yaml`, then trust the exact canonical endpoint in
+this clone:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+Alternatively, configure a clone-local endpoint override. Never place tokens,
+credential profiles, Globus destinations, or destination paths in the shared
+YAML file.
+
 ## Common Problems
 
 ### `git drs pull` did not update my branch

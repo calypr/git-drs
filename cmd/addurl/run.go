@@ -62,13 +62,22 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if isGlobusURL(input.sourceArg) {
+		return s.runGlobus(ctx, cmd, logger, input)
+	}
+	if input.recursive {
+		return fmt.Errorf("--recursive is only supported for globus:// URLs")
+	}
+	if input.dryRun || input.manifest != "" {
+		return fmt.Errorf("--dry-run and --manifest require a globus:// URL")
+	}
 
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return fmt.Errorf("error getting config: %v", err)
 	}
 
-	remote, err := cfg.GetDefaultRemote()
+	remote, err := cfg.GetRemoteOrDefault(input.remote)
 	if err != nil {
 		return err
 	}
@@ -123,7 +132,7 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := writePointerFile(input.path, oid, objectInfo.SizeBytes); err != nil {
+	if err := writePointerFile(input.path, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
 		return err
 	}
 

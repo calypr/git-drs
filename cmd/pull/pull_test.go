@@ -257,6 +257,38 @@ func TestInspectCachedObject(t *testing.T) {
 	}
 }
 
+func TestInspectCachedObjectAcceptsZeroByteObject(t *testing.T) {
+	objectPath := filepath.Join(t.TempDir(), "empty")
+	if err := os.WriteFile(objectPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedObject(objectPath, "", 0)
+	if err != nil || !state.complete {
+		t.Fatalf("zero-byte object state = %+v, err = %v", state, err)
+	}
+}
+
+func TestStrictAccessMethod(t *testing.T) {
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "")
+	t.Setenv("GIT_DRS_TRANSFER_PROVIDER", "")
+	if method, ok := strictAccessMethod("globus", ""); !ok || method != "globus" {
+		t.Fatalf("command requirement = %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "require:globus")
+	if method, ok := strictAccessMethod("", ""); !ok || method != "globus" {
+		t.Fatalf("environment requirement = %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "")
+	if method, ok := strictAccessMethod("", "prefer:globus"); ok || method != "" {
+		t.Fatalf("preference incorrectly treated as strict: %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "prefer:https")
+	t.Setenv("GIT_DRS_TRANSFER_PROVIDER", "require:globus")
+	if method, ok := strictAccessMethod("", "require:globus"); ok || method != "" {
+		t.Fatalf("lower-priority requirement overrode preference: %q, %v", method, ok)
+	}
+}
+
 func TestVerifyObjectAtPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	objectPath := filepath.Join(tmpDir, "obj")

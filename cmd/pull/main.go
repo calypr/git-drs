@@ -107,6 +107,9 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
+			if method, ok := strictAccessMethod(accessMethod, drsCtx.AccessMethodPolicy); ok {
+				return fmt.Errorf("access-method requirement %q cannot be enforced for read-only AnVIL remotes", method)
+			}
 		}
 
 		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
@@ -280,6 +283,24 @@ func normalizeDRSPointerOID(oid string) string {
 	return oid
 }
 
+func strictAccessMethod(command, remotePolicy string) (string, bool) {
+	if command = strings.TrimSpace(command); command != "" {
+		return strings.ToLower(command), true
+	}
+	raw := strings.TrimSpace(os.Getenv("GIT_DRS_ACCESS_METHOD"))
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("GIT_DRS_TRANSFER_PROVIDER"))
+	}
+	if raw == "" {
+		raw = remotePolicy
+	}
+	mode, method, found := strings.Cut(strings.ToLower(strings.TrimSpace(raw)), ":")
+	if found && mode == "require" && method != "" {
+		return method, true
+	}
+	return "", false
+}
+
 type pointerFile struct {
 	Name        string
 	Oid         string
@@ -413,10 +434,7 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 	if info.IsDir() {
 		return state, fmt.Errorf("cached object path is a directory: %s", path)
 	}
-	if expectedSize > 0 && info.Size() != expectedSize {
-		return state, nil
-	}
-	if expectedSize <= 0 && info.Size() <= 0 {
+	if expectedSize >= 0 && info.Size() != expectedSize {
 		return state, nil
 	}
 	if strings.TrimSpace(expectedOID) == "" || strings.HasPrefix(strings.TrimSpace(expectedOID), "//") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(expectedOID)), "drs://") {

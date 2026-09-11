@@ -23,6 +23,7 @@ import (
 	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
@@ -52,6 +53,7 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 	}
 
 	var drsCtx *remoteruntime.GitContext
+	var terraResolver resolver.Resolver
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
@@ -60,6 +62,11 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		drsCtx, err = remoteruntime.New(cfg, remote, logger)
 		if err != nil {
 			logger.Info("DRS server not configured or unreachable", "err", err)
+		} else if drsCtx.RemoteType == config.TerraServerType && !internalfilter.ShouldSkipSmudge() {
+			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if err != nil {
+				return fmt.Errorf("filter: create Terra resolver: %w", err)
+			}
 		}
 	}
 
@@ -70,7 +77,7 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
 	// Build the filter and register handlers.
 	f := internalfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
-		OnSmudge(makeSmudgeHandler(drsCtx, logger)).
+		OnSmudge(makeSmudgeHandler(drsCtx, terraResolver, logger)).
 		OnClean(makeCleanHandler(lfsRoot, logger))
 
 	return f.Run(ctx)
@@ -80,17 +87,27 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, logger *slog.Logger) internalfilter.SmudgeFunc {
+func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, logger *slog.Logger) internalfilter.SmudgeFunc {
 	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn internalfilter.SmudgeDownloadFunc
 		if drsCtx != nil && !internalfilter.ShouldSkipSmudge() {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
+				if terraResolver != nil {
+					return resolver.DownloadToCache(callCtx, terraResolver, normalizeDRSOID(oid), cachePath)
+				}
 				return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 			}
 		}
 		return internalfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
 	}
+}
+
+func normalizeDRSOID(oid string) string {
+	if len(oid) >= 2 && oid[:2] == "//" {
+		return "drs:" + oid
+	}
+	return oid
 }
 
 // --------------------------------------------------------------------------

@@ -1,0 +1,30 @@
+site_name: Git DRS Documentation
+site_description: End-user documentation for Git-compatible DRS workflows
+repo_url: https://github.com/calypr/git-drs
+docs_dir: .pages-docs
+site_dir: _site
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Start here:
+      - Quick Start: quickstart.md
+      - Getting Started: getting-started.md
+      - Commands Reference: commands.md
+  - Work with data:
+      - Pointer Files and Reference State: pointer-files.md
+      - Add Existing S3 Objects: adding-s3-files.md
+      - Remove Files: remove-files.md
+      - Troubleshooting: troubleshooting.md

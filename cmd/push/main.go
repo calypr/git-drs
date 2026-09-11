@@ -58,12 +58,20 @@ var Cmd = &cobra.Command{
 				return err
 			}
 		}
-
 		drsClient, err := remoteruntime.New(cfg, remote, myLogger)
 		if err != nil {
 			myLogger.DebugContext(ctx, "create remote client failed", "error", err)
 			return err
 		}
+		if drsClient.IsReadOnly() || !drsClient.CanUpload() || !drsClient.CanRegister() {
+			return fmt.Errorf(
+				"remote %q is read-only: git drs push cannot upload files to Terra or register DRS objects\n"+
+					"no files were uploaded, and you do not need to back out a commit that references existing Terra data\n"+
+					"to publish the commit and its DRS references, use ordinary git push to a Git remote; this pushes only Git metadata and does not upload files to Terra",
+				remote,
+			)
+		}
+
 		drsClient.ForceUpload = pushForceUpload
 		state, err := resolveSyncRefState(ctx, string(remote))
 		if err != nil {

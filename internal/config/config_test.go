@@ -3,8 +3,26 @@ package config
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
+
+func TestLoadConfigIgnoresFormerRepositoryYAMLPath(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git-drs", "config.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("former repository YAML path must not be loaded: %v", err)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("unexpected remotes loaded from former YAML path: %+v", cfg.Remotes)
+	}
+}
 
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
@@ -289,5 +307,40 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 
 	if localRemote.BaseURL != "http://localhost:8080" {
 		t.Errorf("Expected BaseURL http://localhost:8080, got %s", localRemote.BaseURL)
+	}
+}
+
+func TestRemoveRemote_TerraCleansAuthAndMode(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	remoteName := Remote("anvil")
+
+	_, err := UpdateRemote(remoteName, RemoteSelect{
+		Terra: &TerraRemote{
+			Endpoint: "https://data.terra.bio",
+			Auth:     "google-adc",
+			Mode:     "read-only",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRemote failed: %v", err)
+	}
+
+	cfg, err := RemoveRemote(remoteName)
+	if err != nil {
+		t.Fatalf("RemoveRemote failed: %v", err)
+	}
+	if _, ok := cfg.Remotes[remoteName]; ok {
+		t.Fatalf("removed Terra remote %q was recreated", remoteName)
+	}
+
+	for _, key := range []string{
+		"drs.remote.anvil.auth",
+		"drs.remote.anvil.mode",
+	} {
+		cmd := exec.Command("git", "config", "--local", "--get", key)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("expected %s to be unset, got %q", key, string(output))
+		}
 	}
 }

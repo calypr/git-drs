@@ -67,7 +67,9 @@ The pre-commit cache is non-authoritative and safe to rebuild. The local DRS met
 
 ### Setup path
 
-`git drs remote add gen3 ...` or `git drs remote add local ...` is the standard entrypoint for connecting a repository.
+The provider-neutral `git drs remote add [name] <endpoint-or-alias> ...` is the
+standard entrypoint for connecting a repository. Provider selection, scope,
+authentication, and credential sources are flags rather than subcommands.
 
 That path:
 

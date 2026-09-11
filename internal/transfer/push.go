@@ -112,6 +112,14 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 		if oid == "" {
 			continue
 		}
+		// DRS URI pointers identify an existing remote object; they are not
+		// SHA-256 checksums. Leave them to the URI-aware fetch path rather than
+		// sending the authority/object value through checksum lookup,
+		// registration, or upload synchronization.
+		if lfs.IsDRSURI(oid) {
+			s.debug("skipping DRS URI pointer during checksum push synchronization", "oid", oid)
+			continue
+		}
 		if _, exists := s.filesByOID[oid]; exists {
 			continue
 		}

@@ -20,7 +20,7 @@ func TestUpsertDRSRouteLinesAddNew(t *testing.T) {
 
 	b, _ := os.ReadFile(p)
 	got := string(b)
-	want := "scratch/** drs.route=rw\n"
+	want := "scratch/** drs=rw\n"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -30,7 +30,7 @@ func TestUpsertDRSRouteLinesUpdateExisting(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".gitattributes")
 
-	if err := os.WriteFile(p, []byte("# hi\nscratch/** drs.route=ro\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("# hi\nscratch/** drs=ro\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -44,7 +44,7 @@ func TestUpsertDRSRouteLinesUpdateExisting(t *testing.T) {
 
 	b, _ := os.ReadFile(p)
 	got := string(b)
-	want := "# hi\nscratch/** drs.route=rw\n"
+	want := "# hi\nscratch/** drs=rw\n"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
@@ -54,7 +54,7 @@ func TestUpsertDRSRouteLinesIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, ".gitattributes")
 
-	if err := os.WriteFile(p, []byte("scratch/** drs.route=rw\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("scratch/** drs=rw\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -68,7 +68,7 @@ func TestUpsertDRSRouteLinesIdempotent(t *testing.T) {
 }
 
 func TestParseRouteLine(t *testing.T) {
-	p, m, ok := parseRouteLine("scratch/** drs.route=rw")
+	p, m, ok := parseRouteLine("scratch/** drs=rw")
 	if !ok || p != "scratch/**" || m != "rw" {
 		t.Fatalf("unexpected: ok=%v p=%q m=%q", ok, p, m)
 	}

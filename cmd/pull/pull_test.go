@@ -250,7 +250,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(files, progress)
+	err = checkoutDownloadedFiles(files, progress, false)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -293,7 +293,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress); err != nil {
+	if err := checkoutDownloadedFiles(files, progress, false); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -316,6 +316,51 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	}
 }
 
+func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not supported on Windows")
+	}
+
+	repo := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	payload := []byte("read-only remote payload")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("ObjectPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+
+	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles(files))
+	if err := checkoutDownloadedFiles(files, progress, true); err != nil {
+		t.Fatalf("checkoutDownloadedFiles: %v", err)
+	}
+
+	info, err := os.Stat(files[0].Name)
+	if err != nil {
+		t.Fatalf("stat checked-out file: %v", err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o444); got != want {
+		t.Fatalf("checked-out permissions = %o, want %o", got, want)
+	}
+}
+
 func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	repo := t.TempDir()
 	gitDRS := buildGitDRSBinaryForTest(t)
@@ -335,9 +380,13 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 
 	worktreePath := filepath.Join(repo, "sample.bin")
 	payload := []byte("hello world payload")
-	sum := sha256.Sum256(payload)
-	oid := hex.EncodeToString(sum[:])
-	writePointerFile(t, worktreePath, oid, strconv.Itoa(len(payload)))
+	oid := "drs://drs.anv0:v2_example-without-sha256"
+	pointer := "version https://calypr.github.io/spec/v1\n" +
+		"oid " + oid + "\n" +
+		"size " + strconv.Itoa(len(payload)) + "\n"
+	if err := os.WriteFile(worktreePath, []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write DRS pointer: %v", err)
+	}
 
 	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin")
 	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")

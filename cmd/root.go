@@ -14,6 +14,7 @@ import (
 	"github.com/calypr/git-drs/cmd/lsfiles"
 	"github.com/calypr/git-drs/cmd/ping"
 	"github.com/calypr/git-drs/cmd/precommit"
+	"github.com/calypr/git-drs/cmd/preset"
 	"github.com/calypr/git-drs/cmd/pull"
 	"github.com/calypr/git-drs/cmd/push"
 	"github.com/calypr/git-drs/cmd/query"
@@ -50,6 +51,7 @@ func init() {
 	RootCmd.AddCommand(pull.Cmd)
 	RootCmd.AddCommand(push.Cmd)
 	RootCmd.AddCommand(precommit.Cmd)
+	RootCmd.AddCommand(preset.Cmd)
 	RootCmd.AddCommand(addref.Cmd)
 	RootCmd.AddCommand(addurl.Cmd)
 	RootCmd.AddCommand(deleteCmd.Cmd)

@@ -2,8 +2,12 @@ package copyrecords
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,12 +21,15 @@ import (
 )
 
 type fakeIndexAPI struct {
-	listResp      copyListRecordsResponse
-	listFn        func(opts syservices.ListRecordsOptions) copyListRecordsResponse
-	bulkDocsResp  []copyRecord
-	bulkHashResp  copyBulkHashesResponse
-	createBulkReq []copyBulkCreateRequest
-	createBulkErr error
+	listResp          copyListRecordsResponse
+	listFn            func(opts syservices.ListRecordsOptions) copyListRecordsResponse
+	bulkDocsResp      []copyRecord
+	bulkHashResp      copyBulkHashesResponse
+	createBulkReq     []copyBulkCreateRequest
+	createBulkErr     error
+	overwriteBulkReq  []copyBulkOverwriteRequest
+	overwriteBulkResp copyBulkOverwriteResponse
+	overwriteBulkErr  error
 }
 
 func (f *fakeIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error) {
@@ -46,6 +53,17 @@ func (f *fakeIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest
 		return copyListRecordsResponse{}, f.createBulkErr
 	}
 	return copyListRecordsResponse{Records: &req.Records}, nil
+}
+
+func (f *fakeIndexAPI) OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	f.overwriteBulkReq = append(f.overwriteBulkReq, req)
+	if f.overwriteBulkErr != nil {
+		return copyBulkOverwriteResponse{}, f.overwriteBulkErr
+	}
+	if f.overwriteBulkResp.Processed == 0 {
+		return copyBulkOverwriteResponse{Processed: len(req.Records), Created: len(req.Records)}, nil
+	}
+	return f.overwriteBulkResp, nil
 }
 
 func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testing.T) {
@@ -256,6 +274,30 @@ func TestBuildMergedBatch_MergesIntoExistingChecksumSiblingWhenDIDDiffers(t *tes
 	}
 }
 
+func TestCopyProjectRecordsWithOptions_UsesBulkOverwrite(t *testing.T) {
+	target := &fakeIndexAPI{overwriteBulkResp: copyBulkOverwriteResponse{
+		Processed:       2,
+		Created:         1,
+		Replaced:        1,
+		DIDMatched:      1,
+		ChecksumMatched: 1,
+	}}
+	stats, err := copyProjectRecordsWithOptions(context.Background(), nil, []copyRecord{{Did: "did-1"}, {Did: "did-2"}}, target, "Org", "Project", 5000, false, true)
+	if err != nil {
+		t.Fatalf("copyProjectRecordsWithOptions returned error: %v", err)
+	}
+	if len(target.overwriteBulkReq) != 1 {
+		t.Fatalf("expected one overwrite request, got %d", len(target.overwriteBulkReq))
+	}
+	req := target.overwriteBulkReq[0]
+	if req.Organization != "Org" || req.Project != "Project" || len(req.Records) != 2 {
+		t.Fatalf("unexpected overwrite request: %+v", req)
+	}
+	if stats.Created != 1 || stats.Updated != 1 || stats.Written != 2 || stats.Unchanged != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
 func TestCopyProjectRecords_UsesScopedSourceList(t *testing.T) {
 	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
 	source := &fakeIndexAPI{
@@ -462,8 +504,36 @@ func TestLoadLocalSourceRecords_MissingLocalObjectFailsClearly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if got := err.Error(); !strings.Contains(got, "tracked oid bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb for path data/a.bin is missing local DRS metadata") {
+	if got := err.Error(); !strings.Contains(got, "tracked oid bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb for path data/a.bin is missing local DRS metadata and no matching local payload was found") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadLocalSourceRecords_ReconstructsMissingMetadataFromPayload(t *testing.T) {
+	oldTracked := loadTrackedLfsFiles
+	oldRead := readLocalDRSObject
+	t.Cleanup(func() {
+		loadTrackedLfsFiles = oldTracked
+		readLocalDRSObject = oldRead
+	})
+
+	payload := []byte("local payload")
+	oid := fmt.Sprintf("%x", sha256.Sum256(payload))
+	path := filepath.Join(t.TempDir(), "data.bin")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{path: {Name: path, Oid: "sha256:" + oid, Size: int64(len(payload))}}, nil
+	}
+	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) { return nil, errors.New("not found") }
+
+	records, err := loadLocalSourceRecords("Org", "Proj")
+	if err != nil {
+		t.Fatalf("loadLocalSourceRecords error: %v", err)
+	}
+	if len(records) != 1 || records[0].Did == "" || records[0].Hashes == nil || (*records[0].Hashes)["sha256"] != oid || records[0].Name == nil || *records[0].Name != "data.bin" {
+		t.Fatalf("unexpected reconstructed record: %+v", records)
 	}
 }
 
@@ -589,6 +659,19 @@ func TestCmdRunE_RejectsLocalSourceAndTarget(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "source and target cannot both be local") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLocalSentinel_DoesNotShadowRemoteNamedLocal(t *testing.T) {
+	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
+		"local": {Local: &config.LocalRemote{BaseURL: "http://example.test"}},
+	}}
+
+	if isLocalSentinel(cfg, "local") {
+		t.Fatal("configured remote named local must not be treated as repo-local")
+	}
+	if !isLocalSentinel(cfg, "@local") {
+		t.Fatal("@local must always mean repo-local")
 	}
 }
 

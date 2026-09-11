@@ -351,6 +351,9 @@ Copy Syfon metadata records from one configured remote to another for one scope.
 ```bash
 git drs copy-records prod HTAN_INT/BForePC
 git drs copy-records dev prod HTAN_INT/BForePC
+git drs copy-records @local prod HTAN_INT/BForePC
+git drs copy-records @local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
+git drs copy-records local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
 ```
 
 Behavior:
@@ -362,6 +365,10 @@ Behavior:
   - first is source
   - second is target
 - copies metadata only, not object bytes
+- `@local` explicitly means the current repository's local records
+- the legacy `local` alias means repository-local only when no configured remote is named `local`
+- `--include-path` limits a copy to records matching a file or directory path; repeat it to select multiple paths
+- for indexd/Syfon sources, paths are resolved through the current repository's tracked files and source records are selected by SHA-256
 
 Merge behavior for existing target records:
 
@@ -369,6 +376,11 @@ Merge behavior for existing target records:
 - union `controlled_access`
 - union `access_methods`
 - preserve existing target metadata otherwise
+
+Use `--overwrite-existing` when the source metadata must replace existing
+target metadata. This mode requires a Syfon target that supports
+`PUT /index/bulk/overwrite`; it matches a checksum sibling only inside the
+requested target project and preserves that target record's DID.
 
 ## Bucket Mapping Commands
 

@@ -105,6 +105,39 @@ The managed push path runs directly through the current Syfon client/runtime sta
 
 It does not run `git pull`.
 
+Go callers that need to pull payloads without invoking the binary or opening a
+Git checkout can use the public `client` package:
+
+```go
+import (
+	"context"
+
+	"github.com/calypr/git-drs/client"
+)
+
+drs, err := client.New(client.Options{
+	Endpoint:     "https://syfon.example.org",
+	AccessToken:  token,
+	Organization: "org",
+	Project:      "project",
+})
+if err != nil {
+	return err
+}
+
+err = drs.Pull(ctx, client.PullOptions{
+	Root: "/executor/input",
+	Files: []client.File{
+		{Path: "data/sample.bam", OID: sha256, Size: size},
+	},
+})
+```
+
+This API takes the DRS scope and destination explicitly. It does not read
+Git configuration, inspect the current checkout, populate the Git-LFS cache,
+or update the Git index. The existing CLI `git drs pull` remains the
+checkout-oriented adapter.
+
 ### Filter path
 
 Git clean/smudge/filter-process integration is handled by the current filter stack:

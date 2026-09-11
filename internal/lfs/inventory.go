@@ -84,7 +84,33 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 // GetReachablePointerFilesForRef scans a Git ref/tree and returns valid Git
 // LFS/DRS pointer blobs reachable from that tree.
 func GetReachablePointerFilesForRef(ref string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	return GetLfsFilesForRefs([]string{ref}, logger)
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return GetReachablePointerFilesForRefInRepository(context.Background(), repoDir, ref, logger)
+}
+
+// GetReachablePointerFilesForRefInRepository scans pointer blobs from ref in
+// repositoryRoot. It reads Git objects rather than worktree files, so the
+// result is stable when some or all LFS files have been hydrated.
+func GetReachablePointerFilesForRefInRepository(ctx context.Context, repositoryRoot, ref string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repositoryRoot = strings.TrimSpace(repositoryRoot)
+	if repositoryRoot == "" {
+		return nil, fmt.Errorf("repository root is required")
+	}
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
+	files := make(map[string]LfsFileInfo)
+	if err := addFilesFromRef(ctx, repositoryRoot, ref, logger, files); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // GetLfsFilesForRefPaths scans the given paths in a specific ref/tree and

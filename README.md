@@ -125,7 +125,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 
 - Git
 - access credentials for the target Gen3/Syfon deployment
-- Go 1.26.2+ for local builds
+- Go 1.26.5+ for local builds
 
 ## Support
 

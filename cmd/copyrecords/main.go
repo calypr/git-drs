@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	batchSize     int
-	overwriteName bool
+	batchSize         int
+	overwriteName     bool
+	overwriteExisting bool
+	includePaths      []string
 )
 
 var (
@@ -30,6 +32,12 @@ var (
 	loadLocalSource = func(ctx context.Context, org, project string) ([]copyRecord, error) {
 		return loadLocalSourceRecords(org, project)
 	}
+	loadFilteredLocalSource = func(ctx context.Context, org, project string, paths []string) ([]copyRecord, error) {
+		return loadLocalSourceRecordsIncluding(org, project, paths)
+	}
+	loadIncludedLocalSHA256 = func(paths []string) (map[string]struct{}, error) {
+		return includedLocalSHA256(paths)
+	}
 	newLocalTargetAPI = func() indexAPI {
 		return localIndexAPI{}
 	}
@@ -38,7 +46,7 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "copy-records [source-remote] <target-remote> <organization/project>",
 	Short: "Copy Syfon records between remotes for one organization/project scope",
-	Long:  "Read source records from either a source remote or the current repo's local DRS metadata and bulk load them into a target Syfon instance or the current repo's local DRS metadata, only merging controlled_access and access_methods for records that already exist on the target. Use `git drs copy-records local <target-remote> <organization/project>` to copy local repo records, or `git drs copy-records <source-remote> local <organization/project>` to copy remote records into local repo metadata.",
+	Long:  "Read source records from either a source remote or the current repo's local DRS metadata and bulk load them into a target Syfon instance or the current repo's local DRS metadata. Existing records merge controlled_access and access_methods by default; --overwrite-existing replaces target metadata with source metadata. Use `git drs copy-records local <target-remote> <organization/project>` to copy local repo records, or `git drs copy-records <source-remote> local <organization/project>` to copy remote records into local repo metadata.",
 	Args:  cobra.RangeArgs(2, 3),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := drslog.GetLogger()
@@ -62,7 +70,7 @@ var Cmd = &cobra.Command{
 		if strings.TrimSpace(targetRemote) == "" {
 			return fmt.Errorf("target remote is required")
 		}
-		targetIsLocal := isLocalSentinel(targetRemote)
+		targetIsLocal := isLocalSentinel(cfg, targetRemote)
 		dstRemoteName := config.Remote(strings.TrimSpace(targetRemote))
 
 		org, proj, err := parseScopeArg(scopeArg)
@@ -85,16 +93,27 @@ var Cmd = &cobra.Command{
 			sourceRecords []copyRecord
 			sourceLabel   string
 		)
-		if isLocalSentinel(sourceRemote) {
+		if isLocalSentinel(cfg, sourceRemote) {
 			if targetIsLocal {
 				return fmt.Errorf("source and target cannot both be local")
 			}
-			sourceRecords, err = loadLocalSource(cmd.Context(), org, proj)
+			if len(includePaths) == 0 {
+				sourceRecords, err = loadLocalSource(cmd.Context(), org, proj)
+			} else {
+				sourceRecords, err = loadFilteredLocalSource(cmd.Context(), org, proj, includePaths)
+			}
 			if err != nil {
 				return err
 			}
 			sourceLabel = "local"
 		} else {
+			var includedSHA256 map[string]struct{}
+			if len(includePaths) > 0 {
+				includedSHA256, err = loadIncludedLocalSHA256(includePaths)
+				if err != nil {
+					return err
+				}
+			}
 			srcRemoteName, err := cfg.GetRemoteOrDefault(sourceRemote)
 			if err != nil {
 				return fmt.Errorf("error resolving source remote: %w", err)
@@ -110,7 +129,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("error creating source client: %w", err)
 			}
-			stats, err := copyProjectRecordsFromSourceIndex(
+			stats, err := copyProjectRecordsFromSourceIndexWithFilter(
 				cmd.Context(),
 				logger,
 				newCopyIndexAPI(srcCtx.Client.Requestor()),
@@ -119,6 +138,8 @@ var Cmd = &cobra.Command{
 				proj,
 				batchSize,
 				overwriteName,
+				overwriteExisting,
+				includedSHA256,
 			)
 			if err != nil {
 				return err
@@ -138,7 +159,7 @@ var Cmd = &cobra.Command{
 			return nil
 		}
 
-		stats, err := copyProjectRecords(
+		stats, err := copyProjectRecordsWithOptions(
 			cmd.Context(),
 			logger,
 			sourceRecords,
@@ -147,6 +168,7 @@ var Cmd = &cobra.Command{
 			proj,
 			batchSize,
 			overwriteName,
+			overwriteExisting,
 		)
 		if err != nil {
 			return err
@@ -169,10 +191,23 @@ var Cmd = &cobra.Command{
 func init() {
 	Cmd.Flags().IntVar(&batchSize, "batch-size", defaultCopyBatchSize, "records per source page and target bulk write")
 	Cmd.Flags().BoolVar(&overwriteName, "overwrite-name", false, "for existing target records, replace target name with the source value")
+	Cmd.Flags().BoolVar(&overwriteExisting, "overwrite-existing", false, "replace existing target records with source metadata (requires a Syfon target supporting bulk overwrite)")
+	Cmd.Flags().StringSliceVar(&includePaths, "include-path", nil, "copy only records matching this file or directory path (repeatable)")
 }
 
-func isLocalSentinel(remote string) bool {
-	return strings.EqualFold(strings.TrimSpace(remote), "local")
+func isLocalSentinel(cfg *config.Config, remote string) bool {
+	remote = strings.TrimSpace(remote)
+	if strings.EqualFold(remote, "@local") {
+		return true
+	}
+	if !strings.EqualFold(remote, "local") {
+		return false
+	}
+	if cfg == nil {
+		return true
+	}
+	_, configured := cfg.Remotes[config.Remote(remote)]
+	return !configured
 }
 
 func configuredRemoteList(cfg *config.Config) string {

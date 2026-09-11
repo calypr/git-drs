@@ -2,10 +2,7 @@ package transfer
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -157,7 +154,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 		// hydrated file instead of assuming every pointer path is pointer-form
 		// in the worktree.
 		if st, statErr := os.Stat(worktreePath); statErr == nil && !st.IsDir() {
-			if matches, hashErr := fileMatchesSHA256(worktreePath, oid); hashErr == nil && matches {
+			if matches, hashErr := lfs.FileMatchesSHA256(worktreePath, oid); hashErr == nil && matches {
 				return worktreePath, true, nil
 			}
 		}
@@ -172,26 +169,6 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 		return "", false, fmt.Errorf("worktree path %s is a directory", worktreePath)
 	}
 	return worktreePath, true, nil
-}
-
-func fileMatchesSHA256(path string, oid string) (bool, error) {
-	want := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(oid), "sha256:"))
-	if len(want) != sha256.Size*2 {
-		return false, nil
-	}
-	if _, err := hex.DecodeString(want); err != nil {
-		return false, nil
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return false, err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)) == want, nil
 }
 
 func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool) error {

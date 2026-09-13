@@ -23,7 +23,7 @@ import (
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
 	"github.com/spf13/cobra"
 )

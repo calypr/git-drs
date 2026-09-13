@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syservices "github.com/calypr/syfon/client/services"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
 	"github.com/stretchr/testify/assert"
 )
 

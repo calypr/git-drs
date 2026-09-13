@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	calyprconf "github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	syclient "github.com/calypr/syfon/client"
@@ -113,14 +111,14 @@ func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger
 }
 
 func gen3ClientWithCredential(remoteName, source string, remote config.Gen3Remote, logger *slog.Logger) (*GitContext, error) {
-	manager := calyprconf.NewConfigure(logger)
+	manager := syconf.NewConfigure(logger)
 	cred, saveRefreshed, err := resolveGen3Credential(manager, source, remoteName, remote.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := credentials.EnsureValidCredential(ctx, cred, logger); err != nil {
+	if err := EnsureValidCredential(ctx, cred, logger); err != nil {
 		return nil, WrapCredentialValidationError(remoteName, err)
 	}
 	if saveRefreshed {
@@ -132,21 +130,21 @@ func gen3ClientWithCredential(remoteName, source string, remote config.Gen3Remot
 }
 
 type gen3CredentialManager interface {
-	Import(filePath, fenceToken string) (*calyprconf.Credential, error)
-	Load(profile string) (*calyprconf.Credential, error)
+	Import(filePath, fenceToken string) (*syconf.Credential, error)
+	Load(profile string) (*syconf.Credential, error)
 }
 
 // resolveGen3Credential turns the clone-local source selector into credential
 // material. The configured remote endpoint remains authoritative: a credential
 // source must not be able to redirect requests to another host.
-func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, endpoint string) (*calyprconf.Credential, bool, error) {
+func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, endpoint string) (*syconf.Credential, bool, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		cred, err := manager.Load(remoteName)
 		return cred, true, err
 	}
 
-	var cred *calyprconf.Credential
+	var cred *syconf.Credential
 	var err error
 	switch {
 	case strings.HasPrefix(source, "profile:"):
@@ -177,7 +175,7 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if !ok || strings.TrimSpace(token) == "" {
 			return nil, false, fmt.Errorf("Gen3 credential environment variable %q is empty or unset", name)
 		}
-		cred = &calyprconf.Credential{AccessToken: strings.TrimSpace(token)}
+		cred = &syconf.Credential{AccessToken: strings.TrimSpace(token)}
 	case strings.HasPrefix(source, "helper:"):
 		name := strings.TrimSpace(strings.TrimPrefix(source, "helper:"))
 		output, helperErr := exec.Command(name).Output()
@@ -188,7 +186,7 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if token == "" {
 			return nil, false, fmt.Errorf("Gen3 credential helper %q returned an empty token", name)
 		}
-		cred = &calyprconf.Credential{AccessToken: token}
+		cred = &syconf.Credential{AccessToken: token}
 	default:
 		return nil, false, fmt.Errorf("unsupported Gen3 credential source %q", source)
 	}
@@ -226,13 +224,9 @@ func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logg
 		cred.APIKey = remote.BasicPassword
 	}
 
-	raw, err := syclient.New(remote.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
+	client, err := syclient.New(remote.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
 	if err != nil {
 		return nil, err
-	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	return &GitContext{
@@ -280,13 +274,9 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		}
 	}
 
-	raw, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
+	client, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
 	if err != nil {
 		return nil, err
-	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))

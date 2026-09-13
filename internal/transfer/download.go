@@ -13,9 +13,8 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
-	"github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -125,12 +124,37 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 	if obj == nil || accessURL == nil || strings.TrimSpace(accessURL.Url) == "" {
 		return fmt.Errorf("resolved DRS object and access URL are required")
 	}
+	_, statErr := os.Lstat(dstPath)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return fmt.Errorf("stat download destination: %w", statErr)
+	}
+	hadDestination := statErr == nil
 	src := &resolvedSource{
-		requestor:    drsCtx.Client.Requestor(),
+		requestor:    drsCtx.Client,
 		accessURL:    strings.TrimSpace(accessURL.Url),
 		expectedSize: obj.Size,
+		identity:     resolvedDownloadIdentity(oid, obj),
 	}
-	return sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
+	err := sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
+	if err != nil && !hadDestination {
+		// The transfer engine creates its resume checkpoint before the first
+		// request. Do not leave a failed new download looking resumable to a
+		// caller; an existing partial destination remains available for retry.
+		_ = os.Remove(dstPath)
+		_ = os.Remove(dstPath + ".syfon-download.json")
+	}
+	return err
+}
+
+func resolvedDownloadIdentity(oid string, obj *drsapi.DrsObject) string {
+	for _, checksum := range obj.Checksums {
+		if strings.EqualFold(strings.TrimSpace(checksum.Type), "sha256") {
+			if value := strings.ToLower(strings.TrimSpace(checksum.Checksum)); value != "" {
+				return "sha256:" + value
+			}
+		}
+	}
+	return strings.TrimSpace(oid)
 }
 
 func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
@@ -142,9 +166,12 @@ func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid
 }
 
 type resolvedSource struct {
-	requestor    request.Requester
+	requestor interface {
+		Do(*http.Request) (*http.Response, error)
+	}
 	accessURL    string
 	expectedSize int64
+	identity     string
 }
 
 func (s *resolvedSource) Name() string {
@@ -160,6 +187,7 @@ func (s *resolvedSource) Stat(ctx context.Context, guid string) (*sytransfer.Obj
 		Size:         s.expectedSize,
 		AcceptRanges: s.expectedSize > 0,
 		Provider:     "drs",
+		Identity:     s.identity,
 	}, nil
 }
 
@@ -183,6 +211,9 @@ func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.Re
 	if resp.StatusCode >= http.StatusBadRequest {
 		err := sycommon.ResponseBodyError(resp, fmt.Sprintf("download from %s failed", s.accessURL))
 		resp.Body.Close()
+		if permanentDownloadStatus(resp.StatusCode) {
+			return nil, sytransfer.NonRetryable(err)
+		}
 		return nil, err
 	}
 	if start != nil && resp.StatusCode == http.StatusOK {
@@ -190,4 +221,9 @@ func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.Re
 		return nil, sytransfer.ErrRangeIgnored
 	}
 	return resp.Body, nil
+}
+
+func permanentDownloadStatus(status int) bool {
+	return status >= http.StatusBadRequest && status < http.StatusInternalServerError &&
+		status != http.StatusRequestTimeout && status != http.StatusTooManyRequests
 }

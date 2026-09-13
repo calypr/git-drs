@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	syrequest "github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/apierror"
 )
 
 func TestMapInspectError_UpgradeMessageForMissingRoute(t *testing.T) {
-	err := mapInspectError("s3://bucket/key", &syrequest.ResponseError{
+	err := mapInspectError("s3://bucket/key", &apierror.APIError{
 		Method: http.MethodPost,
 		URL:    "https://example.test/data/inspect",
 		Status: http.StatusNotFound,
@@ -21,7 +21,7 @@ func TestMapInspectError_UpgradeMessageForMissingRoute(t *testing.T) {
 }
 
 func TestMapInspectError_ActionableForbidden(t *testing.T) {
-	err := mapInspectError("s3://bucket/key", &syrequest.ResponseError{
+	err := mapInspectError("s3://bucket/key", &apierror.APIError{
 		Method: http.MethodPost,
 		URL:    "https://example.test/data/inspect",
 		Status: http.StatusForbidden,

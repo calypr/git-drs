@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestNewValidatesConnectionOptions(t *testing.T) {

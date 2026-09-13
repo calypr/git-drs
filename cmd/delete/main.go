@@ -12,6 +12,8 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	"github.com/calypr/syfon/client/apierror"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -23,7 +25,6 @@ var (
 
 const confirmYes = "yes"
 
-// Cmd line declaration
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:    "delete <hash-type> <oid>",
@@ -109,8 +110,7 @@ var Cmd = &cobra.Command{
 			}
 		}
 
-		// Delete the matching record
-		err = drsClient.Client.DRS().DeleteRecordsByHash(context.Background(), oid)
+		err = deleteByHash(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}
@@ -118,6 +118,25 @@ var Cmd = &cobra.Command{
 		logger.Debug(fmt.Sprintf("Successfully deleted record for OID %s", oid))
 		return nil
 	},
+}
+
+func deleteByHash(ctx context.Context, drsClient *remoteruntime.GitContext, oid string) error {
+	if drsClient == nil || drsClient.Client == nil {
+		return fmt.Errorf("DRS client unavailable")
+	}
+	response, err := drsClient.Client.InternalAPI().InternalBulkDeleteHashesWithResponse(ctx, internalapi.BulkHashesRequest{
+		Hashes: []string{oid},
+	})
+	if err != nil {
+		return err
+	}
+	if response == nil {
+		return fmt.Errorf("bulk hash delete returned no response")
+	}
+	if response.JSON200 == nil {
+		return apierror.FromResponse(response.HTTPResponse, response.Body)
+	}
+	return nil
 }
 
 func init() {

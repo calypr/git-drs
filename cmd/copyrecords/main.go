@@ -10,7 +10,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	"github.com/calypr/syfon/client/request"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +26,8 @@ var (
 	newCopyRuntime = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
 		return remoteruntime.New(cfg, remote, logger)
 	}
-	newCopyIndexAPI = func(requestor request.Requester) indexAPI {
-		return newRawIndexAPI(requestor)
+	newCopyIndexAPI = func(client *internalapi.ClientWithResponses) indexAPI {
+		return newRawIndexAPI(client)
 	}
 	loadLocalSource = func(ctx context.Context, org, project string) ([]copyRecord, error) {
 		return loadLocalSourceRecords(org, project)
@@ -86,7 +86,7 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("error creating target client: %w", err)
 			}
-			dstAPI = newCopyIndexAPI(dstCtx.Client.Requestor())
+			dstAPI = newCopyIndexAPI(dstCtx.Client.InternalAPI())
 		}
 
 		var (
@@ -132,7 +132,7 @@ var Cmd = &cobra.Command{
 			stats, err := copyProjectRecordsFromSourceIndexWithFilter(
 				cmd.Context(),
 				logger,
-				newCopyIndexAPI(srcCtx.Client.Requestor()),
+				newCopyIndexAPI(srcCtx.Client.InternalAPI()),
 				dstAPI,
 				org,
 				proj,

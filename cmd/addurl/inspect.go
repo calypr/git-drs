@@ -2,14 +2,16 @@ package addurl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	"github.com/calypr/syfon/client/apierror"
 	sycloud "github.com/calypr/syfon/client/cloud"
-	syrequest "github.com/calypr/syfon/client/request"
 )
 
 const internalInspectObjectPath = "/data/inspect"
@@ -19,38 +21,18 @@ type inspectedObject struct {
 	info      *sycloud.ObjectInfo
 }
 
-type internalInspectObjectRequest struct {
-	Organization string `json:"organization,omitempty"`
-	Project      string `json:"project,omitempty"`
-	Key          string `json:"key,omitempty"`
-	Scheme       string `json:"scheme,omitempty"`
-	ObjectURL    string `json:"object_url,omitempty"`
-}
-
-type internalInspectObjectResponse struct {
-	ObjectURL   string `json:"object_url"`
-	Provider    string `json:"provider"`
-	Bucket      string `json:"bucket"`
-	Key         string `json:"key"`
-	Path        string `json:"path"`
-	SizeBytes   int64  `json:"size_bytes"`
-	MetaSHA256  string `json:"meta_sha256,omitempty"`
-	ETag        string `json:"etag,omitempty"`
-	LastModTime string `json:"last_modified,omitempty"`
-}
-
 func inspectRemoteObjectViaServer(ctx context.Context, drsCtx *remoteruntime.GitContext, input addURLInput) (*inspectedObject, error) {
-	if drsCtx == nil || drsCtx.Client == nil || drsCtx.Client.Requestor() == nil {
+	if drsCtx == nil || drsCtx.Client == nil {
 		return nil, fmt.Errorf("remote-backed add-url inspection requires a configured syfon client")
 	}
 
-	req := internalInspectObjectRequest{}
+	req := internalapi.InternalInspectObjectRequest{}
 	target := strings.TrimSpace(input.sourceArg)
 	if looksLikeCloudURL(target) {
 		if !strings.HasPrefix(strings.ToLower(target), "s3://") {
 			return nil, fmt.Errorf("remote-backed add-url inspection currently supports only s3:// URLs")
 		}
-		req.ObjectURL = target
+		req.ObjectUrl = target
 	} else {
 		if strings.TrimSpace(input.scheme) == "" {
 			return nil, fmt.Errorf("object key mode requires --scheme because the remote must know which provider to inspect")
@@ -64,20 +46,23 @@ func inspectRemoteObjectViaServer(ctx context.Context, drsCtx *remoteruntime.Git
 		req.Scheme = "s3"
 	}
 
-	var resp internalInspectObjectResponse
-	if err := drsCtx.Client.Requestor().Do(ctx, http.MethodPost, internalInspectObjectPath, req, &resp); err != nil {
+	resp, err := drsCtx.Client.InternalAPI().InternalInspectObjectWithResponse(ctx, req)
+	if err != nil {
 		return nil, mapInspectError(target, err)
 	}
+	if resp.JSON200 == nil {
+		return nil, mapInspectError(target, apierror.FromResponse(resp.HTTPResponse, resp.Body))
+	}
 	return &inspectedObject{
-		objectURL: resp.ObjectURL,
+		objectURL: resp.JSON200.ObjectUrl,
 		info: &sycloud.ObjectInfo{
-			Bucket:      resp.Bucket,
-			Key:         resp.Key,
-			Path:        resp.Path,
-			SizeBytes:   resp.SizeBytes,
-			MetaSHA256:  resp.MetaSHA256,
-			ETag:        resp.ETag,
-			LastModTime: parseInspectLastModified(resp.LastModTime),
+			Bucket:      resp.JSON200.Bucket,
+			Key:         resp.JSON200.Key,
+			Path:        resp.JSON200.Path,
+			SizeBytes:   resp.JSON200.SizeBytes,
+			MetaSHA256:  resp.JSON200.MetaSha256,
+			ETag:        resp.JSON200.Etag,
+			LastModTime: parseInspectLastModified(resp.JSON200.LastModified),
 		},
 	}, nil
 }
@@ -95,7 +80,7 @@ func parseInspectLastModified(raw string) time.Time {
 }
 
 func mapInspectError(target string, err error) error {
-	var respErr *syrequest.ResponseError
+	var respErr *apierror.APIError
 	if !errorAsResponse(err, &respErr) {
 		return fmt.Errorf("remote-backed add-url inspection failed for %q: %w", target, err)
 	}
@@ -131,11 +116,6 @@ func fallbackInspectMessage(body string, fallback string) string {
 	return fallback
 }
 
-func errorAsResponse(err error, target **syrequest.ResponseError) bool {
-	respErr, ok := err.(*syrequest.ResponseError)
-	if ok {
-		*target = respErr
-		return true
-	}
-	return false
+func errorAsResponse(err error, target **apierror.APIError) bool {
+	return errors.As(err, target)
 }

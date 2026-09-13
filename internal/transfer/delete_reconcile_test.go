@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 )
 
@@ -206,7 +206,7 @@ func newGitContext(t *testing.T, serverURL string) *remoteruntime.GitContext {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	client := rawClient.(*syclient.Client)
+	client := rawClient
 	return &remoteruntime.GitContext{
 		Client:       client,
 		Organization: "org",

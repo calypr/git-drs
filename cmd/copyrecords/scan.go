@@ -11,9 +11,9 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	sycommon "github.com/calypr/syfon/client/access"
 	syservices "github.com/calypr/syfon/client/services"
-	sycommon "github.com/calypr/syfon/common"
 	"github.com/google/uuid"
 )
 
@@ -42,49 +42,6 @@ func parseScopeArg(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("invalid scope %q: expected organization/project", raw)
 	}
 	return org, project, nil
-}
-
-func listSourceRecordsByControlledAccess(ctx context.Context, src indexAPI, org, project string, batchSize int) ([]copyRecord, error) {
-	if _, err := sycommon.ResourcePath(org, project); err != nil {
-		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
-	}
-	batchSize = normalizeCopyBatchSize(batchSize)
-
-	page := 1
-	startAfter := ""
-	out := make([]copyRecord, 0)
-	seen := map[string]struct{}{}
-	for {
-		fmt.Fprintf(os.Stderr, "copy-records: scanning source index page %d for %s/%s, start-after=%q matched-so-far=%d\n", page, org, project, startAfter, len(out))
-		records, err := listSourceRecordPage(ctx, src, org, project, batchSize, startAfter)
-		if err != nil {
-			return nil, err
-		}
-		if len(records) == 0 {
-			break
-		}
-		nextStartAfter := lastCopyRecordDID(records)
-		if nextStartAfter == "" {
-			return nil, fmt.Errorf("source list for %s/%s returned records without DIDs; cannot advance cursor", org, project)
-		}
-		for _, rec := range records {
-			did := strings.TrimSpace(rec.Did)
-			if did == "" {
-				continue
-			}
-			if _, ok := seen[did]; ok {
-				continue
-			}
-			seen[did] = struct{}{}
-			out = append(out, rec)
-		}
-		if len(records) < batchSize {
-			break
-		}
-		startAfter = nextStartAfter
-		page++
-	}
-	return out, nil
 }
 
 func listSourceRecordPage(ctx context.Context, src indexAPI, org, project string, batchSize int, startAfter string) ([]copyRecord, error) {

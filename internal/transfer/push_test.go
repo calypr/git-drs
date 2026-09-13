@@ -6,7 +6,7 @@ import (
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestBatchSyncSessionNormalizeFilesDeduplicatesByOID(t *testing.T) {
@@ -70,11 +70,8 @@ func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 	t.Chdir(t.TempDir())
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	accessMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/external/object"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/external/object"},
 	}}
 	obj := &drsapi.DrsObject{
 		Checksums:     []drsapi.Checksum{{Type: "sha256", Checksum: oid}},

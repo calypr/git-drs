@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/calypr/syfon/client/request"
+	"github.com/calypr/syfon/client/apierror"
 )
 
 const defaultCopyBatchSize = 1000
@@ -194,7 +194,7 @@ func overwriteCopyBatch(ctx context.Context, dst indexAPI, req copyBulkOverwrite
 	if err == nil {
 		return resp, nil
 	}
-	var responseErr *request.ResponseError
+	var responseErr *apierror.APIError
 	if errors.As(err, &responseErr) && (responseErr.Status == 404 || responseErr.Status == 405) {
 		return copyBulkOverwriteResponse{}, fmt.Errorf("target Syfon does not support bulk overwrite; upgrade the target Syfon instance")
 	}

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestWriteReadObject(t *testing.T) {

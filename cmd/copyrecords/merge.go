@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func buildMergedBatch(ctx context.Context, dst indexAPI, source []copyRecord, overwriteName bool) ([]copyRecord, copyStats, error) {

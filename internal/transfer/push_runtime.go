@@ -13,12 +13,11 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
 	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
-	syrequest "github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
@@ -244,13 +243,13 @@ func resolveScopedUploadURL(rt *pushRuntime, ctx context.Context, backend sytran
 		return "", fmt.Errorf("upload scope organization/project is required")
 	}
 
-	if rt.API != nil && rt.API.Client != nil && rt.API.Client.Requestor() != nil {
-		query := url.Values{}
-		query.Set("organization", organization)
-		query.Set("project", project)
-		query.Set("key", objectKey)
-		var out internalapi.InternalSignedURL
-		if err := rt.API.Client.Requestor().Do(ctx, http.MethodGet, "/data/upload/"+url.PathEscape(did), nil, &out, syrequest.WithQueryValues(query)); err != nil {
+	if rt.API != nil && rt.API.Client != nil {
+		out, err := rt.API.Client.Data().UploadURL(ctx, did, &internalapi.InternalUploadURLParams{
+			Organization: &organization,
+			Project:      &project,
+			Key:          &objectKey,
+		})
+		if err != nil {
 			return "", err
 		}
 		if out.Url == nil || strings.TrimSpace(*out.Url) == "" {

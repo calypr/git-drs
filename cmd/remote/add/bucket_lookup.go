@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
-	syfoncommon "github.com/calypr/syfon/common"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syfoncommon "github.com/calypr/syfon/client/access"
 )
 
 func resolveBucketFromPayload(payload bucketapi.BucketsResponse, organization, project, preferredBucket string) (string, error) {

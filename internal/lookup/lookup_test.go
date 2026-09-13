@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syclient "github.com/calypr/syfon/client"
 )
 
@@ -90,7 +90,7 @@ func TestObjectsByHashesForScopeUsesOneBulkRequestAndFiltersByScope(t *testing.T
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 	ctx := &remoteruntime.GitContext{Client: client, Organization: "org1", ProjectId: "proj1"}
 
 	got, err := ObjectsByHashesForScope(context.Background(), ctx, []string{"sha256:abc", "sha256:def", "abc", "temporary"})
@@ -119,7 +119,7 @@ func TestMissingSHA256ForScopeUsesProjectScopedEndpoint(t *testing.T) {
 		SHA256       []string `json:"sha256"`
 	}
 	httpClient := &http.Client{Transport: lookupRoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.Method != http.MethodPost || r.URL.Path != bulkMissingSHA256Path {
+		if r.Method != http.MethodPost || r.URL.Path != "/index/bulk/sha256/missing" {
 			return nil, fmt.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
@@ -136,7 +136,7 @@ func TestMissingSHA256ForScopeUsesProjectScopedEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 	ctx := &remoteruntime.GitContext{Client: client, Organization: "org", ProjectId: "project"}
 
 	missing, err := MissingSHA256ForScope(context.Background(), ctx, []string{"present", "missing"})
@@ -165,7 +165,7 @@ func TestMissingSHA256ForScopeReportsUnsupportedServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	_, err = MissingSHA256ForScope(context.Background(), &remoteruntime.GitContext{Client: raw.(*syclient.Client), Organization: "org", ProjectId: "project"}, []string{"oid"})
+	_, err = MissingSHA256ForScope(context.Background(), &remoteruntime.GitContext{Client: raw, Organization: "org", ProjectId: "project"}, []string{"oid"})
 	if !errors.Is(err, ErrBulkMissingSHA256Unsupported) {
 		t.Fatalf("expected unsupported endpoint error, got %v", err)
 	}

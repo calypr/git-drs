@@ -18,7 +18,7 @@ import (
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -64,13 +64,9 @@ func New(opts Options) (*Client, error) {
 		clientOpts = append(clientOpts, syclient.WithBasicAuth(opts.Username, opts.Password))
 	}
 
-	raw, err := syclient.New(opts.Endpoint, clientOpts...)
+	syfonClient, err := syclient.New(opts.Endpoint, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create DRS client: %w", err)
-	}
-	syfonClient, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected Syfon client type %T", raw)
 	}
 
 	logger := opts.Logger

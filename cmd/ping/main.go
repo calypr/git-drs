@@ -12,9 +12,9 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syfoncommon "github.com/calypr/syfon/client/access"
 	syservices "github.com/calypr/syfon/client/services"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 

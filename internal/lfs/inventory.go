@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/drsobject"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/client/hash"
 )
 

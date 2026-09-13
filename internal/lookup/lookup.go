@@ -11,28 +11,16 @@ import (
 
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
-	syrequest "github.com/calypr/syfon/client/request"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	"github.com/calypr/syfon/apigen/errorapi"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	"github.com/calypr/syfon/client/apierror"
 	syfoncommon "github.com/calypr/syfon/common"
 )
-
-const bulkMissingSHA256Path = "/index/bulk/sha256/missing"
 
 // ErrBulkMissingSHA256Unsupported indicates that the connected Syfon server
 // predates the project-scoped missing-SHA256 endpoint.
 var ErrBulkMissingSHA256Unsupported = errors.New("bulk missing sha256 endpoint is not supported")
-
-type bulkMissingSHA256Request struct {
-	Organization string   `json:"organization"`
-	Project      string   `json:"project"`
-	SHA256       []string `json:"sha256"`
-}
-
-type bulkMissingSHA256Response struct {
-	Checked       int      `json:"checked"`
-	MissingSHA256 []string `json:"missing_sha256"`
-}
 
 // MissingSHA256ForScope asks Syfon which checksums are not registered in the
 // requested project. It returns only missing values and does not hydrate DRS
@@ -46,20 +34,22 @@ func MissingSHA256ForScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 		return []string{}, nil
 	}
 
-	var response bulkMissingSHA256Response
-	err := drsCtx.Client.Requestor().Do(ctx, http.MethodPost, bulkMissingSHA256Path, bulkMissingSHA256Request{
+	resp, err := drsCtx.Client.InternalAPI().InternalBulkMissingSHA256WithResponse(ctx, internalapi.BulkMissingSHA256Request{
 		Organization: drsCtx.Organization,
 		Project:      drsCtx.ProjectId,
-		SHA256:       checksums,
-	}, &response)
+		Sha256:       checksums,
+	})
 	if err != nil {
-		var responseErr *syrequest.ResponseError
-		if errors.As(err, &responseErr) && responseErr.Status == http.StatusNotFound {
-			return nil, ErrBulkMissingSHA256Unsupported
-		}
 		return nil, err
 	}
-	return response.MissingSHA256, nil
+	if resp.JSON200 == nil {
+		apiErr := apierror.FromResponse(resp.HTTPResponse, resp.Body)
+		if errors.Is(apiErr, errorapi.ErrNotFound) {
+			return nil, ErrBulkMissingSHA256Unsupported
+		}
+		return nil, apiErr
+	}
+	return resp.JSON200.MissingSha256, nil
 }
 
 func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {

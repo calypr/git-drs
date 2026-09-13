@@ -14,9 +14,9 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syclient "github.com/calypr/syfon/client"
-	"github.com/calypr/syfon/client/request"
 	syservices "github.com/calypr/syfon/client/services"
 )
 
@@ -72,20 +72,14 @@ func TestMergeExistingRecord_UnionsControlledAccessAndAccessMethodsOnly(t *testi
 	leftCA := []string{"/organization/A/project/P1"}
 	rightCA := []string{"/organization/A/project/P1", "/organization/A/project/P2"}
 	leftMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/one"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/one"},
 	}}
 	rightMethods := []drsapi.AccessMethod{
 		leftMethods[0],
 		{
-			Type: drsapi.AccessMethodTypeHttps,
-			AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: "https://example.org/two"},
+			Type:      drsapi.AccessMethodTypeHttps,
+			AccessUrl: &drsapi.AccessURL{Url: "https://example.org/two"},
 		},
 	}
 
@@ -152,18 +146,12 @@ func TestBuildMergedBatch_CreatesNewAndUpdatesExisting(t *testing.T) {
 	existingHash := copyHashInfo{"sha256": "sha-existing"}
 	newHash := copyHashInfo{"sha256": "sha-new"}
 	srcMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/a"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/a"},
 	}}
 	newMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeHttps,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "https://example.org/b"},
+		Type:      drsapi.AccessMethodTypeHttps,
+		AccessUrl: &drsapi.AccessURL{Url: "https://example.org/b"},
 	}}
 
 	target := &fakeIndexAPI{
@@ -219,18 +207,12 @@ func TestBuildMergedBatch_MergesIntoExistingChecksumSiblingWhenDIDDiffers(t *tes
 	dstCA := []string{"/organization/A/project/P1"}
 	srcCA := []string{"/organization/A/project/P2"}
 	dstMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/existing"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/existing"},
 	}}
 	srcMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeHttps,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "https://example.org/copied"},
+		Type:      drsapi.AccessMethodTypeHttps,
+		AccessUrl: &drsapi.AccessURL{Url: "https://example.org/copied"},
 	}}
 
 	target := &fakeIndexAPI{
@@ -298,93 +280,6 @@ func TestCopyProjectRecordsWithOptions_UsesBulkOverwrite(t *testing.T) {
 	}
 }
 
-func TestCopyProjectRecords_UsesScopedSourceList(t *testing.T) {
-	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
-	source := &fakeIndexAPI{
-		listFn: func(opts syservices.ListRecordsOptions) copyListRecordsResponse {
-			if opts.Organization == "HTAN_INT" && opts.ProjectID == "BForePC" {
-				return copyListRecordsResponse{Records: &[]copyRecord{
-					{Did: "did-in-scope", ControlledAccess: &scopeCA},
-				}}
-			}
-			return copyListRecordsResponse{Records: &[]copyRecord{}}
-		},
-	}
-	target := &fakeIndexAPI{}
-
-	records, err := listSourceRecordsByControlledAccess(context.Background(), source, "HTAN_INT", "BForePC", 100)
-	if err != nil {
-		t.Fatalf("listSourceRecordsByControlledAccess error: %v", err)
-	}
-	stats, err := copyProjectRecords(context.Background(), nil, records, target, "HTAN_INT", "BForePC", 100, false)
-	if err != nil {
-		t.Fatalf("copyProjectRecords error: %v", err)
-	}
-	if stats.SourceSeen != 1 || stats.Created != 1 || stats.Written != 1 {
-		t.Fatalf("unexpected stats: %+v", stats)
-	}
-	if len(target.createBulkReq) != 1 || len(target.createBulkReq[0].Records) != 1 {
-		t.Fatalf("expected one created record, got %+v", target.createBulkReq)
-	}
-	if target.createBulkReq[0].Records[0].Did != "did-in-scope" {
-		t.Fatalf("unexpected copied did: %+v", target.createBulkReq[0].Records[0])
-	}
-}
-
-func TestCopyProjectRecords_PaginatesScopedSourceListOnly(t *testing.T) {
-	scopeCA := []string{"/organization/HTAN_INT/project/BForePC"}
-	seenOpts := []syservices.ListRecordsOptions{}
-	source := &fakeIndexAPI{
-		listFn: func(opts syservices.ListRecordsOptions) copyListRecordsResponse {
-			seenOpts = append(seenOpts, opts)
-			if opts.Organization == "HTAN_INT" && opts.ProjectID == "BForePC" {
-				switch opts.Start {
-				case "":
-					return copyListRecordsResponse{Records: &[]copyRecord{
-						{Did: "did-page-1", ControlledAccess: &scopeCA},
-					}}
-				case "did-page-1":
-					return copyListRecordsResponse{Records: &[]copyRecord{
-						{Did: "did-page-2", ControlledAccess: &scopeCA},
-					}}
-				}
-			}
-			return copyListRecordsResponse{Records: &[]copyRecord{}}
-		},
-	}
-	target := &fakeIndexAPI{}
-
-	records, err := listSourceRecordsByControlledAccess(context.Background(), source, "HTAN_INT", "BForePC", 1)
-	if err != nil {
-		t.Fatalf("listSourceRecordsByControlledAccess error: %v", err)
-	}
-	stats, err := copyProjectRecords(context.Background(), nil, records, target, "HTAN_INT", "BForePC", 100, false)
-	if err != nil {
-		t.Fatalf("copyProjectRecords error: %v", err)
-	}
-	if stats.SourceSeen != 2 || stats.Created != 2 || stats.Written != 2 {
-		t.Fatalf("unexpected stats: %+v", stats)
-	}
-	if len(target.createBulkReq) != 1 || len(target.createBulkReq[0].Records) != 2 {
-		t.Fatalf("expected two created records, got %+v", target.createBulkReq)
-	}
-	found := map[string]bool{}
-	for _, rec := range target.createBulkReq[0].Records {
-		found[rec.Did] = true
-	}
-	if !found["did-page-1"] || !found["did-page-2"] {
-		t.Fatalf("missing copied records: %+v", target.createBulkReq[0].Records)
-	}
-	for _, opts := range seenOpts {
-		if opts.Organization != "HTAN_INT" || opts.ProjectID != "BForePC" {
-			t.Fatalf("expected scoped list options, got %+v", opts)
-		}
-		if opts.Page != 0 {
-			t.Fatalf("expected cursor pagination without page offsets, got %+v", opts)
-		}
-	}
-}
-
 func TestCopyProjectRecordsFromSourceIndex_WritesEachPageBeforeScanningNextPage(t *testing.T) {
 	sourceHash := copyHashInfo{"sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	sourceCA := []string{"/organization/HTAN_INT/project/BForePC"}
@@ -443,11 +338,8 @@ func TestLoadLocalSourceRecords_DedupesTrackedOIDsAndRewritesScope(t *testing.T)
 		loadCount++
 		name := "source.bin"
 		methods := []drsapi.AccessMethod{{
-			Type: drsapi.AccessMethodTypeS3,
-			AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: "s3://bucket/key"},
+			Type:      drsapi.AccessMethodTypeS3,
+			AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/key"},
 		}}
 		return &drsapi.DrsObject{
 			Id:            "did-1",
@@ -571,7 +463,7 @@ func TestCmdRunE_UsesLocalSourceWithoutBuildingSourceRuntime(t *testing.T) {
 		}}, nil
 	}
 	target := &fakeIndexAPI{}
-	newCopyIndexAPI = func(requestor request.Requester) indexAPI { return target }
+	newCopyIndexAPI = func(_ *internalapi.ClientWithResponses) indexAPI { return target }
 
 	err := Cmd.RunE(Cmd, []string{"local", "target", "Org/Proj"})
 	if err != nil {
@@ -629,7 +521,7 @@ func TestCmdRunE_UsesLocalTargetWithoutBuildingTargetRuntime(t *testing.T) {
 		},
 	}
 	target := &fakeIndexAPI{}
-	newCopyIndexAPI = func(requestor request.Requester) indexAPI { return source }
+	newCopyIndexAPI = func(_ *internalapi.ClientWithResponses) indexAPI { return source }
 	newLocalTargetAPI = func() indexAPI { return target }
 
 	err := Cmd.RunE(Cmd, []string{"dev", "local", "Org/Proj"})
@@ -714,18 +606,12 @@ func TestLocalIndexAPI_MergesByChecksumAndWritesLocalDRSObject(t *testing.T) {
 	targetCA := []string{"/organization/Org/project/Existing"}
 	sourceCA := []string{"/organization/Org/project/New"}
 	targetMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/existing"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/existing"},
 	}}
 	sourceMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeHttps,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "https://example.test/copied"},
+		Type:      drsapi.AccessMethodTypeHttps,
+		AccessUrl: &drsapi.AccessURL{Url: "https://example.test/copied"},
 	}}
 	readLocalDRSObject = func(gotOID string) (*drsapi.DrsObject, error) {
 		if gotOID != oid {

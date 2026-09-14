@@ -314,7 +314,7 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	}
 	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
 		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
-	} else if !strings.Contains(out, "downloaded invalid cached object") || !strings.Contains(out, "does not match expected oid/size") {
+	} else if !strings.Contains(out, "failed to download oid "+unknownPointerOID) || !strings.Contains(out, "download checksum does not match sha256:"+unknownPointerOID) {
 		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
 	}
 	logRepoSnapshot(t, cloneDir, "post-add-url-pull")

@@ -312,10 +312,10 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath)
-	gotUnknown := mustReadFile(t, cloneDir, unknownPath)
-	if !bytes.Equal(gotUnknown, unknownData) {
-		t.Fatalf("unknown-checksum add-url file mismatch: got %q want %q", string(gotUnknown), string(unknownData))
+	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
+		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
+	} else if !strings.Contains(out, "failed to download oid "+unknownPointerOID) || !strings.Contains(out, "download checksum does not match sha256:"+unknownPointerOID) {
+		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
 	}
 	unknownRecordPath := filepath.Join(".git", "drs", "lfs", "objects", unknownPointerOID[:2], unknownPointerOID[2:4], unknownPointerOID)
 	unknownRecord := mustReadFile(t, cloneDir, unknownRecordPath)

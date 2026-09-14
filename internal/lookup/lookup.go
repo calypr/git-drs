@@ -2,14 +2,52 @@ package lookup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	"github.com/calypr/syfon/apigen/errorapi"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	"github.com/calypr/syfon/client/apierror"
 	"golang.org/x/sync/errgroup"
 )
+
+// ErrBulkMissingSHA256Unsupported indicates that the connected Syfon server
+// predates the project-scoped missing-SHA256 endpoint.
+var ErrBulkMissingSHA256Unsupported = errors.New("bulk missing sha256 endpoint is not supported")
+
+// MissingSHA256ForScope asks Syfon which checksums are not registered in the
+// requested project. It returns only missing values and does not hydrate DRS
+// records. Older servers return 404; callers can fall back to the legacy
+// record lookup in that case.
+func MissingSHA256ForScope(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) ([]string, error) {
+	if drsCtx == nil || drsCtx.Client == nil {
+		return nil, fmt.Errorf("DRS client unavailable")
+	}
+	if len(checksums) == 0 {
+		return []string{}, nil
+	}
+
+	resp, err := drsCtx.Client.InternalAPI().InternalBulkMissingSHA256WithResponse(ctx, internalapi.BulkMissingSHA256Request{
+		Organization: drsCtx.Organization,
+		Project:      drsCtx.ProjectId,
+		Sha256:       checksums,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		apiErr := apierror.FromResponse(resp.HTTPResponse, resp.Body)
+		if errors.Is(apiErr, errorapi.ErrNotFound) {
+			return nil, ErrBulkMissingSHA256Unsupported
+		}
+		return nil, apiErr
+	}
+	return resp.JSON200.MissingSha256, nil
+}
 
 func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {
 	if drsCtx == nil || drsCtx.Client == nil {
@@ -19,11 +57,11 @@ func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checks
 	if checksum == "" {
 		return nil, nil
 	}
-	page, err := drsCtx.Client.DRS().BatchGetObjectsByHash(ctx, []string{checksum})
+	objectsByChecksum, err := ObjectsByHashes(ctx, drsCtx, []string{checksum})
 	if err != nil {
 		return nil, err
 	}
-	return page.DrsObjects, nil
+	return objectsByChecksum[checksum], nil
 }
 
 func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) (map[string][]drsapi.DrsObject, error) {

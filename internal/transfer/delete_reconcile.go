@@ -11,7 +11,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	sycommon "github.com/calypr/syfon/common"
+	sycommon "github.com/calypr/syfon/client/access"
 )
 
 type RefUpdate struct {
@@ -92,10 +92,7 @@ func ReconcileCommittedDeletes(ctx context.Context, drsCtx *remoteruntime.GitCon
 			continue
 		}
 
-		var out map[string]any
-		if err := drsCtx.Client.Requestor().Do(ctx, "POST", "/index/"+record.Id+"/controlled-access/remove", map[string]string{
-			"resource": resource,
-		}, &out); err != nil {
+		if _, err := drsCtx.Client.Index().RemoveControlledAccess(ctx, record.Id, resource); err != nil {
 			return summary, err
 		}
 		summary.RemovedResources++

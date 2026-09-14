@@ -20,7 +20,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
@@ -404,9 +404,5 @@ func newAnonymousSourceDRSGetter(endpoint string) (drsObjectGetter, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
-	}
-	return client.DRS(), nil
+	return raw.DRS(), nil
 }

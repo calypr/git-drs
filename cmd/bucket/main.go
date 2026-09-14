@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	conf "github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -226,7 +226,7 @@ func addScope(args []string, requireProject bool) error {
 }
 
 func resolveEndpointAndToken(remoteName string) (string, string, error) {
-	configure := conf.NewConfigure(drslog.GetLogger())
+	configure := syconf.NewConfigure(drslog.GetLogger())
 
 	// Resolve token
 	token := strings.TrimSpace(flagToken)
@@ -250,7 +250,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 			token = strings.TrimSpace(prof.AccessToken)
 			if token == "" {
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				ensureErr := credentials.EnsureValidCredential(ctx, prof, drslog.GetLogger())
+				ensureErr := remoteruntime.EnsureValidCredential(ctx, prof, drslog.GetLogger())
 				cancel()
 				if ensureErr == nil {
 					if err := configure.Save(prof); err != nil {

@@ -88,7 +88,7 @@ var Cmd = &cobra.Command{
 		uniqueOIDs := countUniqueOIDs(lfsFiles)
 		if state.AckOID == "" {
 			fmt.Fprintf(os.Stdout, "DRS: no synchronization baseline for %s; bootstrapping full Git history and checking %d unique object(s)\n", state.RemoteRef, uniqueOIDs)
-			fmt.Fprintln(os.Stdout, "DRS: this full metadata check is normally needed once per branch; it repeats only when the remote synchronization ref is missing or behind")
+			fmt.Fprintln(os.Stdout, "DRS: this full Git history scan and bulk existence check is normally needed once per branch; it repeats only when the remote synchronization ref is missing or behind")
 		} else {
 			fmt.Fprintf(os.Stdout, "DRS: checking %d new reachable pointer(s) (%d unique object(s)) since synchronization %s\n", len(lfsFiles), uniqueOIDs, state.AckOID[:12])
 		}

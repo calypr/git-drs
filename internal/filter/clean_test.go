@@ -17,7 +17,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
@@ -37,11 +37,8 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{
 		Size: 21,
 		AccessMethods: &[]drsapi.AccessMethod{{
-			Type: drsapi.AccessMethodTypeS3,
-			AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: explicitURL},
+			Type:      drsapi.AccessMethodTypeS3,
+			AccessUrl: &drsapi.AccessURL{Url: explicitURL},
 		}},
 	}, oid); err != nil {
 		t.Fatalf("seed DRS object: %v", err)

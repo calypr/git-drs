@@ -14,7 +14,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/precommit_cache"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -62,17 +62,11 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 	if objectPath != "" {
 		if drsObj.AccessMethods != nil && len(*drsObj.AccessMethods) > 0 {
 			am := &(*drsObj.AccessMethods)[0]
-			am.AccessUrl = &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: objectPath}
+			am.AccessUrl = &drsapi.AccessURL{Url: objectPath}
 		} else {
 			drsObj.AccessMethods = &[]drsapi.AccessMethod{{
-				Type: drsapi.AccessMethodTypeS3,
-				AccessUrl: &struct {
-					Headers *[]string `json:"headers,omitempty"`
-					Url     string    `json:"url"`
-				}{Url: objectPath},
+				Type:      drsapi.AccessMethodTypeS3,
+				AccessUrl: &drsapi.AccessURL{Url: objectPath},
 			}}
 		}
 	}

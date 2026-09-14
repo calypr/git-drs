@@ -5,9 +5,9 @@ import (
 	"net/url"
 	"strings"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
-	syfoncommon "github.com/calypr/syfon/common"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	syfoncommon "github.com/calypr/syfon/client/access"
 	"github.com/google/uuid"
 )
 
@@ -123,11 +123,8 @@ func BuildWithOptions(fileName string, checksum string, size int64, drsID string
 	}
 
 	am := drsapi.AccessMethod{
-		Type: drsapi.AccessMethodType(methodType),
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: accessURL},
+		Type:      drsapi.AccessMethodType(methodType),
+		AccessUrl: &drsapi.AccessURL{Url: accessURL},
 	}
 	ams := []drsapi.AccessMethod{am}
 	obj.AccessMethods = &ams

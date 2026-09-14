@@ -43,7 +43,6 @@ lint-depends:
 	go install github.com/client9/misspell/cmd/misspell@latest
 
 # Run code style and other checks
-# Note: Using native Go tools instead of golangci-lint for Go 1.24 compatibility
 lint:
 	@echo "Running go vet..."
 	@go vet ./...

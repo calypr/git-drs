@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/internal/drstrack"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
 
 var (
-	gitLFSTrackPatterns = drstrack.TrackPatterns
-	gitLFSListPatterns  = drstrack.ListTrackedPatterns
+	gitLFSTrackPatterns = gitrepo.TrackPatterns
+	gitLFSListPatterns  = gitrepo.ListTrackedPatterns
 )
 
 var Cmd = NewCommand()
@@ -56,7 +56,9 @@ func runTrack(cmd *cobra.Command, args []string) error {
 	}
 
 	if out != "" {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+			return fmt.Errorf("write track output: %w", err)
+		}
 	}
 	return nil
 }

@@ -1,0 +1,142 @@
+# Use AnVIL data references with git-drs
+
+This guide is for AnVIL users who want to version a dataset layout in Git
+without copying controlled-access data into Git. A Git commit contains stable
+DRS references and public resolver settings only. Each person downloads data
+with their own Google identity and AnVIL authorization.
+
+## Before you begin
+
+Install Git, `git-drs`, the Google Cloud CLI, and obtain access to both the Git
+repository and the referenced AnVIL data. Establish Application Default
+Credentials (ADC) for your user:
+
+```bash
+gcloud auth application-default login
+```
+
+ADC is local user state. Never copy the ADC JSON file into the repository.
+
+## Configure an AnVIL repository
+
+Configure the remote in repository-local Git config:
+
+```bash
+git drs remote add anvil terra --checkout hydrate
+```
+
+`anvil` is the chosen local name and `terra` is the built-in endpoint alias.
+The alias selects the Terra provider, production endpoint, Google ADC, and
+read-only behavior, so no provider subcommand, `--drs-endpoint`, or `--mode`
+flag is needed. The command stores only public remote metadata in `.git/config`.
+Google ADC remains local user state. Each clone must run the command because
+`.git/config` is not tracked.
+
+## Publish one reference
+
+Use the configured remote and choose the path that the data should occupy:
+
+```bash
+git drs add-ref --remote anvil \
+  drs://<authority>/<object-id> data/sample.cram
+# Run this only after add-ref finishes successfully.
+git add .gitattributes data/sample.cram
+git commit -m "Reference AnVIL sample"
+git push
+```
+
+For a Terra remote, `add-ref` authenticates with your ADC, validates metadata,
+and writes a small pointer. The pointer retains the canonical DRS URI even when
+the record has a SHA256 checksum. It never contains an access token or signed
+download URL. Destination paths must stay inside the Git repository.
+
+AnVIL remotes are read-only. `git drs push` refuses a Terra remote before doing
+any remote work because that command uploads payloads to writable DRS
+providers. The failure does not require backing out a commit that references
+existing Terra data: publish that commit and its pointers with ordinary
+`git push` to a Git remote. Plain `git push` transfers only the Git commit and
+small DRS references; it does **not** upload the referenced files to Terra or
+create or modify Terra DRS records.
+
+## Clone and hydrate as another user
+
+The consumer authenticates independently and then hydrates all pointers:
+
+```bash
+gcloud auth application-default login
+git clone <git-repository>
+cd <repository>
+git drs pull
+```
+
+Hydrate only selected paths with an include pattern:
+
+```bash
+git drs pull -I "data/*.cram"
+```
+
+Cloning the Git repository does **not** grant AnVIL data access. A user without
+permission can inspect reference paths and DRS URIs but receives an
+authorization error when hydration resolves the object.
+
+## Undo an accidental change to downloaded data
+
+`git drs pull` makes files downloaded from a read-only remote read-only. If a
+user nevertheless makes a downloaded file writable, changes it, stages it, and
+commits it, the clean filter records the changed content as a new pointer.
+`git drs push` will still refuse the operation because the Terra remote is
+read-only; that error does not by itself identify the accidental edit.
+
+If the mistaken commit is the latest commit and has not been pushed, restore
+the original DRS pointer from its parent and amend the commit:
+
+```bash
+# Inspect the change before rewriting the commit.
+git diff HEAD^ HEAD -- data/sample.cram
+
+# Restore the original pointer in both the index and working tree.
+git restore --source=HEAD^ --staged --worktree -- data/sample.cram
+git commit --amend --no-edit
+
+# Confirm that the committed file is a pointer again.
+git show HEAD:data/sample.cram
+git status
+```
+
+If the entire latest commit was a mistake and it contains no work that should
+be kept, it can instead be removed with `git reset --hard HEAD^`. Inspect the
+commit and working tree first because this discards all changes in both.
+
+If the mistaken commit has already been shared, do not rewrite shared history.
+Restore the pointer in a corrective commit:
+
+```bash
+git restore --source=HEAD^ --staged --worktree -- data/sample.cram
+git commit -m "Restore AnVIL DRS reference"
+git push
+```
+
+After either repair, hydrate the restored pointer again when local access to
+the payload is needed:
+
+```bash
+git drs pull -I "data/sample.cram"
+```
+
+Use ordinary `git push` to publish commits containing read-only AnVIL
+references. Do not use `git drs push` for a Terra remote.
+
+## Security and troubleshooting
+
+* `google application default credentials are unavailable`: run
+  `gcloud auth application-default login` as the current user and retry.
+* `not authorized to access AnVIL DRS object`: confirm that the ADC identity has
+  access to the controlled dataset. Do not ask another user to share ADC files.
+* `AnVIL DRS object not found`: verify the committed URI and that the configured
+  resolver supports its authority.
+* Do not commit `.git/drs`, `.git/lfs`, Google credential files, bearer tokens,
+  request headers, or resolved access URLs. Access URLs are temporary and are
+  resolved again at download time.
+
+For pointer details, see [Pointer files](pointer-files.md). For the prototype
+design and acceptance criteria, see [AnVIL/Terra POC](anvil-terra-poc.md).

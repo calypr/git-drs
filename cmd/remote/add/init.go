@@ -3,35 +3,52 @@ package add
 import "github.com/spf13/cobra"
 
 var (
-	apiEndpoint   string
-	bucket        string
-	credFile      string
-	fenceToken    string
-	localPassword string
-	localUsername string
-	project       string
-	organization  string
+	credFile       string
+	fenceToken     string
+	selectedBucket string
+	localPassword  string
+	localUsername  string
+	noSkipSmudge   bool
+	terraEndpoint  string
+	terraAuth      string
+	terraMode      string
 )
 
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:   "add",
-	Short: "add server access for git-drs",
+	Short: "Add a DRS server using an endpoint or built-in preset",
+	Args:  cobra.RangeArgs(1, 2),
+	RunE:  runUnified,
 }
 
 func init() {
-	Gen3Cmd.Flags().StringVar(&apiEndpoint, "url", "", "[gen3] Specify the API endpoint of the data commons")
-	Gen3Cmd.Flags().StringVar(&bucket, "bucket", "", "[gen3] Specify the bucket name")
-	Gen3Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Specify the gen3 credential file that you want to use")
-	Gen3Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Specify the token to be used as a replacement for a credential file for temporary access")
-	Gen3Cmd.Flags().StringVar(&project, "project", "", "[gen3] Specify the gen3 project ID in the format <program>-<project>")
-	Gen3Cmd.Flags().StringVar(&organization, "organization", "", "[gen3] Optional organization/program scope (use with --project as project id)")
+	Cmd.PersistentFlags().StringVar(&scopeFlag, "scope", "", "Provider-specific organization/project scope")
+	Cmd.PersistentFlags().StringVar(&authFlag, "auth", "auto", "Authentication method")
+	Cmd.PersistentFlags().StringVar(&credentialFlag, "credential", "", "Credential source (never an inline secret)")
+	Cmd.PersistentFlags().StringVar(&providerFlag, "provider", "auto", "DRS provider adapter")
+	Cmd.PersistentFlags().StringVar(&storageFlag, "storage", "", "Advanced publishing bucket/prefix")
+	Cmd.PersistentFlags().StringVar(&checkoutFlag, "checkout", "", "Checkout mode: pointers or hydrate")
+	Gen3Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Import a Gen3 credential file into this profile")
+	Gen3Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Use a temporary bearer token issued from fence")
+	Gen3Cmd.Flags().StringVar(&selectedBucket, "bucket", "", "[gen3] Select a specific visible bucket when multiple buckets match the scope")
+	Gen3Cmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
 
 	Cmd.AddCommand(Gen3Cmd)
-	LocalCmd.Flags().StringVarP(&project, "project", "p", "", "Project ID")
-	LocalCmd.Flags().StringVar(&bucket, "bucket", "", "Bucket Name")
-	LocalCmd.Flags().StringVar(&organization, "organization", "", "Organization Name")
+	Gen3Cmd.Deprecated = "use 'git drs remote add <endpoint> --provider gen3 --scope <organization/project> --credential <source>'"
+	Gen3Cmd.Hidden = true
+	LocalCmd.Flags().StringVar(&selectedBucket, "bucket", "", "Select a specific visible bucket when multiple buckets match the scope")
 	LocalCmd.Flags().StringVar(&localUsername, "username", "", "Username for local DRS HTTP basic auth")
 	LocalCmd.Flags().StringVar(&localPassword, "password", "", "Password for local DRS HTTP basic auth")
+	LocalCmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
 	Cmd.AddCommand(LocalCmd)
+	LocalCmd.Deprecated = "use the unified endpoint form"
+	LocalCmd.Hidden = true
+
+	TerraCmd.Flags().StringVar(&terraEndpoint, "drs-endpoint", "", "Terra DRS service base URL")
+	TerraCmd.Flags().StringVar(&terraAuth, "auth", "", "Terra authentication method (google-adc)")
+	TerraCmd.Flags().StringVar(&terraMode, "mode", "", "Terra remote mode (read-only)")
+	Cmd.AddCommand(TerraCmd)
+	TerraCmd.Deprecated = "use 'git drs remote add terra'"
+	TerraCmd.Hidden = true
 }

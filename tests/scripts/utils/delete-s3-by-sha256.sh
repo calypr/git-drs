@@ -63,7 +63,7 @@ fi
 
 
 # Read 4 fields per line: separated by space or tab
-while IFS=$' \t' read -r did hash file_name resource; do
+while IFS=$' \t' read -r did hash name resource; do
     # skip empty lines
     if [[ -z "${did:-}" ]]; then
         echo "No DID found, skipping..."
@@ -83,11 +83,10 @@ while IFS=$' \t' read -r did hash file_name resource; do
     fi
     # Run mc rm and show output; report based on mc exit status
     if mc rm --force "${MC_ALIAS}/${BUCKET}/${object_key}"; then
-        echo "Deleted: ${resource} ${file_name}"
+        echo "Deleted: ${resource} ${name}"
     else
         echo "ERROR: Failed to delete ${MC_ALIAS}/${BUCKET}/${object_key}"
     fi
 done
-
 
 

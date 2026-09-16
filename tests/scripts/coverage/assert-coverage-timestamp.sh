@@ -58,7 +58,7 @@ while IFS= read -r -d '' f; do
     max=$m
     latest_go="$f"
   fi
-done < <(find . -type f -name '*.go' -not -path './vendor/*' -print0)
+done < <(find . -type f -name '*.go' -not -path './vendor/*' -not -path '*/.*' -not -path './venv/*' -print0)
 
 if [ "$max" -eq 0 ]; then
   echo "No .go files found to compare against." >&2

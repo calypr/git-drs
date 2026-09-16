@@ -7,17 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
 	"github.com/go-git/go-git/v5"
 )
-
-func DrsTopLevel() (string, error) {
-	base, err := GitTopLevel()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, common.DRS_DIR), nil
-}
 
 // GetRepo opens the current git repository
 func GetRepo() (*git.Repository, error) {
@@ -51,6 +42,22 @@ func GetGitConfigString(key string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// GetGitConfigStrings reads every value from all Git configuration scopes.
+func GetGitConfigStrings(key string) ([]string, error) {
+	cmd := exec.Command("git", "config", "--get-all", key)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	var values []string
+	for _, value := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values, nil
 }
 
 // GetGitConfigInt reads an integer value from git config
@@ -131,18 +138,4 @@ func GetGitHooksDir() (string, error) {
 	// This is a simplification; for complex setups (submodules, worktrees),
 	// we might need more robust logic, but this matches previous behavior.
 	return filepath.Join(wt.Filesystem.Root(), ".git", "hooks"), nil
-}
-
-// AddFile adds a file to the git staging area (index)
-func AddFile(path string) error {
-	repo, err := GetRepo()
-	if err != nil {
-		return err
-	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return err
-	}
-	_, err = wt.Add(path)
-	return err
 }

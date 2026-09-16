@@ -135,31 +135,6 @@ if [ ! -d "fixtures" ]; then
   exit 1
 fi
 
-# ensure git-lfs is installed
-if ! command -v git-lfs >/dev/null 2>&1; then
-  echo "error: git-lfs is not installed; please install it to proceed" >&2
-  # Example install command:
-  if [ "$(uname -s)" = "Darwin" ]; then
-    if ! command -v brew >/dev/null 2>&1; then
-      echo "error: Homebrew is not installed. Please install Homebrew first:" >&2
-      echo "  https://brew.sh" >&2
-      exit 1
-    fi
-    echo "installing git-lfs via Homebrew on macOS" >&2
-    if ! brew install git-lfs; then
-      echo "error: failed to install git-lfs via Homebrew" >&2
-      exit 1
-    fi
-    if ! git lfs install --skip-smudge; then
-      echo "error: failed to initialize git-lfs" >&2
-      exit 1
-    fi
-  else
-    echo "See installation instructions for your platform:" >&2
-    echo "  https://github.com/git-lfs/git-lfs/wiki/Installation" >&2
-    exit 1
-  fi
-fi
 
 # ensure git-drs is running from this project's build
 # run `which git-drs` and check if it's in the build directory
@@ -177,7 +152,7 @@ echo "Using git-drs from: $(which git-drs)" >&2
 
 
 # ensure a gen3 project exists
-calypr_admin projects ls --profile "$PROFILE" | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
+calypr-cli auth --profile=$PROFILE --all | grep "/programs/$PROGRAM/projects/$PROJECT" >/dev/null 2>&1 || {
   echo "error: /programs/$PROGRAM/projects/$PROJECT does not exist; please create it first" >&2
   exit 1
 }
@@ -199,7 +174,7 @@ if [ "$CLONE" = "true" ]; then
   cd ../clone
   echo "Cloning remote repository into ../clone" >&2
   # clone into current directory
-  if ! git clone "$GIT_REMOTE" .; then
+  if ! GIT_LFS_SKIP_SMUDGE=1 git clone --branch main "$GIT_REMOTE" .; then
     echo "error: git clone failed" >&2
     exit 1
   fi
@@ -211,8 +186,8 @@ if [ "$CLONE" = "true" ]; then
   fi
   echo "Pulling LFS objects from remote" >&2
   git drs init
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
-  git lfs pull origin main
+  git drs remote add gen3 origin "$PROGRAM/$PROJECT" --cred "$CREDENTIALS_PATH"
+  git drs pull origin
   if grep -q 'https://git-lfs.github.com/spec/v1' ./TARGET-ALL-P2/sub-directory-1/*file-0001.dat; then
     echo "error: LFS pointer resolved and data in `TARGET-ALL-P2/sub-directory-1/file-0001.dat`" >&2
     exit 1
@@ -234,8 +209,8 @@ else
   git remote add origin "$GIT_REMOTE"
 
   # Initialize drs configuration for this repo
-  git drs init -t 16
-  git drs remote add gen3 "$PROFILE" --cred "$CREDENTIALS_PATH"  --bucket $BUCKET --project "$PROGRAM-$PROJECT" --url https://calypr-dev.ohsu.edu
+  git drs init -t 16 --enable-data-client-logs
+  git drs remote add gen3 origin "$PROGRAM/$PROJECT" --cred "$CREDENTIALS_PATH"
   # Set multipart-threshold to 10 (MB) for testing purposes
   # Using a smaller threshold to force a multipart upload for testing
   # default is 500 (MB)
@@ -256,8 +231,8 @@ else
   fi
 
   # Ensure enable-data-client-logs is present in git config
-  if ! git config --list | grep -q -- 'enable-data-client-logs'; then
-    echo "error: git config key 'enable-data-client-logs' not found; please set it before running tests" >&2
+  if ! git config --local --get drs.enable-data-client-logs >/dev/null; then
+    echo "error: git config key 'drs.enable-data-client-logs' not found after git drs init" >&2
     exit 1
   fi
 
@@ -303,7 +278,7 @@ for dir in */ ; do
       continue
     fi
     # $dir has trailing slash; don't need trailing slash in track
-    git lfs track "$dir**"
+    git drs track "$dir**"
     git add "$dir"
     git commit -am "Add $dir" 2>&1 | tee commit.log
     cat commit.log >> commit-aggregate.log
@@ -322,10 +297,6 @@ for dir in */ ; do
       echo "# Last 3 lines of .drs/lfs/objects tree:" >> lfs-console.log
       tree .drs/lfs/objects | tail -3 >> lfs-console.log
     fi
-    echo "# git lfs status:" >> lfs-console.log
-    git lfs status >> lfs-console.log
-    echo "# Number of LFS files to be pushed in dry-run:" >> lfs-console.log
-    git lfs push --dry-run origin main | wc -l >> lfs-console.log
     echo "##########################################" >> lfs-console.log
     cat lfs-console.log >> lfs-console-aggregate.log
 
@@ -334,7 +305,7 @@ for dir in */ ; do
     #
 
     # use the first file found in the directory for testing, that will be a single part file
-    target_file=$(find "$dir" -type f -name '*file-0001.dat')
+    target_file=$(find "$dir" -type f -name '*file-0001.dat' | head -n 1)
     # strip double slashes from path if any
     target_file=${target_file//\/\//\/}
     if [ -z "$target_file" ]; then
@@ -342,7 +313,7 @@ for dir in */ ; do
       exit 1
     fi
 
-    original_oid=$(git lfs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    original_oid=$(git drs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$original_oid" ]; then
       echo "error: unable to find LFS OID for $target_file" >&2
       exit 1
@@ -353,7 +324,7 @@ for dir in */ ; do
     git add "$target_file"
     git commit -m "Update content for $target_file"
 
-    updated_oid=$(git lfs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    updated_oid=$(git drs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$updated_oid" ]; then
       echo "error: unable to find updated LFS OID for $target_file" >&2
       exit 1
@@ -371,7 +342,7 @@ for dir in */ ; do
     git mv "$target_file" "$renamed_path"
     git commit -m "Rename $target_file to $renamed_path"
 
-    renamed_oid=$(git lfs ls-files -l | awk -v path="$renamed_path" '$0 ~ (" " path "$") {print $1; exit}')
+    renamed_oid=$(git drs ls-files -l | awk -v path="$renamed_path" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$renamed_oid" ]; then
       echo "error: unable to find LFS OID for renamed path $renamed_path" >&2
       exit 1
@@ -380,12 +351,12 @@ for dir in */ ; do
       echo "error: expected same OID after rename for $renamed_path" >&2
       exit 1
     fi
-    if git lfs ls-files -l | grep -Fq " $target_file"; then
+    if git drs ls-files -l | grep -Fq " $target_file"; then
       echo "error: expected old path $target_file to be absent after rename" >&2
       exit 1
     fi
 
     git push origin main 2>&1 | tee -a lfs-console.log
-    break  # uncomment for one directory at a time testing
+    # break  # comment for one directory at a time testing
   fi
 done

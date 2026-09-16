@@ -3,11 +3,127 @@ package config
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/gitrepo"
 )
+
+func TestLoadConfigIgnoresFormerRepositoryYAMLPath(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git-drs", "config.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("former repository YAML path must not be loaded: %v", err)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("unexpected remotes loaded from former YAML path: %+v", cfg.Remotes)
+	}
+}
+
+func TestLoadConfigMergesSharedPolicyWithLocalOverrides(t *testing.T) {
+	dir := setupTestRepo(t)
+	if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	policy := `version: 1
+remotes:
+  research:
+    endpoint: https://drs.example.org
+    provider: gen3
+    auth: bearer
+    scope: example/tutorial
+    selection:
+      access_method: prefer:globus
+    transfer:
+      globus:
+        allowed_source_collections: [SOURCE-A]
+`
+	if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"config", "drs.remote.research.endpoint", "https://internal.example.org"},
+		{"config", "drs.remote.research.access-method", "require:https"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := cfg.Remotes[Remote("research")]
+	if cfg.DefaultRemote != "research" {
+		t.Fatalf("default remote = %q", cfg.DefaultRemote)
+	}
+	if remote.Generic == nil || remote.Generic.Endpoint != "https://internal.example.org" || remote.Generic.Provider != "gen3" || remote.Generic.Auth != "bearer" || remote.Generic.Scope != "example/tutorial" || remote.AccessMethod != "require:https" {
+		t.Fatalf("effective remote = %+v", remote)
+	}
+	if !remote.FromSharedPolicy {
+		t.Fatal("shared provenance was lost after applying local overrides")
+	}
+	if len(remote.AllowedGlobusSources) != 1 || remote.AllowedGlobusSources[0] != "source-a" {
+		t.Fatalf("allowed sources = %v", remote.AllowedGlobusSources)
+	}
+}
+
+func TestLoadConfigSharedPolicyValidation(t *testing.T) {
+	for name, policy := range map[string]string{
+		"unsupported version": "version: 2\nremotes: {}\n",
+		"unknown field":       "version: 1\nunknown: true\nremotes: {}\n",
+		"invalid mode":        "version: 1\nremotes:\n  r:\n    selection:\n      access_method: sometimes\n",
+		"local routing":       "version: 1\nremotes:\n  r:\n    globus:\n      default_destination: x\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := setupTestRepo(t)
+			if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadConfig(); err == nil {
+				t.Fatal("expected invalid shared policy to fail")
+			}
+		})
+	}
+}
+
+func TestLoadConfigDistinguishesMissingAndEmptySourceConstraint(t *testing.T) {
+	for name, test := range map[string]struct {
+		globus  string
+		wantNil bool
+	}{
+		"missing": {globus: "", wantNil: true},
+		"empty":   {globus: "    transfer:\n      globus:\n        allowed_source_collections: []\n", wantNil: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := setupTestRepo(t)
+			if err := os.MkdirAll(filepath.Join(dir, ".git-drs"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			policy := "version: 1\nremotes:\n  research:\n" + test.globus
+			if err := os.WriteFile(filepath.Join(dir, sharedPolicyPath), []byte(policy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotNil := cfg.Remotes[Remote("research")].AllowedGlobusSources == nil; gotNil != test.wantNil {
+				t.Fatalf("nil = %v, want %v", gotNil, test.wantNil)
+			}
+		})
+	}
+}
 
 func setupTestRepo(t *testing.T) string {
 	t.Helper()
@@ -44,7 +160,7 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	setupTestRepo(t)
 
 	remote := RemoteSelect{
-		Gen3: &Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"},
+		Gen3: &Gen3Remote{Endpoint: "https://gen3.example", ProjectID: "proj", Bucket: "buck"}, AccessMethod: "prefer:globus",
 	}
 	cfg, err := UpdateRemote(Remote("origin"), remote)
 	if err != nil {
@@ -60,6 +176,61 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	}
 	if _, ok := loaded.Remotes[Remote("origin")]; !ok {
 		t.Fatalf("expected remote in loaded config")
+	}
+	if got := loaded.Remotes[Remote("origin")].AccessMethod; got != "prefer:globus" {
+		t.Fatalf("access method policy = %q", got)
+	}
+}
+
+func TestLoadConfigPreservesGlobusRouteMaps(t *testing.T) {
+	dir := setupTestRepo(t)
+	commands := [][]string{
+		{"config", "drs.remote.research.type", "local"},
+		{"config", "drs.remote.research.endpoint", "http://localhost:8080"},
+		{"config", "drs.remote.research.globus-default-destination", "destination-default"},
+		{"config", "--add", "drs.remote.research.globus-collection", "SOURCE-A=destination-west"},
+		{"config", "--add", "drs.remote.research.globus-collection", "source-b=destination-east"},
+		{"config", "--add", "drs.remote.research.globus-destination-path", "destination-west=/projects/research"},
+	}
+	for _, args := range commands {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := cfg.Remotes[Remote("research")]
+	if remote.GlobusDefaultDestination != "destination-default" || remote.GlobusCollections["source-a"] != "destination-west" || remote.GlobusCollections["source-b"] != "destination-east" {
+		t.Fatalf("Globus routing = %+v", remote)
+	}
+	if remote.GlobusDestinationPaths["destination-west"] != "/projects/research" {
+		t.Fatalf("Globus destination paths = %+v", remote.GlobusDestinationPaths)
+	}
+}
+
+func TestLoadConfigRejectsConflictingGlobusRoutes(t *testing.T) {
+	dir := setupTestRepo(t)
+	for _, value := range []string{"source-a=destination-one", "source-a=destination-two"} {
+		cmd := exec.Command("git", "config", "--add", "drs.remote.research.globus-collection", value)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config: %v: %s", err, out)
+		}
+	}
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "conflicting globus-collection") {
+		t.Fatalf("LoadConfig error = %v", err)
+	}
+}
+
+func TestParseConfigMapRejectsMalformedValues(t *testing.T) {
+	for _, value := range []string{"missing-separator", "source=", "=destination", "source=destination=extra"} {
+		if _, err := parseConfigMap("globus-collection", []string{value}); err == nil {
+			t.Fatalf("expected %q to fail", value)
+		}
 	}
 }
 
@@ -157,30 +328,6 @@ func TestConfig_FindRemote(t *testing.T) {
 	}
 	if foundSelect.Local == nil {
 		t.Error("Expected found remote to have Local config")
-	}
-}
-
-func TestRemote_Validation(t *testing.T) {
-	// IsValidRemoteType test
-	tests := []struct {
-		name    string
-		mode    string
-		isValid bool
-	}{
-		{"valid gen3", "gen3", true},
-		{"valid local", "local", true},
-		{"invalid", "foo", false},
-		{"empty", "", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := IsValidRemoteType(tt.mode)
-			valid := err == nil
-			if valid != tt.isValid {
-				t.Errorf("IsValidRemoteType(%q) = %v, want %v", tt.mode, valid, tt.isValid)
-			}
-		})
 	}
 }
 
@@ -319,67 +466,37 @@ func TestUpdateRemote_LocalTypePersistence(t *testing.T) {
 	}
 }
 
-func TestGetRemoteClient_LocalIncludesRepoBasicAuth(t *testing.T) {
-	setupTestRepo(t)
+func TestRemoveRemote_TerraCleansAuthAndMode(t *testing.T) {
+	tmpDir := setupTestRepo(t)
+	remoteName := Remote("anvil")
 
-	remoteName := Remote("origin")
 	_, err := UpdateRemote(remoteName, RemoteSelect{
-		Local: &LocalRemote{
-			BaseURL: "http://localhost:8080",
+		Terra: &TerraRemote{
+			Endpoint: "https://data.terra.bio",
+			Auth:     "google-adc",
+			Mode:     "read-only",
 		},
 	})
 	if err != nil {
 		t.Fatalf("UpdateRemote failed: %v", err)
 	}
 
-	if err := gitrepo.SetRemoteBasicAuth("origin", "alice", "secret"); err != nil {
-		t.Fatalf("SetRemoteBasicAuth failed: %v", err)
-	}
-
-	cfg, err := LoadConfig()
+	cfg, err := RemoveRemote(remoteName)
 	if err != nil {
-		t.Fatalf("LoadConfig failed: %v", err)
+		t.Fatalf("RemoveRemote failed: %v", err)
 	}
-	logger := drslog.GetLogger()
-	gitCtx, err := cfg.GetRemoteClient(remoteName, logger)
-	if err != nil {
-		t.Fatalf("GetRemoteClient failed: %v", err)
-	}
-	if gitCtx == nil {
-		t.Fatalf("expected *GitContext, got nil")
-	}
-	if gitCtx.Client == nil {
-		t.Fatalf("expected client to be initialized, got nil")
-	}
-	// Basic auth is baked into the HTTP client during construction;
-	// the test verifies that GetRemoteClient completes without error when
-	// repo credentials are present, and that a usable GitContext is returned.
-}
-
-func TestLocalRemoteGetClientResolvesBucketScopeMappings(t *testing.T) {
-	setupTestRepo(t)
-
-	if err := gitrepo.SetBucketMapping("org-a", "", "mapped-bucket", "program-root"); err != nil {
-		t.Fatalf("SetBucketMapping org: %v", err)
-	}
-	if err := gitrepo.SetBucketMapping("org-a", "proj-1", "mapped-bucket", "project-subpath"); err != nil {
-		t.Fatalf("SetBucketMapping project: %v", err)
+	if _, ok := cfg.Remotes[remoteName]; ok {
+		t.Fatalf("removed Terra remote %q was recreated", remoteName)
 	}
 
-	remote := LocalRemote{
-		BaseURL:      "http://localhost:8080",
-		Organization: "org-a",
-		ProjectID:    "proj-1",
-		Bucket:       "configured-bucket",
-	}
-	gitCtx, err := remote.GetClient("origin", drslog.GetLogger())
-	if err != nil {
-		t.Fatalf("GetClient failed: %v", err)
-	}
-	if gitCtx.BucketName != "mapped-bucket" {
-		t.Fatalf("BucketName = %q, want mapped-bucket", gitCtx.BucketName)
-	}
-	if gitCtx.StoragePrefix != "program-root/project-subpath" {
-		t.Fatalf("StoragePrefix = %q, want program-root/project-subpath", gitCtx.StoragePrefix)
+	for _, key := range []string{
+		"drs.remote.anvil.auth",
+		"drs.remote.anvil.mode",
+	} {
+		cmd := exec.Command("git", "config", "--local", "--get", key)
+		cmd.Dir = tmpDir
+		if output, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("expected %s to be unset, got %q", key, string(output))
+		}
 	}
 }

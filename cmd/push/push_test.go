@@ -6,6 +6,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/testutils"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPushCmdArgs(t *testing.T) {
@@ -37,4 +38,26 @@ func TestPushRun_DefaultRemoteError(t *testing.T) {
 
 	err := Cmd.RunE(Cmd, []string{})
 	assert.Error(t, err)
+}
+
+func TestPushRun_ReadOnlyTerraRemoteExplainsWhatWasNotPushed(t *testing.T) {
+	tmpDir := testutils.SetupTestGitRepo(t)
+	testutils.CreateTestConfig(t, tmpDir, &config.Config{
+		DefaultRemote: "anvil",
+		Remotes: map[config.Remote]config.RemoteSelect{
+			"anvil": {Terra: &config.TerraRemote{
+				Endpoint: "https://data.terra.bio",
+				Mode:     "read-only",
+			}},
+		},
+	})
+
+	err := Cmd.RunE(Cmd, nil)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, `remote "anvil" is read-only`)
+	assert.ErrorContains(t, err, "cannot upload files to Terra")
+	assert.ErrorContains(t, err, "no files were uploaded")
+	assert.ErrorContains(t, err, "do not need to back out a commit")
+	assert.ErrorContains(t, err, "ordinary git push to a Git remote")
+	assert.ErrorContains(t, err, "pushes only Git metadata")
 }

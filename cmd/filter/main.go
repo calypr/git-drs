@@ -19,11 +19,12 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
-	"github.com/calypr/git-drs/internal/gitfilter"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -51,15 +52,21 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("filter: load config: %w", err)
 	}
 
-	var drsCtx *config.GitContext
+	var drsCtx *remoteruntime.GitContext
+	var terraResolver resolver.Resolver
 
 	remote, err := cfg.GetDefaultRemote()
 	if err != nil {
 		logger.Info("filter: no default remote", "err", err)
 	} else {
-		drsCtx, err = cfg.GetRemoteClient(remote, logger)
+		drsCtx, err = remoteruntime.New(cfg, remote, logger)
 		if err != nil {
 			logger.Info("DRS server not configured or unreachable", "err", err)
+		} else if drsCtx.RemoteType == config.TerraServerType && !internalfilter.ShouldSkipSmudge() {
+			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if err != nil {
+				return fmt.Errorf("filter: create Terra resolver: %w", err)
+			}
 		}
 	}
 
@@ -69,8 +76,8 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 	}
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
 	// Build the filter and register handlers.
-	f := gitfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
-		OnSmudge(makeSmudgeHandler(drsCtx, logger)).
+	f := internalfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
+		OnSmudge(makeSmudgeHandler(drsCtx, terraResolver, logger)).
 		OnClean(makeCleanHandler(lfsRoot, logger))
 
 	return f.Run(ctx)
@@ -80,27 +87,37 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // Smudge handler — checkout: LFS pointer → real file content
 // --------------------------------------------------------------------------
 
-func makeSmudgeHandler(drsCtx *config.GitContext, logger *slog.Logger) gitfilter.SmudgeFunc {
-	return func(ctx context.Context, req gitfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
+func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, logger *slog.Logger) internalfilter.SmudgeFunc {
+	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
-		var downloadFn drsfilter.SmudgeDownloadFunc
-		if drsCtx != nil {
+		var downloadFn internalfilter.SmudgeDownloadFunc
+		if drsCtx != nil && !internalfilter.ShouldSkipSmudge() {
 			downloadFn = func(callCtx context.Context, oid, cachePath string) error {
-				return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
+				if terraResolver != nil {
+					return resolver.DownloadToCache(callCtx, terraResolver, normalizeDRSOID(oid), cachePath)
+				}
+				return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 			}
 		}
-		return drsfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
+		return internalfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
 	}
+}
+
+func normalizeDRSOID(oid string) string {
+	if len(oid) >= 2 && oid[:2] == "//" {
+		return "drs:" + oid
+	}
+	return oid
 }
 
 // --------------------------------------------------------------------------
 // Clean handler — stage: real file content → LFS pointer
 // --------------------------------------------------------------------------
 
-func makeCleanHandler(lfsRoot string, logger *slog.Logger) gitfilter.CleanFunc {
-	return func(ctx context.Context, req gitfilter.FilterRequest, content io.Reader, dst io.Writer) error {
+func makeCleanHandler(lfsRoot string, logger *slog.Logger) internalfilter.CleanFunc {
+	return func(ctx context.Context, req internalfilter.FilterRequest, content io.Reader, dst io.Writer) error {
 		logger.Debug("clean", "pathname", req.Pathname)
-		return drsfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
+		return internalfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
 	}
 }
 

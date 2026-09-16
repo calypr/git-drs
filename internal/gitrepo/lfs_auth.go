@@ -32,18 +32,6 @@ func GetRemoteToken(remoteName string) (string, error) {
 	return GetGitConfigString(remoteTokenKey(remoteName))
 }
 
-// SetRemoteToken stores a remote-specific bearer token in repo-local git config.
-func SetRemoteToken(remoteName, token string) error {
-	if strings.TrimSpace(remoteName) == "" {
-		return fmt.Errorf("remote name is required")
-	}
-	if strings.TrimSpace(token) == "" {
-		return fmt.Errorf("token is required")
-	}
-	configs := map[string]string{remoteTokenKey(remoteName): token}
-	return SetGitConfigOptions(configs)
-}
-
 func GetRemoteBasicAuth(remoteName string) (string, string, error) {
 	username, err := GetGitConfigString(remoteUsernameKey(remoteName))
 	if err != nil {

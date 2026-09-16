@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/spf13/cobra"
 )
@@ -54,5 +54,5 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("clean: resolve LFS root: %w", err)
 	}
 
-	return drsfilter.CleanContent(ctx, lfsRoot, pathname, os.Stdin, os.Stdout, logger)
+	return internalfilter.CleanContent(ctx, lfsRoot, pathname, os.Stdin, os.Stdout, logger)
 }

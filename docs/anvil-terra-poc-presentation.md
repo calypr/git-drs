@@ -49,6 +49,164 @@ Reference proof of concept · July 2026
 
 ---
 
+## DRS: object metadata + live access
+
+<div class="columns">
+<div>
+<svg viewBox="0 0 900 300" width="100%" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1d70a2"/>
+    </marker>
+    <linearGradient id="g1" x1="0" x2="1">
+      <stop offset="0%" stop-color="#eaf3fb"/>
+      <stop offset="100%" stop-color="#dff3f1"/>
+    </linearGradient>
+  </defs>
+  <rect x="42" y="62" width="180" height="152" rx="20" fill="url(#g1)" stroke="#1d70a2" stroke-width="2"/>
+  <text x="132" y="102" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Git repo</text>
+  <text x="132" y="138" text-anchor="middle" font-size="18" fill="#10253f">pointer metadata</text>
+  <text x="132" y="166" text-anchor="middle" font-size="18" fill="#10253f">DRS URI</text>
+  <text x="132" y="194" text-anchor="middle" font-size="18" fill="#10253f">checksum + size</text>
+
+  <rect x="322" y="36" width="260" height="204" rx="22" fill="#f6f8fb" stroke="#54c6be" stroke-width="2"/>
+  <text x="452" y="78" text-anchor="middle" font-size="24" fill="#10253f" font-weight="700">DRS registry</text>
+  <text x="452" y="116" text-anchor="middle" font-size="18" fill="#10253f">id / self_uri / name</text>
+  <text x="452" y="146" text-anchor="middle" font-size="18" fill="#10253f">checksums / size</text>
+  <text x="452" y="176" text-anchor="middle" font-size="18" fill="#10253f">description / version</text>
+  <text x="452" y="206" text-anchor="middle" font-size="18" fill="#10253f">created_time / controlled_access</text>
+
+  <rect x="670" y="62" width="180" height="152" rx="20" fill="#eaf5f3" stroke="#54c6be" stroke-width="2"/>
+  <text x="760" y="102" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Access layer</text>
+  <text x="760" y="138" text-anchor="middle" font-size="18" fill="#10253f">access_id</text>
+  <text x="760" y="166" text-anchor="middle" font-size="18" fill="#10253f">HTTPS / GS / S3</text>
+  <text x="760" y="194" text-anchor="middle" font-size="18" fill="#10253f">Globus / transfer APIs</text>
+
+  <line x1="222" y1="138" x2="322" y2="138" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow)"/>
+  <line x1="582" y1="138" x2="670" y2="138" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M 452 240 C 540 260, 650 260, 760 230" fill="none" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow)" stroke-dasharray="8 8"/>
+  <text x="610" y="260" text-anchor="middle" font-size="18" fill="#1d70a2">resolve live access + fetch bytes</text>
+</svg>
+</div>
+<div>
+<h3>Key idea</h3>
+<ul>
+<li>Git stores a stable reference to a DRS object, not the bytes.</li>
+<li>DRS records describe the object identity, metadata, and the live access methods.</li>
+<li>Clients resolve a fresh access URL at read time and validate size/checksum before hydration.</li>
+<li>Providers stay in control of authorization and storage transport.</li>
+</ul>
+</div>
+</div>
+
+> Reference schema work: <a href="https://github.com/ga4gh/data-repository-service-schemas">GA4GH DRS schemas</a> and the writable DRS prototype branch <a href="https://github.com/ga4gh/data-repository-service-schemas/tree/feature/issue-416-drs-upload">feature/issue-416-drs-upload</a>.
+
+---
+
+## Writable DRS: register, update, and resolve
+
+<div class="columns">
+<div>
+<svg viewBox="0 0 920 300" width="100%" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1d70a2"/>
+    </marker>
+  </defs>
+  <rect x="28" y="120" width="150" height="80" rx="18" fill="#eaf3fb" stroke="#1d70a2" stroke-width="2"/>
+  <text x="103" y="150" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Register</text>
+  <text x="103" y="176" text-anchor="middle" font-size="16" fill="#10253f">new object</text>
+
+  <rect x="220" y="82" width="175" height="155" rx="18" fill="#f6f8fb" stroke="#54c6be" stroke-width="2"/>
+  <text x="307" y="114" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Writable DRS</text>
+  <text x="307" y="146" text-anchor="middle" font-size="16" fill="#10253f">metadata</text>
+  <text x="307" y="170" text-anchor="middle" font-size="16" fill="#10253f">checksums</text>
+  <text x="307" y="194" text-anchor="middle" font-size="16" fill="#10253f">access methods</text>
+
+  <rect x="442" y="92" width="170" height="136" rx="18" fill="#eaf5f3" stroke="#54c6be" stroke-width="2"/>
+  <text x="527" y="128" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Resolve</text>
+  <text x="527" y="156" text-anchor="middle" font-size="16" fill="#10253f">access_id</text>
+  <text x="527" y="182" text-anchor="middle" font-size="16" fill="#10253f">fresh URL</text>
+
+  <rect x="676" y="120" width="170" height="80" rx="18" fill="#eaf3fb" stroke="#1d70a2" stroke-width="2"/>
+  <text x="761" y="150" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Fetch</text>
+  <text x="761" y="176" text-anchor="middle" font-size="16" fill="#10253f">verify + hydrate</text>
+
+  <line x1="178" y1="160" x2="220" y2="160" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow2)"/>
+  <line x1="395" y1="160" x2="442" y2="160" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow2)"/>
+  <line x1="612" y1="160" x2="676" y2="160" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow2)"/>
+</svg>
+</div>
+<div>
+<h3>Writable DRS adds lifecycle operations</h3>
+<ul>
+<li>Register an object with stable identity, checksums, and metadata.</li>
+<li>Update description, version, timestamps, or access metadata as the dataset evolves.</li>
+<li>Add access methods for HTTPS, GS, Globus, or other provider-backed transport.</li>
+<li>Resolve access_id to a fresh URL and verify bytes before materialization.</li>
+</ul>
+</div>
+</div>
+
+---
+
+## Analyst-facing Git repo with DRS-backed local, AnVIL, and Globus data
+
+<div>
+<svg viewBox="0 0 980 320" width="100%" height="320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow3" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1d70a2"/>
+    </marker>
+  </defs>
+  <rect x="24" y="120" width="150" height="96" rx="18" fill="#eaf3fb" stroke="#1d70a2" stroke-width="2"/>
+  <text x="99" y="156" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Local</text>
+  <text x="99" y="184" text-anchor="middle" font-size="16" fill="#10253f">ordinary files</text>
+
+  <rect x="234" y="120" width="180" height="96" rx="18" fill="#f6f8fb" stroke="#54c6be" stroke-width="2"/>
+  <text x="324" y="156" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">AnVIL DRS</text>
+  <text x="324" y="184" text-anchor="middle" font-size="16" fill="#10253f">provider metadata</text>
+
+  <rect x="478" y="120" width="180" height="96" rx="18" fill="#eaf5f3" stroke="#54c6be" stroke-width="2"/>
+  <text x="568" y="156" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Globus</text>
+  <text x="568" y="184" text-anchor="middle" font-size="16" fill="#10253f">transfer-backed files</text>
+
+  <rect x="718" y="78" width="220" height="180" rx="20" fill="#f5f7fb" stroke="#1d70a2" stroke-width="2"/>
+  <text x="828" y="116" text-anchor="middle" font-size="22" fill="#10253f" font-weight="700">Analyst repo</text>
+  <text x="828" y="148" text-anchor="middle" font-size="17" fill="#10253f">Git history</text>
+  <text x="828" y="176" text-anchor="middle" font-size="17" fill="#10253f">pointer metadata</text>
+  <text x="828" y="204" text-anchor="middle" font-size="17" fill="#10253f">.gitattributes</text>
+  <text x="828" y="232" text-anchor="middle" font-size="17" fill="#10253f">selective hydration</text>
+
+  <line x1="174" y1="168" x2="234" y2="168" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow3)"/>
+  <line x1="414" y1="168" x2="478" y2="168" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow3)"/>
+  <line x1="658" y1="168" x2="718" y2="168" stroke="#1d70a2" stroke-width="4" marker-end="url(#arrow3)"/>
+  <path d="M 99 216 C 210 270, 350 270, 828 250" fill="none" stroke="#54c6be" stroke-width="4" stroke-dasharray="8 8" marker-end="url(#arrow3)"/>
+  <text x="460" y="275" text-anchor="middle" font-size="17" fill="#1d70a2">data flow: local + DRS + Globus → hydrated analyst workspace</text>
+</svg>
+</div>
+
+<div class="columns">
+<div>
+<h3>Repository contents</h3>
+<ul>
+<li>Local files are tracked as regular Git content.</li>
+<li>ANVIL and Globus content are represented as DRS pointers and resolved on demand.</li>
+<li>Each user authenticates independently and hydrates only the paths they need.</li>
+</ul>
+</div>
+<div>
+<h3>Why it works</h3>
+<ul>
+<li>Git remains the reviewable source of truth for file paths and history.</li>
+<li>DRS remains the authoritative layer for object metadata and access.</li>
+<li>Providers retain control over authorization, transport, and cache lifecycle.</li>
+</ul>
+</div>
+</div>
+
+---
+
 ## Git moves references. AnVIL moves bytes.
 
 | User A | Git | User B | AnVIL |
@@ -259,60 +417,21 @@ cache_oid = sha256("git-drs-anvil-ref:v1\n" + normalized_drs_uri)
 
 <!-- _class: small -->
 
-## Component status: implemented, partial, and missing
+## Status: implemented, in flight, and next
 
 <div class="columns3">
-<div class="card"><span class="tag">IMPLEMENTED</span><h3>Focused coverage</h3><ul><li>ADC-backed resolver contract</li><li>Canonical pointer and cache key</li><li>Atomic size/SHA256 validation</li><li>Terra ping and push refusal</li></ul></div>
-<div class="card"><span class="tag">PARTIAL</span><h3>Workflow coverage</h3><ul><li>Manifest validation is sequential</li><li>Selective pull is covered in isolation</li><li>Cache reuse is per clone</li><li>Remote setup is clone-local</li></ul></div>
-<div class="card"><span class="tag">MISSING</span><h3>POC acceptance</h3><ul><li>Independent User A/User B journey</li><li>Production AnVIL contract proof</li><li>Expired-URL retry and concurrency</li><li>Denied-user and leak audit</li></ul></div>
+<div class="card"><span class="tag">IMPLEMENTED</span><h3>Core DRS + git-drs path</h3><ul><li>Provider-neutral resolver contract</li><li>DRS pointer metadata and checksum validation</li><li>Local + AnVIL + Globus mixed-source repo model</li><li>Access fallback handling and safer credential checks</li></ul></div>
+<div class="card"><span class="tag">IN FLIGHT</span><h3>Workflow hardening</h3><ul><li>End-to-end clone/pull acceptance</li><li>Globus collection import and auth flows</li><li>Retry and refresh behavior for expired URLs</li><li>Clean multi-user and denied-user validation</li></ul></div>
+<div class="card"><span class="tag">NEXT</span><h3>Production readiness</h3><ul><li>Certify GA4GH schema contract and endpoint compatibility</li><li>Validate upload-oriented writable DRS behavior</li><li>Harden concurrency and diagnostics</li><li>Generalize to other providers and fixtures</li></ul></div>
 </div>
 
-| Arrange | Act | Assert |
+| Area | Current state | Evidence |
 |---|---|---|
-| Separate homes, config, ADC, caches | Commit → clone → authenticate → pull | Verified bytes; isolated credentials |
+| DRS model | Modernized for writable metadata and live access | GA4GH DRS schema work and writable DRS upload branch |
+| git-drs workflow | Validated for mixed local / AnVIL / Globus usage | Provider-neutral resolver, selective hydration, pointer-based Git repo |
+| Production proof | Still needs end-to-end acceptance work | Clean-clone, denied-user, and credential-isolation checks pending |
 
----
-
-<!-- _class: small -->
-
-## Most original blockers are now closed
-
-<div class="columns">
-<div>
-<h3>Implemented</h3>
-<ul>
-<li>ADC-backed <code>AnVILResolver</code> handles metadata and access.</li>
-<li>Terra <code>add-ref</code> and pull use provider-neutral resolution.</li>
-<li>Remote config selects behavior; <code>--remote-type</code> is deprecated.</li>
-<li>Terra pointers retain DRS URI, size, and optional SHA256.</li>
-<li>Cache keys are separate from content checksums.</li>
-</ul>
-</div>
-<div>
-<h3>Still incomplete</h3>
-<ul>
-<li>Every fresh clone must manually recreate the Terra remote in <code>.git/config</code>.</li>
-<li>The production endpoint, OAuth scope, and object/access contracts are not certified end to end.</li>
-<li>Manifest resolution and downloads lack bounded concurrency and retry.</li>
-<li>An expired download URL is not re-resolved after an HTTP failure.</li>
-<li>Independent two-user, denied-user, and credential-leak acceptance remain unverified.</li>
-</ul>
-</div>
-</div>
-
-> **Bottom line:** an implemented vertical slice still needs production-contract validation, resilience, and end-to-end proof.
-
----
-
-<!-- _class: small -->
-
-## Turn the vertical slice into a proven POC
-
-<div class="columns3">
-<div class="card"><span class="tag">P0 · VERIFY</span><h3>Prove production fit</h3><ul><li>Confirm endpoint and OAuth scopes</li><li>Certify object/access contracts</li><li>Test slash and compact DRS IDs</li><li>Run clean two-user clone/pull</li><li>Audit logs and history</li></ul></div>
-<div class="card"><span class="tag">P1 · HARDEN</span><h3>Make it resilient</h3><ul><li>Safe clone setup mechanism</li><li>Expired-URL re-resolution</li><li>Bounded retry and concurrency</li><li>Cancellation and diagnostics</li><li>Clean-environment CI</li></ul></div>
-<div class="card"><span class="tag">P2 · GENERALIZE</span><h3>Keep DRS composable</h3><ul><li>Provider-neutral resolver contract</li><li>CGC and Synapse fixtures</li><li>Capability discovery</li><li>Keep publishing provider-specific</li><li>Defer mutation and copying</li></ul></div>
-</div>
+> **Bottom line:** the technical architecture is now in place and the repository model is proven in principle; remaining work is about hardening, contract certification, and acceptance testing.
 
 ---
 

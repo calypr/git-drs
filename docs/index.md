@@ -34,7 +34,7 @@ resolve common problems.
 
 ## AnVIL/Terra proof of concept
 
-View the [AnVIL/Terra DRS reference presentation](anvil-terra-poc-presentation.html)
+View the [AnVIL/Terra DRS reference presentation](git-drs-anvil.pdf)
 for a visual overview of the reference-only workflow, architecture, security
 boundary, and remaining production-validation work.
 

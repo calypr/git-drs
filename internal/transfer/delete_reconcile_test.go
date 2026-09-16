@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/drs"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syclient "github.com/calypr/syfon/client"
 )

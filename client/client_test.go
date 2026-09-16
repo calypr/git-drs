@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 )
 
 func TestNewValidatesConnectionOptions(t *testing.T) {
@@ -52,7 +53,15 @@ func TestPullUsesBulkAccessBeforePerObjectAccess(t *testing.T) {
 		Checksums:        []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
 		AccessMethods:    &methods,
 	}
-	checksumResponse, err := json.Marshal(drsapi.N200OkDrsObjects{ResolvedDrsObject: &[]drsapi.DrsObject{object}})
+	checksumResponse, err := json.Marshal(internalapi.BulkHashesResponse{Results: map[string][]internalapi.InternalRecord{
+		oid: {{
+			Did:              object.Id,
+			Size:             &object.Size,
+			ControlledAccess: object.ControlledAccess,
+			Hashes:           &internalapi.HashInfo{"sha256": oid},
+			AccessMethods:    object.AccessMethods,
+		}},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +72,7 @@ func TestPullUsesBulkAccessBeforePerObjectAccess(t *testing.T) {
 		header := make(http.Header)
 		header.Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/"+oid:
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk/hashes":
 			return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(strings.NewReader(string(checksumResponse))), Request: r}, nil
 		case r.Method == http.MethodPost && r.URL.Path == "/ga4gh/drs/v1/objects/access":
 			bulkCalled = true

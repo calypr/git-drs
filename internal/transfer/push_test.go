@@ -133,11 +133,8 @@ func TestClonedPlaceholderKeepsRemoteMetadata(t *testing.T) {
 	realOID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	controlled := []string{"/organization/example/project/tutorial"}
 	methods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeGlobus,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "globus://source/data/file.dat"},
+		Type:      drsapi.AccessMethodTypeGlobus,
+		AccessUrl: &drsapi.AccessURL{Url: "globus://source/data/file.dat"},
 	}}
 	match := drsapi.DrsObject{
 		Id:               "remote-object",

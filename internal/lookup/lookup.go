@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -14,8 +13,8 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/apigen/errorapi"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	syaccess "github.com/calypr/syfon/client/access"
 	"github.com/calypr/syfon/client/apierror"
-	syfoncommon "github.com/calypr/syfon/common"
 )
 
 // ErrBulkMissingSHA256Unsupported indicates that the connected Syfon server
@@ -88,17 +87,18 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 		return map[string][]drsapi.DrsObject{}, nil
 	}
 
-	var response struct {
-		Results map[string][]internalapi.InternalRecord `json:"results"`
-	}
-	if err := drsCtx.Client.Requestor().Do(ctx, http.MethodPost, "/index/bulk/hashes", internalapi.BulkHashesRequest{Hashes: queryChecksums}, &response); err != nil {
+	resp, err := drsCtx.Client.InternalAPI().InternalBulkHashesWithResponse(ctx, internalapi.BulkHashesRequest{Hashes: queryChecksums})
+	if err != nil {
 		return nil, fmt.Errorf("batch objects by checksum: %w", err)
+	}
+	if resp.JSON200 == nil {
+		return nil, apierror.FromResponse(resp.HTTPResponse, resp.Body)
 	}
 
 	results := make(map[string][]drsapi.DrsObject, len(normalizedToOriginal))
 	for normalized, original := range normalizedToOriginal {
-		objects := make([]drsapi.DrsObject, 0, len(response.Results[normalized]))
-		for _, record := range response.Results[normalized] {
+		objects := make([]drsapi.DrsObject, 0, len(resp.JSON200.Results[normalized]))
+		for _, record := range resp.JSON200.Results[normalized] {
 			objects = append(objects, internalRecordToDRSObject(record))
 		}
 		results[original] = objects
@@ -131,7 +131,7 @@ func internalRecordToDRSObject(record internalapi.InternalRecord) drsapi.DrsObje
 		}
 	}
 	if record.ControlledAccess != nil {
-		controlled := syfoncommon.NormalizeAccessResources(*record.ControlledAccess)
+		controlled := syaccess.NormalizeAccessResources(*record.ControlledAccess)
 		obj.ControlledAccess = &controlled
 	}
 	if record.AccessMethods != nil {

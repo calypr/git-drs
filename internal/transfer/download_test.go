@@ -154,10 +154,7 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &projectAccessID}}
-	projectMethods[0].AccessUrl = &struct {
-		Headers *[]string `json:"headers,omitempty"`
-		Url     string    `json:"url"`
-	}{Url: "s3://bucket/object"}
+	projectMethods[0].AccessUrl = &drsapi.AccessURL{Url: "s3://bucket/object"}
 	orgMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &orgAccessID}}
 	projectControlled := []string{"/organization/org1/project/proj1"}
 	orgControlled := []string{"/organization/org1"}

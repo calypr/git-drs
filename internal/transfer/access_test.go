@@ -10,16 +10,13 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 )
 
 func TestPlanAccessURLFallsBackAfterGlobusAccessResolution(t *testing.T) {
 	globusID := "globus-access"
-	httpsURL := &struct {
-		Headers *[]string `json:"headers,omitempty"`
-		Url     string    `json:"url"`
-	}{Url: "https://public.example/object"}
+	httpsURL := &drsapi.AccessURL{Url: "https://public.example/object"}
 	methods := []drsapi.AccessMethod{
 		{Type: drsapi.AccessMethodTypeGlobus, AccessId: &globusID},
 		{Type: drsapi.AccessMethodTypeHttps, AccessUrl: httpsURL},
@@ -38,7 +35,7 @@ func TestPlanAccessURLFallsBackAfterGlobusAccessResolution(t *testing.T) {
 	}
 	t.Setenv(globusauth.TransferTokenEnv, "token")
 	t.Setenv(globusDestCollectionEnv, "")
-	drsCtx := &remoteruntime.GitContext{Client: raw.(*syclient.Client), AccessMethodPolicy: "prefer:globus"}
+	drsCtx := &remoteruntime.GitContext{Client: raw, AccessMethodPolicy: "prefer:globus"}
 
 	got, err := planAccessURL(t.Context(), drsCtx, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
 	if err != nil || got.Url != httpsURL.Url {
@@ -53,10 +50,7 @@ func TestPlanAccessURLFallsBackAfterGlobusAccessResolution(t *testing.T) {
 func TestPlanAccessURLRejectsHostlessHTTP(t *testing.T) {
 	t.Run("resolve access ID", func(t *testing.T) {
 		accessID := "signed"
-		methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeHttps, AccessId: &accessID, AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "https:///object"}}}
+		methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeHttps, AccessId: &accessID, AccessUrl: &drsapi.AccessURL{Url: "https:///object"}}}
 		var requestPath string
 		httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			requestPath = r.URL.Path
@@ -71,7 +65,7 @@ func TestPlanAccessURLRejectsHostlessHTTP(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := planAccessURL(t.Context(), &remoteruntime.GitContext{Client: raw.(*syclient.Client)}, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
+		got, err := planAccessURL(t.Context(), &remoteruntime.GitContext{Client: raw}, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
 		if err != nil || got.Url != "https://signed.example/object" || requestPath != "/ga4gh/drs/v1/objects/object-1/access/signed" {
 			t.Fatalf("planned URL = %+v, path = %q, error = %v", got, requestPath, err)
 		}
@@ -79,14 +73,8 @@ func TestPlanAccessURLRejectsHostlessHTTP(t *testing.T) {
 
 	t.Run("try next method", func(t *testing.T) {
 		methods := []drsapi.AccessMethod{
-			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: "https:///object"}},
-			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: "https://public.example/object"}},
+			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &drsapi.AccessURL{Url: "https:///object"}},
+			{Type: drsapi.AccessMethodTypeHttps, AccessUrl: &drsapi.AccessURL{Url: "https://public.example/object"}},
 		}
 		got, err := planAccessURL(t.Context(), &remoteruntime.GitContext{}, drsapi.DrsObject{Id: "object-1", AccessMethods: &methods})
 		if err != nil || got.Url != "https://public.example/object" {
@@ -160,14 +148,8 @@ func TestAccessPolicyPrecedence(t *testing.T) {
 }
 
 func TestBulkAccessRequestAggregatesSelectionDiagnostics(t *testing.T) {
-	globusURL := func(source string) *struct {
-		Headers *[]string `json:"headers,omitempty"`
-		Url     string    `json:"url"`
-	} {
-		return &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "globus://" + source + "/object"}
+	globusURL := func(source string) *drsapi.AccessURL {
+		return &drsapi.AccessURL{Url: "globus://" + source + "/object"}
 	}
 	objects := []drsapi.DrsObject{
 		{Id: "one", AccessMethods: &[]drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeGlobus, AccessUrl: globusURL("source-one")}}},
@@ -218,10 +200,7 @@ func TestSelectAccessMethodSkipsUnconfiguredGlobus(t *testing.T) {
 func TestSelectAccessMethodSkipsUnsupportedDirectURL(t *testing.T) {
 	httpsID := "https-access"
 	methods := []drsapi.AccessMethod{
-		{Type: drsapi.AccessMethodTypeS3, AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/object"}},
+		{Type: drsapi.AccessMethodTypeS3, AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/object"}},
 		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
 	}
 
@@ -248,10 +227,7 @@ func TestSelectAccessMethodFallsBackToFirstResolvableMethod(t *testing.T) {
 func TestSelectAccessMethodAcceptsDirectGlobusAccessURL(t *testing.T) {
 	httpsID := "https-access"
 	methods := []drsapi.AccessMethod{
-		{Type: drsapi.AccessMethodTypeGlobus, AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "globus://source-collection/path/file.bam"}},
+		{Type: drsapi.AccessMethodTypeGlobus, AccessUrl: &drsapi.AccessURL{Url: "globus://source-collection/path/file.bam"}},
 		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
 	}
 	t.Setenv(globusauth.TransferTokenEnv, "token")

@@ -260,21 +260,25 @@ type resolvedSource struct {
 }
 
 type accessURLRequestor struct {
-	request.Requester
+	request.HTTPDoer
 	headers *[]string
 }
 
-func (r accessURLRequestor) Do(ctx context.Context, method, path string, body, out any, opts ...request.RequestOption) error {
+func (r accessURLRequestor) Do(req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return nil, fmt.Errorf("download request is nil")
+	}
+	requestCopy := req.Clone(req.Context())
 	if r.headers != nil {
 		for _, header := range *r.headers {
 			key, value, ok := strings.Cut(header, ":")
 			if !ok || strings.TrimSpace(key) == "" {
-				return fmt.Errorf("invalid access URL header")
+				return nil, fmt.Errorf("invalid access URL header")
 			}
-			opts = append(opts, request.WithHeader(strings.TrimSpace(key), strings.TrimSpace(value)))
+			requestCopy.Header.Set(strings.TrimSpace(key), strings.TrimSpace(value))
 		}
 	}
-	return r.Requester.Do(ctx, method, path, body, out, opts...)
+	return r.HTTPDoer.Do(requestCopy)
 }
 
 func (s *resolvedSource) Name() string {
@@ -308,7 +312,7 @@ func (s *resolvedSource) GetRangeReader(ctx context.Context, guid string, offset
 
 func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.ReadCloser, error) {
 	accessURL := s.currentAccessURL()
-	requestor := accessURLRequestor{Requester: s.requestor, headers: s.headers}
+	requestor := accessURLRequestor{HTTPDoer: s.requestor, headers: s.headers}
 	resp, err := sytransfer.GenericDownload(ctx, requestor, accessURL, start, end)
 	if err != nil {
 		return nil, err

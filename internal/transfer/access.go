@@ -27,7 +27,22 @@ func BulkAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitCont
 	}
 	out := make(map[string]drsapi.AccessURL, len(objects))
 	var diagnostics []error
+	if req, ok := bulkAccessRequest(objects); ok {
+		if api := drsCtx.Client.DRSAPI(); api != nil {
+			if resp, err := api.GetBulkAccessURLWithResponse(ctx, req); err == nil && resp.JSON200 != nil && resp.JSON200.ResolvedDrsObjectAccessUrls != nil {
+				for _, resolved := range *resp.JSON200.ResolvedDrsObjectAccessUrls {
+					if resolved.DrsObjectId == nil || strings.TrimSpace(*resolved.DrsObjectId) == "" || strings.TrimSpace(resolved.Url) == "" {
+						continue
+					}
+					out[strings.TrimSpace(*resolved.DrsObjectId)] = drsapi.AccessURL{Headers: resolved.Headers, Url: resolved.Url}
+				}
+			}
+		}
+	}
 	for _, obj := range objects {
+		if _, ok := out[strings.TrimSpace(obj.Id)]; ok {
+			continue
+		}
 		accessURL, err := planAccessURL(ctx, drsCtx, obj)
 		if err != nil {
 			diagnostics = append(diagnostics, err)
@@ -36,6 +51,43 @@ func BulkAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitCont
 		out[strings.TrimSpace(obj.Id)] = *accessURL
 	}
 	return out, errors.Join(diagnostics...)
+}
+
+func bulkAccessRequest(objects []drsapi.DrsObject) (drsapi.BulkObjectAccessId, bool) {
+	req := drsapi.BulkObjectAccessId{}
+	items := make([]struct {
+		BulkAccessIds *[]string `json:"bulk_access_ids,omitempty"`
+		BulkObjectId  *string   `json:"bulk_object_id,omitempty"`
+	}, 0, len(objects))
+	for _, obj := range objects {
+		objectID := strings.TrimSpace(obj.Id)
+		accessID := accessIDForBulkRequest(obj)
+		if objectID == "" || accessID == "" {
+			continue
+		}
+		accessIDs := []string{accessID}
+		items = append(items, struct {
+			BulkAccessIds *[]string `json:"bulk_access_ids,omitempty"`
+			BulkObjectId  *string   `json:"bulk_object_id,omitempty"`
+		}{BulkAccessIds: &accessIDs, BulkObjectId: &objectID})
+	}
+	if len(items) == 0 {
+		return req, false
+	}
+	req.BulkObjectAccessIds = &items
+	return req, true
+}
+
+func accessIDForBulkRequest(obj drsapi.DrsObject) string {
+	if obj.AccessMethods == nil {
+		return ""
+	}
+	for _, method := range *obj.AccessMethods {
+		if method.AccessId != nil && strings.TrimSpace(*method.AccessId) != "" {
+			return strings.TrimSpace(*method.AccessId)
+		}
+	}
+	return ""
 }
 
 type accessPolicy struct {

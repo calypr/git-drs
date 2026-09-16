@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -391,4 +393,83 @@ func TestDownloadResolvedToPathRetriesTransientHTTPError(t *testing.T) {
 	}
 
 	var _ sytransfer.RetryStrategy = immediateDownloadRetry{}
+}
+
+func TestDownloadResolvedToPathRefreshesExpiredAccessURL(t *testing.T) {
+	t.Parallel()
+
+	const chunkSize = int64(1024 * 1024)
+	firstChunk := bytes.Repeat([]byte("a"), int(chunkSize))
+	secondChunk := bytes.Repeat([]byte("b"), int(chunkSize))
+	thirdChunk := bytes.Repeat([]byte("c"), int(chunkSize))
+	want := append(append(append([]byte(nil), firstChunk...), secondChunk...), thirdChunk...)
+	var expiredRequests atomic.Int32
+	var refreshRequests atomic.Int32
+	expiredReady := make(chan struct{})
+
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := func(status int, body []byte) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(bytes.NewReader(body)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		}
+
+		switch {
+		case r.URL.Path == "/download/expired" && r.Header.Get("Range") == "bytes=0-1048575":
+			return response(http.StatusPartialContent, firstChunk)
+		case r.URL.Path == "/download/expired":
+			if expiredRequests.Add(1) == 2 {
+				close(expiredReady)
+			}
+			<-expiredReady
+			return response(http.StatusForbidden, []byte("AccessDenied: signed URL expired"))
+		case r.URL.Path == "/ga4gh/drs/v1/objects/obj-1/access/s3":
+			refreshRequests.Add(1)
+			return response(http.StatusOK, []byte(`{"url":"https://signed.example/download/fresh"}`))
+		case r.URL.Path == "/download/fresh" && r.Header.Get("Range") == "bytes=1048576-2097151":
+			return response(http.StatusPartialContent, secondChunk)
+		case r.URL.Path == "/download/fresh" && r.Header.Get("Range") == "bytes=2097152-3145727":
+			return response(http.StatusPartialContent, thirdChunk)
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	accessID := "s3"
+	methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &accessID}}
+	dstPath := filepath.Join(t.TempDir(), "object.bin")
+	err = DownloadResolvedToPath(
+		context.Background(),
+		&remoteruntime.GitContext{Client: client},
+		"obj-1",
+		dstPath,
+		&drsapi.DrsObject{Id: "obj-1", Size: int64(len(want)), AccessMethods: &methods},
+		&drsapi.AccessURL{Url: "https://signed.example/download/expired"},
+		sydownload.DownloadOptions{
+			MultipartThreshold: 1,
+			Concurrency:        2,
+			ChunkSize:          chunkSize,
+			RetryStrategy:      immediateDownloadRetry{},
+		},
+	)
+	if err != nil {
+		t.Fatalf("DownloadResolvedToPath returned error: %v", err)
+	}
+	if refreshRequests.Load() != 1 {
+		t.Fatalf("access URL refresh requests = %d, want 1", refreshRequests.Load())
+	}
+	got, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("downloaded payload does not match the ranged responses")
+	}
 }

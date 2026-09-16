@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
@@ -17,6 +18,7 @@ import (
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -136,6 +138,11 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 		expectedSize: obj.Size,
 		identity:     resolvedDownloadIdentity(oid, obj),
 	}
+	if accessID := resolvedAccessID(obj); accessID != "" && strings.TrimSpace(obj.Id) != "" {
+		src.drsClient = drsCtx.Client.DRS()
+		src.objectID = strings.TrimSpace(obj.Id)
+		src.accessID = accessID
+	}
 	err := sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
 	if err != nil && !hadDestination {
 		// The transfer engine creates its resume checkpoint before the first
@@ -240,8 +247,14 @@ type resolvedSource struct {
 	requestor interface {
 		Do(*http.Request) (*http.Response, error)
 	}
-	accessURL    string
-	headers      *[]string
+	accessURLMu sync.RWMutex
+	accessURL   string
+	headers     *[]string
+	drsClient   interface {
+		GetAccessURL(context.Context, string, string) (drsapi.AccessURL, error)
+	}
+	objectID     string
+	accessID     string
 	expectedSize int64
 	identity     string
 }
@@ -294,12 +307,25 @@ func (s *resolvedSource) GetRangeReader(ctx context.Context, guid string, offset
 }
 
 func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.ReadCloser, error) {
-	resp, err := sytransfer.GenericDownload(ctx, accessURLRequestor{Requester: s.requestor, headers: s.headers}, s.accessURL, start, end)
+	accessURL := s.currentAccessURL()
+	requestor := accessURLRequestor{Requester: s.requestor, headers: s.headers}
+	resp, err := sytransfer.GenericDownload(ctx, requestor, accessURL, start, end)
 	if err != nil {
 		return nil, err
 	}
+	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.canRefreshAccessURL() {
+		resp.Body.Close()
+		accessURL, err = s.refreshAccessURL(ctx, accessURL)
+		if err != nil {
+			return nil, fmt.Errorf("refresh DRS access URL: %w", err)
+		}
+		resp, err = sytransfer.GenericDownload(ctx, requestor, accessURL, start, end)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		err := sycommon.ResponseBodyError(resp, fmt.Sprintf("download from %s failed", s.accessURL))
+		err := sycommon.ResponseBodyError(resp, fmt.Sprintf("download from %s failed", accessURL))
 		resp.Body.Close()
 		if permanentDownloadStatus(resp.StatusCode) {
 			return nil, sytransfer.NonRetryable(err)
@@ -311,6 +337,45 @@ func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.Re
 		return nil, sytransfer.ErrRangeIgnored
 	}
 	return resp.Body, nil
+}
+
+func resolvedAccessID(obj *drsapi.DrsObject) string {
+	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
+		return ""
+	}
+	method := (*obj.AccessMethods)[0]
+	if method.AccessId != nil && strings.TrimSpace(*method.AccessId) != "" {
+		return strings.TrimSpace(*method.AccessId)
+	}
+	return strings.TrimSpace(string(method.Type))
+}
+
+func (s *resolvedSource) canRefreshAccessURL() bool {
+	return s.drsClient != nil && s.objectID != "" && s.accessID != ""
+}
+
+func (s *resolvedSource) refreshAccessURL(ctx context.Context, failedURL string) (string, error) {
+	s.accessURLMu.Lock()
+	defer s.accessURLMu.Unlock()
+	if s.accessURL != failedURL {
+		return s.accessURL, nil
+	}
+	refreshed, err := s.drsClient.GetAccessURL(ctx, s.objectID, s.accessID)
+	if err != nil {
+		return "", err
+	}
+	refreshedURL := strings.TrimSpace(refreshed.Url)
+	if refreshedURL == "" {
+		return "", fmt.Errorf("DRS access URL is empty")
+	}
+	s.accessURL = refreshedURL
+	return refreshedURL, nil
+}
+
+func (s *resolvedSource) currentAccessURL() string {
+	s.accessURLMu.RLock()
+	defer s.accessURLMu.RUnlock()
+	return s.accessURL
 }
 
 func permanentDownloadStatus(status int) bool {

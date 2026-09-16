@@ -89,6 +89,20 @@ func TestUnifiedAddRejectsUnsupportedGen3AuthenticationBeforeInitializing(t *tes
 	}
 }
 
+func TestUnifiedAddRejectsGlobusAuthenticationBeforeInitializing(t *testing.T) {
+	repo := testutils.SetupTestGitRepo(t)
+	resetUnifiedFlags(t)
+	providerFlag = "ga4gh"
+	authFlag = "globus"
+
+	if err := runUnified(Cmd, []string{"https://drs.example.org"}); err == nil {
+		t.Fatal("expected Globus remote authentication to be rejected")
+	}
+	if _, err := os.Stat(repo + "/.git-drs"); !os.IsNotExist(err) {
+		t.Fatalf("remote validation modified repository state: .git-drs stat error = %v", err)
+	}
+}
+
 func resetUnifiedFlags(t *testing.T) {
 	old := []string{scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag}
 	scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag = "", "auto", "", "auto", "", ""

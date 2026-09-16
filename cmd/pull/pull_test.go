@@ -17,11 +17,13 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
+	drsapi "github.com/calypr/syfon/apigen/client/drs"
 )
 
 func resetPullFlagsForTest() {
@@ -44,6 +46,62 @@ func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
 	}
 	if files[0].Name != "data/a.bin" || files[1].Name != "data/b.bin" {
 		t.Fatalf("unexpected file order: %+v", files)
+	}
+}
+
+func TestPlaceholderPointerValidationUsesSize(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := pointerFile{Name: "data/file.bin", Oid: strings.Repeat("a", 64), Size: int64(len("payload")), Placeholder: true}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.complete {
+		t.Fatalf("state = %+v, err = %v", state, err)
+	}
+	if err := verifyPointerAtPath(path, file); err != nil {
+		t.Fatalf("verifyPointerAtPath returned error: %v", err)
+	}
+}
+
+func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
+	t.Chdir(t.TempDir())
+	payload := []byte("downloaded without a published checksum")
+	temporaryOID := strings.Repeat("a", 64)
+	realSum := sha256.Sum256(payload)
+	realOID := hex.EncodeToString(realSum[:])
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, temporaryOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := localdrsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{Id: "object-1"}, temporaryOID); err != nil {
+		t.Fatal(err)
+	}
+	files := []pointerFile{{Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true}}
+	if err := savePlaceholderChecksums(t.Context(), nil, files, nil); err != nil {
+		t.Fatal(err)
+	}
+	obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, temporaryOID)
+	if err != nil || objectSHA256(obj) != realOID || files[0].SHA256 != realOID {
+		t.Fatalf("saved object = %+v, files = %+v, err = %v", obj, files, err)
+	}
+	learned := collectPointerFiles(map[string]lfs.LfsFileInfo{
+		"data/file.bin": {Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true},
+	}, nil)
+	corrupt := append([]byte(nil), payload...)
+	corrupt[0]++
+	if err := os.WriteFile(cachePath, corrupt, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedPointer(cachePath, learned[0])
+	if err != nil || state.complete {
+		t.Fatalf("same-sized corrupt placeholder cache accepted: state=%+v err=%v", state, err)
 	}
 }
 
@@ -196,6 +254,38 @@ func TestInspectCachedObject(t *testing.T) {
 	}
 	if state.complete {
 		t.Fatal("same-size corrupt file should not be complete")
+	}
+}
+
+func TestInspectCachedObjectAcceptsZeroByteObject(t *testing.T) {
+	objectPath := filepath.Join(t.TempDir(), "empty")
+	if err := os.WriteFile(objectPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedObject(objectPath, "", 0)
+	if err != nil || !state.complete {
+		t.Fatalf("zero-byte object state = %+v, err = %v", state, err)
+	}
+}
+
+func TestStrictAccessMethod(t *testing.T) {
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "")
+	t.Setenv("GIT_DRS_TRANSFER_PROVIDER", "")
+	if method, ok := strictAccessMethod("globus", ""); !ok || method != "globus" {
+		t.Fatalf("command requirement = %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "require:globus")
+	if method, ok := strictAccessMethod("", ""); !ok || method != "globus" {
+		t.Fatalf("environment requirement = %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "")
+	if method, ok := strictAccessMethod("", "prefer:globus"); ok || method != "" {
+		t.Fatalf("preference incorrectly treated as strict: %q, %v", method, ok)
+	}
+	t.Setenv("GIT_DRS_ACCESS_METHOD", "prefer:https")
+	t.Setenv("GIT_DRS_TRANSFER_PROVIDER", "require:globus")
+	if method, ok := strictAccessMethod("", "require:globus"); ok || method != "" {
+		t.Fatalf("lower-priority requirement overrode preference: %q, %v", method, ok)
 	}
 }
 

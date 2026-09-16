@@ -20,6 +20,13 @@ resolve common problems.
   commits in place of large payloads.
 - [Add Existing S3 Objects](adding-s3-files.md) — create references for data
   that is already in provider storage.
+- [Add Existing Globus Objects](globus-add-url.md) — import one file, a
+  collection tree, or a wildcard selection without downloading it first.
+- [Globus Access Methods](globus.md) — log in with Globus Auth, configure a
+  destination collection, and use Globus-backed hydration.
+- [Access-Method Selection](access-method-selection-and-authentication.md) —
+  choose automatic, preferred, or required transfer methods and understand
+  fallback and readiness diagnostics.
 - [Remove Files](remove-files.md) — remove tracked files and understand remote
   reconciliation behavior.
 - [Troubleshooting](troubleshooting.md) — diagnose setup, authentication,
@@ -27,7 +34,7 @@ resolve common problems.
 
 ## AnVIL/Terra proof of concept
 
-View the [AnVIL/Terra DRS reference presentation](anvil-terra-poc-presentation.html)
+View the [AnVIL/Terra DRS reference presentation](git-drs-anvil.pdf)
 for a visual overview of the reference-only workflow, architecture, security
 boundary, and remaining production-validation work.
 

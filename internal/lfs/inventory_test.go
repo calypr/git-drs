@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/drslog"
@@ -51,6 +52,14 @@ func TestGetLfsFilesForRefPaths(t *testing.T) {
 	}
 	if info.Oid != oid || info.Size != 123 || !info.IsPointer {
 		t.Fatalf("unexpected pointer info: %+v", info)
+	}
+}
+
+func TestParsePlaceholderPointer(t *testing.T) {
+	oid := strings.Repeat("a", 64)
+	pointer, ok := parseLFSPointer("version https://git-lfs.github.com/spec/v1\next-0-gitdrsplaceholder sha256:" + oid + "\noid sha256:" + oid + "\nsize 7\n")
+	if !ok || !pointer.Placeholder || pointer.Oid != oid {
+		t.Fatalf("pointer = %+v, ok = %v", pointer, ok)
 	}
 }
 

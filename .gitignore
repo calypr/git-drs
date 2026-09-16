@@ -24,3 +24,6 @@ patch.txt
 .pages-docs/
 _site/
 
+
+# Ignore local syfon working tree (kept for local dev)
+syfon/

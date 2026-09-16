@@ -63,6 +63,17 @@ git drs remote add production calypr --scope <organization/project> \
 git drs pull
 ```
 
+If the repository includes `.git-drs/drs-policies.yaml`, its canonical remote
+and access-method default are loaded automatically. An authenticated committed
+endpoint must be reviewed once before git-drs sends credentials:
+
+```bash
+git config --local --add drs.trusted-endpoint https://drs.example.org
+```
+
+Clone-local remote configuration overrides the committed endpoint. Globus
+destination routing and credentials are never read from the committed policy.
+
 ### New Repository
 
 ```bash
@@ -98,6 +109,18 @@ Most work reduces to this loop:
    git drs pull -I "data/sample.bam"
    git drs pull -I "*.vcf.gz"
    ```
+
+   If objects offer several transfer methods, normal pulls select one
+   automatically. To prefer Globus while allowing fallback, or to require it
+   for a single pull:
+
+   ```bash
+   GIT_DRS_ACCESS_METHOD=prefer:globus git drs pull
+   git drs pull --access-method globus
+   ```
+
+   See [Access-Method Selection](access-method-selection-and-authentication.md)
+   for persistent per-remote preferences and diagnostics.
 
 3. edit or add files normally
 

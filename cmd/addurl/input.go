@@ -10,11 +10,16 @@ import (
 
 // addURLInput holds the parsed CLI state for the add-url command.
 type addURLInput struct {
-	sourceArg string
-	objectURL string
-	path      string
-	sha256    string
-	scheme    string
+	sourceArg    string
+	objectURL    string
+	path         string
+	sha256       string
+	scheme       string
+	recursive    bool
+	dryRun       bool
+	manifest     string
+	remote       string
+	explicitPath bool
 }
 
 // parseAddURLInput parses CLI args and flags into an addURLInput.
@@ -34,12 +39,21 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag scheme: %w", err)
 	}
+	recursive, _ := cmd.Flags().GetBool("recursive")
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	manifest, _ := cmd.Flags().GetString("manifest")
+	remote, _ := cmd.Flags().GetString("remote")
 
 	return addURLInput{
-		sourceArg: sourceArg,
-		path:      pathArg,
-		sha256:    sha256Param,
-		scheme:    strings.ToLower(strings.TrimSpace(scheme)),
+		sourceArg:    sourceArg,
+		path:         pathArg,
+		sha256:       sha256Param,
+		scheme:       strings.ToLower(strings.TrimSpace(scheme)),
+		recursive:    recursive,
+		dryRun:       dryRun,
+		manifest:     strings.TrimSpace(manifest),
+		remote:       strings.TrimSpace(remote),
+		explicitPath: len(args) == 2,
 	}, nil
 }
 
@@ -68,11 +82,16 @@ func looksLikeCloudURL(raw string) bool {
 		return false
 	}
 	switch strings.ToLower(strings.TrimSpace(u.Scheme)) {
-	case "s3", "gs", "gcs", "azblob", "http", "https":
+	case "s3", "gs", "gcs", "azblob", "http", "https", "globus":
 		return strings.TrimSpace(u.Host) != ""
 	default:
 		return false
 	}
+}
+
+func isGlobusURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && strings.EqualFold(u.Scheme, "globus")
 }
 
 func firstNonEmpty(values ...string) string {

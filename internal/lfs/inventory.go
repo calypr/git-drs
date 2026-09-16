@@ -20,15 +20,16 @@ import (
 
 // LfsFileInfo represents a Git LFS pointer discovered in Git history or CLI output.
 type LfsFileInfo struct {
-	Name       string `json:"name"`
-	Size       int64  `json:"size"`
-	Checkout   bool   `json:"checkout"`
-	Downloaded bool   `json:"downloaded"`
-	IsPointer  bool   `json:"is_pointer,omitempty"`
-	OidType    string `json:"oid_type"`
-	Oid        string `json:"oid"`
-	Version    string `json:"version"`
-	SHA256     string `json:"sha256,omitempty"`
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	Checkout    bool   `json:"checkout"`
+	Downloaded  bool   `json:"downloaded"`
+	IsPointer   bool   `json:"is_pointer,omitempty"`
+	OidType     string `json:"oid_type"`
+	Oid         string `json:"oid"`
+	Version     string `json:"version"`
+	SHA256      string `json:"sha256,omitempty"`
+	Placeholder bool   `json:"placeholder,omitempty"`
 }
 
 func IsLFSTracked(path string) (bool, error) {
@@ -140,13 +141,14 @@ func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 			continue
 		}
 		files[path] = LfsFileInfo{
-			Name:      path,
-			Size:      pointer.Size,
-			IsPointer: true,
-			OidType:   pointer.OidType,
-			Oid:       pointer.Oid,
-			Version:   pointer.Version,
-			SHA256:    pointer.SHA256,
+			Name:        path,
+			Size:        pointer.Size,
+			IsPointer:   true,
+			OidType:     pointer.OidType,
+			Oid:         pointer.Oid,
+			Version:     pointer.Version,
+			SHA256:      pointer.SHA256,
+			Placeholder: pointer.Placeholder,
 		}
 	}
 	return files, nil
@@ -210,13 +212,14 @@ func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string,
 			continue
 		}
 		lfsFileMap[path] = LfsFileInfo{
-			Name:      path,
-			Size:      pointer.Size,
-			IsPointer: true,
-			OidType:   pointer.OidType,
-			Oid:       pointer.Oid,
-			Version:   pointer.Version,
-			SHA256:    pointer.SHA256,
+			Name:        path,
+			Size:        pointer.Size,
+			IsPointer:   true,
+			OidType:     pointer.OidType,
+			Oid:         pointer.Oid,
+			Version:     pointer.Version,
+			SHA256:      pointer.SHA256,
+			Placeholder: pointer.Placeholder,
 		}
 	}
 
@@ -407,13 +410,14 @@ func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {
 		return LfsFileInfo{}, false
 	}
 	return LfsFileInfo{
-		Name:      path,
-		Size:      pointer.Size,
-		IsPointer: true,
-		OidType:   pointer.OidType,
-		Oid:       pointer.Oid,
-		Version:   pointer.Version,
-		SHA256:    pointer.SHA256,
+		Name:        path,
+		Size:        pointer.Size,
+		IsPointer:   true,
+		OidType:     pointer.OidType,
+		Oid:         pointer.Oid,
+		Version:     pointer.Version,
+		SHA256:      pointer.SHA256,
+		Placeholder: pointer.Placeholder,
 	}, true
 }
 
@@ -427,13 +431,14 @@ func readIndexPointerInfo(ctx context.Context, repoDir, path string) (LfsFileInf
 		return LfsFileInfo{}, false
 	}
 	return LfsFileInfo{
-		Name:      path,
-		Size:      pointer.Size,
-		IsPointer: false,
-		OidType:   pointer.OidType,
-		Oid:       pointer.Oid,
-		Version:   pointer.Version,
-		SHA256:    pointer.SHA256,
+		Name:        path,
+		Size:        pointer.Size,
+		IsPointer:   false,
+		OidType:     pointer.OidType,
+		Oid:         pointer.Oid,
+		Version:     pointer.Version,
+		SHA256:      pointer.SHA256,
+		Placeholder: pointer.Placeholder,
 	}, true
 }
 
@@ -490,15 +495,17 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 }
 
 type lfsPointer struct {
-	Version string
-	OidType string
-	Oid     string
-	Size    int64
-	SHA256  string
+	Version     string
+	OidType     string
+	Oid         string
+	Size        int64
+	SHA256      string
+	Placeholder bool
 }
 
 func parseLFSPointer(content string) (lfsPointer, bool) {
 	var p lfsPointer
+	var placeholderOID string
 	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -533,6 +540,9 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 				return lfsPointer{}, false
 			}
 		}
+		if strings.HasPrefix(line, "ext-0-gitdrsplaceholder sha256:") {
+			placeholderOID = strings.TrimPrefix(line, "ext-0-gitdrsplaceholder sha256:")
+		}
 	}
 
 	if p.Version == "" || p.OidType == "" || p.Oid == "" {
@@ -553,6 +563,7 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 	default:
 		return lfsPointer{}, false
 	}
+	p.Placeholder = placeholderOID != "" && placeholderOID == p.Oid
 
 	return p, true
 }
@@ -565,6 +576,11 @@ func ParseLFSPointer(data []byte) (oid string, size int64, ok bool) {
 		return "", 0, false
 	}
 	return pointer.Oid, pointer.Size, true
+}
+
+func IsPlaceholderPointer(data []byte) bool {
+	pointer, ok := parseLFSPointer(string(data))
+	return ok && pointer.Placeholder
 }
 
 // CreateLfsPointer creates a Git LFS pointer file for the given DRS object.

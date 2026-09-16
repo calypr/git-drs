@@ -76,11 +76,12 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 			path = pointer.oid
 		}
 		files[path] = LfsFileInfo{
-			Name:      path,
-			Size:      pointer.size,
-			IsPointer: true,
-			OidType:   pointer.oidType,
-			Oid:       pointer.oid,
+			Name:        path,
+			Size:        pointer.size,
+			IsPointer:   true,
+			OidType:     pointer.oidType,
+			Oid:         pointer.oid,
+			Placeholder: pointer.placeholder,
 		}
 	}
 	return files, nil
@@ -92,10 +93,9 @@ type pointerBlobCandidate struct {
 }
 
 type pointerBlob struct {
-	blobOID string
-	oidType string
-	oid     string
-	size    int64
+	blobOID, oidType, oid string
+	size                  int64
+	placeholder           bool
 }
 
 const maxPointerBlobSize = 4096
@@ -189,15 +189,11 @@ func batchReadPointers(ctx context.Context, candidates []pointerBlobCandidate) (
 		if _, err := reader.ReadByte(); err != nil {
 			return nil, fmt.Errorf("read git blob separator %s: %w", candidate.blobOID, err)
 		}
-		oid, declaredSize, ok := ParseLFSPointer(payload)
+		pointer, ok := parseLFSPointer(string(payload))
 		if !ok {
 			continue
 		}
-		oidType := "sha256"
-		if strings.HasPrefix(strings.TrimSpace(oid), "//") {
-			oidType = "drs"
-		}
-		pointers = append(pointers, pointerBlob{blobOID: candidate.blobOID, oidType: oidType, oid: oid, size: declaredSize})
+		pointers = append(pointers, pointerBlob{blobOID: candidate.blobOID, oidType: pointer.OidType, oid: pointer.Oid, size: pointer.Size, placeholder: pointer.Placeholder})
 	}
 	if err := cmd.Wait(); err != nil {
 		return nil, fmt.Errorf("git cat-file --batch: %w", err)

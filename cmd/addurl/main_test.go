@@ -17,10 +17,189 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/globusauth"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	sycloud "github.com/calypr/syfon/client/cloud"
 )
+
+type fakeGlobusLister struct {
+	files []globusauth.File
+	stat  globusauth.File
+}
+
+func (f *fakeGlobusLister) ListFiles(context.Context, string, string) ([]globusauth.File, error) {
+	return f.files, nil
+}
+func (f *fakeGlobusLister) StatFile(_ context.Context, _ string, path string) (globusauth.File, error) {
+	f.stat.Path = path
+	return f.stat, nil
+}
+func (*fakeGlobusLister) Close() error { return nil }
+
+func TestGlobusDirectoryImportMaterializesMembersWithoutChecksums(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	for _, args := range [][]string{
+		{"config", "drs.default-remote", "research"},
+		{"config", "drs.remote.research.type", "gen3"},
+		{"config", "drs.remote.research.endpoint", "https://drs.example.org"},
+		{"config", "drs.remote.research.project", "project"},
+		{"config", "drs.remote.research.bucket", "bucket"},
+	} {
+		cmd := exec.Command("git", args...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	modified := "2026-08-12 19:08:37+00:00"
+	oldLister := newGlobusLister
+	newGlobusLister = func(context.Context) (globusLister, error) {
+		return &fakeGlobusLister{files: []globusauth.File{{Path: "/release/a.bam", Size: 10, LastModified: modified}, {Path: "/release/sub/b.bai", Size: 20, LastModified: modified}}}, nil
+	}
+	t.Cleanup(func() { newGlobusLister = oldLister })
+	service := NewAddURLService()
+	dryRun := NewCommand()
+	_ = dryRun.Flags().Set("dry-run", "true")
+	if err := service.Run(dryRun, []string{"globus://source/release/", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat("data/study/a.bam"); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote a pointer: %v", err)
+	}
+	cmd := NewCommand()
+	if err := service.Run(cmd, []string{"globus://source/release/", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"data/study/a.bam", "data/study/sub/b.bai"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("missing pointer %s: %v", path, err)
+		}
+	}
+	attrs, _ := os.ReadFile(".gitattributes")
+	if !strings.Contains(string(attrs), "data/study/** filter=drs") || !strings.Contains(string(attrs), "data/study/** drs=ro") {
+		t.Fatalf(".gitattributes = %s", attrs)
+	}
+	sourceURL := "globus://source/release/a.bam"
+	oid, err := placeholderOIDForUnknownSHA("last_modified="+modified+";size=10", sourceURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	if err != nil || obj.AccessMethods == nil || string((*obj.AccessMethods)[0].Type) != "globus" {
+		t.Fatalf("Globus DRS object = %+v, %v", obj, err)
+	}
+	if len(obj.Checksums) != 0 || (*obj.AccessMethods)[0].AccessUrl.Url != sourceURL {
+		t.Fatalf("checksum-less Globus DRS object = %+v", obj)
+	}
+}
+
+func TestGlobusWildcardSupportsDoubleStar(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	oldLister := newGlobusLister
+	newGlobusLister = func(context.Context) (globusLister, error) {
+		return &fakeGlobusLister{files: []globusauth.File{
+			{Path: "/release/a.bam", Size: 10, LastModified: "2026-08-12 19:08:37+00:00"},
+			{Path: "/release/sub/b.bam", Size: 20, LastModified: "2026-08-12 19:08:37+00:00"},
+			{Path: "/release/sub/b.bai", Size: 2, LastModified: "2026-08-12 19:08:37+00:00"},
+		}}, nil
+	}
+	t.Cleanup(func() { newGlobusLister = oldLister })
+
+	cmd := NewCommand()
+	_ = cmd.Flags().Set("dry-run", "true")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if err := NewAddURLService().Run(cmd, []string{"globus://source/release/**/*.bam", "data/study"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "/release/a.bam") || !strings.Contains(got, "/release/sub/b.bam") || strings.Contains(got, ".bai") {
+		t.Fatalf("wildcard output = %q", got)
+	}
+}
+
+func TestMatchGlobusPath(t *testing.T) {
+	for _, test := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"/release/*.bam", "/release/a.bam", true},
+		{"/release/*.bam", "/release/sub/a.bam", false},
+		{"/release/a?.bam", "/release/a1.bam", true},
+		{"/release/[ab].bam", "/release/b.bam", true},
+		{"/release/**/*.bam", "/release/a.bam", true},
+		{"/release/**/*.bam", "/release/sub/a.bam", true},
+	} {
+		got, err := matchGlobusPath(test.pattern, test.name)
+		if err != nil || got != test.want {
+			t.Fatalf("matchGlobusPath(%q, %q) = %v, %v; want %v", test.pattern, test.name, got, err, test.want)
+		}
+	}
+}
+
+func TestParseGlobusSourceRejectsInvalidWildcard(t *testing.T) {
+	if _, err := parseGlobusSource("globus://source/release/[.bam"); err == nil {
+		t.Fatal("expected invalid wildcard error")
+	}
+}
+
+func TestParseGlobusSourcePreservesRawQuestionWildcard(t *testing.T) {
+	source, err := parseGlobusSource("globus://source/release/file?.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.collection != "source" || source.root != "/release" || source.pattern != "/release/file?.txt" || !source.tree {
+		t.Fatalf("source = %+v", source)
+	}
+}
+
+func TestGlobusExactFileUsesExplicitDestination(t *testing.T) {
+	source, err := parseGlobusSource("globus://source/release/a.bam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, files, err := discoverGlobusFiles(t.Context(), &fakeGlobusLister{stat: globusauth.File{Size: 10, LastModified: "2026-08-12 19:08:37+00:00"}}, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := globusEntries(files, source, "data/a.bam", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].destination != "data/a.bam" || entries[0].sha256 != "" || len(entries[0].oid) != 64 {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
+func TestRecursiveGlobusManifestRejectsDuplicateContent(t *testing.T) {
+	manifest := filepath.Join(t.TempDir(), "manifest.tsv")
+	sha := strings.Repeat("a", 64)
+	_ = os.WriteFile(manifest, []byte("path\tsize\tsha256\na\t1\t"+sha+"\nb\t1\t"+sha+"\n"), 0o644)
+	if _, err := readGlobusManifest(manifest, "source", "/root", "data"); err == nil || !strings.Contains(err.Error(), "repeats sha256") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestWritePointerFileRejectsFilesystemCollision(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "A.bam")
+	firstOID := strings.Repeat("a", 64)
+	if err := writePointerFile(destination, firstOID, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePointerFile(destination, strings.Repeat("b", 64), 2, false); err == nil {
+		t.Fatal("expected existing destination to be rejected")
+	}
+	pointer, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pointer), firstOID) {
+		t.Fatalf("existing pointer was overwritten: %s", pointer)
+	}
+}
 
 func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	tempDir := t.TempDir()
@@ -120,7 +299,8 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 		t.Fatalf("read pointer file: %v", err)
 	}
 	expectedPointer := fmt.Sprintf(
-		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
+		"version https://git-lfs.github.com/spec/v1\next-0-gitdrsplaceholder sha256:%s\noid sha256:%s\nsize %d\n",
+		oid,
 		oid,
 		11,
 	)

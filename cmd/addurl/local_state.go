@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,15 +61,20 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 	}
 
 	if objectPath != "" {
+		methodType := drsapi.AccessMethodTypeS3
+		if u, parseErr := url.Parse(objectPath); parseErr == nil && strings.EqualFold(u.Scheme, "globus") {
+			methodType = drsapi.AccessMethodType("globus")
+		}
 		if drsObj.AccessMethods != nil && len(*drsObj.AccessMethods) > 0 {
 			am := &(*drsObj.AccessMethods)[0]
+			am.Type = methodType
 			am.AccessUrl = &struct {
 				Headers *[]string `json:"headers,omitempty"`
 				Url     string    `json:"url"`
 			}{Url: objectPath}
 		} else {
 			drsObj.AccessMethods = &[]drsapi.AccessMethod{{
-				Type: drsapi.AccessMethodTypeS3,
+				Type: methodType,
 				AccessUrl: &struct {
 					Headers *[]string `json:"headers,omitempty"`
 					Url     string    `json:"url"`
@@ -188,11 +194,12 @@ func repoRelativePath(pathArg string) (string, error) {
 	return filepath.ToSlash(clean), nil
 }
 
-func writePointerFile(pathArg, oid string, sizeBytes int64) error {
-	pointer := fmt.Sprintf(
-		"version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n",
-		oid, sizeBytes,
-	)
+func writePointerFile(pathArg, oid string, sizeBytes int64, placeholder bool) error {
+	pointer := "version https://git-lfs.github.com/spec/v1\n"
+	if placeholder {
+		pointer += fmt.Sprintf("ext-0-gitdrsplaceholder sha256:%s\n", oid)
+	}
+	pointer += fmt.Sprintf("oid sha256:%s\nsize %d\n", oid, sizeBytes)
 	if pathArg == "" {
 		return fmt.Errorf("empty worktree path")
 	}
@@ -203,8 +210,18 @@ func writePointerFile(pathArg, oid string, sizeBytes int64) error {
 			return fmt.Errorf("mkdir %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(safePath, []byte(pointer), 0o644); err != nil {
+	f, err := os.OpenFile(safePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", safePath, err)
+	}
+	if _, err := f.WriteString(pointer); err != nil {
+		_ = f.Close()
+		_ = os.Remove(safePath)
 		return fmt.Errorf("write %s: %w", safePath, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(safePath)
+		return fmt.Errorf("close %s: %w", safePath, err)
 	}
 
 	if _, err := fmt.Fprintf(os.Stderr, "Added Git LFS pointer file at %s\n", safePath); err != nil {

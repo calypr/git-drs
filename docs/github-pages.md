@@ -55,6 +55,9 @@ The generated site includes:
 /commands/
 /pointer-files/
 /adding-s3-files/
+/globus-add-url/
+/globus/
+/access-method-selection-and-authentication/
 /remove-files/
 /troubleshooting/
 /anvil-terra-poc-presentation.html
@@ -74,15 +77,16 @@ python -m pip install mkdocs-material==9.6.14
 rm -rf .pages-docs _site
 mkdir .pages-docs
 cp docs/{index,quickstart,getting-started,commands,pointer-files}.md .pages-docs/
-cp docs/{adding-s3-files,remove-files,troubleshooting}.md .pages-docs/
+cp docs/{access-method-selection-and-authentication,adding-s3-files,globus,globus-add-url}.md .pages-docs/
+cp docs/{remove-files,troubleshooting}.md .pages-docs/
 cp docs/*.png .pages-docs/
 npx --yes @marp-team/marp-cli@4.2.3 \
   docs/anvil-terra-poc-presentation.md \
   --html \
   --template bespoke \
-  --output /tmp/anvil-terra-poc-presentation.html
+  --output .pages-docs/anvil-terra-poc-presentation.html
 mkdocs build --strict
-cp /tmp/anvil-terra-poc-presentation.html \
+cp .pages-docs/anvil-terra-poc-presentation.html \
   _site/anvil-terra-poc-presentation.html
 python -m http.server --directory _site 8000
 ```

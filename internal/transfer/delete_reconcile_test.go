@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
 	syclient "github.com/calypr/syfon/client"
 )
 
@@ -36,14 +36,12 @@ func TestReconcileCommittedDeletesRemovesControlledAccess(t *testing.T) {
 	var removedResource string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/"+strings.Repeat("a", 64):
-			obj := drsapi.DrsObject{
-				Id:               "did-1",
-				ControlledAccess: &[]string{"/organization/org/project/proj", "/organization/other/project/x"},
-				Checksums:        []drsapi.Checksum{{Type: "sha256", Checksum: strings.Repeat("a", 64)}},
-			}
-			records := []drsapi.DrsObject{obj}
-			writeJSON(t, w, http.StatusOK, drsapi.N200OkDrsObjects{ResolvedDrsObject: &records})
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk/hashes":
+			oid := strings.Repeat("a", 64)
+			hashes := internalapi.HashInfo{"sha256": oid}
+			controlled := []string{"/organization/org/project/proj", "/organization/other/project/x"}
+			record := internalapi.InternalRecord{Did: "did-1", ControlledAccess: &controlled, Hashes: &hashes}
+			writeJSON(t, w, http.StatusOK, map[string]any{"results": map[string]any{oid: []internalapi.InternalRecord{record}}})
 		case r.Method == http.MethodPost && r.URL.Path == "/index/did-1/controlled-access/remove":
 			var req struct {
 				Resource string `json:"resource"`
@@ -90,14 +88,12 @@ func TestReconcileCommittedDeletesDeletesWholeRecord(t *testing.T) {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/ga4gh/drs/v1/objects/checksum/"+strings.Repeat("b", 64):
-			obj := drsapi.DrsObject{
-				Id:               "did-2",
-				ControlledAccess: &[]string{"/organization/org/project/proj"},
-				Checksums:        []drsapi.Checksum{{Type: "sha256", Checksum: strings.Repeat("b", 64)}},
-			}
-			records := []drsapi.DrsObject{obj}
-			writeJSON(t, w, http.StatusOK, drsapi.N200OkDrsObjects{ResolvedDrsObject: &records})
+		case r.Method == http.MethodPost && r.URL.Path == "/index/bulk/hashes":
+			oid := strings.Repeat("b", 64)
+			hashes := internalapi.HashInfo{"sha256": oid}
+			controlled := []string{"/organization/org/project/proj"}
+			record := internalapi.InternalRecord{Did: "did-2", ControlledAccess: &controlled, Hashes: &hashes}
+			writeJSON(t, w, http.StatusOK, map[string]any{"results": map[string]any{oid: []internalapi.InternalRecord{record}}})
 		case r.Method == http.MethodPut && r.URL.Path == "/ga4gh/drs/v1/objects/did-2/delete":
 			if err := json.NewDecoder(r.Body).Decode(&deleteReq); err != nil {
 				t.Fatalf("decode delete request: %v", err)

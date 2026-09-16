@@ -82,10 +82,13 @@ func readRemoteSyncRefsOutput(out, remoteRef, ackRef string) (string, string, er
 	return remoteOID, ackOID, nil
 }
 
-func pushSyncAcknowledgment(ctx context.Context, remote string, state syncRefState) error {
+func pushSyncAcknowledgment(ctx context.Context, remote string, state syncRefState, skippedUnavailable int) error {
+	if skippedUnavailable > 0 {
+		return nil
+	}
 	lease := "--force-with-lease=" + state.AckRef + ":" + state.AckOID
 	source := state.TargetOID + ":" + state.AckRef
-	if _, err := gitOutput(ctx, "push", "--no-verify", lease, remote, source); err != nil {
+	if _, err := gitOutputFn(ctx, "push", "--no-verify", lease, remote, source); err != nil {
 		return fmt.Errorf("advance DRS synchronization ref %s: %w", state.AckRef, err)
 	}
 	return nil

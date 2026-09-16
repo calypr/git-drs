@@ -3,7 +3,9 @@ package remote
 import (
 	"context"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -151,4 +153,22 @@ func TestRemoteRemoveRunClearsDefaultWhenLastRemoteRemoved(t *testing.T) {
 	val, err := exec.Command("git", "config", "--get", "drs.default-remote").CombinedOutput()
 	assert.Empty(t, string(val))
 	assert.Error(t, err)
+}
+
+func TestRemoteRemoveRejectsSharedPolicyRemote(t *testing.T) {
+	dir := testutils.SetupTestGitRepo(t)
+	policyDir := filepath.Join(dir, ".git-drs")
+	if err := os.MkdirAll(policyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	policy := "version: 1\nremotes:\n  shared:\n    endpoint: https://drs.example.org\n    provider: gen3\n"
+	if err := os.WriteFile(filepath.Join(policyDir, "drs-policies.yaml"), []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := RemoveCmd.RunE(RemoveCmd, []string{"shared"})
+	assert.ErrorContains(t, err, "cannot be removed because it is defined in .git-drs/drs-policies.yaml")
+	cfg, loadErr := config.LoadConfig()
+	assert.NoError(t, loadErr)
+	assert.Contains(t, cfg.Remotes, config.Remote("shared"))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
@@ -30,6 +32,7 @@ import (
 
 var includePatterns []string
 var dryRun bool
+var accessMethod string
 
 var (
 	loadCfg         = config.LoadConfig
@@ -94,6 +97,7 @@ var Cmd = &cobra.Command{
 			logg.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
+		drsCtx.CommandAccessMethod = accessMethod
 		var anvil resolver.Resolver
 		if !drsCtx.CanDownload() || !drsCtx.CanResolve() {
 			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
@@ -102,6 +106,9 @@ var Cmd = &cobra.Command{
 			anvil, err = resolver.NewAnVIL(cmd.Context(), drsCtx.Endpoint)
 			if err != nil {
 				return err
+			}
+			if method, ok := strictAccessMethod(accessMethod, drsCtx.AccessMethodPolicy); ok {
+				return fmt.Errorf("access-method requirement %q cannot be enforced for read-only AnVIL remotes", method)
 			}
 		}
 
@@ -134,17 +141,27 @@ var Cmd = &cobra.Command{
 			missingOIDs = append(missingOIDs, f.Oid)
 		}
 
+		prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 		if len(missingOIDs) > 0 {
-			prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
+			checksumOIDs := make([]string, 0, len(missingOIDs))
 			for _, oid := range missingOIDs {
 				if isDRSPointerOID(oid) {
+					if anvil == nil {
+						obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
+						if err == nil {
+							prefetched[oid] = obj
+						}
+					}
 					continue
 				}
-				recs, err := lookup.ObjectsByHashForScope(ctx, drsCtx, oid)
-				if err != nil || len(recs) == 0 {
-					continue
+				checksumOIDs = append(checksumOIDs, oid)
+			}
+			if recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs); err == nil {
+				for _, oid := range checksumOIDs {
+					if recs := recsByOID[oid]; len(recs) > 0 {
+						prefetched[oid] = recs[0]
+					}
 				}
-				prefetched[oid] = recs[0]
 			}
 			if len(prefetched) > 0 {
 				logg.Debug(fmt.Sprintf("prefetched %d objects for pull", len(prefetched)))
@@ -161,9 +178,32 @@ var Cmd = &cobra.Command{
 				if resolved, err := internaltransfer.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
+				} else if errors.Is(err, internaltransfer.ErrAccessMethodSelection) {
+					return err
 				} else {
 					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
 				}
+			}
+			var globusDownloads []internaltransfer.GlobusDownload
+			for _, f := range pointers {
+				obj, ok := prefetched[f.Oid]
+				if !ok {
+					continue
+				}
+				accessURL, ok := prefetchedAccess[obj.Id]
+				if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(accessURL.Url)), "globus://") {
+					continue
+				}
+				cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+				if err != nil {
+					return err
+				}
+				objCopy := obj
+				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: accessURL.Url, Placeholder: f.Placeholder})
+				progress.OnDownloadStart(toPullFile(f))
+			}
+			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
+				return fmt.Errorf("Globus batch download failed: %w", err)
 			}
 			for _, f := range pointers {
 				dstPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
@@ -190,7 +230,7 @@ var Cmd = &cobra.Command{
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
-						if err := verifyObjectAtPath(dstPath, f.Oid, f.Size); err != nil {
+						if err := verifyPointerAtPath(dstPath, f); err != nil {
 							_ = os.Remove(dstPath)
 							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 						}
@@ -220,6 +260,9 @@ var Cmd = &cobra.Command{
 		} else {
 			logg.Debug("no missing pointer objects to download")
 		}
+		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched); err != nil {
+			return err
+		}
 
 		readOnly := drsCtx.IsReadOnly()
 		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
@@ -240,11 +283,30 @@ func normalizeDRSPointerOID(oid string) string {
 	return oid
 }
 
+func strictAccessMethod(command, remotePolicy string) (string, bool) {
+	if command = strings.TrimSpace(command); command != "" {
+		return strings.ToLower(command), true
+	}
+	raw := strings.TrimSpace(os.Getenv("GIT_DRS_ACCESS_METHOD"))
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("GIT_DRS_TRANSFER_PROVIDER"))
+	}
+	if raw == "" {
+		raw = remotePolicy
+	}
+	mode, method, found := strings.Cut(strings.ToLower(strings.TrimSpace(raw)), ":")
+	if found && mode == "require" && method != "" {
+		return method, true
+	}
+	return "", false
+}
+
 type pointerFile struct {
-	Name   string
-	Oid    string
-	Size   int64
-	SHA256 string
+	Name        string
+	Oid         string
+	Size        int64
+	SHA256      string
+	Placeholder bool
 }
 
 func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
@@ -260,13 +322,23 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 	files := make([]pointerFile, 0, len(keys))
 	for _, path := range keys {
 		info := inventory[path]
-		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: info.SHA256})
+		sha256 := info.SHA256
+		if info.Placeholder && sha256 == "" {
+			if obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, info.Oid); err == nil {
+				sha256 = objectSHA256(obj)
+			}
+		}
+		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: sha256, Placeholder: info.Placeholder})
 	}
 	return files
 }
 
 func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {
-	state, err := inspectCachedObject(path, file.Oid, file.Size)
+	expectedOID := file.Oid
+	if file.Placeholder {
+		expectedOID = ""
+	}
+	state, err := inspectCachedObject(path, expectedOID, file.Size)
 	if err != nil || !state.complete || file.SHA256 == "" {
 		return state, err
 	}
@@ -279,7 +351,11 @@ func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, err
 }
 
 func verifyPointerAtPath(path string, file pointerFile) error {
-	if err := verifyObjectAtPath(path, file.Oid, file.Size); err != nil {
+	expectedOID := file.Oid
+	if file.Placeholder {
+		expectedOID = ""
+	}
+	if err := verifyObjectAtPath(path, expectedOID, file.Size); err != nil {
 		return err
 	}
 	if file.SHA256 == "" {
@@ -358,10 +434,7 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 	if info.IsDir() {
 		return state, fmt.Errorf("cached object path is a directory: %s", path)
 	}
-	if expectedSize > 0 && info.Size() != expectedSize {
-		return state, nil
-	}
-	if expectedSize <= 0 && info.Size() <= 0 {
+	if expectedSize >= 0 && info.Size() != expectedSize {
 		return state, nil
 	}
 	if strings.TrimSpace(expectedOID) == "" || strings.HasPrefix(strings.TrimSpace(expectedOID), "//") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(expectedOID)), "drs://") {
@@ -403,6 +476,90 @@ func calculateFileSHA256(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func objectSHA256(obj *drsapi.DrsObject) string {
+	if obj == nil {
+		return ""
+	}
+	for _, checksum := range obj.Checksums {
+		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+		if checksumType != "sha256" && checksumType != "sha-256" {
+			continue
+		}
+		sha256 := strings.ToLower(localdrsobject.NormalizeChecksum(checksum.Checksum))
+		if len(sha256) == 64 && strings.Trim(sha256, "0123456789abcdef") == "" {
+			return sha256
+		}
+	}
+	return ""
+}
+
+func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject) error {
+	saved := make(map[string]string)
+	for i := range files {
+		file := &files[i]
+		if !file.Placeholder {
+			continue
+		}
+		if actual, ok := saved[file.Oid]; ok {
+			file.SHA256 = actual
+			continue
+		}
+		cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, file.Oid)
+		if err != nil {
+			return err
+		}
+		actual, err := calculateFileSHA256(cachePath)
+		if err != nil {
+			return fmt.Errorf("calculate sha256 for placeholder oid %s: %w", file.Oid, err)
+		}
+		file.SHA256 = actual
+		saved[file.Oid] = actual
+
+		var obj drsapi.DrsObject
+		local, localErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, file.Oid)
+		if localErr == nil {
+			obj = *local
+		}
+		prefetched, remoteFound := objects[file.Oid]
+		if !remoteFound && objectSHA256(&obj) == "" && drsCtx != nil && drsCtx.Client != nil {
+			records, err := lookup.ObjectsByHashForScope(ctx, drsCtx, file.Oid)
+			if err != nil {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: %w", file.Oid, err)
+			}
+			if len(records) == 0 {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: no matching Syfon record", file.Oid)
+			}
+			prefetched, remoteFound = records[0], true
+		}
+		if localErr != nil {
+			if !remoteFound {
+				return fmt.Errorf("resolve placeholder oid %s before saving sha256: metadata unavailable", file.Oid)
+			}
+			obj = prefetched
+		}
+		if expected := objectSHA256(&obj); expected != "" && !strings.EqualFold(expected, actual) {
+			return fmt.Errorf("downloaded placeholder oid %s has sha256 %s, expected %s", file.Oid, actual, expected)
+		}
+		if remoteFound {
+			if expected := objectSHA256(&prefetched); expected != "" && !strings.EqualFold(expected, actual) {
+				return fmt.Errorf("downloaded placeholder oid %s has sha256 %s, expected %s", file.Oid, actual, expected)
+			}
+		}
+		checksums := make([]drsapi.Checksum, 0, len(obj.Checksums)+1)
+		for _, checksum := range obj.Checksums {
+			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
+			if checksumType != "sha256" && checksumType != "sha-256" {
+				checksums = append(checksums, checksum)
+			}
+		}
+		obj.Checksums = append(checksums, drsapi.Checksum{Type: "sha256", Checksum: actual})
+		if err := localdrsobject.WriteObject(gitrepo.DRSObjectsPath, &obj, file.Oid); err != nil {
+			return fmt.Errorf("save sha256 for placeholder oid %s: %w", file.Oid, err)
+		}
+	}
+	return nil
 }
 
 func matchesPattern(path, pattern string) bool {
@@ -452,7 +609,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
-		if err := verifyObjectAtPath(srcPath, f.Oid, f.Size); err != nil {
+		if err := verifyPointerAtPath(srcPath, f); err != nil {
 			return fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
 		}
 		src, err := os.Open(srcPath)
@@ -494,7 +651,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err := src.Close(); err != nil {
 			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
 		}
-		if err := verifyObjectAtPath(f.Name, f.Oid, f.Size); err != nil {
+		if err := verifyPointerAtPath(f.Name, f); err != nil {
 			if removeErr := os.Remove(f.Name); removeErr != nil && !os.IsNotExist(removeErr) {
 				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
 			}
@@ -589,4 +746,5 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.Gi
 func init() {
 	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list matching pointer files without downloading them")
+	Cmd.Flags().StringVar(&accessMethod, "access-method", "", "require one access method type (for example: globus or https)")
 }

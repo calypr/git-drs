@@ -244,7 +244,8 @@ Terra/AnVIL DRS objects may expose multiple access methods. `git-drs` should sup
 Example target flags:
 
 ```bash
-git drs pull --access-method auto
+# automatic selection is the default
+git drs pull
 git drs pull --access-method https
 git drs pull --access-method gs
 ```

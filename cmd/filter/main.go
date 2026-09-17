@@ -17,10 +17,12 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
@@ -75,9 +77,10 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("filter: resolve LFS root: %w", err)
 	}
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
+	objectsRoot := filepath.Join(lfsRoot, "objects")
 	// Build the filter and register handlers.
 	f := internalfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
-		OnSmudge(makeSmudgeHandler(drsCtx, terraResolver, logger)).
+		OnSmudge(makeSmudgeHandlerWithRoot(drsCtx, terraResolver, objectsRoot, logger)).
 		OnClean(makeCleanHandler(lfsRoot, logger))
 
 	return f.Run(ctx)
@@ -88,6 +91,10 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // --------------------------------------------------------------------------
 
 func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, logger *slog.Logger) internalfilter.SmudgeFunc {
+	return makeSmudgeHandlerWithRoot(drsCtx, terraResolver, gitrepo.LFSObjectsPath, logger)
+}
+
+func makeSmudgeHandlerWithRoot(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, objectsRoot string, logger *slog.Logger) internalfilter.SmudgeFunc {
 	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn internalfilter.SmudgeDownloadFunc
@@ -99,7 +106,7 @@ func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.
 				return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 			}
 		}
-		return internalfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
+		return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, req.Pathname, ptr, dst, logger, downloadFn)
 	}
 }
 

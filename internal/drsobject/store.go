@@ -1,6 +1,7 @@
 package drsobject
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,11 +12,27 @@ import (
 )
 
 func objectPath(basePath string, oid string) (string, error) {
-	oid = strings.TrimPrefix(oid, "sha256:")
+	if basePath == "" {
+		return "", fmt.Errorf("object base path is required")
+	}
+	oid = strings.TrimSpace(oid)
+	if len(oid) >= len("sha256:") && strings.EqualFold(oid[:len("sha256:")], "sha256:") {
+		oid = oid[len("sha256:"):]
+	}
 	if len(oid) != 64 {
 		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
 	}
-	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil
+	if _, err := hex.DecodeString(oid); err != nil {
+		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
+	}
+	oid = strings.ToLower(oid)
+	basePath = filepath.Clean(basePath)
+	objectPath := filepath.Join(basePath, oid[:2], oid[2:4], oid)
+	rel, err := filepath.Rel(basePath, objectPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("error: object path escapes base path")
+	}
+	return objectPath, nil
 }
 
 func WriteObject(basePath string, drsObj *drsapi.DrsObject, oid string) error {

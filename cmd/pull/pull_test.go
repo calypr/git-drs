@@ -349,6 +349,52 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	}
 }
 
+func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test skipped on Windows")
+	}
+	repo := t.TempDir()
+	t.Chdir(repo)
+	cacheRoot := gitrepo.LFSObjectsPath
+	payload := []byte("safe payload")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	cachePath, err := lfs.ObjectPath(cacheRoot, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	for _, name := range []string{"../outside.txt", "link/outside.txt"} {
+		if name == "link/outside.txt" {
+			if err := os.Symlink(filepath.Dir(outside), filepath.Join(repo, "link")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		files := []pointerFile{{Name: name, Oid: oid, Size: int64(len(payload))}}
+		progress.OnPlan(toPullFiles(files))
+		if err := checkoutDownloadedFiles(files, progress, false); err == nil {
+			t.Fatalf("checkoutDownloadedFiles accepted unsafe path %q", name)
+		}
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "sentinel" {
+		t.Fatalf("outside sentinel was changed to %q", got)
+	}
+}
+
 func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	repo := t.TempDir()
 	oldWD, err := os.Getwd()

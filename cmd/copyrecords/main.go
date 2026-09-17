@@ -9,6 +9,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	"github.com/spf13/cobra"
@@ -30,10 +31,18 @@ var (
 		return newRawIndexAPI(client)
 	}
 	loadLocalSource = func(ctx context.Context, org, project string) ([]copyRecord, error) {
-		return loadLocalSourceRecords(org, project)
+		objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve LFS objects root: %w", err)
+		}
+		return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, nil, objectsRoot)
 	}
 	loadFilteredLocalSource = func(ctx context.Context, org, project string, paths []string) ([]copyRecord, error) {
-		return loadLocalSourceRecordsIncluding(org, project, paths)
+		objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve LFS objects root: %w", err)
+		}
+		return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, paths, objectsRoot)
 	}
 	loadIncludedLocalSHA256 = func(paths []string) (map[string]struct{}, error) {
 		return includedLocalSHA256(paths)

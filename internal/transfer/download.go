@@ -24,51 +24,67 @@ import (
 )
 
 func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) (*drsapi.AccessURL, *drsapi.DrsObject, error) {
-	records, err := lookup.ObjectsByHashForScope(ctx, drsCtx, checksum)
+	resolved, object, err := ResolvedAccessURLForHashScope(ctx, drsCtx, checksum)
 	if err != nil {
 		return nil, nil, err
 	}
+	return &resolved.AccessURL, object, nil
+}
+
+func ResolvedAccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) (ResolvedAccess, *drsapi.DrsObject, error) {
+	records, err := lookup.ObjectsByHashForScope(ctx, drsCtx, checksum)
+	if err != nil {
+		return ResolvedAccess{}, nil, err
+	}
 	if len(records) == 0 {
-		return nil, nil, fmt.Errorf("no matching DRS record found for oid %s", hash.NormalizeChecksum(checksum))
+		return ResolvedAccess{}, nil, fmt.Errorf("no matching DRS record found for oid %s", hash.NormalizeChecksum(checksum))
 	}
 	match := records[0]
 	if match.AccessMethods == nil || len(*match.AccessMethods) == 0 {
-		return nil, nil, fmt.Errorf("AccessURLForHashScope: no access methods *available* for DRS object %s", match.Id)
+		return ResolvedAccess{}, nil, fmt.Errorf("AccessURLForHashScope: no access methods *available* for DRS object %s", match.Id)
 	}
-	accessURL, err := planAccessURL(ctx, drsCtx, match)
+	access, err := planResolvedAccess(ctx, drsCtx, match)
 	if err != nil {
-		return nil, nil, err
+		return ResolvedAccess{}, nil, err
 	}
-	return accessURL, &match, nil
+	return access, &match, nil
 }
 
 func AccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI string) (*drsapi.AccessURL, *drsapi.DrsObject, error) {
+	access, obj, err := ResolvedAccessURLForDRSURI(ctx, drsCtx, drsURI)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &access.AccessURL, obj, nil
+}
+
+func ResolvedAccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI string) (ResolvedAccess, *drsapi.DrsObject, error) {
 	if strings.HasPrefix(drsURI, "//") {
 		drsURI = "drs:" + drsURI
 	}
 	obj, err := drsCtx.Client.DRS().GetObject(ctx, drsURI)
 	if err != nil {
-		return nil, nil, err
+		return ResolvedAccess{}, nil, err
 	}
 	if obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
-		return nil, nil, fmt.Errorf("AccessURLForDRSURI: no access methods *available* for DRS object %s", obj.Id)
+		return ResolvedAccess{}, nil, fmt.Errorf("AccessURLForDRSURI: no access methods *available* for DRS object %s", obj.Id)
 	}
-	accessURL, err := planAccessURL(ctx, drsCtx, obj)
+	access, err := planResolvedAccess(ctx, drsCtx, obj)
 	if err != nil {
-		return nil, nil, err
+		return ResolvedAccess{}, nil, err
 	}
-	return accessURL, &obj, nil
+	return access, &obj, nil
 }
 
 func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI, cachePath string) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}
-	accessURL, obj, err := AccessURLForDRSURI(ctx, drsCtx, drsURI)
+	access, obj, err := ResolvedAccessURLForDRSURI(ctx, drsCtx, drsURI)
 	if err != nil {
 		return err
 	}
-	return DownloadResolvedToCachePath(ctx, drsCtx, drsURI, cachePath, obj, accessURL)
+	return DownloadResolvedToCachePathWithAccess(ctx, drsCtx, drsURI, cachePath, obj, access)
 }
 
 func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string) error {
@@ -80,11 +96,11 @@ func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}
 
-	accessURL, match, err := AccessURLForHashScope(ctx, drsCtx, oid)
+	access, match, err := ResolvedAccessURLForHashScope(ctx, drsCtx, oid)
 	if err != nil {
 		return err
 	}
-	return DownloadResolvedToCachePath(ctx, drsCtx, oid, cachePath, match, accessURL)
+	return DownloadResolvedToCachePathWithAccess(ctx, drsCtx, oid, cachePath, match, access)
 }
 
 // DownloadToPath resolves a DRS object by checksum and writes its payload to
@@ -92,11 +108,11 @@ func DownloadToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 // the Git-LFS object cache and is intended for callers that are not operating
 // on a Git checkout.
 func DownloadToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string) error {
-	accessURL, match, err := AccessURLForHashScope(ctx, drsCtx, oid)
+	access, match, err := ResolvedAccessURLForHashScope(ctx, drsCtx, oid)
 	if err != nil {
 		return err
 	}
-	return DownloadResolvedToPath(ctx, drsCtx, oid, dstPath, match, accessURL, sydownload.DownloadOptions{
+	return DownloadResolvedToPathWithAccess(ctx, drsCtx, oid, dstPath, match, access, sydownload.DownloadOptions{
 		MultipartThreshold: 5 * 1024 * 1024,
 		Concurrency:        2,
 		ChunkSize:          64 * 1024 * 1024,
@@ -104,16 +120,22 @@ func DownloadToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, 
 }
 
 func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
+	access := compatibilityResolvedAccess(obj, accessURL)
+	return DownloadResolvedToCachePathWithAccess(ctx, drsCtx, oid, cachePath, obj, access)
+}
+
+func DownloadResolvedToCachePathWithAccess(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, access ResolvedAccess, cacheRoots ...string) error {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for cache path: %w", err)
 	}
-	if obj == nil || accessURL == nil || accessURL.Url == "" {
+	if obj == nil || strings.TrimSpace(access.AccessURL.Url) == "" {
 		return DownloadToCachePath(ctx, drsCtx, oid, cachePath)
 	}
-	if isGlobusURL(accessURL.Url) {
-		return downloadGlobusResolved(ctx, drsCtx, accessURL.Url, cachePath, oid, obj)
+	cacheRoots = resolvedCacheRoots(drsCtx, cacheRoots)
+	if isGlobusURL(access.AccessURL.Url) {
+		return downloadGlobusResolved(ctx, drsCtx, access.AccessURL.Url, cachePath, oid, obj, cacheRoots...)
 	}
-	return DownloadResolvedToPath(ctx, drsCtx, oid, cachePath, obj, accessURL, sydownload.DownloadOptions{
+	return DownloadResolvedToPathWithAccess(ctx, drsCtx, oid, cachePath, obj, access, sydownload.DownloadOptions{
 		MultipartThreshold: 5 * 1024 * 1024,
 		Concurrency:        2,
 		ChunkSize:          64 * 1024 * 1024,
@@ -121,13 +143,52 @@ func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitC
 }
 
 func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL, opts sydownload.DownloadOptions) error {
-	if accessURL != nil && isGlobusURL(accessURL.Url) {
-		return downloadGlobusResolved(ctx, drsCtx, accessURL.Url, dstPath, oid, obj)
+	access := compatibilityResolvedAccess(obj, accessURL)
+	return DownloadResolvedToPathWithAccess(ctx, drsCtx, oid, dstPath, obj, access, opts)
+}
+
+// compatibilityResolvedAccess preserves refresh support for callers of the
+// legacy URL-only helpers when the access method is unambiguous. Production
+// planning paths carry ResolvedAccess directly and never infer this identity.
+func compatibilityResolvedAccess(obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) ResolvedAccess {
+	var resolved ResolvedAccess
+	if accessURL == nil {
+		return resolved
+	}
+	resolved.AccessURL = cloneAccessURL(*accessURL, strings.TrimSpace(accessURL.Url))
+	if obj == nil || obj.AccessMethods == nil {
+		return resolved
+	}
+
+	var onlyAccessID string
+	for _, method := range *obj.AccessMethods {
+		if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
+			continue
+		}
+		accessID := strings.TrimSpace(*method.AccessId)
+		if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) == resolved.AccessURL.Url {
+			resolved.AccessID = accessID
+			return resolved
+		}
+		if onlyAccessID == "" {
+			onlyAccessID = accessID
+		} else if onlyAccessID != accessID {
+			return resolved
+		}
+	}
+	resolved.AccessID = onlyAccessID
+	return resolved
+}
+
+func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, access ResolvedAccess, opts sydownload.DownloadOptions, cacheRoots ...string) error {
+	cacheRoots = resolvedCacheRoots(drsCtx, cacheRoots)
+	if strings.TrimSpace(access.AccessURL.Url) != "" && isGlobusURL(access.AccessURL.Url) {
+		return downloadGlobusResolved(ctx, drsCtx, access.AccessURL.Url, dstPath, oid, obj, cacheRoots...)
 	}
 	if drsCtx == nil || drsCtx.Client == nil {
 		return fmt.Errorf("DRS client unavailable")
 	}
-	if obj == nil || accessURL == nil || strings.TrimSpace(accessURL.Url) == "" {
+	if obj == nil || strings.TrimSpace(access.AccessURL.Url) == "" {
 		return fmt.Errorf("resolved DRS object and access URL are required")
 	}
 	_, statErr := os.Lstat(dstPath)
@@ -137,15 +198,15 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 	hadDestination := statErr == nil
 	src := &resolvedSource{
 		requestor:    drsCtx.Client,
-		accessURL:    strings.TrimSpace(accessURL.Url),
-		headers:      accessURL.Headers,
+		accessURL:    strings.TrimSpace(access.AccessURL.Url),
+		headers:      cloneAccessHeaders(access.AccessURL.Headers),
+		accessID:     strings.TrimSpace(access.AccessID),
 		expectedSize: obj.Size,
 		identity:     resolvedDownloadIdentity(oid, obj),
 	}
-	if accessID := resolvedAccessID(obj); accessID != "" && strings.TrimSpace(obj.Id) != "" {
+	if src.accessID != "" && strings.TrimSpace(obj.Id) != "" {
 		src.drsClient = drsCtx.Client.DRS()
 		src.objectID = strings.TrimSpace(obj.Id)
-		src.accessID = accessID
 	}
 	err := sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
 	if err != nil && !hadDestination {
@@ -156,6 +217,13 @@ func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContex
 		_ = os.Remove(dstPath + ".syfon-download.json")
 	}
 	return err
+}
+
+func resolvedCacheRoots(drsCtx *remoteruntime.GitContext, roots []string) []string {
+	if len(roots) > 0 || drsCtx == nil || strings.TrimSpace(drsCtx.LFSObjectsRoot) == "" || strings.TrimSpace(drsCtx.RepositoryRoot) == "" {
+		return roots
+	}
+	return []string{drsCtx.LFSObjectsRoot, drsCtx.RepositoryRoot}
 }
 
 func resolvedDownloadIdentity(oid string, obj *drsapi.DrsObject) string {
@@ -169,11 +237,11 @@ func resolvedDownloadIdentity(oid string, obj *drsapi.DrsObject) string {
 	return strings.TrimSpace(oid)
 }
 
-func downloadGlobusResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, dstPath, oid string, obj *drsapi.DrsObject) error {
+func downloadGlobusResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, dstPath, oid string, obj *drsapi.DrsObject, cacheRoots ...string) error {
 	if obj == nil {
 		return fmt.Errorf("resolved DRS object is required")
 	}
-	if err := transferGlobusToCachePath(ctx, drsCtx, accessURL, dstPath); err != nil {
+	if err := transferGlobusToCachePath(ctx, drsCtx, accessURL, dstPath, cacheRoots...); err != nil {
 		_ = os.Remove(dstPath)
 		return err
 	}
@@ -307,18 +375,19 @@ func (s *resolvedSource) GetRangeReader(ctx context.Context, guid string, offset
 }
 
 func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.ReadCloser, error) {
-	accessURL := s.currentAccessURL()
-	requestor := accessURLRequestor{HTTPDoer: s.requestor, headers: s.headers}
+	accessURL, headers := s.currentAccess()
+	requestor := accessURLRequestor{HTTPDoer: s.requestor, headers: headers}
 	resp, err := sytransfer.GenericDownload(ctx, requestor, accessURL, start, end)
 	if err != nil {
 		return nil, err
 	}
 	if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) && s.canRefreshAccessURL() {
 		resp.Body.Close()
-		accessURL, err = s.refreshAccessURL(ctx, accessURL)
+		accessURL, headers, err = s.refreshAccessURL(ctx, accessURL)
 		if err != nil {
 			return nil, fmt.Errorf("refresh DRS access URL: %w", err)
 		}
+		requestor = accessURLRequestor{HTTPDoer: s.requestor, headers: headers}
 		resp, err = sytransfer.GenericDownload(ctx, requestor, accessURL, start, end)
 		if err != nil {
 			return nil, err
@@ -339,43 +408,33 @@ func (s *resolvedSource) download(ctx context.Context, start, end *int64) (io.Re
 	return resp.Body, nil
 }
 
-func resolvedAccessID(obj *drsapi.DrsObject) string {
-	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
-		return ""
-	}
-	method := (*obj.AccessMethods)[0]
-	if method.AccessId != nil && strings.TrimSpace(*method.AccessId) != "" {
-		return strings.TrimSpace(*method.AccessId)
-	}
-	return strings.TrimSpace(string(method.Type))
-}
-
 func (s *resolvedSource) canRefreshAccessURL() bool {
 	return s.drsClient != nil && s.objectID != "" && s.accessID != ""
 }
 
-func (s *resolvedSource) refreshAccessURL(ctx context.Context, failedURL string) (string, error) {
+func (s *resolvedSource) refreshAccessURL(ctx context.Context, failedURL string) (string, *[]string, error) {
 	s.accessURLMu.Lock()
 	defer s.accessURLMu.Unlock()
 	if s.accessURL != failedURL {
-		return s.accessURL, nil
+		return s.accessURL, cloneAccessHeaders(s.headers), nil
 	}
 	refreshed, err := s.drsClient.GetAccessURL(ctx, s.objectID, s.accessID)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	refreshedURL := strings.TrimSpace(refreshed.Url)
 	if refreshedURL == "" {
-		return "", fmt.Errorf("DRS access URL is empty")
+		return "", nil, fmt.Errorf("DRS access URL is empty")
 	}
 	s.accessURL = refreshedURL
-	return refreshedURL, nil
+	s.headers = cloneAccessHeaders(refreshed.Headers)
+	return s.accessURL, cloneAccessHeaders(s.headers), nil
 }
 
-func (s *resolvedSource) currentAccessURL() string {
+func (s *resolvedSource) currentAccess() (string, *[]string) {
 	s.accessURLMu.RLock()
 	defer s.accessURLMu.RUnlock()
-	return s.accessURL
+	return s.accessURL, cloneAccessHeaders(s.headers)
 }
 
 func permanentDownloadStatus(status int) bool {

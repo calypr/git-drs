@@ -151,10 +151,10 @@ func (c *Client) downloadFile(ctx context.Context, oid, dst string) error {
 	objects, err := lookup.ObjectsByHashForScope(ctx, c.runtime, oid)
 	if err == nil && len(objects) > 0 {
 		object := objects[0]
-		accessURLs, bulkErr := internaltransfer.BulkAccessURLsForObjects(ctx, c.runtime, []drsapi.DrsObject{object})
+		accessURLs, bulkErr := internaltransfer.BulkResolvedAccessURLsForObjects(ctx, c.runtime, []drsapi.DrsObject{object})
 		if bulkErr == nil {
-			if accessURL, ok := accessURLs[object.Id]; ok {
-				return internaltransfer.DownloadResolvedToPath(ctx, c.runtime, oid, dst, &object, &accessURL, sydownload.DownloadOptions{
+			if access, ok := accessURLs[object.Id]; ok {
+				return internaltransfer.DownloadResolvedToPathWithAccess(ctx, c.runtime, oid, dst, &object, access, sydownload.DownloadOptions{
 					MultipartThreshold: 5 * 1024 * 1024,
 					Concurrency:        2,
 					ChunkSize:          64 * 1024 * 1024,

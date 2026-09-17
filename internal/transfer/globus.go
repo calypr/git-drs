@@ -29,6 +29,8 @@ type GlobusDownload struct {
 	Object         *drsapi.DrsObject
 	AccessURL      string
 	Placeholder    bool
+	ObjectsRoot    string
+	RepositoryRoot string
 }
 
 type globusClient interface {
@@ -47,31 +49,81 @@ func isGlobusURL(raw string) bool {
 
 func parseGlobusURL(raw string) (globusLocator, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || !strings.EqualFold(u.Scheme, "globus") || u.Host == "" {
+	if err != nil || !strings.EqualFold(u.Scheme, "globus") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return globusLocator{}, fmt.Errorf("invalid Globus access URL %q; expected globus://<collection-id>/<path>", raw)
 	}
-	p := path.Clean("/" + strings.TrimPrefix(u.EscapedPath(), "/"))
-	if p == "/" || p == "." {
-		return globusLocator{}, fmt.Errorf("invalid Globus access URL %q; source path is required", raw)
-	}
-	decodedPath, err := url.PathUnescape(p)
+	decodedPath, err := url.PathUnescape(strings.TrimSpace(u.EscapedPath()))
 	if err != nil {
 		return globusLocator{}, fmt.Errorf("invalid Globus access URL %q: %w", raw, err)
 	}
-	return globusLocator{Collection: u.Host, Path: decodedPath}, nil
+	if decodedPath == "" || strings.ContainsAny(decodedPath, "\x00\\") {
+		return globusLocator{}, fmt.Errorf("invalid Globus access URL %q; source path contains invalid characters", raw)
+	}
+	for _, part := range strings.Split(decodedPath, "/") {
+		if part == ".." {
+			return globusLocator{}, fmt.Errorf("invalid Globus access URL %q; source path contains traversal", raw)
+		}
+	}
+	p := path.Clean("/" + strings.TrimPrefix(decodedPath, "/"))
+	if p == "/" || p == "." {
+		return globusLocator{}, fmt.Errorf("invalid Globus access URL %q; source path is required", raw)
+	}
+	return globusLocator{Collection: u.Host, Path: p}, nil
 }
 
-func globusDestinationForCachePath(drsCtx *remoteruntime.GitContext, sourceCollection, cachePath string) (globusLocator, error) {
+func globusDestinationForCachePath(drsCtx *remoteruntime.GitContext, sourceCollection, cachePath string, roots ...string) (globusLocator, error) {
 	collection, repositoryPath, err := resolveGlobusDestination(drsCtx, sourceCollection)
 	if err != nil {
 		return globusLocator{}, err
 	}
-	clean := filepath.Clean(cachePath)
-	rel, err := filepath.Rel(gitrepo.LFSObjectsPath, clean)
-	if err != nil || filepath.IsAbs(clean) || rel == "." || !filepath.IsLocal(rel) {
-		return globusLocator{}, fmt.Errorf("Globus destination must be inside %s", gitrepo.LFSObjectsPath)
+	objectsRoot := gitrepo.LFSObjectsPath
+	if len(roots) > 0 && strings.TrimSpace(roots[0]) != "" {
+		objectsRoot = roots[0]
 	}
-	return globusLocator{Collection: collection, Path: path.Join(repositoryPath, filepath.ToSlash(clean))}, nil
+	repositoryRoot, err := os.Getwd()
+	if err != nil {
+		return globusLocator{}, fmt.Errorf("resolve Globus repository root: %w", err)
+	}
+	if len(roots) > 1 && strings.TrimSpace(roots[1]) != "" {
+		repositoryRoot = roots[1]
+	}
+	objectsRoot, err = filepath.Abs(objectsRoot)
+	if err != nil {
+		return globusLocator{}, fmt.Errorf("resolve Globus object root: %w", err)
+	}
+	repositoryRoot, err = filepath.Abs(repositoryRoot)
+	if err != nil {
+		return globusLocator{}, fmt.Errorf("resolve Globus repository root: %w", err)
+	}
+	clean, err := filepath.Abs(filepath.Clean(cachePath))
+	if err != nil {
+		return globusLocator{}, fmt.Errorf("resolve Globus cache path: %w", err)
+	}
+	objectRel, err := filepath.Rel(objectsRoot, clean)
+	if err != nil || objectRel == "." || !filepath.IsLocal(objectRel) {
+		return globusLocator{}, fmt.Errorf("Globus destination must be inside canonical LFS objects root %s", objectsRoot)
+	}
+	rel, err := filepath.Rel(repositoryRoot, clean)
+	if err != nil || rel == "." || !filepath.IsLocal(rel) {
+		return globusLocator{}, fmt.Errorf("canonical LFS objects root is not representable beneath Globus repository root %s", repositoryRoot)
+	}
+	return globusLocator{Collection: collection, Path: path.Join(repositoryPath, filepath.ToSlash(rel))}, nil
+}
+
+func globusStorageRepresentationError(objectsRoot, repositoryRoot string) error {
+	objectsRoot, err := filepath.Abs(objectsRoot)
+	if err != nil {
+		return fmt.Errorf("resolve Globus object root: %w", err)
+	}
+	repositoryRoot, err = filepath.Abs(repositoryRoot)
+	if err != nil {
+		return fmt.Errorf("resolve Globus repository root: %w", err)
+	}
+	rel, err := filepath.Rel(repositoryRoot, objectsRoot)
+	if err != nil || !filepath.IsLocal(rel) {
+		return fmt.Errorf("canonical LFS objects root %s is outside Globus repository root %s", objectsRoot, repositoryRoot)
+	}
+	return nil
 }
 
 func resolveGlobusDestination(drsCtx *remoteruntime.GitContext, sourceCollection string) (string, string, error) {
@@ -130,12 +182,12 @@ func normalizeGlobusRepositoryPath(raw string) (string, error) {
 	return path.Clean(raw), nil
 }
 
-func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, cachePath string) error {
+func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, accessURL, cachePath string, roots ...string) error {
 	src, err := parseGlobusURL(accessURL)
 	if err != nil {
 		return err
 	}
-	dst, err := globusDestinationForCachePath(drsCtx, src.Collection, cachePath)
+	dst, err := globusDestinationForCachePath(drsCtx, src.Collection, cachePath, roots...)
 	if err != nil {
 		return err
 	}
@@ -174,7 +226,11 @@ func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 		if err != nil {
 			return err
 		}
-		dst, err := globusDestinationForCachePath(drsCtx, src.Collection, download.CachePath)
+		var roots []string
+		if download.ObjectsRoot != "" || download.RepositoryRoot != "" {
+			roots = []string{download.ObjectsRoot, download.RepositoryRoot}
+		}
+		dst, err := globusDestinationForCachePath(drsCtx, src.Collection, download.CachePath, roots...)
 		if err != nil {
 			return err
 		}

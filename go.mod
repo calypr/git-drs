@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/sonic v1.15.2
 	github.com/calypr/syfon/apigen v0.3.4
 	github.com/git-lfs/pktline v0.0.0-20230103162542-ca444d533ef1
-	github.com/go-git/go-git/v5 v5.19.1
+	github.com/go-git/go-git/v5 v5.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-isatty v0.0.22

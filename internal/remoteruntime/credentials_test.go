@@ -2,6 +2,7 @@ package remoteruntime
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -20,5 +21,13 @@ func TestEnsureValidCredentialRejectsReusedAPIKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "access token and API key must differ") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRedactCredentialErrorRemovesSecrets(t *testing.T) {
+	cred := &syconf.Credential{AccessToken: "access-secret", APIKey: "api-secret"}
+	err := redactCredentialError(errors.New("request failed with access-secret and api-secret"), cred)
+	if strings.Contains(err.Error(), cred.AccessToken) || strings.Contains(err.Error(), cred.APIKey) {
+		t.Fatalf("credential error leaked secret: %v", err)
 	}
 }

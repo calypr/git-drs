@@ -18,23 +18,61 @@ import (
 
 var ErrAccessMethodSelection = errors.New("access method selection failed")
 
+// ResolvedAccess keeps the URL, request headers, and the access method that
+// produced them together. The access ID is required for refreshing an expired
+// URL; it must never be inferred from the object's method ordering.
+type ResolvedAccess struct {
+	AccessURL drsapi.AccessURL
+	AccessID  string
+}
+
 // BulkAccessURLsForObjects plans each object before any transfer begins. DRS
 // /access resolution is planning because it may reveal the Globus source used
 // for destination routing.
-func BulkAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitContext, objects []drsapi.DrsObject) (map[string]drsapi.AccessURL, error) {
+func BulkResolvedAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitContext, objects []drsapi.DrsObject) (map[string]ResolvedAccess, error) {
 	if drsCtx == nil || drsCtx.Client == nil {
 		return nil, fmt.Errorf("DRS client unavailable")
 	}
-	out := make(map[string]drsapi.AccessURL, len(objects))
+	out := make(map[string]ResolvedAccess, len(objects))
 	var diagnostics []error
-	if req, ok := bulkAccessRequest(objects); ok {
+	bulkPlans, ok := bulkAccessRequest(drsCtx, objects)
+	if ok {
 		if api := drsCtx.Client.DRSAPI(); api != nil {
-			if resp, err := api.GetBulkAccessURLWithResponse(ctx, req); err == nil && resp.JSON200 != nil && resp.JSON200.ResolvedDrsObjectAccessUrls != nil {
+			if resp, err := api.GetBulkAccessURLWithResponse(ctx, bulkPlans.request); err == nil && resp.JSON200 != nil && resp.JSON200.ResolvedDrsObjectAccessUrls != nil {
+				candidates := make(map[string]map[string][]ResolvedAccess)
 				for _, resolved := range *resp.JSON200.ResolvedDrsObjectAccessUrls {
-					if resolved.DrsObjectId == nil || strings.TrimSpace(*resolved.DrsObjectId) == "" || strings.TrimSpace(resolved.Url) == "" {
+					if resolved.DrsObjectId == nil || resolved.DrsAccessId == nil || strings.TrimSpace(*resolved.DrsObjectId) == "" || strings.TrimSpace(*resolved.DrsAccessId) == "" || strings.TrimSpace(resolved.Url) == "" {
 						continue
 					}
-					out[strings.TrimSpace(*resolved.DrsObjectId)] = drsapi.AccessURL{Headers: resolved.Headers, Url: resolved.Url}
+					objectID := strings.TrimSpace(*resolved.DrsObjectId)
+					accessID := strings.TrimSpace(*resolved.DrsAccessId)
+					_, requested := bulkPlans.byObject[objectID][accessID]
+					if !requested {
+						continue
+					}
+					accessURL := drsapi.AccessURL{Headers: cloneAccessHeaders(resolved.Headers), Url: strings.TrimSpace(resolved.Url)}
+					if state, _ := resolvedAccessReadiness(drsCtx, accessURL.Url); state != globusauth.Ready {
+						continue
+					}
+					if candidates[objectID] == nil {
+						candidates[objectID] = make(map[string][]ResolvedAccess)
+					}
+					candidates[objectID][accessID] = append(candidates[objectID][accessID], ResolvedAccess{AccessURL: accessURL, AccessID: accessID})
+				}
+				for objectID, byAccessID := range candidates {
+					for accessID, matches := range byAccessID {
+						// A duplicate result for one requested method is ambiguous.
+						// Fall back to the ordinary per-object planner instead of
+						// allowing server response order to select the URL.
+						if len(matches) != 1 {
+							continue
+						}
+						rank := bulkPlans.byObject[objectID][accessID]
+						if _, exists := out[objectID]; !exists || rank < bulkPlans.rank[objectID] {
+							out[objectID] = matches[0]
+							bulkPlans.rank[objectID] = rank
+						}
+					}
 				}
 			}
 		}
@@ -43,51 +81,123 @@ func BulkAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitCont
 		if _, ok := out[strings.TrimSpace(obj.Id)]; ok {
 			continue
 		}
-		accessURL, err := planAccessURL(ctx, drsCtx, obj)
+		resolvedAccess, err := planResolvedAccess(ctx, drsCtx, obj)
 		if err != nil {
 			diagnostics = append(diagnostics, err)
 			continue
 		}
-		out[strings.TrimSpace(obj.Id)] = *accessURL
+		out[strings.TrimSpace(obj.Id)] = resolvedAccess
 	}
 	return out, errors.Join(diagnostics...)
 }
 
-func bulkAccessRequest(objects []drsapi.DrsObject) (drsapi.BulkObjectAccessId, bool) {
-	req := drsapi.BulkObjectAccessId{}
+// BulkAccessURLsForObjects is retained as a leaf compatibility adapter. New
+// transfer paths must use BulkResolvedAccessURLsForObjects so refresh retains
+// the exact access ID and headers selected during planning.
+func BulkAccessURLsForObjects(ctx context.Context, drsCtx *remoteruntime.GitContext, objects []drsapi.DrsObject) (map[string]drsapi.AccessURL, error) {
+	resolved, err := BulkResolvedAccessURLsForObjects(ctx, drsCtx, objects)
+	if resolved == nil {
+		return nil, err
+	}
+	out := make(map[string]drsapi.AccessURL, len(resolved))
+	for objectID, access := range resolved {
+		out[objectID] = access.AccessURL
+	}
+	return out, err
+}
+
+type bulkAccessPlan struct {
+	request  drsapi.BulkObjectAccessId
+	byObject map[string]map[string]int
+	rank     map[string]int
+}
+
+func bulkAccessRequest(drsCtx *remoteruntime.GitContext, objects []drsapi.DrsObject) (bulkAccessPlan, bool) {
+	plan := bulkAccessPlan{byObject: make(map[string]map[string]int), rank: make(map[string]int)}
 	items := make([]struct {
 		BulkAccessIds *[]string `json:"bulk_access_ids,omitempty"`
 		BulkObjectId  *string   `json:"bulk_object_id,omitempty"`
 	}, 0, len(objects))
 	for _, obj := range objects {
 		objectID := strings.TrimSpace(obj.Id)
-		accessID := accessIDForBulkRequest(obj)
-		if objectID == "" || accessID == "" {
+		if objectID == "" {
 			continue
 		}
-		accessIDs := []string{accessID}
+		methods, policy, err := orderedAccessMethods(obj, accessPolicyFor(drsCtx))
+		if err != nil {
+			continue
+		}
+		accessIDs := make([]string, 0, len(methods))
+		byAccessID := make(map[string]int)
+		for methodIndex, method := range methods {
+			methodType := strings.ToLower(string(method.Type))
+			if policy.mode == "require" && methodType != policy.method {
+				continue
+			}
+			if method.Available != nil && !*method.Available {
+				continue
+			}
+			if methodType == "globus" {
+				state, _ := globusauth.CredentialReadiness()
+				if state != globusauth.Ready {
+					continue
+				}
+			}
+			accessID := ""
+			if method.AccessId != nil {
+				accessID = strings.TrimSpace(*method.AccessId)
+			}
+			if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
+				raw := strings.TrimSpace(method.AccessUrl.Url)
+				if isHTTPURL(raw) || isGlobusURL(raw) || accessID == "" {
+					if state, _ := resolvedAccessReadiness(drsCtx, raw); state == globusauth.Ready {
+						// The ordinary planner would choose this embedded URL before
+						// any later access ID, so this object cannot use bulk planning.
+						accessIDs = nil
+						break
+					}
+					continue
+				}
+			}
+			if method.AccessUrl == nil && accessID != "" && !supportedAccessMethodType(methodType) {
+				continue
+			}
+			if method.AccessId == nil {
+				continue
+			}
+			if accessID == "" {
+				continue
+			}
+			if _, duplicate := byAccessID[accessID]; duplicate {
+				continue
+			}
+			byAccessID[accessID] = methodIndex
+			accessIDs = append(accessIDs, accessID)
+		}
+		if len(accessIDs) == 0 {
+			continue
+		}
 		items = append(items, struct {
 			BulkAccessIds *[]string `json:"bulk_access_ids,omitempty"`
 			BulkObjectId  *string   `json:"bulk_object_id,omitempty"`
 		}{BulkAccessIds: &accessIDs, BulkObjectId: &objectID})
+		plan.byObject[objectID] = byAccessID
+		plan.rank[objectID] = len(methods) + 1
 	}
 	if len(items) == 0 {
-		return req, false
+		return plan, false
 	}
-	req.BulkObjectAccessIds = &items
-	return req, true
+	plan.request.BulkObjectAccessIds = &items
+	return plan, true
 }
 
-func accessIDForBulkRequest(obj drsapi.DrsObject) string {
-	if obj.AccessMethods == nil {
-		return ""
+func supportedAccessMethodType(methodType string) bool {
+	switch methodType {
+	case "https", "s3", "gs", "globus":
+		return true
+	default:
+		return false
 	}
-	for _, method := range *obj.AccessMethods {
-		if method.AccessId != nil && strings.TrimSpace(*method.AccessId) != "" {
-			return strings.TrimSpace(*method.AccessId)
-		}
-	}
-	return ""
 }
 
 type accessPolicy struct {
@@ -155,10 +265,10 @@ func orderedAccessMethods(obj drsapi.DrsObject, rawPolicy string) ([]drsapi.Acce
 	return methods, policy, nil
 }
 
-func planAccessURL(ctx context.Context, drsCtx *remoteruntime.GitContext, obj drsapi.DrsObject) (*drsapi.AccessURL, error) {
+func planResolvedAccess(ctx context.Context, drsCtx *remoteruntime.GitContext, obj drsapi.DrsObject) (ResolvedAccess, error) {
 	methods, policy, err := orderedAccessMethods(obj, accessPolicyFor(drsCtx))
 	if err != nil {
-		return nil, err
+		return ResolvedAccess{}, err
 	}
 	diagnostics := make([]string, 0, len(methods))
 	for i := range methods {
@@ -183,38 +293,64 @@ func planAccessURL(ctx context.Context, drsCtx *remoteruntime.GitContext, obj dr
 			continue
 		}
 
-		accessURL, err := accessURLForMethod(ctx, drsCtx, obj.Id, method)
+		resolved, err := accessURLForMethod(ctx, drsCtx, obj.Id, method)
 		if err != nil {
 			diagnostics = append(diagnostics, fmt.Sprintf("%s=broken (%v)", methodType, err))
 			continue
 		}
-		state, reason := resolvedAccessReadiness(drsCtx, accessURL.Url)
+		state, reason := resolvedAccessReadiness(drsCtx, resolved.AccessURL.Url)
 		if state == globusauth.Ready {
-			return accessURL, nil
+			return resolved, nil
 		}
 		diagnostics = append(diagnostics, fmt.Sprintf("%s=%s (%s)", methodType, state, reason))
 	}
 	if policy.mode == "require" && len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, fmt.Sprintf("%s=disabled (not advertised)", policy.method))
 	}
-	return nil, fmt.Errorf("%w: object %s: no usable access method for %s: %s", ErrAccessMethodSelection, obj.Id, policy.mode, strings.Join(diagnostics, "; "))
+	return ResolvedAccess{}, fmt.Errorf("%w: object %s: no usable access method for %s: %s", ErrAccessMethodSelection, obj.Id, policy.mode, strings.Join(diagnostics, "; "))
 }
 
-func accessURLForMethod(ctx context.Context, drsCtx *remoteruntime.GitContext, objectID string, method *drsapi.AccessMethod) (*drsapi.AccessURL, error) {
+func planAccessURL(ctx context.Context, drsCtx *remoteruntime.GitContext, obj drsapi.DrsObject) (*drsapi.AccessURL, error) {
+	resolved, err := planResolvedAccess(ctx, drsCtx, obj)
+	if err != nil {
+		return nil, err
+	}
+	return &resolved.AccessURL, nil
+}
+
+func accessURLForMethod(ctx context.Context, drsCtx *remoteruntime.GitContext, objectID string, method *drsapi.AccessMethod) (ResolvedAccess, error) {
+	accessID := ""
+	if method.AccessId != nil {
+		accessID = strings.TrimSpace(*method.AccessId)
+	}
 	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
 		raw := strings.TrimSpace(method.AccessUrl.Url)
 		if isHTTPURL(raw) || isGlobusURL(raw) || method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
-			return &drsapi.AccessURL{Headers: method.AccessUrl.Headers, Url: raw}, nil
+			return ResolvedAccess{AccessURL: cloneAccessURL(*method.AccessUrl, raw), AccessID: accessID}, nil
 		}
 	}
 	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
-		return nil, fmt.Errorf("no access URL or access ID")
+		return ResolvedAccess{}, fmt.Errorf("no access URL or access ID")
 	}
 	accessURL, err := drsCtx.Client.DRS().GetAccessURL(ctx, objectID, strings.TrimSpace(*method.AccessId))
 	if err != nil {
-		return nil, fmt.Errorf("DRS /access resolution failed: %w", err)
+		return ResolvedAccess{}, fmt.Errorf("DRS /access resolution failed: %w", err)
 	}
-	return &accessURL, nil
+	return ResolvedAccess{AccessURL: cloneAccessURL(accessURL, strings.TrimSpace(accessURL.Url)), AccessID: accessID}, nil
+}
+
+func cloneAccessHeaders(headers *[]string) *[]string {
+	if headers == nil {
+		return nil
+	}
+	copyHeaders := append([]string(nil), (*headers)...)
+	return &copyHeaders
+}
+
+func cloneAccessURL(accessURL drsapi.AccessURL, resolvedURL string) drsapi.AccessURL {
+	accessURL.Url = resolvedURL
+	accessURL.Headers = cloneAccessHeaders(accessURL.Headers)
+	return accessURL
 }
 
 func resolvedAccessReadiness(drsCtx *remoteruntime.GitContext, rawURL string) (globusauth.Readiness, string) {
@@ -222,6 +358,11 @@ func resolvedAccessReadiness(drsCtx *remoteruntime.GitContext, rawURL string) (g
 		return globusauth.Ready, "HTTP handler available"
 	}
 	if isGlobusURL(rawURL) {
+		if drsCtx != nil && drsCtx.LFSObjectsRoot != "" && drsCtx.RepositoryRoot != "" {
+			if err := globusStorageRepresentationError(drsCtx.LFSObjectsRoot, drsCtx.RepositoryRoot); err != nil {
+				return globusauth.Disabled, err.Error()
+			}
+		}
 		source, err := parseGlobusURL(rawURL)
 		if err != nil {
 			return globusauth.Broken, err.Error()

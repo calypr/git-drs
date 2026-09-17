@@ -40,6 +40,8 @@ type GitContext struct {
 	GlobusCollections        map[string]string
 	GlobusDestinationPaths   map[string]string
 	AllowedGlobusSources     []string
+	LFSObjectsRoot           string
+	RepositoryRoot           string
 }
 
 // Capabilities is the command-facing contract for a resolved remote. Commands
@@ -172,11 +174,20 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 	source = strings.TrimSpace(source)
 	if source == "" {
 		cred, err := manager.Load(remoteName)
-		return cred, true, err
+		if err != nil {
+			return nil, true, err
+		}
+		if cred == nil {
+			return nil, true, fmt.Errorf("load Gen3 credential profile %q returned nil credential", remoteName)
+		}
+		cred.APIEndpoint = strings.TrimSpace(endpoint)
+		return cred, true, nil
 	}
 
 	var cred *syconf.Credential
 	var err error
+	save := false
+	profileSource := false
 	switch {
 	case strings.HasPrefix(source, "profile:"):
 		profile := strings.TrimSpace(strings.TrimPrefix(source, "profile:"))
@@ -187,8 +198,8 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if err != nil {
 			return nil, false, fmt.Errorf("load Gen3 credential profile %q: %w", profile, err)
 		}
-		cred.APIEndpoint = endpoint
-		return cred, true, nil
+		save = true
+		profileSource = true
 	case strings.HasPrefix(source, "file:"):
 		fileName := strings.TrimSpace(strings.TrimPrefix(source, "file:"))
 		if strings.HasPrefix(fileName, "~/") {
@@ -222,9 +233,14 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		return nil, false, fmt.Errorf("unsupported Gen3 credential source %q", source)
 	}
 
-	cred.Profile = remoteName
-	cred.APIEndpoint = endpoint
-	return cred, false, nil
+	if cred == nil {
+		return nil, false, fmt.Errorf("credential source %q returned nil credential", source)
+	}
+	if !profileSource {
+		cred.Profile = remoteName
+	}
+	cred.APIEndpoint = strings.TrimSpace(endpoint)
+	return cred, save, nil
 }
 
 func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logger) (*GitContext, error) {

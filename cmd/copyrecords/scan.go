@@ -70,10 +70,14 @@ func lastCopyRecordDID(records []copyRecord) string {
 }
 
 func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
-	return loadLocalSourceRecordsIncluding(org, project, nil)
+	return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, nil, gitrepo.LFSObjectsPath)
 }
 
 func loadLocalSourceRecordsIncluding(org, project string, include []string) ([]copyRecord, error) {
+	return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, include, gitrepo.LFSObjectsPath)
+}
+
+func loadLocalSourceRecordsIncludingWithObjectsRoot(org, project string, include []string, objectsRoot string) ([]copyRecord, error) {
 	resource, err := sycommon.ResourcePath(org, project)
 	if err != nil {
 		return nil, fmt.Errorf("invalid scope %s/%s: %w", org, project, err)
@@ -105,7 +109,7 @@ func loadLocalSourceRecordsIncluding(org, project string, include []string) ([]c
 
 		obj, err := readLocalDRSObject(oid)
 		if err != nil {
-			obj, err = localDRSObjectFromPayload(path, info, oid)
+			obj, err = localDRSObjectFromPayload(path, info, oid, objectsRoot)
 			if err != nil {
 				return nil, fmt.Errorf("tracked oid %s for path %s is missing local DRS metadata and no matching local payload was found: %w", oid, path, err)
 			}
@@ -175,9 +179,13 @@ func isIncludedLocalPath(path string, include []string) bool {
 	return false
 }
 
-func localDRSObjectFromPayload(path string, info lfs.LfsFileInfo, oid string) (*drsapi.DrsObject, error) {
+func localDRSObjectFromPayload(path string, info lfs.LfsFileInfo, oid string, objectsRoot ...string) (*drsapi.DrsObject, error) {
+	cacheRoot := gitrepo.LFSObjectsPath
+	if len(objectsRoot) > 0 && strings.TrimSpace(objectsRoot[0]) != "" {
+		cacheRoot = objectsRoot[0]
+	}
 	candidates := []string{path}
-	if cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid); err == nil {
+	if cachePath, err := lfs.ObjectPath(cacheRoot, oid); err == nil {
 		candidates = append([]string{cachePath}, candidates...)
 	}
 	for _, candidate := range candidates {

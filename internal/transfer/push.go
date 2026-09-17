@@ -71,6 +71,11 @@ func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Conte
 	if len(files) == 0 {
 		return PushSyncSummary{}, nil
 	}
+	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	if err != nil {
+		return PushSyncSummary{}, fmt.Errorf("resolve LFS objects root: %w", err)
+	}
+	session.rt.ObjectsRoot = objectsRoot
 
 	session.debug("normalizing push files")
 	session.normalizeFiles(files)
@@ -288,7 +293,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// has the payload bytes. Do not create orphan metadata for historical
 			// pointers that the caller cannot upload.
 			file := s.filesByOID[oid]
-			_, hasPayload, payloadErr := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+			_, hasPayload, payloadErr := resolveUploadSourcePathAt(s.rt.ObjectsRoot, oid, file.Name, file.IsPointer)
 			if payloadErr != nil || !hasPayload {
 				s.skippedUnavailable++
 				s.debug("skipping pointer without local payload", "oid", oid)
@@ -615,7 +620,7 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 		}
 
 		file := s.filesByOID[oid]
-		srcPath, canUpload, err := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+		srcPath, canUpload, err := resolveUploadSourcePathAt(s.rt.ObjectsRoot, oid, file.Name, file.IsPointer)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve upload source for oid %s: %w", oid, err)
 		}

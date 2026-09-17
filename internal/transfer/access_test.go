@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -125,5 +126,84 @@ func TestBulkAccessRequestAggregatesSelectionDiagnostics(t *testing.T) {
 	_, err := BulkAccessURLsForObjects(t.Context(), drsCtx, objects)
 	if err == nil || !strings.Contains(err.Error(), "object one") || !strings.Contains(err.Error(), "object two") {
 		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestBulkResolvedAccessSelectsPolicyOrderNotResponseOrder(t *testing.T) {
+	globusID := "globus-id"
+	httpsID := "https-id"
+	methods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeHttps, AccessId: &httpsID},
+		{Type: drsapi.AccessMethodTypeGlobus, AccessId: &globusID},
+	}
+	var bulkBody []byte
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/ga4gh/drs/v1/objects/access" {
+			return nil, fmt.Errorf("unexpected request path %s", r.URL.Path)
+		}
+		bulkBody, _ = io.ReadAll(r.Body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{"resolved_drs_object_access_urls":[` +
+				`{"drs_object_id":"obj-1","drs_access_id":"https-id","url":"https://fallback.example/object","headers":["X-Access: fallback"]},` +
+				`{"drs_object_id":"obj-1","drs_access_id":"globus-id","url":"globus://source.example/object","headers":["X-Access: preferred"]}` +
+				`]}`)),
+			Header:  http.Header{"Content-Type": []string{"application/json"}},
+			Request: r,
+		}, nil
+	})}
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(globusauth.TransferTokenEnv, "token")
+	t.Setenv(globusDestCollectionEnv, "destination-collection")
+	drsCtx := &remoteruntime.GitContext{Client: raw, AccessMethodPolicy: "prefer:globus"}
+	got, err := BulkResolvedAccessURLsForObjects(t.Context(), drsCtx, []drsapi.DrsObject{{Id: "obj-1", AccessMethods: &methods}})
+	if err != nil {
+		t.Fatalf("BulkResolvedAccessURLsForObjects returned error: %v", err)
+	}
+	resolved, ok := got["obj-1"]
+	if !ok || resolved.AccessID != globusID || resolved.AccessURL.Url != "globus://source.example/object" {
+		t.Fatalf("resolved access = %+v, want preferred Globus result", resolved)
+	}
+	if resolved.AccessURL.Headers == nil || (*resolved.AccessURL.Headers)[0] != "X-Access: preferred" {
+		t.Fatalf("resolved headers = %+v, want preferred headers", resolved.AccessURL.Headers)
+	}
+	if !strings.Contains(string(bulkBody), `"https-id"`) || !strings.Contains(string(bulkBody), `"globus-id"`) {
+		t.Fatalf("bulk request omitted an ordered access ID: %s", bulkBody)
+	}
+}
+
+func TestBulkResolvedAccessFallsBackOnDuplicateMethodResults(t *testing.T) {
+	accessID := "https-id"
+	methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeHttps, AccessId: &accessID}}
+	var individualRequests int
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := ""
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/access":
+			body = `{"resolved_drs_object_access_urls":[` +
+				`{"drs_object_id":"obj-1","drs_access_id":"https-id","url":"https://one.example/object"},` +
+				`{"drs_object_id":"obj-1","drs_access_id":"https-id","url":"https://two.example/object"}` +
+				`]}`
+		case "/ga4gh/drs/v1/objects/obj-1/access/https-id":
+			individualRequests++
+			body = `{"url":"https://stable.example/object"}`
+		default:
+			return nil, fmt.Errorf("unexpected request path %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}, Request: r}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := BulkResolvedAccessURLsForObjects(t.Context(), &remoteruntime.GitContext{Client: client}, []drsapi.DrsObject{{Id: "obj-1", AccessMethods: &methods}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if individualRequests != 1 || got["obj-1"].AccessURL.Url != "https://stable.example/object" {
+		t.Fatalf("duplicate bulk result did not fall back deterministically: requests=%d result=%+v", individualRequests, got["obj-1"])
 	}
 }

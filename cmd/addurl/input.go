@@ -35,6 +35,12 @@ func parseAddURLInput(cmd *cobra.Command, args []string) (addURLInput, error) {
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag sha256: %w", err)
 	}
+	if strings.TrimSpace(sha256Param) != "" {
+		sha256Param, err = normalizeSHA256(sha256Param)
+		if err != nil {
+			return addURLInput{}, err
+		}
+	}
 	scheme, err := cmd.Flags().GetString("scheme")
 	if err != nil {
 		return addURLInput{}, fmt.Errorf("read flag scheme: %w", err)

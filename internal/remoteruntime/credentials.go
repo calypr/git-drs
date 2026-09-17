@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	syconf "github.com/calypr/syfon/client/config"
 	syrequest "github.com/calypr/syfon/client/request"
@@ -27,7 +28,7 @@ func EnsureValidCredential(ctx context.Context, cred *syconf.Credential, logger 
 	}
 	apiKeyValid, apiKeyErr := manager.IsTokenValid(cred.APIKey)
 	if !apiKeyValid {
-		return fmt.Errorf("invalid credential: both access token and API key are invalid: %v; %v", accessErr, apiKeyErr)
+		return fmt.Errorf("invalid credential: both access token and API key are invalid: %v; %v", redactCredentialError(accessErr, cred), redactCredentialError(apiKeyErr, cred))
 	}
 
 	transport := &syrequest.AuthTransport{
@@ -36,10 +37,25 @@ func EnsureValidCredential(ctx context.Context, cred *syconf.Credential, logger 
 		Mode: syrequest.AuthModeBearer,
 	}
 	if refreshErr := transport.NewAccessToken(ctx); refreshErr != nil {
-		return fmt.Errorf("failed to refresh access token: %v (original error: %v)", refreshErr, accessErr)
+		return fmt.Errorf("failed to refresh access token: %v (original error: %v)", redactCredentialError(refreshErr, cred), redactCredentialError(accessErr, cred))
 	}
 	saveRefreshedCredential(manager, cred, logger)
 	return nil
+}
+
+func redactCredentialError(err error, cred *syconf.Credential) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	if cred != nil {
+		for _, secret := range []string{cred.AccessToken, cred.APIKey} {
+			if secret = strings.TrimSpace(secret); secret != "" {
+				message = strings.ReplaceAll(message, secret, "[REDACTED]")
+			}
+		}
+	}
+	return fmt.Errorf("%s", message)
 }
 
 func saveRefreshedCredential(manager *syconf.Manager, cred *syconf.Credential, logger *slog.Logger) {

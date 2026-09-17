@@ -490,6 +490,9 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 	switch strings.ToLower(p.OidType) {
 	case "sha256":
 		p.OidType = "sha256"
+		if p.Version != "https://git-lfs.github.com/spec/v1" {
+			return lfsPointer{}, false
+		}
 		if !sha256OIDRe.MatchString(p.Oid) {
 			return lfsPointer{}, false
 		}

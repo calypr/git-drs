@@ -70,6 +70,32 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	}
 }
 
+func TestCleanContentUsesConfiguredLFSRoot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	customRoot := filepath.Join(t.TempDir(), "custom-lfs")
+	const payload = "configured storage payload"
+	var out bytes.Buffer
+	if err := CleanContent(t.Context(), customRoot, "data.bin", strings.NewReader(payload), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(sum[:])
+	customPath, err := lfs.ObjectPath(filepath.Join(customRoot, "objects"), oid)
+	if err != nil {
+		t.Fatalf("custom ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("configured LFS object missing at %s: %v", customPath, err)
+	}
+	defaultPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("default ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("default LFS object was written at %s: err=%v", defaultPath, err)
+	}
+}
+
 func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
 	repo := t.TempDir()
 	t.Chdir(repo)

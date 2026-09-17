@@ -75,7 +75,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 	// file, preserve that indexed pointer if its recorded checksum proves the
 	// worktree payload is unchanged. Otherwise hydration would turn the URI
 	// pointer into a SHA256 LFS pointer and appear as a staged modification.
-	if pointer, ok := matchingIndexedDRSPointer(pathname, oid, size); ok {
+	if pointer, ok := matchingIndexedDRSPointer(pathname, oid, size, lfsRoot); ok {
 		if _, err := dst.Write(pointer); err != nil {
 			return fmt.Errorf("clean: write indexed DRS pointer: %w", err)
 		}
@@ -102,7 +102,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 		}
 	}
 
-	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	cachePath, err := lfs.ObjectPath(objDir, oid)
 	if err != nil {
 		return fmt.Errorf("clean: resolve cache path: %w", err)
 	}
@@ -130,7 +130,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 	return nil
 }
 
-func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte, bool) {
+func matchingIndexedDRSPointer(pathname, contentOID string, size int64, lfsRoot string) ([]byte, bool) {
 	pathname = filepath.ToSlash(filepath.Clean(pathname))
 	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
 		return nil, false
@@ -148,7 +148,7 @@ func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte,
 	// Some DRS services do not publish a SHA256 checksum. In that case compare
 	// the worktree payload with the validated object cached by pull. This keeps
 	// status clean without hiding a same-sized edit made after hydration.
-	if cachedOID, ok := cachedObjectOID(pointerOID, size); ok && cachedOID == contentOID {
+	if cachedOID, ok := cachedObjectOID(pointerOID, size, lfsRoot); ok && cachedOID == contentOID {
 		return pointer, true
 	}
 	for _, line := range strings.Split(string(pointer), "\n") {
@@ -170,8 +170,8 @@ func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte,
 	return nil, false
 }
 
-func cachedObjectOID(pointerOID string, size int64) (string, bool) {
-	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, pointerOID)
+func cachedObjectOID(pointerOID string, size int64, lfsRoot string) (string, bool) {
+	cachePath, err := lfs.ObjectPath(filepath.Join(lfsRoot, "objects"), pointerOID)
 	if err != nil {
 		return "", false
 	}

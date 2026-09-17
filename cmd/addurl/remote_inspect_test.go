@@ -38,6 +38,9 @@ func TestInspectRemoteObjectViaServerMapsSyfonResponse(t *testing.T) {
 		if request.ObjectUrl != sourceURL {
 			t.Errorf("object URL = %q, want %q", request.ObjectUrl, sourceURL)
 		}
+		if request.ExpectedSha256 != strings.Repeat("a", 64) {
+			t.Errorf("expected sha256 = %q, want normalized checksum", request.ExpectedSha256)
+		}
 		if request.Organization != "" || request.Project != "" || request.Key != "" || request.Scheme != "" {
 			t.Errorf("unexpected key-mode fields in URL request: %+v", request)
 		}
@@ -65,7 +68,7 @@ func TestInspectRemoteObjectViaServerMapsSyfonResponse(t *testing.T) {
 	got, err := inspectRemoteObjectViaServer(
 		context.Background(),
 		&remoteruntime.GitContext{Client: client},
-		addURLInput{sourceArg: sourceURL},
+		addURLInput{sourceArg: sourceURL, sha256: "sha256:" + strings.Repeat("a", 64)},
 	)
 	if err != nil {
 		t.Fatalf("inspectRemoteObjectViaServer returned error: %v", err)

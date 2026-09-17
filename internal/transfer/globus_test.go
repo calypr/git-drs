@@ -58,6 +58,20 @@ func TestParseGlobusURLRejectsMissingPath(t *testing.T) {
 	}
 }
 
+func TestParseGlobusURLRejectsDecodedTraversalAndUserinfo(t *testing.T) {
+	for _, raw := range []string{
+		"globus://collection/%2e%2e/secret",
+		"globus://collection/%2E%2E/secret",
+		"globus://collection/%2f..%2fsecret",
+		"globus://user:password@collection/path",
+		"globus://collection/path%5Csecret",
+	} {
+		if _, err := parseGlobusURL(raw); err == nil {
+			t.Fatalf("parseGlobusURL accepted unsafe URL %q", raw)
+		}
+	}
+}
+
 func TestGlobusDestinationForCachePathRequiresCollection(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "")
 	if _, err := globusDestinationForCachePath(nil, "source", filepath.Join(".git", "drs", "objects", "aa")); err == nil {
@@ -86,6 +100,16 @@ func TestGlobusDestinationForCachePathRejectsNonCachePath(t *testing.T) {
 		if _, err := globusDestinationForCachePath(nil, "source", destination); err == nil {
 			t.Fatalf("expected destination %q to be rejected", destination)
 		}
+	}
+}
+
+func TestGlobusDestinationForCachePathRejectsExternalCanonicalStorage(t *testing.T) {
+	t.Setenv(globusDestCollectionEnv, "dest-collection")
+	repo := t.TempDir()
+	externalObjects := filepath.Join(t.TempDir(), "lfs", "objects")
+	cachePath := filepath.Join(externalObjects, "aa", "bb", strings.Repeat("a", 64))
+	if _, err := globusDestinationForCachePath(nil, "source", cachePath, externalObjects, repo); err == nil {
+		t.Fatal("expected Globus mapping to reject storage outside repository anchor")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -468,5 +469,60 @@ func TestDownloadResolvedToPathRefreshesExpiredAccessURL(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("downloaded payload does not match the ranged responses")
+	}
+}
+
+func TestDownloadResolvedToPathRefreshesSelectedAccessWithHeaders(t *testing.T) {
+	t.Parallel()
+
+	const payload = "payload"
+	const selectedID = "selected-access"
+	wrongID := "wrong-access"
+	selectedMethods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeS3, AccessId: &wrongID},
+		{Type: drsapi.AccessMethodTypeHttps, AccessId: func() *string { value := selectedID; return &value }()},
+	}
+	var refreshPath, retryHeader string
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := func(status int, body string) (*http.Response, error) {
+			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}, Request: r}, nil
+		}
+		switch r.URL.Path {
+		case "/download/expired":
+			return response(http.StatusForbidden, "expired")
+		case "/ga4gh/drs/v1/objects/obj-1/access/" + selectedID:
+			refreshPath = r.URL.Path
+			return response(http.StatusOK, `{"url":"https://signed.example/download/fresh","headers":["Authorization: fresh"]}`)
+		case "/ga4gh/drs/v1/objects/obj-1/access/" + wrongID:
+			return nil, fmt.Errorf("refresh used wrong access ID")
+		case "/download/fresh":
+			retryHeader = r.Header.Get("Authorization")
+			return response(http.StatusOK, payload)
+		default:
+			return nil, fmt.Errorf("unexpected request path %s", r.URL.Path)
+		}
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedAccessID := selectedID
+	err = DownloadResolvedToPathWithAccess(
+		context.Background(),
+		&remoteruntime.GitContext{Client: client},
+		"obj-1",
+		filepath.Join(t.TempDir(), "object.bin"),
+		&drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload)), AccessMethods: &selectedMethods},
+		ResolvedAccess{AccessURL: drsapi.AccessURL{Url: "https://signed.example/download/expired", Headers: func() *[]string { values := []string{"Authorization: expired"}; return &values }()}, AccessID: selectedAccessID},
+		sydownload.DownloadOptions{MultipartThreshold: 1 << 20, Concurrency: 1, ChunkSize: 1 << 20, RetryStrategy: immediateDownloadRetry{}},
+	)
+	if err != nil {
+		t.Fatalf("DownloadResolvedToPathWithAccess returned error: %v", err)
+	}
+	if refreshPath != "/ga4gh/drs/v1/objects/obj-1/access/"+selectedID {
+		t.Fatalf("refresh path = %q, want selected access ID", refreshPath)
+	}
+	if retryHeader != "fresh" {
+		t.Fatalf("retry Authorization = %q, want refreshed header", retryHeader)
 	}
 }

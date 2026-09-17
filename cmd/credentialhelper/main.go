@@ -73,7 +73,8 @@ var Cmd = &cobra.Command{
 		// Try global profile to refresh/validate; fall back to repo token if unavailable.
 		manager := syconf.NewConfigure(logg)
 		cred, err := manager.Load(remoteName)
-		if err == nil {
+		if err == nil && cred != nil {
+			cred.APIEndpoint = endpoint
 			if token != "" {
 				cred.AccessToken = token
 			}
@@ -158,7 +159,7 @@ func resolveRemote() (string, string, error) {
 }
 
 func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
-	if strings.TrimSpace(req.Host) == "" {
+	if strings.TrimSpace(req.Protocol) == "" || strings.TrimSpace(req.Host) == "" {
 		return false
 	}
 
@@ -170,5 +171,5 @@ func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
 		return false
 	}
 
-	return strings.EqualFold(req.Host, parsed.Host)
+	return strings.EqualFold(req.Protocol, parsed.Scheme) && strings.EqualFold(req.Host, parsed.Host)
 }

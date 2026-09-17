@@ -36,12 +36,13 @@ type pushTuning struct {
 }
 
 type pushRuntime struct {
-	API        *remoteruntime.GitContext
-	Backend    sytransfer.MultipartBackend
-	Credential *conf.Credential
-	Logger     *slog.Logger
-	Scope      pushScope
-	Tuning     pushTuning
+	API         *remoteruntime.GitContext
+	Backend     sytransfer.MultipartBackend
+	Credential  *conf.Credential
+	Logger      *slog.Logger
+	Scope       pushScope
+	Tuning      pushTuning
+	ObjectsRoot string
 }
 
 func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
@@ -69,6 +70,7 @@ func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},
+		ObjectsRoot: gitrepo.LFSObjectsPath,
 	}
 }
 
@@ -106,12 +108,16 @@ func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix str
 }
 
 func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (string, bool, error) {
+	return resolveUploadSourcePathAt(gitrepo.LFSObjectsPath, oid, worktreePath, isPointer)
+}
+
+func resolveUploadSourcePathAt(objectsRoot string, oid string, worktreePath string, isPointer bool) (string, bool, error) {
 	oid = localdrsobject.NormalizeOid(oid)
 	if oid == "" {
 		return "", false, fmt.Errorf("empty oid")
 	}
 
-	lfsObjPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	lfsObjPath, err := lfs.ObjectPath(objectsRoot, oid)
 	if err == nil {
 		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
 			return lfsObjPath, true, nil

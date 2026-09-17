@@ -18,6 +18,13 @@ func TestParsePlaceholderPointer(t *testing.T) {
 	}
 }
 
+func TestParseLFSPointerRejectsUnknownSHA256Version(t *testing.T) {
+	oid := strings.Repeat("a", 64)
+	if _, ok := parseLFSPointer("version https://example.invalid/spec/v1\noid sha256:" + oid + "\nsize 7\n"); ok {
+		t.Fatal("parseLFSPointer accepted a SHA-256 pointer with an unknown version")
+	}
+}
+
 func TestGetReachablePointerFilesForRefHandlesSpacesAndIgnoresNonPointers(t *testing.T) {
 	repo := t.TempDir()
 	runGitCmdTest(t, repo, "init")

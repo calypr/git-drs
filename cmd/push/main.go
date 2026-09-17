@@ -120,7 +120,7 @@ var Cmd = &cobra.Command{
 		if !pushWithHooks {
 			pushArgs = append(pushArgs, "--no-verify")
 		}
-		pushArgs = append(pushArgs, string(remote), state.LocalRef+":"+state.RemoteRef)
+		pushArgs = append(pushArgs, string(remote), pushRefspec(state))
 		myLogger.DebugContext(ctx, "pushing Git ref", "remote", remote, "ref", state.RemoteRef, "oid", state.TargetOID)
 		out, err := runCommand("git", pushArgs...)
 		if err != nil {
@@ -142,6 +142,10 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func pushRefspec(state syncRefState) string {
+	return strings.TrimSpace(state.TargetOID) + ":" + state.RemoteRef
 }
 
 func init() {

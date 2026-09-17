@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/apigen/errorapi"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syaccess "github.com/calypr/syfon/client/access"
 	"github.com/calypr/syfon/client/apierror"
+	"github.com/calypr/syfon/client/hash"
 )
 
 // ErrBulkMissingSHA256Unsupported indicates that the connected Syfon server
@@ -55,7 +55,7 @@ func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checks
 	if drsCtx == nil || drsCtx.Client == nil {
 		return nil, fmt.Errorf("DRS client unavailable")
 	}
-	checksum = drsobject.NormalizeChecksum(checksum)
+	checksum = hash.NormalizeChecksum(checksum)
 	if checksum == "" {
 		return nil, nil
 	}
@@ -73,7 +73,7 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 	normalizedToOriginal := make(map[string]string, len(checksums))
 	queryChecksums := make([]string, 0, len(checksums))
 	for _, checksum := range checksums {
-		normalized := drsobject.NormalizeChecksum(checksum)
+		normalized := hash.NormalizeChecksum(checksum)
 		if normalized == "" {
 			continue
 		}

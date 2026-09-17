@@ -240,36 +240,6 @@ func resolvedAccessReadiness(drsCtx *remoteruntime.GitContext, rawURL string) (g
 	return globusauth.Disabled, fmt.Sprintf("no handler for resolved URL %q", rawURL)
 }
 
-// selectAccessMethod is retained for callers that only need preliminary
-// metadata selection. Transfer planning must use planAccessURL.
-func selectAccessMethod(obj drsapi.DrsObject) *drsapi.AccessMethod {
-	method, _ := selectAccessMethodWithPolicy(obj, environmentAccessPolicy())
-	return method
-}
-
-func selectAccessMethodWithPolicy(obj drsapi.DrsObject, rawPolicy string) (*drsapi.AccessMethod, error) {
-	methods, policy, err := orderedAccessMethods(obj, rawPolicy)
-	if err != nil {
-		return nil, err
-	}
-	diagnostics := make([]string, 0, len(methods))
-	for i := range methods {
-		methodType := strings.ToLower(string(methods[i].Type))
-		if policy.mode == "require" && methodType != policy.method {
-			continue
-		}
-		state, reason := accessMethodReadiness(methods[i])
-		if state == globusauth.Ready {
-			return &methods[i], nil
-		}
-		diagnostics = append(diagnostics, fmt.Sprintf("%s=%s (%s)", methodType, state, reason))
-	}
-	if policy.mode == "require" && len(diagnostics) == 0 {
-		diagnostics = append(diagnostics, fmt.Sprintf("%s=disabled (not advertised)", policy.method))
-	}
-	return nil, fmt.Errorf("%w: object %s: no usable access method for %s: %s", ErrAccessMethodSelection, obj.Id, policy.mode, strings.Join(diagnostics, "; "))
-}
-
 func accessMethodRank(method string) int {
 	for rank, known := range []string{"https", "s3", "gs", "globus"} {
 		if method == known {
@@ -277,22 +247,6 @@ func accessMethodRank(method string) int {
 		}
 	}
 	return 4
-}
-
-func accessMethodReadiness(method drsapi.AccessMethod) (globusauth.Readiness, string) {
-	if method.Available != nil && !*method.Available {
-		return globusauth.Disabled, "marked unavailable by server"
-	}
-	if method.AccessUrl != nil && strings.TrimSpace(method.AccessUrl.Url) != "" {
-		return resolvedAccessReadiness(nil, method.AccessUrl.Url)
-	}
-	if method.AccessId == nil || strings.TrimSpace(*method.AccessId) == "" {
-		return globusauth.Broken, "no access URL or access ID"
-	}
-	if method.Type == drsapi.AccessMethodTypeGlobus {
-		return globusauth.CredentialReadiness()
-	}
-	return globusauth.Ready, "DRS access ID can be resolved"
 }
 
 func isHTTPURL(raw string) bool {

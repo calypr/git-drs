@@ -150,7 +150,7 @@ func ReadPathEntry(cache *Cache, path string) (*PathEntry, bool, error) {
 }
 
 func WritePathEntry(cache *Cache, entry PathEntry) error {
-	return writeJSONAtomic(PathEntryPath(cache, entry.Path), entry)
+	return WriteJSONAtomic(PathEntryPath(cache, entry.Path), entry)
 }
 
 func ReadOIDEntry(cache *Cache, oid string, now string) (*OIDEntry, error) {
@@ -200,7 +200,7 @@ func UpsertOIDPath(cache *Cache, oid, oldPath, newPath, externalURL, now string,
 	entry.ContentChange = entry.ContentChange || contentChanged
 	entry.ExternalURL = firstNonEmpty(externalURL, entry.ExternalURL)
 
-	return writeJSONAtomic(OIDEntryPath(cache, oid), entry)
+	return WriteJSONAtomic(OIDEntryPath(cache, oid), entry)
 }
 
 func RemoveOIDPath(cache *Cache, oid, path, now string) error {
@@ -221,7 +221,7 @@ func RemoveOIDPath(cache *Cache, oid, path, now string) error {
 	}
 	entry.Paths = sortedKeys(paths)
 	entry.UpdatedAt = now
-	return writeJSONAtomic(OIDEntryPath(cache, oid), entry)
+	return WriteJSONAtomic(OIDEntryPath(cache, oid), entry)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -243,7 +243,12 @@ func sortedKeys(values map[string]struct{}) []string {
 	return out
 }
 
-func writeJSONAtomic(path string, v any) (retErr error) {
+// WriteJSONAtomic encodes v as indented JSON and atomically replaces path.
+//
+// The destination directory is created when needed. The temporary file uses
+// the cache's standard 0644 permissions, is synced before replacement, and is
+// removed when encoding or syncing fails.
+func WriteJSONAtomic(path string, v any) (retErr error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

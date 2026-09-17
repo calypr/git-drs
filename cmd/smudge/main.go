@@ -85,5 +85,3 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 
 	return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, downloadFn)
 }
-
-func init() {}

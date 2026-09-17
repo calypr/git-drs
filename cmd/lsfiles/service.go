@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -15,6 +13,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
+	"github.com/calypr/git-drs/internal/pathspec"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 )
@@ -181,7 +180,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		oids := make([]string, 0, len(keys))
 		seenOIDs := make(map[string]struct{}, len(keys))
 		for _, path := range keys {
-			if !matchesAnyPattern(path, patterns) {
+			if !pathspec.MatchesAnyPattern(path, patterns) {
 				continue
 			}
 			oid := lfsFiles[path].Oid
@@ -197,7 +196,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		drsResults, drsLookupErr = lookupScopedObjectsBatch(ctx, client, oids)
 	}
 	for _, path := range keys {
-		if !matchesAnyPattern(path, patterns) {
+		if !pathspec.MatchesAnyPattern(path, patterns) {
 			continue
 		}
 		info := lfsFiles[path]
@@ -267,61 +266,6 @@ func shortDRSOID(id string) string {
 		return id[:18]
 	}
 	return id
-}
-
-func matchesAnyPattern(path string, patterns []string) bool {
-	if len(patterns) == 0 {
-		return true
-	}
-	normalized := filepath.ToSlash(filepath.Clean(path))
-	for _, pattern := range patterns {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		if matchesPattern(normalized, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesPattern(path, pattern string) bool {
-	pattern = filepath.ToSlash(filepath.Clean(pattern))
-	if !strings.ContainsAny(pattern, "*?[") {
-		return path == pattern
-	}
-	re, err := regexp.Compile(globToRegexp(pattern))
-	if err != nil {
-		return false
-	}
-	return re.MatchString(path)
-}
-
-func globToRegexp(pattern string) string {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		switch ch {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-				continue
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
-		default:
-			b.WriteByte(ch)
-		}
-	}
-	b.WriteString("$")
-	return b.String()
 }
 
 func isLocalized(path string) bool {

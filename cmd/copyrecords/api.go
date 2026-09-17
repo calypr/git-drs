@@ -64,42 +64,22 @@ type indexAPI interface {
 
 type rawIndexAPI struct {
 	client *internalapi.ClientWithResponses
+	index  *syservices.IndexService
 }
 
 func newRawIndexAPI(client *internalapi.ClientWithResponses) *rawIndexAPI {
-	return &rawIndexAPI{client: client}
+	return &rawIndexAPI{
+		client: client,
+		index:  syservices.NewIndexService(client),
+	}
 }
 
 func (r *rawIndexAPI) List(ctx context.Context, opts syservices.ListRecordsOptions) (copyListRecordsResponse, error) {
-	params := &internalapi.InternalListParams{}
-	if opts.Hash != "" {
-		params.Hash = &opts.Hash
-	}
-	if opts.URL != "" {
-		params.Url = &opts.URL
-	}
-	if opts.Organization != "" {
-		params.Organization = &opts.Organization
-	}
-	if opts.ProjectID != "" {
-		params.Project = &opts.ProjectID
-	}
-	if opts.Limit != 0 {
-		params.Limit = &opts.Limit
-	}
-	if opts.Start != "" {
-		params.Start = &opts.Start
-	} else if opts.Page != 0 {
-		params.Page = &opts.Page
-	}
-	resp, err := r.client.InternalListWithResponse(ctx, params)
+	response, err := r.index.List(ctx, opts)
 	if err != nil {
 		return copyListRecordsResponse{}, err
 	}
-	if resp.JSON200 == nil {
-		return copyListRecordsResponse{}, apierror.FromResponse(resp.HTTPResponse, resp.Body)
-	}
-	return copyListResponse(*resp.JSON200), nil
+	return copyListResponse(response), nil
 }
 
 func (r *rawIndexAPI) BulkDocuments(ctx context.Context, dids []string) ([]copyRecord, error) {

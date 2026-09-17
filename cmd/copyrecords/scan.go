@@ -268,15 +268,3 @@ func stringTimePointer(value string) *string {
 func int64Pointer(value int64) *int64 {
 	return &value
 }
-
-func recordHasControlledAccess(rec copyRecord, resource string) bool {
-	if rec.ControlledAccess == nil {
-		return false
-	}
-	for _, candidate := range *rec.ControlledAccess {
-		if strings.TrimSpace(candidate) == resource {
-			return true
-		}
-	}
-	return false
-}

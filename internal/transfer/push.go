@@ -18,6 +18,7 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -56,11 +57,6 @@ type uploadCandidate struct {
 const metadataLookupBatchSize = 500
 const metadataExistenceBatchSize = 10000
 const metadataRegisterBatchSize = 250
-
-func BatchSyncForPush(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
-	_, err := BatchSyncForPushWithSummary(cl, ctx, files, reporter)
-	return err
-}
 
 func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) (PushSyncSummary, error) {
 	session := &batchSyncSession{
@@ -440,7 +436,7 @@ func objectSHA256(obj *drsapi.DrsObject) string {
 	for _, checksum := range obj.Checksums {
 		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
 		if checksumType == "sha256" || checksumType == "sha-256" {
-			return localdrsobject.NormalizeChecksum(checksum.Checksum)
+			return hash.NormalizeChecksum(checksum.Checksum)
 		}
 	}
 	return ""
@@ -704,7 +700,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 			eg.Go(func() error {
 				s.reportUploadStarted(c)
 				uploadCtx := s.progressContextForCandidate(egCtx, c)
-				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
 					return err
 				}
 				s.reportUploadCompleted(c)
@@ -719,7 +715,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	for _, c := range large {
 		s.reportUploadStarted(c)
 		uploadCtx := s.progressContextForCandidate(s.ctx, c)
-		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
 			return err
 		}
 		s.reportUploadCompleted(c)

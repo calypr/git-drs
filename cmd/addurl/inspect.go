@@ -81,7 +81,7 @@ func parseInspectLastModified(raw string) time.Time {
 
 func mapInspectError(target string, err error) error {
 	var respErr *apierror.APIError
-	if !errorAsResponse(err, &respErr) {
+	if !errors.As(err, &respErr) {
 		return fmt.Errorf("remote-backed add-url inspection failed for %q: %w", target, err)
 	}
 
@@ -114,8 +114,4 @@ func fallbackInspectMessage(body string, fallback string) string {
 		return strings.TrimSpace(body)
 	}
 	return fallback
-}
-
-func errorAsResponse(err error, target **apierror.APIError) bool {
-	return errors.As(err, target)
 }

@@ -301,6 +301,7 @@ func TestNewGitContextDiscoversBucketForScopeOnlyRemote(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("Authorization = %q, want bearer token", got)
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"S3_BUCKETS":{"scope-bucket":{"programs":["/organization/org1/project/proj1"]}}}`))
 	}))
 	defer server.Close()

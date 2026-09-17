@@ -34,7 +34,7 @@ At a high level:
 2. let `remote add` bootstrap repo-local `git-drs` state if needed
 3. track file patterns with `git drs track`
 4. add and commit with normal Git
-5. remove tracked pointers with `git drs rm` when you want repository deletion to reconcile with remote DRS state
+5. remove tracked pointers from Git with `git drs rm`; this does not delete remote DRS records or payloads
 6. run `git drs push` for managed metadata registration/upload plus Git push
 7. hydrate pointer files later with `git drs pull`
 
@@ -105,7 +105,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | `git drs rm <path>...` | Remove tracked DRS/LFS files from Git |
 | `git drs ls-files` | List tracked files and localization state |
 | `git drs pull` | Hydrate pointer files in the current checkout |
-| `git drs push` | Register/upload objects, reconcile committed deletes, and push refs |
+| `git drs push` | Register/upload objects and push refs |
 | `git drs add-url` | Add an existing provider object by URL or scoped key |
 | `git drs add-ref` | Add a local reference to an existing DRS object |
 | `git drs query` | Query a DRS object by ID |

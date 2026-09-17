@@ -21,10 +21,6 @@ type copyStats struct {
 	Written    int
 }
 
-func copyProjectRecords(ctx context.Context, logger *slog.Logger, source []copyRecord, dst indexAPI, org, project string, batchSize int, overwriteName bool) (copyStats, error) {
-	return copyProjectRecordsWithOptions(ctx, logger, source, dst, org, project, batchSize, overwriteName, false)
-}
-
 func copyProjectRecordsWithOptions(ctx context.Context, logger *slog.Logger, source []copyRecord, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool) (copyStats, error) {
 	batchSize = normalizeCopyBatchSize(batchSize)
 	if overwriteExisting && batchSize > defaultCopyBatchSize {
@@ -51,14 +47,6 @@ func copyProjectRecordsWithOptions(ctx context.Context, logger *slog.Logger, sou
 	}
 
 	return stats, nil
-}
-
-func copyProjectRecordsFromSourceIndex(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName bool) (copyStats, error) {
-	return copyProjectRecordsFromSourceIndexWithOptions(ctx, logger, src, dst, org, project, batchSize, overwriteName, false)
-}
-
-func copyProjectRecordsFromSourceIndexWithOptions(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool) (copyStats, error) {
-	return copyProjectRecordsFromSourceIndexWithFilter(ctx, logger, src, dst, org, project, batchSize, overwriteName, overwriteExisting, nil)
 }
 
 func copyProjectRecordsFromSourceIndexWithFilter(ctx context.Context, logger *slog.Logger, src indexAPI, dst indexAPI, org, project string, batchSize int, overwriteName, overwriteExisting bool, includedSHA256 map[string]struct{}) (copyStats, error) {
@@ -125,10 +113,6 @@ func copyRecordMatchesIncludedSHA256(rec copyRecord, include map[string]struct{}
 	}
 	_, ok := include[strings.ToLower(copyRecordSHA256(rec))]
 	return ok
-}
-
-func reconcileCopyBatch(ctx context.Context, logger *slog.Logger, stats *copyStats, dst indexAPI, batch []copyRecord, org, project string, batchStart int, overwriteName bool) error {
-	return reconcileCopyBatchWithOptions(ctx, logger, stats, dst, batch, org, project, batchStart, overwriteName, false)
 }
 
 func reconcileCopyBatchWithOptions(ctx context.Context, logger *slog.Logger, stats *copyStats, dst indexAPI, batch []copyRecord, org, project string, batchStart int, overwriteName, overwriteExisting bool) error {

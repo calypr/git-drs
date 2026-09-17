@@ -304,7 +304,7 @@ func TestCopyProjectRecordsFromSourceIndex_WritesEachPageBeforeScanningNextPage(
 	targetErr := errors.New("target write failed")
 	target := &fakeIndexAPI{createBulkErr: targetErr}
 
-	_, err := copyProjectRecordsFromSourceIndex(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 1, false)
+	_, err := copyProjectRecordsFromSourceIndexWithFilter(context.Background(), nil, source, target, "HTAN_INT", "BForePC", 1, false, false, nil)
 	if err == nil {
 		t.Fatal("expected target write error")
 	}
@@ -641,7 +641,7 @@ func TestLocalIndexAPI_MergesByChecksumAndWritesLocalDRSObject(t *testing.T) {
 		ControlledAccess: &sourceCA,
 		AccessMethods:    &sourceMethods,
 	}}
-	stats, err := copyProjectRecords(context.Background(), nil, source, localIndexAPI{}, "Org", "New", 100, false)
+	stats, err := copyProjectRecordsWithOptions(context.Background(), nil, source, localIndexAPI{}, "Org", "New", 100, false, false)
 	if err != nil {
 		t.Fatalf("copyProjectRecords error: %v", err)
 	}

@@ -3,7 +3,6 @@ package push
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,7 +24,6 @@ var runCommand = func(name string, args ...string) ([]byte, error) {
 }
 
 var gitOutputFn = gitOutput
-var getRemoteMergeBaseFn = getRemoteMergeBase
 var getReachablePointerFilesForRefFn = lfs.GetReachablePointerFilesForRef
 
 var Cmd = &cobra.Command{
@@ -151,30 +149,6 @@ func init() {
 	Cmd.Flags().BoolVar(&pushForceUpload, "force-upload", false, "Upload payload bytes even when a matching downloadable object already exists remotely")
 }
 
-func discoverLfsFilesForPush(refs []internaltransfer.RefUpdate, logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
-	const zeroSHA = "0000000000000000000000000000000000000000"
-	files := make(map[string]lfs.LfsFileInfo)
-	seenRefs := make(map[string]struct{}, len(refs))
-	for _, update := range refs {
-		ref := strings.TrimSpace(update.NewSHA)
-		if ref == "" || ref == zeroSHA {
-			continue
-		}
-		if _, ok := seenRefs[ref]; ok {
-			continue
-		}
-		seenRefs[ref] = struct{}{}
-		refFiles, err := getReachablePointerFilesForRefFn(ref, logger)
-		if err != nil {
-			return nil, err
-		}
-		for path, info := range refFiles {
-			files[path] = info
-		}
-	}
-	return files, nil
-}
-
 func countUniqueOIDs(files map[string]lfs.LfsFileInfo) int {
 	seen := make(map[string]struct{}, len(files))
 	for _, info := range files {
@@ -193,56 +167,6 @@ func includeReachablePlaceholders(files, current map[string]lfs.LfsFileInfo) {
 			files[path] = info
 		}
 	}
-}
-
-func currentPushRefUpdates(ctx context.Context, remote string) ([]internaltransfer.RefUpdate, error) {
-	const zeroSHA = "0000000000000000000000000000000000000000"
-	head, err := gitOutputFn(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, err
-	}
-	var oldSHA string
-	upstream, err := gitOutputFn(ctx, "rev-parse", "--verify", "@{upstream}")
-	if err == nil {
-		oldSHA = upstream
-	} else {
-		mb, err := getRemoteMergeBaseFn(ctx, remote, head)
-		if err == nil && mb != "" {
-			oldSHA = mb
-		} else {
-			oldSHA = zeroSHA
-		}
-	}
-	return []internaltransfer.RefUpdate{{
-		OldSHA: oldSHA,
-		NewSHA: head,
-	}}, nil
-}
-
-func getRemoteMergeBase(ctx context.Context, remote string, head string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", "for-each-ref", "--format=%(refname)", "refs/remotes/"+remote+"/")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", err
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	var refs []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasSuffix(line, "/HEAD") {
-			refs = append(refs, line)
-		}
-	}
-	if len(refs) == 0 {
-		return "", nil
-	}
-	args := append([]string{"merge-base", head}, refs...)
-	cmdMerge := exec.CommandContext(ctx, "git", args...)
-	outMerge, err := cmdMerge.CombinedOutput()
-	if err != nil {
-		return "", nil
-	}
-	return strings.TrimSpace(string(outMerge)), nil
 }
 
 func gitOutput(ctx context.Context, args ...string) (string, error) {

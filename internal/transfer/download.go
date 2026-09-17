@@ -12,12 +12,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
@@ -29,7 +29,7 @@ func AccessURLForHashScope(ctx context.Context, drsCtx *remoteruntime.GitContext
 		return nil, nil, err
 	}
 	if len(records) == 0 {
-		return nil, nil, fmt.Errorf("no matching DRS record found for oid %s", drsobject.NormalizeChecksum(checksum))
+		return nil, nil, fmt.Errorf("no matching DRS record found for oid %s", hash.NormalizeChecksum(checksum))
 	}
 	match := records[0]
 	if match.AccessMethods == nil || len(*match.AccessMethods) == 0 {
@@ -113,7 +113,11 @@ func DownloadResolvedToCachePath(ctx context.Context, drsCtx *remoteruntime.GitC
 	if isGlobusURL(accessURL.Url) {
 		return downloadGlobusResolved(ctx, drsCtx, accessURL.Url, cachePath, oid, obj)
 	}
-	return downloadResolved(ctx, drsCtx, oid, cachePath, obj, accessURL)
+	return DownloadResolvedToPath(ctx, drsCtx, oid, cachePath, obj, accessURL, sydownload.DownloadOptions{
+		MultipartThreshold: 5 * 1024 * 1024,
+		Concurrency:        2,
+		ChunkSize:          64 * 1024 * 1024,
+	})
 }
 
 func DownloadResolvedToPath(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL, opts sydownload.DownloadOptions) error {
@@ -191,7 +195,7 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholde
 	placeholder = placeholder || hasPlaceholderChecksum(obj, oid)
 	want := ""
 	if !placeholder {
-		want = strings.ToLower(drsobject.NormalizeChecksum(oid))
+		want = strings.ToLower(hash.NormalizeChecksum(oid))
 		if decoded, err := hex.DecodeString(want); err != nil || len(decoded) != sha256.Size {
 			want = ""
 		}
@@ -200,7 +204,7 @@ func verifyGlobusDownload(dstPath, oid string, obj *drsapi.DrsObject, placeholde
 		for _, checksum := range obj.Checksums {
 			checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
 			if checksumType == "sha256" || checksumType == "sha-256" {
-				want = strings.ToLower(drsobject.NormalizeChecksum(checksum.Checksum))
+				want = strings.ToLower(hash.NormalizeChecksum(checksum.Checksum))
 				break
 			}
 		}
@@ -228,19 +232,11 @@ func hasPlaceholderChecksum(obj *drsapi.DrsObject, oid string) bool {
 		return false
 	}
 	for _, checksum := range obj.Checksums {
-		if strings.EqualFold(strings.TrimSpace(checksum.Type), "git-drs-placeholder") && strings.EqualFold(drsobject.NormalizeChecksum(checksum.Checksum), drsobject.NormalizeChecksum(oid)) {
+		if strings.EqualFold(strings.TrimSpace(checksum.Type), "git-drs-placeholder") && strings.EqualFold(hash.NormalizeChecksum(checksum.Checksum), hash.NormalizeChecksum(oid)) {
 			return true
 		}
 	}
 	return false
-}
-
-func downloadResolved(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, cachePath string, obj *drsapi.DrsObject, accessURL *drsapi.AccessURL) error {
-	return DownloadResolvedToPath(ctx, drsCtx, oid, cachePath, obj, accessURL, sydownload.DownloadOptions{
-		MultipartThreshold: 5 * 1024 * 1024,
-		Concurrency:        2,
-		ChunkSize:          64 * 1024 * 1024,
-	})
 }
 
 type resolvedSource struct {

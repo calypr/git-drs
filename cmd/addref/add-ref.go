@@ -254,7 +254,7 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if entries[i].size != nil && *entries[i].size != obj.Size {
 			problems = append(problems, fmt.Sprintf("row %d: asserted size %d does not match authoritative size %d", i+2, *entries[i].size, obj.Size))
 		}
-		authSHA := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		authSHA := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 		if entries[i].sha256 != "" && !strings.EqualFold(entries[i].sha256, authSHA) {
 			problems = append(problems, fmt.Sprintf("row %d: asserted sha256 does not match authoritative checksum", i+2))
 		}
@@ -303,7 +303,7 @@ func createAddRefPointer(obj *drsapi.DrsObject, dst, sourceURI string) error {
 
 func addRefLocalOID(sourceURI string, remoteName config.Remote, obj *drsapi.DrsObject) string {
 	if obj != nil {
-		if sha := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
+		if sha := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
 			return sha
 		}
 	}

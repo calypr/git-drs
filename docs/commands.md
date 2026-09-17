@@ -422,7 +422,7 @@ What it does:
 
 - validates that each path is tracked as a `git-drs` pointer-managed file
 - runs `git rm` for those paths
-- leaves remote DRS reconciliation to the later `git drs push`
+- leaves the remote DRS record and stored payload unchanged
 
 Remote behavior on push:
 

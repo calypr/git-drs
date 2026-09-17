@@ -283,6 +283,11 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		return nil, fmt.Errorf("no gen3 project specified")
 	}
 
+	client, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
+	if err != nil {
+		return nil, err
+	}
+
 	scope, err := gitrepo.ResolveBucketScope(
 		remote.GetOrganization(),
 		projectID,
@@ -294,8 +299,7 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		defer cancel()
 		scope, err = resolveBucketScopeFromServer(
 			ctx,
-			profileConfig.APIEndpoint,
-			profileConfig.AccessToken,
+			client,
 			remote.GetOrganization(),
 			projectID,
 			remote.GetBucketName(),
@@ -303,11 +307,6 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		if err != nil {
 			return nil, fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", remote.GetOrganization(), projectID, err)
 		}
-	}
-
-	client, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
-	if err != nil {
-		return nil, err
 	}
 
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))

@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -22,11 +21,13 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
+	"github.com/calypr/git-drs/internal/pathspec"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -312,7 +313,7 @@ type pointerFile struct {
 func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
 	keys := make([]string, 0, len(inventory))
 	for path := range inventory {
-		if !matchesAnyPattern(path, patterns) {
+		if !pathspec.MatchesAnyPattern(path, patterns) {
 			continue
 		}
 		keys = append(keys, path)
@@ -399,23 +400,6 @@ func toPullFile(file pointerFile) internaltransfer.PullFile {
 	return internaltransfer.PullFile{Name: file.Name, Oid: file.Oid, Size: file.Size}
 }
 
-func matchesAnyPattern(path string, patterns []string) bool {
-	if len(patterns) == 0 {
-		return true
-	}
-	normalized := filepath.ToSlash(filepath.Clean(path))
-	for _, pattern := range patterns {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		if matchesPattern(normalized, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
 type cachedObjectState struct {
 	exists   bool
 	complete bool
@@ -487,7 +471,7 @@ func objectSHA256(obj *drsapi.DrsObject) string {
 		if checksumType != "sha256" && checksumType != "sha-256" {
 			continue
 		}
-		sha256 := strings.ToLower(localdrsobject.NormalizeChecksum(checksum.Checksum))
+		sha256 := strings.ToLower(hash.NormalizeChecksum(checksum.Checksum))
 		if len(sha256) == 64 && strings.Trim(sha256, "0123456789abcdef") == "" {
 			return sha256
 		}
@@ -560,44 +544,6 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 		}
 	}
 	return nil
-}
-
-func matchesPattern(path, pattern string) bool {
-	pattern = filepath.ToSlash(filepath.Clean(pattern))
-	if !strings.ContainsAny(pattern, "*?[") {
-		return path == pattern
-	}
-	re, err := regexp.Compile(globToRegexp(pattern))
-	if err != nil {
-		return false
-	}
-	return re.MatchString(path)
-}
-
-func globToRegexp(pattern string) string {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		switch ch {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-				continue
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
-		default:
-			b.WriteByte(ch)
-		}
-	}
-	b.WriteString("$")
-	return b.String()
 }
 
 func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool) error {

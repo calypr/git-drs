@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -24,6 +25,13 @@ func TestAddLocalRemote(t *testing.T) {
 }
 
 func TestResolveBucketScopeFromLocalServer(t *testing.T) {
+	t.Run("rejects missing endpoint", func(t *testing.T) {
+		_, err := resolveBucketScopeFromLocalServer(context.Background(), "", "", "", "org", "project", "")
+		if err == nil || !strings.Contains(err.Error(), "missing API endpoint") {
+			t.Fatalf("error = %v, want missing API endpoint", err)
+		}
+	})
+
 	t.Run("matches project resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/data/buckets" {
@@ -33,6 +41,7 @@ func TestResolveBucketScopeFromLocalServer(t *testing.T) {
 			if !ok || user != "drs-user" || pass != "drs-pass" {
 				t.Fatalf("unexpected basic auth: ok=%v user=%q pass=%q", ok, user, pass)
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/calypr/project/end_to_end_test"]}}}`))
 		}))
 		defer srv.Close()
@@ -56,6 +65,7 @@ func TestLocalRemoteAddEnsuresInitialization(t *testing.T) {
 		if r.URL.Path != "/data/buckets" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/calypr/project/end_to_end_test"]}}}`))
 	}))
 	defer srv.Close()

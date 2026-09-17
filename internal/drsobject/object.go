@@ -8,6 +8,7 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syfoncommon "github.com/calypr/syfon/client/access"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 )
 
@@ -17,14 +18,8 @@ import (
 // with this exact namespace. Do not change it without a DRS ID migration plan.
 var UUIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
-func NormalizeChecksum(raw string) string {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimPrefix(raw, "sha256:")
-	return strings.TrimSpace(raw)
-}
-
 func NormalizeOid(raw string) string {
-	return NormalizeChecksum(raw)
+	return hash.NormalizeChecksum(raw)
 }
 
 type Builder struct {
@@ -96,7 +91,7 @@ type LocationOptions struct {
 }
 
 func BuildWithOptions(fileName string, checksum string, size int64, drsID string, opts LocationOptions) (*drsapi.DrsObject, error) {
-	checksum = NormalizeChecksum(checksum)
+	checksum = hash.NormalizeChecksum(checksum)
 	if checksum == "" {
 		return nil, fmt.Errorf("checksum is required")
 	}

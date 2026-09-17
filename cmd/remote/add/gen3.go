@@ -37,7 +37,7 @@ var Gen3Cmd = &cobra.Command{
 			scopeArg = args[1]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, scopeArg, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -50,7 +50,7 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}

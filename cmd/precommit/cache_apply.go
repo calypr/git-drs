@@ -43,7 +43,7 @@ func handleUpsert(ctx context.Context, cache *precommit_cache.Cache, path, now s
 	return nil
 }
 
-func handleDelete(_ context.Context, cache *precommit_cache.Cache, tombsDir, path, now string) error {
+func handleDelete(cache *precommit_cache.Cache, tombsDir, path, now string) error {
 	entry, ok, err := precommit_cache.ReadPathEntry(cache, path)
 	if err != nil || !ok {
 		return nil

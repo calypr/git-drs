@@ -28,14 +28,65 @@ func TestNewValidatesConnectionOptions(t *testing.T) {
 	}
 }
 
-func TestSafeRelativePath(t *testing.T) {
-	for _, path := range []string{"/absolute", "../outside", "..", "."} {
-		if _, err := safeRelativePath(path); err == nil {
-			t.Fatalf("expected unsafe path %q to fail", path)
-		}
+func TestPullRejectsUnsafePathsBeforeDownloadOrWrite(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "pull")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if got, err := safeRelativePath("data/file.bin"); err != nil || got != "data/file.bin" {
-		t.Fatalf("safe path = %q, err = %v", got, err)
+
+	requests := 0
+	client, err := New(Options{
+		Endpoint:    "http://example.test",
+		AccessToken: "token",
+		Project:     "project",
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			requests++
+			return nil, io.EOF
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{path: "/absolute", want: `path must be relative to pull root: "/absolute"`},
+		{path: "../outside", want: `path must be relative to pull root: "../outside"`},
+		{path: "..", want: `path must be relative to pull root: ".."`},
+		{path: ".", want: `path must be relative to pull root: "."`},
+	} {
+		requests = 0
+		err := client.Pull(context.Background(), PullOptions{
+			Root: root,
+			Files: []File{{
+				Path: test.path,
+				OID:  "sha256:" + strings.Repeat("0", 64),
+				Size: 0,
+			}},
+		})
+		if err == nil || err.Error() != test.want {
+			t.Fatalf("Pull(%q) error = %v, want %q", test.path, err, test.want)
+		}
+		if requests != 0 {
+			t.Fatalf("Pull(%q) made %d download requests", test.path, requests)
+		}
+		entries, err := os.ReadDir(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 || entries[0].Name() != "pull" {
+			t.Fatalf("Pull(%q) changed destination tree: %v", test.path, entries)
+		}
+		rootEntries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rootEntries) != 0 {
+			t.Fatalf("Pull(%q) wrote to pull root: %v", test.path, rootEntries)
+		}
 	}
 }
 
@@ -98,10 +149,11 @@ func TestPullUsesBulkAccessBeforePerObjectAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dst := filepath.Join(t.TempDir(), "data.bin")
+	root := t.TempDir()
+	dst := filepath.Join(root, "data", "file.bin")
 	if err := client.Pull(context.Background(), PullOptions{
-		Root:  filepath.Dir(dst),
-		Files: []File{{Path: filepath.Base(dst), OID: oid, Size: int64(len(payload))}},
+		Root:  root,
+		Files: []File{{Path: filepath.Join("data", "file.bin"), OID: oid, Size: int64(len(payload))}},
 	}); err != nil {
 		t.Fatal(err)
 	}

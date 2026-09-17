@@ -33,7 +33,7 @@ Local consolidation can remove roughly another 160 lines from duplicated glob ma
 
 ## Implementation result
 
-The cleanup reduced production Go from 17,829 to 16,912 physical lines and from 15,631 to 14,942 code lines. Across production and tests, Go fell from 30,908 to 29,936 physical lines. Tests account for 13,024 of the remaining physical Go lines.
+The cleanup reduced production Go from 17,829 to 16,907 physical lines and from 15,631 to 14,942 code lines. Across production and tests, Go fell from 30,908 to 29,931 physical lines. Tests account for 13,024 of the remaining physical Go lines.
 
 `internal/transfer` production code fell from 2,958 to 2,600 physical lines (2,349 code lines). It now delegates the reusable transport boundary to Syfon: upload and download engines, multipart transfer, retries and checkpoints, hash normalization, low-level progress context, scoped authorization metadata, and DRS access resolution. The remaining transfer code owns Git-specific inventory and cache semantics, cross-scope record reuse, access-method and Globus policy, expiring access-URL refresh, metadata batching, and CLI progress. Syfon v0.3.8 has no equivalent high-level APIs for those contracts.
 

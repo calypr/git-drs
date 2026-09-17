@@ -287,7 +287,9 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// A pointer in Git history is not actionable unless this checkout
 			// has the payload bytes. Do not create orphan metadata for historical
 			// pointers that the caller cannot upload.
-			if !s.hasLocalPayload(oid) {
+			file := s.filesByOID[oid]
+			_, hasPayload, payloadErr := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+			if payloadErr != nil || !hasPayload {
 				s.skippedUnavailable++
 				s.debug("skipping pointer without local payload", "oid", oid)
 				continue
@@ -608,11 +610,7 @@ func parseStorageURL(raw string) (bucket string, key string, ok bool) {
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
 	candidates := make([]uploadCandidate, 0)
 	for _, oid := range s.oids {
-		needsUpload, err := s.needsUpload(oid)
-		if err != nil {
-			return nil, err
-		}
-		if !needsUpload {
+		if !s.rt.Tuning.ForceUpload && !s.uploadRequired[oid] {
 			continue
 		}
 
@@ -642,20 +640,6 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 	}
 	return candidates, nil
 }
-
-func (s *batchSyncSession) hasLocalPayload(oid string) bool {
-	file := s.filesByOID[oid]
-	_, ok, err := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
-	return err == nil && ok
-}
-
-func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
-	if s.rt.Tuning.ForceUpload {
-		return true, nil
-	}
-	return s.uploadRequired[oid], nil
-}
-
 func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
 	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
 		return false

@@ -146,7 +146,7 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			checksumOIDs := make([]string, 0, len(missingOIDs))
 			for _, oid := range missingOIDs {
-				if isDRSPointerOID(oid) {
+				if lfs.IsDRSURI(oid) {
 					if anvil == nil {
 						obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
 						if err == nil {
@@ -238,7 +238,7 @@ var Cmd = &cobra.Command{
 						continue
 					}
 				}
-				if isDRSPointerOID(f.Oid) {
+				if lfs.IsDRSURI(f.Oid) {
 					var downloadErr error
 					if anvil != nil {
 						downloadErr = resolver.DownloadToCache(downloadCtx, anvil, normalizeDRSPointerOID(f.Oid), dstPath)
@@ -370,11 +370,6 @@ func verifyPointerAtPath(path string, file pointerFile) error {
 		return fmt.Errorf("sha256 mismatch: expected %s, got %s", file.SHA256, actual)
 	}
 	return nil
-}
-
-func isDRSPointerOID(oid string) bool {
-	oid = strings.TrimSpace(oid)
-	return strings.HasPrefix(oid, "//") || strings.HasPrefix(strings.ToLower(oid), "drs://")
 }
 
 func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {

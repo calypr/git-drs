@@ -20,13 +20,5 @@ func ConfigureGen3(opts Gen3Options) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	previousToken := fenceToken
-	previousBucket := selectedBucket
-	defer func() {
-		fenceToken = previousToken
-		selectedBucket = previousBucket
-	}()
-	fenceToken = opts.Token
-	selectedBucket = opts.Bucket
-	return gen3Init(opts.RemoteName, "", opts.Token, opts.Scope, logger)
+	return gen3Init(opts.RemoteName, "", opts.Token, opts.Bucket, opts.Scope, logger)
 }

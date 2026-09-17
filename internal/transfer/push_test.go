@@ -66,7 +66,7 @@ func TestBatchSyncSessionNormalizeFilesExcludesDRSURIReferences(t *testing.T) {
 	}
 }
 
-func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
+func TestAddURLObjectDoesNotProduceUploadCandidate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	accessMethods := []drsapi.AccessMethod{{
@@ -86,15 +86,16 @@ func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 
 	session := &batchSyncSession{
 		rt:             &pushRuntime{},
+		oids:           []string{oid},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/external.dat"}},
 		uploadRequired: map[string]bool{oid: false},
-		existingByHash: map[string][]drsapi.DrsObject{oid: nil},
 	}
-	needsUpload, err := session.needsUpload(oid)
+	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
-		t.Fatalf("needsUpload: %v", err)
+		t.Fatalf("identifyUploadCandidates: %v", err)
 	}
-	if needsUpload {
-		t.Fatal("add-url metadata must be registered without scheduling a local payload upload")
+	if len(candidates) != 0 {
+		t.Fatalf("add-url metadata scheduled upload candidates: %+v", candidates)
 	}
 }
 

@@ -74,7 +74,7 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 			continue
 		}
 		seen[ref] = struct{}{}
-		if err := addFilesFromRef(ctx, repoDir, ref, logger, lfsFileMap); err != nil {
+		if err := addFilesFromRef(ctx, repoDir, ref, lfsFileMap); err != nil {
 			return nil, err
 		}
 	}
@@ -107,7 +107,7 @@ func GetReachablePointerFilesForRefInRepository(ctx context.Context, repositoryR
 		ref = "HEAD"
 	}
 	files := make(map[string]LfsFileInfo)
-	if err := addFilesFromRef(ctx, repositoryRoot, ref, logger, files); err != nil {
+	if err := addFilesFromRef(ctx, repositoryRoot, ref, files); err != nil {
 		return nil, err
 	}
 	return files, nil
@@ -148,15 +148,15 @@ func GetTrackedLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 	return files, nil
 }
 
-func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addFilesFromRef(ctx context.Context, repoDir, ref string, lfsFileMap map[string]LfsFileInfo) error {
 	paths, err := grepPointerPaths(ctx, repoDir, ref)
 	if err != nil {
 		return fmt.Errorf("git grep failed for %s: %w", ref, err)
 	}
-	return addFilesFromPaths(ctx, repoDir, ref, paths, logger, lfsFileMap)
+	return addFilesFromPaths(ctx, repoDir, ref, paths, lfsFileMap)
 }
 
-func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string, _ *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string, lfsFileMap map[string]LfsFileInfo) error {
 	if len(paths) == 0 {
 		return nil
 	}

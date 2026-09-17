@@ -206,9 +206,6 @@ func UpsertOIDPath(cache *Cache, oid, oldPath, newPath, externalURL, now string,
 func RemoveOIDPath(cache *Cache, oid, path, now string) error {
 	entry, err := ReadOIDEntry(cache, oid, now)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
 		return err
 	}
 	paths := make(map[string]struct{}, len(entry.Paths))

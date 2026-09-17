@@ -205,27 +205,14 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	tempDir := t.TempDir()
 	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
 
-	// ensure a git repository exists so any git-based config lookups succeed
 	cmdInit := exec.Command("git", "init")
 	cmdInit.Dir = tempDir
 	if out, err := cmdInit.CombinedOutput(); err != nil {
 		t.Fatalf("git init failed: %v: %s", err, out)
 	}
 
-	exec.Command("git", "init", tempDir).Run()
 	oldwd := mustChdir(t, tempDir)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
-
-	// Mock config
-	// Create dummy config using git config
-	// create a minimal drs config so runAddURL doesn't fail with
-	//default_remote: calypr-dev
-	//remotes:
-	//  calypr-dev:
-	//    gen3:
-	//      endpoint: https://calypr-dev.ohsu.edu
-	//      project_id: cbds-monorepos
-	//      bucket: cbds
 
 	cmds := [][]string{
 		{"config", "drs.default-remote", "calypr-dev"},

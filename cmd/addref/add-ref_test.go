@@ -152,14 +152,14 @@ func TestCreateDRSPointerPreservesSourceURI(t *testing.T) {
 	}
 }
 
-func TestAddRefPointerPreservesSourceURIWhenObjectHasSHA256(t *testing.T) {
+func TestCreateDRSPointerIncludesSHA256(t *testing.T) {
 	obj := &drsapi.DrsObject{
 		Size:      42,
 		Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: strings.Repeat("a", 64)}},
 	}
 	path := filepath.Join(t.TempDir(), "pointer")
-	if err := createAddRefPointer(obj, path, "drs://source.example/object-1"); err != nil {
-		t.Fatalf("createAddRefPointer error: %v", err)
+	if err := lfs.CreateDRSPointer(obj, path, "drs://source.example/object-1"); err != nil {
+		t.Fatalf("CreateDRSPointer error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

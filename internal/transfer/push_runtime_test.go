@@ -75,23 +75,12 @@ func writeUploadTestFile(t *testing.T, contents string) string {
 	return path
 }
 
-func withUploadBackend(t *testing.T, backend sytransfer.MultipartBackend) {
-	t.Helper()
-	previous := uploadBackendForRuntime
-	uploadBackendForRuntime = func(*pushRuntime) sytransfer.MultipartBackend {
-		return backend
-	}
-	t.Cleanup(func() {
-		uploadBackendForRuntime = previous
-	})
-}
-
 func TestUploadFileForObjectPassesScopeToSingleResolver(t *testing.T) {
 	backend := &uploadMetadataBackend{}
-	withUploadBackend(t, backend)
 	path := writeUploadTestFile(t, "payload")
 	rt := &pushRuntime{
-		Logger: slog.Default(),
+		Backend: backend,
+		Logger:  slog.Default(),
 		Scope: pushScope{
 			Organization: " org ",
 			Project:      " project ",
@@ -114,10 +103,10 @@ func TestUploadFileForObjectPassesScopeToSingleResolver(t *testing.T) {
 
 func TestUploadFileForObjectPassesScopeToMultipartInitializer(t *testing.T) {
 	backend := &uploadMetadataBackend{}
-	withUploadBackend(t, backend)
 	path := writeUploadTestFile(t, "payload")
 	rt := &pushRuntime{
-		Logger: slog.Default(),
+		Backend: backend,
+		Logger:  slog.Default(),
 		Scope: pushScope{
 			Organization: "org",
 			Project:      "project",
@@ -166,7 +155,6 @@ func TestScopedUploadMetadataRequiresCompleteScope(t *testing.T) {
 }
 
 func TestUploadFileForObjectRequiresBackend(t *testing.T) {
-	withUploadBackend(t, nil)
 	path := writeUploadTestFile(t, "payload")
 	rt := &pushRuntime{Logger: slog.Default()}
 

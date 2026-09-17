@@ -20,7 +20,9 @@ func NewCommand() *cobra.Command {
 			}
 			return nil
 		},
-		RunE: runAddURL,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return NewAddURLService().Run(cmd, args)
+		},
 	}
 	addFlags(cmd)
 	return cmd
@@ -43,9 +45,4 @@ func addFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("dry-run", false, "List and validate matching Globus objects without writing files")
 	cmd.Flags().String("manifest", "", "Optional TSV manifest supplying path, size, and sha256 for Globus collections")
 	cmd.Flags().StringP("remote", "r", "", "Target DRS remote")
-}
-
-// runAddURL is the Cobra RunE wrapper that delegates execution to the service.
-func runAddURL(cmd *cobra.Command, args []string) (err error) {
-	return NewAddURLService().Run(cmd, args)
 }

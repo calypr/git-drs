@@ -21,13 +21,6 @@ import (
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
 
-var uploadBackendForRuntime = func(rt *pushRuntime) sytransfer.MultipartBackend {
-	if rt == nil || rt.API == nil || rt.API.Client == nil {
-		return nil
-	}
-	return rt.API.Client.Data()
-}
-
 type pushScope struct {
 	Organization string
 	Project      string
@@ -44,6 +37,7 @@ type pushTuning struct {
 
 type pushRuntime struct {
 	API        *remoteruntime.GitContext
+	Backend    sytransfer.MultipartBackend
 	Credential *conf.Credential
 	Logger     *slog.Logger
 	Scope      pushScope
@@ -54,8 +48,13 @@ func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 	if cl == nil {
 		return &pushRuntime{}
 	}
+	var backend sytransfer.MultipartBackend
+	if cl.Client != nil {
+		backend = cl.Client.Data()
+	}
 	return &pushRuntime{
 		API:        cl,
+		Backend:    backend,
 		Credential: cl.Credential,
 		Logger:     cl.Logger,
 		Scope: pushScope{
@@ -177,17 +176,16 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	backend := uploadBackendForRuntime(rt)
-	if backend == nil {
+	if rt.Backend == nil {
 		return fmt.Errorf("upload backend is required")
 	}
 	if forceMultipart {
-		if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
+		if err := syupload.Upload(ctx, rt.Backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
 			return fmt.Errorf("upload error: %w", err)
 		}
 		return nil
 	}
-	if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
+	if err := syupload.Upload(ctx, rt.Backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
 		return fmt.Errorf("upload error: %w", err)
 	}
 	return nil

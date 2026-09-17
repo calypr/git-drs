@@ -11,7 +11,6 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/spf13/cobra"
 )
 
@@ -127,9 +126,12 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	oid, err := s.ensureLFSObject(ctx, objectInfo, input, lfsRoot)
-	if err != nil {
-		return err
+	oid := input.sha256
+	if oid == "" {
+		oid, err = placeholderOIDForUnknownSHA(objectInfo.ETag, input.objectURL)
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := writePointerFile(input.path, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
@@ -156,12 +158,4 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
-}
-
-func (s *AddURLService) ensureLFSObject(_ context.Context, objectInfo *sycloud.ObjectInfo, input addURLInput, _ string) (string, error) {
-	if input.sha256 != "" {
-		return input.sha256, nil
-	}
-
-	return placeholderOIDForUnknownSHA(objectInfo.ETag, input.objectURL)
 }

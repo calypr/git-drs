@@ -29,13 +29,13 @@ func stagedChanges(ctx context.Context) ([]Change, error) {
 		status := parts[0]
 		switch {
 		case status == "A":
-			changes = append(changes, Change{Kind: KindAdd, NewPath: parts[1], Status: status})
+			changes = append(changes, Change{Kind: KindAdd, NewPath: parts[1]})
 		case status == "M":
-			changes = append(changes, Change{Kind: KindModify, NewPath: parts[1], Status: status})
+			changes = append(changes, Change{Kind: KindModify, NewPath: parts[1]})
 		case status == "D":
-			changes = append(changes, Change{Kind: KindDelete, NewPath: parts[1], Status: status})
+			changes = append(changes, Change{Kind: KindDelete, NewPath: parts[1]})
 		case strings.HasPrefix(status, "R") && len(parts) >= 3:
-			changes = append(changes, Change{Kind: KindRename, OldPath: parts[1], NewPath: parts[2], Status: status})
+			changes = append(changes, Change{Kind: KindRename, OldPath: parts[1], NewPath: parts[2]})
 		}
 	}
 	if err := sc.Err(); err != nil {

@@ -7,13 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/cmd/initialize"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -38,7 +37,7 @@ var Gen3Cmd = &cobra.Command{
 			scopeArg = args[1]
 		}
 
-		err := gen3Init(remoteName, credFile, fenceToken, scopeArg, logg)
+		err := gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg, logg)
 		if err != nil {
 			return fmt.Errorf("error configuring gen3 server: %v", err)
 		}
@@ -51,7 +50,7 @@ var Gen3Cmd = &cobra.Command{
 	},
 }
 
-func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logger) error {
+func gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg string, logg *slog.Logger) error {
 	if remoteName == "" {
 		return fmt.Errorf("remote name is required")
 	}
@@ -64,7 +63,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 	}
 
 	var accessToken, apiKey, keyID, apiEndpoint string
-	configure := conf.NewConfigure(logg)
+	configure := syconf.NewConfigure(logg)
 	switch {
 	case fenceToken != "":
 		accessToken = fenceToken
@@ -104,7 +103,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 		return fmt.Errorf("could not determine Gen3 API endpoint")
 	}
 
-	cred := &conf.Credential{
+	cred := &syconf.Credential{
 		Profile:            remoteName,
 		APIEndpoint:        apiEndpoint,
 		APIKey:             apiKey,
@@ -116,7 +115,7 @@ func gen3Init(remoteName, credFile, fenceToken, scopeArg string, logg *slog.Logg
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := credentials.EnsureValidCredential(ctx, cred, logg); err != nil {
+	if err := remoteruntime.EnsureValidCredential(ctx, cred, logg); err != nil {
 		return fmt.Errorf("failed to verify/refresh Gen3 credential: %w", remoteruntime.WrapCredentialValidationError(remoteName, err))
 	}
 

@@ -20,7 +20,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
@@ -99,7 +99,7 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		if err := createAddRefPointer(&obj, dstPath, drsUri); err != nil {
+		if err := lfs.CreateDRSPointer(&obj, dstPath, drsUri); err != nil {
 			return err
 		}
 		if _, err := gitrepo.TrackReadOnly(cmd.Context(), args[1]); err != nil {
@@ -254,7 +254,7 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if entries[i].size != nil && *entries[i].size != obj.Size {
 			problems = append(problems, fmt.Sprintf("row %d: asserted size %d does not match authoritative size %d", i+2, *entries[i].size, obj.Size))
 		}
-		authSHA := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		authSHA := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 		if entries[i].sha256 != "" && !strings.EqualFold(entries[i].sha256, authSHA) {
 			problems = append(problems, fmt.Sprintf("row %d: asserted sha256 does not match authoritative checksum", i+2))
 		}
@@ -271,7 +271,7 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if err := os.MkdirAll(filepath.Dir(e.destination), 0o755); err != nil {
 			return err
 		}
-		err = createAddRefPointer(&e.object, e.destination, e.uri)
+		err = lfs.CreateDRSPointer(&e.object, e.destination, e.uri)
 		if err != nil {
 			return err
 		}
@@ -293,17 +293,9 @@ func persistAddRefObject(obj *drsapi.DrsObject, sourceURI string, remoteName con
 	return drsobject.WriteObject(gitrepo.DRSObjectsPath, obj, addRefLocalOID(sourceURI, remoteName, obj))
 }
 
-// createAddRefPointer keeps the source authority in Git. The metadata written
-// under .git/drs is only a local cache, so a checksum-only pointer would leave
-// another clone unable to route hydration back to the authority that resolved
-// the reference.
-func createAddRefPointer(obj *drsapi.DrsObject, dst, sourceURI string) error {
-	return lfs.CreateDRSPointer(obj, dst, sourceURI)
-}
-
 func addRefLocalOID(sourceURI string, remoteName config.Remote, obj *drsapi.DrsObject) string {
 	if obj != nil {
-		if sha := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
+		if sha := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
 			return sha
 		}
 	}
@@ -404,9 +396,5 @@ func newAnonymousSourceDRSGetter(endpoint string) (drsObjectGetter, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
-	}
-	return client.DRS(), nil
+	return raw.DRS(), nil
 }

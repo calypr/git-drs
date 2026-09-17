@@ -2,15 +2,15 @@ package add
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/bucketselection"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
-	syfoncommon "github.com/calypr/syfon/common"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syclient "github.com/calypr/syfon/client"
+	syfoncommon "github.com/calypr/syfon/client/access"
 )
 
 func resolveBucketFromPayload(payload bucketapi.BucketsResponse, organization, project, preferredBucket string) (string, error) {
@@ -34,7 +34,7 @@ func resolveBucketFromPayload(payload bucketapi.BucketsResponse, organization, p
 }
 
 func chooseVisibleBucket(payload bucketapi.BucketsResponse, resource, preferredBucket string) (string, error) {
-	matches := findBucketsByResource(payload, resource)
+	matches := bucketselection.MatchesResource(payload, resource)
 	if len(matches) == 0 {
 		return "", nil
 	}
@@ -55,28 +55,6 @@ func chooseVisibleBucket(payload bucketapi.BucketsResponse, resource, preferredB
 	return "", fmt.Errorf("multiple visible server buckets matched resource %q: %s; rerun with --bucket <bucket>", resource, strings.Join(matches, ", "))
 }
 
-func findBucketsByResource(payload bucketapi.BucketsResponse, resource string) []string {
-	resource = syfoncommon.NormalizeAccessResource(resource)
-	if resource == "" {
-		return nil
-	}
-
-	matches := make([]string, 0)
-	for bucket, meta := range payload.S3BUCKETS {
-		if meta.Programs == nil {
-			continue
-		}
-		for _, candidate := range *meta.Programs {
-			if syfoncommon.NormalizeAccessResource(candidate) == resource {
-				matches = append(matches, bucket)
-				break
-			}
-		}
-	}
-	slices.Sort(matches)
-	return slices.Compact(matches)
-}
-
 func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
 	if strings.TrimSpace(endpoint) == "" {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
@@ -85,24 +63,16 @@ func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organiza
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing access token for server bucket lookup")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
+	client, err := syclient.New(endpoint,
+		syclient.WithHTTPClient(http.DefaultClient),
+		syclient.WithBearerToken(token),
+	)
 	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list client: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-
-	resp, err := http.DefaultClient.Do(req)
+	payload, err := client.Buckets().List(ctx)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
-	}
-
-	var payload bucketapi.BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
 	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
@@ -117,26 +87,16 @@ func resolveBucketScopeFromLocalServer(ctx context.Context, endpoint, username, 
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("missing API endpoint for server bucket lookup")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
+	client, err := syclient.New(endpoint,
+		syclient.WithHTTPClient(http.DefaultClient),
+		syclient.WithBasicAuth(username, password),
+	)
 	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list client: %w", err)
 	}
-	if username != "" || password != "" {
-		req.SetBasicAuth(username, password)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
+	payload, err := client.Buckets().List(ctx)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
-	}
-
-	var payload bucketapi.BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
 	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)

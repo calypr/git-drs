@@ -1,27 +1,36 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syclient "github.com/calypr/syfon/client"
+	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
 
 type downloadRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f downloadRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type immediateDownloadRetry struct{}
+
+func (immediateDownloadRetry) WaitTime(int) time.Duration { return 0 }
 
 func TestDownloadToCachePathDispatchesDRSOIDToURIResolver(t *testing.T) {
 	t.Parallel()
@@ -41,7 +50,7 @@ func TestDownloadToCachePathDispatchesDRSOIDToURIResolver(t *testing.T) {
 				t.Fatalf("syclient.New: %v", err)
 			}
 
-			err = DownloadToCachePath(context.Background(), &remoteruntime.GitContext{Client: raw.(*syclient.Client)}, oid, filepath.Join(t.TempDir(), "object"))
+			err = DownloadToCachePath(context.Background(), &remoteruntime.GitContext{Client: raw}, oid, filepath.Join(t.TempDir(), "object"))
 			if err == nil {
 				t.Fatal("DownloadToCachePath unexpectedly succeeded")
 			}
@@ -76,7 +85,7 @@ func TestBulkAccessURLsForObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 
 	got, err := BulkAccessURLsForObjects(context.Background(), &remoteruntime.GitContext{Client: client}, []drsapi.DrsObject{
 		{Id: "obj-1", AccessMethods: &methods},
@@ -146,10 +155,7 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	projectAccessID := "s3-project"
 	orgAccessID := "s3-org"
 	projectMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &projectAccessID}}
-	projectMethods[0].AccessUrl = &struct {
-		Headers *[]string `json:"headers,omitempty"`
-		Url     string    `json:"url"`
-	}{Url: "s3://bucket/object"}
+	projectMethods[0].AccessUrl = &drsapi.AccessURL{Url: "s3://bucket/object"}
 	orgMethods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &orgAccessID}}
 	projectControlled := []string{"/organization/org1/project/proj1"}
 	orgControlled := []string{"/organization/org1"}
@@ -190,7 +196,7 @@ func TestAccessURLForHashScopeFiltersByScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 	ctx := &remoteruntime.GitContext{Client: client, Organization: "org1", ProjectId: "proj1"}
 
 	accessURL, obj, err := AccessURLForHashScope(context.Background(), ctx, "sha256:abc")
@@ -232,7 +238,7 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 	drsCtx := &remoteruntime.GitContext{Client: client}
 
 	tmpDir := t.TempDir()
@@ -242,6 +248,16 @@ func TestDownloadResolvedToPathRangeIgnoredRestartsDownload(t *testing.T) {
 	}
 	if err := os.WriteFile(dstPath, payload[:10], 0o644); err != nil {
 		t.Fatalf("seed partial download: %v", err)
+	}
+	checkpoint, err := json.Marshal(struct {
+		Identity string `json:"identity"`
+		Size     int64  `json:"size"`
+	}{Identity: "obj-1", Size: int64(len(payload))})
+	if err != nil {
+		t.Fatalf("marshal download checkpoint: %v", err)
+	}
+	if err := os.WriteFile(dstPath+".syfon-download.json", checkpoint, 0o644); err != nil {
+		t.Fatalf("seed download checkpoint: %v", err)
 	}
 
 	obj := &drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload))}
@@ -287,7 +303,7 @@ func TestDownloadResolvedToPathReturnsHTTPErrorBeforeWritingBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syclient.New: %v", err)
 	}
-	client := raw.(*syclient.Client)
+	client := raw
 	drsCtx := &remoteruntime.GitContext{Client: client}
 
 	tmpDir := t.TempDir()
@@ -314,5 +330,199 @@ func TestDownloadResolvedToPathReturnsHTTPErrorBeforeWritingBody(t *testing.T) {
 	}
 	if _, statErr := os.Stat(dstPath); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no downloaded file to be written, got stat err=%v", statErr)
+	}
+	if _, statErr := os.Stat(dstPath + ".syfon-download.json"); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no download checkpoint to be written, got stat err=%v", statErr)
+	}
+}
+
+func TestDownloadResolvedToPathRetriesTransientHTTPError(t *testing.T) {
+	t.Parallel()
+
+	payload := "downloaded"
+	requests := 0
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		status := http.StatusServiceUnavailable
+		body := "temporarily unavailable"
+		if requests > 1 {
+			status = http.StatusOK
+			body = payload
+		}
+		return &http.Response{
+			StatusCode: status,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+			Request:    r,
+		}, nil
+	})}
+
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	dstPath := filepath.Join(t.TempDir(), "object.bin")
+	err = DownloadResolvedToPath(
+		context.Background(),
+		&remoteruntime.GitContext{Client: client},
+		"obj-1",
+		dstPath,
+		&drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload))},
+		&drsapi.AccessURL{Url: "https://signed.example/object.bin"},
+		sydownload.DownloadOptions{
+			MultipartThreshold: int64(len(payload) + 1),
+			Concurrency:        1,
+			ChunkSize:          int64(len(payload)),
+			RetryStrategy:      immediateDownloadRetry{},
+		},
+	)
+	if err != nil {
+		t.Fatalf("DownloadResolvedToPath returned error: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("expected one retry, got %d requests", requests)
+	}
+	contents, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(contents) != payload {
+		t.Fatalf("unexpected downloaded payload %q", contents)
+	}
+
+	var _ sytransfer.RetryStrategy = immediateDownloadRetry{}
+}
+
+func TestDownloadResolvedToPathRefreshesExpiredAccessURL(t *testing.T) {
+	t.Parallel()
+
+	const chunkSize = int64(1024 * 1024)
+	firstChunk := bytes.Repeat([]byte("a"), int(chunkSize))
+	secondChunk := bytes.Repeat([]byte("b"), int(chunkSize))
+	thirdChunk := bytes.Repeat([]byte("c"), int(chunkSize))
+	want := append(append(append([]byte(nil), firstChunk...), secondChunk...), thirdChunk...)
+	var expiredRequests atomic.Int32
+	var refreshRequests atomic.Int32
+	expiredReady := make(chan struct{})
+
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := func(status int, body []byte) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: status,
+				Body:       io.NopCloser(bytes.NewReader(body)),
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Request:    r,
+			}, nil
+		}
+
+		switch {
+		case r.URL.Path == "/download/expired" && r.Header.Get("Range") == "bytes=0-1048575":
+			return response(http.StatusPartialContent, firstChunk)
+		case r.URL.Path == "/download/expired":
+			if expiredRequests.Add(1) == 2 {
+				close(expiredReady)
+			}
+			<-expiredReady
+			return response(http.StatusForbidden, []byte("AccessDenied: signed URL expired"))
+		case r.URL.Path == "/ga4gh/drs/v1/objects/obj-1/access/s3":
+			refreshRequests.Add(1)
+			return response(http.StatusOK, []byte(`{"url":"https://signed.example/download/fresh"}`))
+		case r.URL.Path == "/download/fresh" && r.Header.Get("Range") == "bytes=1048576-2097151":
+			return response(http.StatusPartialContent, secondChunk)
+		case r.URL.Path == "/download/fresh" && r.Header.Get("Range") == "bytes=2097152-3145727":
+			return response(http.StatusPartialContent, thirdChunk)
+		default:
+			return nil, io.EOF
+		}
+	})}
+
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	accessID := "s3"
+	methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &accessID}}
+	dstPath := filepath.Join(t.TempDir(), "object.bin")
+	err = DownloadResolvedToPath(
+		context.Background(),
+		&remoteruntime.GitContext{Client: client},
+		"obj-1",
+		dstPath,
+		&drsapi.DrsObject{Id: "obj-1", Size: int64(len(want)), AccessMethods: &methods},
+		&drsapi.AccessURL{Url: "https://signed.example/download/expired"},
+		sydownload.DownloadOptions{
+			MultipartThreshold: 1,
+			Concurrency:        2,
+			ChunkSize:          chunkSize,
+			RetryStrategy:      immediateDownloadRetry{},
+		},
+	)
+	if err != nil {
+		t.Fatalf("DownloadResolvedToPath returned error: %v", err)
+	}
+	if refreshRequests.Load() != 1 {
+		t.Fatalf("access URL refresh requests = %d, want 1", refreshRequests.Load())
+	}
+	got, err := os.ReadFile(dstPath)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("downloaded payload does not match the ranged responses")
+	}
+}
+
+func TestDownloadResolvedToPathRefreshesSelectedAccessWithHeaders(t *testing.T) {
+	t.Parallel()
+
+	const payload = "payload"
+	const selectedID = "selected-access"
+	wrongID := "wrong-access"
+	selectedMethods := []drsapi.AccessMethod{
+		{Type: drsapi.AccessMethodTypeS3, AccessId: &wrongID},
+		{Type: drsapi.AccessMethodTypeHttps, AccessId: func() *string { value := selectedID; return &value }()},
+	}
+	var refreshPath, retryHeader string
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := func(status int, body string) (*http.Response, error) {
+			return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}, Request: r}, nil
+		}
+		switch r.URL.Path {
+		case "/download/expired":
+			return response(http.StatusForbidden, "expired")
+		case "/ga4gh/drs/v1/objects/obj-1/access/" + selectedID:
+			refreshPath = r.URL.Path
+			return response(http.StatusOK, `{"url":"https://signed.example/download/fresh","headers":["Authorization: fresh"]}`)
+		case "/ga4gh/drs/v1/objects/obj-1/access/" + wrongID:
+			return nil, fmt.Errorf("refresh used wrong access ID")
+		case "/download/fresh":
+			retryHeader = r.Header.Get("Authorization")
+			return response(http.StatusOK, payload)
+		default:
+			return nil, fmt.Errorf("unexpected request path %s", r.URL.Path)
+		}
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedAccessID := selectedID
+	err = DownloadResolvedToPathWithAccess(
+		context.Background(),
+		&remoteruntime.GitContext{Client: client},
+		"obj-1",
+		filepath.Join(t.TempDir(), "object.bin"),
+		&drsapi.DrsObject{Id: "obj-1", Size: int64(len(payload)), AccessMethods: &selectedMethods},
+		ResolvedAccess{AccessURL: drsapi.AccessURL{Url: "https://signed.example/download/expired", Headers: func() *[]string { values := []string{"Authorization: expired"}; return &values }()}, AccessID: selectedAccessID},
+		sydownload.DownloadOptions{MultipartThreshold: 1 << 20, Concurrency: 1, ChunkSize: 1 << 20, RetryStrategy: immediateDownloadRetry{}},
+	)
+	if err != nil {
+		t.Fatalf("DownloadResolvedToPathWithAccess returned error: %v", err)
+	}
+	if refreshPath != "/ga4gh/drs/v1/objects/obj-1/access/"+selectedID {
+		t.Fatalf("refresh path = %q, want selected access ID", refreshPath)
+	}
+	if retryHeader != "fresh" {
+		t.Fatalf("retry Authorization = %q, want refreshed header", retryHeader)
 	}
 }

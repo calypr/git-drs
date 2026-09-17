@@ -13,8 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/calypr/git-drs/internal/drsobject"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/client/hash"
 )
 
@@ -75,7 +74,7 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 			continue
 		}
 		seen[ref] = struct{}{}
-		if err := addFilesFromRef(ctx, repoDir, ref, logger, lfsFileMap); err != nil {
+		if err := addFilesFromRef(ctx, repoDir, ref, lfsFileMap); err != nil {
 			return nil, err
 		}
 	}
@@ -85,71 +84,31 @@ func GetLfsFilesForRefs(refs []string, logger *slog.Logger) (map[string]LfsFileI
 // GetReachablePointerFilesForRef scans a Git ref/tree and returns valid Git
 // LFS/DRS pointer blobs reachable from that tree.
 func GetReachablePointerFilesForRef(ref string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	return GetLfsFilesForRefs([]string{ref}, logger)
-}
-
-// GetLfsFilesForRefPaths scans the given paths in a specific ref/tree and
-// returns only those entries whose blob content is a valid Git LFS pointer.
-func GetLfsFilesForRefPaths(ref string, paths []string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	if logger == nil {
-		return nil, fmt.Errorf("logger is required")
-	}
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
+	}
+	return GetReachablePointerFilesForRefInRepository(context.Background(), repoDir, ref, logger)
+}
+
+// GetReachablePointerFilesForRefInRepository scans pointer blobs from ref in
+// repositoryRoot. It reads Git objects rather than worktree files, so the
+// result is stable when some or all LFS files have been hydrated.
+func GetReachablePointerFilesForRefInRepository(ctx context.Context, repositoryRoot, ref string, logger *slog.Logger) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
+	}
+	repositoryRoot = strings.TrimSpace(repositoryRoot)
+	if repositoryRoot == "" {
+		return nil, fmt.Errorf("repository root is required")
 	}
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		ref = "HEAD"
 	}
-	normalized := uniquePaths(paths)
 	files := make(map[string]LfsFileInfo)
-	if len(normalized) == 0 {
-		return files, nil
-	}
-	if err := addFilesFromPaths(context.Background(), repoDir, ref, normalized, logger, files); err != nil {
+	if err := addFilesFromRef(ctx, repositoryRoot, ref, files); err != nil {
 		return nil, err
-	}
-	return files, nil
-}
-
-// GetWorktreeLfsFiles scans the current checkout and returns tracked files whose
-// worktree content is currently a valid Git LFS pointer. This is the fast path
-// for interactive commands like `git-drs ls-files`.
-func GetWorktreeLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	if logger == nil {
-		return nil, fmt.Errorf("logger is required")
-	}
-	repoDir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	logger.Debug("Scanning current worktree for LFS pointer files")
-	ctx := context.Background()
-	paths, err := listTrackedWorktreeFiles(ctx, repoDir)
-	if err != nil {
-		return nil, err
-	}
-	files := make(map[string]LfsFileInfo)
-	for _, path := range paths {
-		payload, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(path)))
-		if err != nil {
-			continue
-		}
-		pointer, ok := parseLFSPointer(string(payload))
-		if !ok {
-			continue
-		}
-		files[path] = LfsFileInfo{
-			Name:        path,
-			Size:        pointer.Size,
-			IsPointer:   true,
-			OidType:     pointer.OidType,
-			Oid:         pointer.Oid,
-			Version:     pointer.Version,
-			SHA256:      pointer.SHA256,
-			Placeholder: pointer.Placeholder,
-		}
 	}
 	return files, nil
 }
@@ -189,15 +148,15 @@ func GetTrackedLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
 	return files, nil
 }
 
-func addFilesFromRef(ctx context.Context, repoDir, ref string, logger *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addFilesFromRef(ctx context.Context, repoDir, ref string, lfsFileMap map[string]LfsFileInfo) error {
 	paths, err := grepPointerPaths(ctx, repoDir, ref)
 	if err != nil {
 		return fmt.Errorf("git grep failed for %s: %w", ref, err)
 	}
-	return addFilesFromPaths(ctx, repoDir, ref, paths, logger, lfsFileMap)
+	return addFilesFromPaths(ctx, repoDir, ref, paths, lfsFileMap)
 }
 
-func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string, _ *slog.Logger, lfsFileMap map[string]LfsFileInfo) error {
+func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string, lfsFileMap map[string]LfsFileInfo) error {
 	if len(paths) == 0 {
 		return nil
 	}
@@ -224,26 +183,6 @@ func addFilesFromPaths(ctx context.Context, repoDir, ref string, paths []string,
 	}
 
 	return nil
-}
-
-func uniquePaths(paths []string) []string {
-	if len(paths) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(paths))
-	out := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if _, ok := seen[path]; ok {
-			continue
-		}
-		seen[path] = struct{}{}
-		out = append(out, path)
-	}
-	return out
 }
 
 func readRefBlobsBatch(ctx context.Context, repoDir, ref string, paths []string) (map[string]string, error) {
@@ -551,6 +490,9 @@ func parseLFSPointer(content string) (lfsPointer, bool) {
 	switch strings.ToLower(p.OidType) {
 	case "sha256":
 		p.OidType = "sha256"
+		if p.Version != "https://git-lfs.github.com/spec/v1" {
+			return lfsPointer{}, false
+		}
 		if !sha256OIDRe.MatchString(p.Oid) {
 			return lfsPointer{}, false
 		}
@@ -583,32 +525,6 @@ func IsPlaceholderPointer(data []byte) bool {
 	return ok && pointer.Placeholder
 }
 
-// CreateLfsPointer creates a Git LFS pointer file for the given DRS object.
-func CreateLfsPointer(drsObj *drsapi.DrsObject, dst string) error {
-	hashInfo := hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums)
-	shaSum := hashInfo.SHA256
-	if shaSum == "" {
-		return fmt.Errorf("no sha256 checksum found for DRS object")
-	}
-	return CreateLfsPointerWithOID(drsObj, dst, shaSum)
-}
-
-// CreateLfsPointerWithOID writes a Git LFS pointer using an explicit local/cache
-// oid. The oid may be a real content SHA256 or a derived source-identity key.
-func CreateLfsPointerWithOID(drsObj *drsapi.DrsObject, dst string, oid string) error {
-	oid = strings.TrimPrefix(strings.TrimSpace(oid), "sha256:")
-	if !sha256OIDRe.MatchString(oid) {
-		return fmt.Errorf("oid %q is not a valid sha256-shaped value", oid)
-	}
-	pointerContent := "version https://git-lfs.github.com/spec/v1\n"
-	pointerContent += fmt.Sprintf("oid sha256:%s\n", strings.ToLower(oid))
-	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
-	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
-		return fmt.Errorf("failed to write LFS pointer file: %w", err)
-	}
-	return nil
-}
-
 // CreateDRSPointer writes a git-drs pointer that preserves the retrievable DRS URI.
 func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error {
 	drsURI = strings.TrimSpace(drsURI)
@@ -619,7 +535,7 @@ func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error
 	pointerContent := "version https://calypr.github.io/spec/v1\n"
 	pointerContent += fmt.Sprintf("oid drs:%s\n", pointerOID)
 	pointerContent += fmt.Sprintf("size %d\n", drsObj.Size)
-	if checksum := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums).SHA256); checksum != "" {
+	if checksum := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums).SHA256); checksum != "" {
 		pointerContent += fmt.Sprintf("sha256 %s\n", strings.ToLower(checksum))
 	}
 	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {

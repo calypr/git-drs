@@ -9,12 +9,12 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/bucketselection"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	syfoncommon "github.com/calypr/syfon/client/access"
 	syservices "github.com/calypr/syfon/client/services"
-	syfoncommon "github.com/calypr/syfon/common"
 	"github.com/spf13/cobra"
 )
 
@@ -277,7 +277,7 @@ func visibleBucketForScope(ctx context.Context, gc *remoteruntime.GitContext, or
 		return "", fmt.Errorf("build scope resource path: %w", err)
 	}
 
-	matches := findBucketsByResource(payload, resource)
+	matches := bucketselection.MatchesResource(payload, resource)
 	if len(matches) == 0 {
 		return "", fmt.Errorf("no visible server bucket matched configured scope %s", resource)
 	}
@@ -285,25 +285,4 @@ func visibleBucketForScope(ctx context.Context, gc *remoteruntime.GitContext, or
 		return "", fmt.Errorf("multiple visible server buckets matched configured scope %s: %s", resource, strings.Join(matches, ", "))
 	}
 	return matches[0], nil
-}
-
-func findBucketsByResource(payload bucketapi.BucketsResponse, resource string) []string {
-	resource = syfoncommon.NormalizeAccessResource(resource)
-	if resource == "" {
-		return nil
-	}
-
-	matches := make([]string, 0)
-	for bucket, meta := range payload.S3BUCKETS {
-		if meta.Programs == nil {
-			continue
-		}
-		for _, candidate := range *meta.Programs {
-			if syfoncommon.NormalizeAccessResource(candidate) == resource {
-				matches = append(matches, bucket)
-				break
-			}
-		}
-	}
-	return matches
 }

@@ -6,7 +6,7 @@ import (
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestBatchSyncSessionNormalizeFilesDeduplicatesByOID(t *testing.T) {
@@ -66,15 +66,12 @@ func TestBatchSyncSessionNormalizeFilesExcludesDRSURIReferences(t *testing.T) {
 	}
 }
 
-func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
+func TestAddURLObjectDoesNotProduceUploadCandidate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	accessMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/external/object"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/external/object"},
 	}}
 	obj := &drsapi.DrsObject{
 		Checksums:     []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
@@ -89,15 +86,16 @@ func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 
 	session := &batchSyncSession{
 		rt:             &pushRuntime{},
+		oids:           []string{oid},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/external.dat"}},
 		uploadRequired: map[string]bool{oid: false},
-		existingByHash: map[string][]drsapi.DrsObject{oid: nil},
 	}
-	needsUpload, err := session.needsUpload(oid)
+	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
-		t.Fatalf("needsUpload: %v", err)
+		t.Fatalf("identifyUploadCandidates: %v", err)
 	}
-	if needsUpload {
-		t.Fatal("add-url metadata must be registered without scheduling a local payload upload")
+	if len(candidates) != 0 {
+		t.Fatalf("add-url metadata scheduled upload candidates: %+v", candidates)
 	}
 }
 
@@ -136,11 +134,8 @@ func TestClonedPlaceholderKeepsRemoteMetadata(t *testing.T) {
 	realOID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	controlled := []string{"/organization/example/project/tutorial"}
 	methods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeGlobus,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "globus://source/data/file.dat"},
+		Type:      drsapi.AccessMethodTypeGlobus,
+		AccessUrl: &drsapi.AccessURL{Url: "globus://source/data/file.dat"},
 	}}
 	match := drsapi.DrsObject{
 		Id:               "remote-object",

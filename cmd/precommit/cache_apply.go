@@ -2,9 +2,7 @@ package precommit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/calypr/git-drs/internal/precommit_cache"
@@ -45,7 +43,7 @@ func handleUpsert(ctx context.Context, cache *precommit_cache.Cache, path, now s
 	return nil
 }
 
-func handleDelete(_ context.Context, cache *precommit_cache.Cache, tombsDir, path, now string) error {
+func handleDelete(cache *precommit_cache.Cache, tombsDir, path, now string) error {
 	entry, ok, err := precommit_cache.ReadPathEntry(cache, path)
 	if err != nil || !ok {
 		return nil
@@ -60,7 +58,7 @@ func handleDelete(_ context.Context, cache *precommit_cache.Cache, tombsDir, pat
 	}
 
 	tombFile := filepath.Join(tombsDir, precommit_cache.EncodePath(path)+".json")
-	if err := writeJSONAtomic(tombFile, map[string]string{
+	if err := precommit_cache.WriteJSONAtomic(tombFile, map[string]string{
 		"path":       path,
 		"deleted_at": now,
 	}); err != nil {
@@ -68,35 +66,4 @@ func handleDelete(_ context.Context, cache *precommit_cache.Cache, tombsDir, pat
 	}
 
 	return nil
-}
-
-func writeJSONAtomic(path string, v any) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-
-	enc := json.NewEncoder(f)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		_ = f.Close()
-		_ = removeIfExists(tmp)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		_ = removeIfExists(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = removeIfExists(tmp)
-		return err
-	}
-	return os.Rename(tmp, path)
 }

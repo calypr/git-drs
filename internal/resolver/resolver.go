@@ -193,19 +193,6 @@ func NewAnVIL(ctx context.Context, endpoint string) (*AnVILResolver, error) {
 	return &AnVILResolver{endpoint: u, client: &http.Client{Transport: &oauth2.Transport{Base: http.DefaultTransport, Source: creds.TokenSource}}}, nil
 }
 
-// NewAnVILWithClient supports contract tests and callers that already own an
-// authenticated, refreshing client.
-func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, error) {
-	u, err := trustedEndpoint(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	if client == nil {
-		return nil, fmt.Errorf("HTTP client is required")
-	}
-	return &AnVILResolver{endpoint: u, client: client}, nil
-}
-
 func trustedEndpoint(endpoint string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {

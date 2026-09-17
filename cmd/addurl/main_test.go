@@ -146,6 +146,19 @@ func TestParseGlobusSourceRejectsInvalidWildcard(t *testing.T) {
 	}
 }
 
+func TestParseGlobusSourceRejectsDecodedTraversalAndUserinfo(t *testing.T) {
+	for _, raw := range []string{
+		"globus://source/%2e%2e/secret",
+		"globus://source/%2E%2E/secret",
+		"globus://user:password@source/path",
+		"globus://source/path%5Csecret",
+	} {
+		if _, err := parseGlobusSource(raw); err == nil {
+			t.Fatalf("parseGlobusSource accepted unsafe URL %q", raw)
+		}
+	}
+}
+
 func TestParseGlobusSourcePreservesRawQuestionWildcard(t *testing.T) {
 	source, err := parseGlobusSource("globus://source/release/file?.txt")
 	if err != nil {
@@ -205,27 +218,14 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	tempDir := t.TempDir()
 	lfsRoot := filepath.Join(tempDir, ".git", "lfs")
 
-	// ensure a git repository exists so any git-based config lookups succeed
 	cmdInit := exec.Command("git", "init")
 	cmdInit.Dir = tempDir
 	if out, err := cmdInit.CombinedOutput(); err != nil {
 		t.Fatalf("git init failed: %v: %s", err, out)
 	}
 
-	exec.Command("git", "init", tempDir).Run()
 	oldwd := mustChdir(t, tempDir)
 	t.Cleanup(func() { _ = os.Chdir(oldwd) })
-
-	// Mock config
-	// Create dummy config using git config
-	// create a minimal drs config so runAddURL doesn't fail with
-	//default_remote: calypr-dev
-	//remotes:
-	//  calypr-dev:
-	//    gen3:
-	//      endpoint: https://calypr-dev.ohsu.edu
-	//      project_id: cbds-monorepos
-	//      bucket: cbds
 
 	cmds := [][]string{
 		{"config", "drs.default-remote", "calypr-dev"},
@@ -380,6 +380,30 @@ func TestParseAddURLInput_ObjectKeyModeDefaultsPathToKey(t *testing.T) {
 	}
 	if in.scheme != "s3" {
 		t.Fatalf("unexpected scheme: %s", in.scheme)
+	}
+}
+
+func TestParseAddURLInput_NormalizesAndValidatesSHA256(t *testing.T) {
+	cmd := NewCommand()
+	want := strings.Repeat("a", 64)
+	if err := cmd.Flags().Set("sha256", " SHA256:"+strings.ToUpper(want)+" "); err != nil {
+		t.Fatalf("set sha256 flag: %v", err)
+	}
+	in, err := parseAddURLInput(cmd, []string{"s3://bucket/object"})
+	if err != nil {
+		t.Fatalf("parseAddURLInput error: %v", err)
+	}
+	if in.sha256 != want {
+		t.Fatalf("normalized sha256 = %q, want %q", in.sha256, want)
+	}
+	for _, invalid := range []string{"short", strings.Repeat("g", 64), strings.Repeat("a", 63)} {
+		cmd := NewCommand()
+		if err := cmd.Flags().Set("sha256", invalid); err != nil {
+			t.Fatalf("set invalid sha256 flag: %v", err)
+		}
+		if _, err := parseAddURLInput(cmd, []string{"s3://bucket/object"}); err == nil {
+			t.Fatalf("parseAddURLInput accepted invalid sha256 %q", invalid)
+		}
 	}
 }
 

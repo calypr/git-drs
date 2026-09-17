@@ -108,3 +108,14 @@ func GetGitRootDirectories(ctx context.Context) (string, string, error) {
 	}
 	return gitCommonDir, lfsRoot, nil
 }
+
+// ResolveObjectsRoot resolves the canonical Git-LFS object directory once for
+// a command. Callers should pass the returned path to lower-level cache loops
+// rather than making each object lookup rerun Git configuration.
+func ResolveObjectsRoot(ctx context.Context) (string, error) {
+	_, lfsRoot, err := GetGitRootDirectories(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(lfsRoot, "objects"), nil
+}

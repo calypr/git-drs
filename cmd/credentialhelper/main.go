@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	conf "github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -71,14 +71,15 @@ var Cmd = &cobra.Command{
 		}
 
 		// Try global profile to refresh/validate; fall back to repo token if unavailable.
-		manager := conf.NewConfigure(logg)
+		manager := syconf.NewConfigure(logg)
 		cred, err := manager.Load(remoteName)
-		if err == nil {
+		if err == nil && cred != nil {
+			cred.APIEndpoint = endpoint
 			if token != "" {
 				cred.AccessToken = token
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			ensureErr := credentials.EnsureValidCredential(ctx, cred, logg)
+			ensureErr := remoteruntime.EnsureValidCredential(ctx, cred, logg)
 			cancel()
 			if ensureErr == nil {
 				if err := manager.Save(cred); err != nil {
@@ -158,7 +159,7 @@ func resolveRemote() (string, string, error) {
 }
 
 func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
-	if strings.TrimSpace(req.Host) == "" {
+	if strings.TrimSpace(req.Protocol) == "" || strings.TrimSpace(req.Host) == "" {
 		return false
 	}
 
@@ -170,5 +171,5 @@ func requestMatchesEndpointHost(req credentialRequest, endpoint string) bool {
 		return false
 	}
 
-	return strings.EqualFold(req.Host, parsed.Host)
+	return strings.EqualFold(req.Protocol, parsed.Scheme) && strings.EqualFold(req.Host, parsed.Host)
 }

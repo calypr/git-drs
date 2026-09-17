@@ -17,6 +17,10 @@ import (
 type SmudgeDownloadFunc func(ctx context.Context, oid, cachePath string) error
 
 func SmudgeContent(ctx context.Context, pathname string, ptr io.Reader, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
+	return SmudgeContentWithObjectsRoot(ctx, gitrepo.LFSObjectsPath, pathname, ptr, dst, logger, download)
+}
+
+func SmudgeContentWithObjectsRoot(ctx context.Context, objectsRoot, pathname string, ptr io.Reader, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
 	ptrBytes, err := io.ReadAll(ptr)
 	if err != nil {
 		return fmt.Errorf("smudge: read pointer: %w", err)
@@ -35,17 +39,23 @@ func SmudgeContent(ctx context.Context, pathname string, ptr io.Reader, dst io.W
 		logger.Debug("smudge", "pathname", pathname, "oid", oid, "size", size)
 	}
 
-	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	cachePath, err := lfs.ObjectPath(objectsRoot, oid)
 	if err != nil {
 		return fmt.Errorf("smudge: resolve cache path: %w", err)
 	}
 
-	err = copyObjectToWriter(cachePath, dst)
-	if err == nil {
-		return nil
+	valid, validateErr := lfs.FileMatchesPointer(cachePath, ptrBytes)
+	if validateErr == nil && valid {
+		return copyObjectToWriter(cachePath, dst)
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("smudge: read cache: %w", err)
+	if validateErr != nil && !errors.Is(validateErr, fs.ErrNotExist) {
+		return fmt.Errorf("smudge: validate cache: %w", validateErr)
+	}
+	if validateErr == nil && !valid {
+		if err := os.Remove(cachePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("smudge: remove invalid cache: %w", err)
+		}
+		_ = os.Remove(cachePath + ".syfon-download.json")
 	}
 
 	if download == nil {
@@ -64,6 +74,13 @@ func SmudgeContent(ctx context.Context, pathname string, ptr io.Reader, dst io.W
 		return fmt.Errorf("smudge: download oid %s: %w", oid, err)
 	}
 
+	valid, err = lfs.FileMatchesPointer(cachePath, ptrBytes)
+	if err != nil {
+		return fmt.Errorf("smudge: validate downloaded cache: %w", err)
+	}
+	if !valid {
+		return fmt.Errorf("smudge: downloaded cache does not match oid or size")
+	}
 	if err := copyObjectToWriter(cachePath, dst); err != nil {
 		return fmt.Errorf("smudge: open downloaded file: %w", err)
 	}

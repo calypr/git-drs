@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	calyprconf "github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	syclient "github.com/calypr/syfon/client"
@@ -42,6 +40,8 @@ type GitContext struct {
 	GlobusCollections        map[string]string
 	GlobusDestinationPaths   map[string]string
 	AllowedGlobusSources     []string
+	LFSObjectsRoot           string
+	RepositoryRoot           string
 }
 
 // Capabilities is the command-facing contract for a resolved remote. Commands
@@ -144,14 +144,14 @@ func gen3Client(remoteName string, remote config.Gen3Remote, logger *slog.Logger
 }
 
 func gen3ClientWithCredential(remoteName, source string, remote config.Gen3Remote, logger *slog.Logger) (*GitContext, error) {
-	manager := calyprconf.NewConfigure(logger)
+	manager := syconf.NewConfigure(logger)
 	cred, saveRefreshed, err := resolveGen3Credential(manager, source, remoteName, remote.Endpoint)
 	if err != nil {
 		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := credentials.EnsureValidCredential(ctx, cred, logger); err != nil {
+	if err := EnsureValidCredential(ctx, cred, logger); err != nil {
 		return nil, WrapCredentialValidationError(remoteName, err)
 	}
 	if saveRefreshed {
@@ -163,22 +163,31 @@ func gen3ClientWithCredential(remoteName, source string, remote config.Gen3Remot
 }
 
 type gen3CredentialManager interface {
-	Import(filePath, fenceToken string) (*calyprconf.Credential, error)
-	Load(profile string) (*calyprconf.Credential, error)
+	Import(filePath, fenceToken string) (*syconf.Credential, error)
+	Load(profile string) (*syconf.Credential, error)
 }
 
 // resolveGen3Credential turns the clone-local source selector into credential
 // material. The configured remote endpoint remains authoritative: a credential
 // source must not be able to redirect requests to another host.
-func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, endpoint string) (*calyprconf.Credential, bool, error) {
+func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, endpoint string) (*syconf.Credential, bool, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		cred, err := manager.Load(remoteName)
-		return cred, true, err
+		if err != nil {
+			return nil, true, err
+		}
+		if cred == nil {
+			return nil, true, fmt.Errorf("load Gen3 credential profile %q returned nil credential", remoteName)
+		}
+		cred.APIEndpoint = strings.TrimSpace(endpoint)
+		return cred, true, nil
 	}
 
-	var cred *calyprconf.Credential
+	var cred *syconf.Credential
 	var err error
+	save := false
+	profileSource := false
 	switch {
 	case strings.HasPrefix(source, "profile:"):
 		profile := strings.TrimSpace(strings.TrimPrefix(source, "profile:"))
@@ -189,8 +198,8 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if err != nil {
 			return nil, false, fmt.Errorf("load Gen3 credential profile %q: %w", profile, err)
 		}
-		cred.APIEndpoint = endpoint
-		return cred, true, nil
+		save = true
+		profileSource = true
 	case strings.HasPrefix(source, "file:"):
 		fileName := strings.TrimSpace(strings.TrimPrefix(source, "file:"))
 		if strings.HasPrefix(fileName, "~/") {
@@ -208,7 +217,7 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if !ok || strings.TrimSpace(token) == "" {
 			return nil, false, fmt.Errorf("Gen3 credential environment variable %q is empty or unset", name)
 		}
-		cred = &calyprconf.Credential{AccessToken: strings.TrimSpace(token)}
+		cred = &syconf.Credential{AccessToken: strings.TrimSpace(token)}
 	case strings.HasPrefix(source, "helper:"):
 		name := strings.TrimSpace(strings.TrimPrefix(source, "helper:"))
 		output, helperErr := exec.Command(name).Output()
@@ -219,14 +228,19 @@ func resolveGen3Credential(manager gen3CredentialManager, source, remoteName, en
 		if token == "" {
 			return nil, false, fmt.Errorf("Gen3 credential helper %q returned an empty token", name)
 		}
-		cred = &calyprconf.Credential{AccessToken: token}
+		cred = &syconf.Credential{AccessToken: token}
 	default:
 		return nil, false, fmt.Errorf("unsupported Gen3 credential source %q", source)
 	}
 
-	cred.Profile = remoteName
-	cred.APIEndpoint = endpoint
-	return cred, false, nil
+	if cred == nil {
+		return nil, false, fmt.Errorf("credential source %q returned nil credential", source)
+	}
+	if !profileSource {
+		cred.Profile = remoteName
+	}
+	cred.APIEndpoint = strings.TrimSpace(endpoint)
+	return cred, save, nil
 }
 
 func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logger) (*GitContext, error) {
@@ -257,13 +271,9 @@ func localClient(remoteName string, remote config.LocalRemote, logger *slog.Logg
 		cred.APIKey = remote.BasicPassword
 	}
 
-	raw, err := syclient.New(remote.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
+	client, err := syclient.New(remote.BaseURL, syclient.WithBasicAuth(cred.KeyID, cred.APIKey))
 	if err != nil {
 		return nil, err
-	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	return &GitContext{
@@ -289,6 +299,11 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		return nil, fmt.Errorf("no gen3 project specified")
 	}
 
+	client, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
+	if err != nil {
+		return nil, err
+	}
+
 	scope, err := gitrepo.ResolveBucketScope(
 		remote.GetOrganization(),
 		projectID,
@@ -300,8 +315,7 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		defer cancel()
 		scope, err = resolveBucketScopeFromServer(
 			ctx,
-			profileConfig.APIEndpoint,
-			profileConfig.AccessToken,
+			client,
 			remote.GetOrganization(),
 			projectID,
 			remote.GetBucketName(),
@@ -309,15 +323,6 @@ func newGitContext(profileConfig syconf.Credential, remote config.Gen3Remote, lo
 		if err != nil {
 			return nil, fmt.Errorf("failed resolving bucket mapping for organization=%q project=%q: %w", remote.GetOrganization(), projectID, err)
 		}
-	}
-
-	raw, err := syclient.New(profileConfig.APIEndpoint, syclient.WithBearerToken(profileConfig.AccessToken))
-	if err != nil {
-		return nil, err
-	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
 	}
 
 	uploadConcurrency := int(gitrepo.GetGitConfigInt("lfs.concurrenttransfers", 4))

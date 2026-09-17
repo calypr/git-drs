@@ -2,39 +2,26 @@ package remoteruntime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"slices"
 	"strings"
 
+	"github.com/calypr/git-drs/internal/bucketselection"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
-	syfoncommon "github.com/calypr/syfon/common"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syclient "github.com/calypr/syfon/client"
+	syfoncommon "github.com/calypr/syfon/client/access"
 )
 
 // resolveBucketScopeFromServer discovers the bucket exposed for a Gen3 scope.
 // This is the runtime fallback for remotes configured with a scope but without
 // an explicit storage location or repository-local bucket mapping.
-func resolveBucketScopeFromServer(ctx context.Context, endpoint, token, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/data/buckets", nil)
-	if err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("build bucket list request: %w", err)
+func resolveBucketScopeFromServer(ctx context.Context, client *syclient.Client, organization, project, preferredBucket string) (gitrepo.ResolvedBucketScope, error) {
+	if client == nil {
+		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list client is required")
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(token))
-
-	resp, err := http.DefaultClient.Do(req)
+	payload, err := client.Buckets().List(ctx)
 	if err != nil {
 		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("request bucket list: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("bucket list failed with status %d", resp.StatusCode)
-	}
-
-	var payload bucketapi.BucketsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return gitrepo.ResolvedBucketScope{}, fmt.Errorf("decode bucket list response: %w", err)
 	}
 
 	bucket, err := resolveBucketFromPayload(payload, organization, project, preferredBucket)
@@ -55,20 +42,7 @@ func resolveBucketFromPayload(payload bucketapi.BucketsResponse, organization, p
 	}
 
 	for _, resource := range []string{projectResource, orgResource} {
-		matches := make([]string, 0)
-		for bucket, meta := range payload.S3BUCKETS {
-			if meta.Programs == nil {
-				continue
-			}
-			for _, candidate := range *meta.Programs {
-				if syfoncommon.NormalizeAccessResource(candidate) == syfoncommon.NormalizeAccessResource(resource) {
-					matches = append(matches, bucket)
-					break
-				}
-			}
-		}
-		slices.Sort(matches)
-		matches = slices.Compact(matches)
+		matches := bucketselection.MatchesResource(payload, resource)
 		if len(matches) == 0 {
 			continue
 		}

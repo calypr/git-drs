@@ -17,7 +17,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
@@ -37,11 +37,8 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{
 		Size: 21,
 		AccessMethods: &[]drsapi.AccessMethod{{
-			Type: drsapi.AccessMethodTypeS3,
-			AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: explicitURL},
+			Type:      drsapi.AccessMethodTypeS3,
+			AccessUrl: &drsapi.AccessURL{Url: explicitURL},
 		}},
 	}, oid); err != nil {
 		t.Fatalf("seed DRS object: %v", err)
@@ -70,6 +67,32 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 		if _, statErr := os.Stat(cachePath); !os.IsNotExist(statErr) {
 			t.Fatalf("did not expect pointer text to be cached as payload at %s", cachePath)
 		}
+	}
+}
+
+func TestCleanContentUsesConfiguredLFSRoot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	customRoot := filepath.Join(t.TempDir(), "custom-lfs")
+	const payload = "configured storage payload"
+	var out bytes.Buffer
+	if err := CleanContent(t.Context(), customRoot, "data.bin", strings.NewReader(payload), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(sum[:])
+	customPath, err := lfs.ObjectPath(filepath.Join(customRoot, "objects"), oid)
+	if err != nil {
+		t.Fatalf("custom ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("configured LFS object missing at %s: %v", customPath, err)
+	}
+	defaultPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("default ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("default LFS object was written at %s: err=%v", defaultPath, err)
 	}
 }
 

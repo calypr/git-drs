@@ -118,6 +118,81 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	}
 }
 
+func TestRunWritesTombstoneForDeletedLFSPointer(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := filepath.Join(repo, "data", "file.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	lfsPointer := strings.Join([]string{
+		"version https://git-lfs.github.com/spec/v1",
+		"oid sha256:deadbeef",
+		"size 12",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(lfsPointer), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/file.bin")
+	gitCmd(t, repo, "commit", "-m", "add pointer")
+
+	cache, err := precommit_cache.Open(context.Background())
+	if err != nil {
+		t.Fatalf("open cache: %v", err)
+	}
+	if err := precommit_cache.EnsureLayout(cache); err != nil {
+		t.Fatalf("ensure cache layout: %v", err)
+	}
+	if err := precommit_cache.WritePathEntry(cache, precommit_cache.PathEntry{
+		Path:      "data/file.bin",
+		LFSOID:    "sha256:deadbeef",
+		UpdatedAt: "2026-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("write path entry: %v", err)
+	}
+	if err := precommit_cache.UpsertOIDPath(cache, "sha256:deadbeef", "", "data/file.bin", "", "2026-01-01T00:00:00Z", false); err != nil {
+		t.Fatalf("write oid entry: %v", err)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove working tree file: %v", err)
+	}
+	gitCmd(t, repo, "add", "-u")
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if _, err := os.Stat(precommit_cache.PathEntryPath(cache, "data/file.bin")); !os.IsNotExist(err) {
+		t.Fatalf("expected deleted path entry to be removed, got err=%v", err)
+	}
+	tombstone := filepath.Join(cache.Root, "tombstones", precommit_cache.EncodePath("data/file.bin")+".json")
+	data, err := os.ReadFile(tombstone)
+	if err != nil {
+		t.Fatalf("read tombstone: %v", err)
+	}
+	var tombstoneEntry map[string]string
+	if err := json.Unmarshal(data, &tombstoneEntry); err != nil {
+		t.Fatalf("unmarshal tombstone: %v", err)
+	}
+	if tombstoneEntry["path"] != "data/file.bin" {
+		t.Fatalf("expected tombstone path data/file.bin, got %q", tombstoneEntry["path"])
+	}
+	if tombstoneEntry["deleted_at"] == "" {
+		t.Fatal("expected tombstone deleted_at")
+	}
+	if info, err := os.Stat(tombstone); err != nil {
+		t.Fatalf("stat tombstone: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("expected tombstone permissions 0644, got %o", got)
+	}
+	if _, err := os.Stat(tombstone + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("expected tombstone temporary file to be removed, got err=%v", err)
+	}
+}
+
 func TestCollectOversizedPlainGitStagedFiles(t *testing.T) {
 	repo := setupGitRepo(t)
 	oldwd := mustChdir(t, repo)

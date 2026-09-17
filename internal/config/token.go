@@ -11,7 +11,7 @@ func ParseAPIEndpointFromToken(tokenString string) (string, error) {
 	claims := jwt.MapClaims{}
 	_, _, err := jwt.NewParser().ParseUnverified(tokenString, &claims)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode token in ParseAPIEndpointFromToken: '%s': %w", tokenString, err)
+		return "", fmt.Errorf("failed to decode token in ParseAPIEndpointFromToken: %w", err)
 	}
 	issURL, ok := claims["iss"].(string)
 	if !ok {

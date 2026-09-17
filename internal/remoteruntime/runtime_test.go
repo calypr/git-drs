@@ -168,6 +168,19 @@ func TestResolveGen3CredentialUsesSelectedProfile(t *testing.T) {
 	}
 }
 
+func TestResolveGen3CredentialConfiguredEndpointOverridesStoredProfile(t *testing.T) {
+	manager := &fakeGen3CredentialManager{loaded: &syconf.Credential{
+		Profile: "production", APIEndpoint: "https://stored.example", APIKey: "key",
+	}}
+	cred, save, err := resolveGen3Credential(manager, "", "production", "https://configured.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manager.loadName != "production" || cred.APIEndpoint != "https://configured.example" || !save {
+		t.Fatalf("stored endpoint was not overridden: credential=%+v save=%v", cred, save)
+	}
+}
+
 func TestResolveGen3CredentialImportsFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	manager := &fakeGen3CredentialManager{imported: &syconf.Credential{APIKey: "key"}}
@@ -301,6 +314,7 @@ func TestNewGitContextDiscoversBucketForScopeOnlyRemote(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer token" {
 			t.Fatalf("Authorization = %q, want bearer token", got)
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"S3_BUCKETS":{"scope-bucket":{"programs":["/organization/org1/project/proj1"]}}}`))
 	}))
 	defer server.Close()

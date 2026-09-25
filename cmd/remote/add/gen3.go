@@ -132,6 +132,9 @@ func gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg string,
 		return fmt.Errorf("no bucket mapping found for organization=%q project=%q", organization, project)
 	}
 
+	if err := configure.EnsureExists(); err != nil {
+		return fmt.Errorf("prepare Gen3 credential store: %w", err)
+	}
 	if err := persistGen3Remote(remoteName, organization, project, apiEndpoint, scope, func() error {
 		return configure.Save(cred)
 	}); err != nil {

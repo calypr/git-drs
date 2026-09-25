@@ -1,0 +1,11 @@
+.git
+.gopath
+.gomodcache
+.gocache
+.gotmp
+.pycache
+.audit
+.DS_Store
+venv
+bin
+coverage

@@ -27,13 +27,6 @@ func inspectRemoteObjectViaServer(ctx context.Context, drsCtx *remoteruntime.Git
 	}
 
 	req := internalapi.InternalInspectObjectRequest{}
-	if strings.TrimSpace(input.sha256) != "" {
-		expectedSHA256, err := normalizeSHA256(input.sha256)
-		if err != nil {
-			return nil, err
-		}
-		req.ExpectedSha256 = expectedSHA256
-	}
 	target := strings.TrimSpace(input.sourceArg)
 	if looksLikeCloudURL(target) {
 		if !strings.HasPrefix(strings.ToLower(target), "s3://") {

@@ -23,13 +23,12 @@ func startMinIOContainer(ctx context.Context) (*minioContainer, error) {
 	containerName := fmt.Sprintf("git-drs-minio-e2e-%d", time.Now().UnixNano())
 	fmt.Fprintf(os.Stderr, "starting MinIO container %s\n", containerName)
 	runArgs := []string{
-		"run", "-d", "--rm",
+		"run", "-d",
 		"--name", containerName,
 		"-e", "MINIO_ROOT_USER=" + dockerE2EMinioAccessKey,
 		"-e", "MINIO_ROOT_PASSWORD=" + dockerE2EMinioSecretKey,
 		"-p", "127.0.0.1::9000",
 		dockerE2EMinioImage,
-		"server", "/data", "--address", ":9000",
 	}
 	runCmd := exec.CommandContext(ctx, "docker", runArgs...)
 	out, err := runCmd.CombinedOutput()

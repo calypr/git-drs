@@ -38,8 +38,8 @@ func TestInspectRemoteObjectViaServerMapsSyfonResponse(t *testing.T) {
 		if request.ObjectUrl != sourceURL {
 			t.Errorf("object URL = %q, want %q", request.ObjectUrl, sourceURL)
 		}
-		if request.ExpectedSha256 != strings.Repeat("a", 64) {
-			t.Errorf("expected sha256 = %q, want normalized checksum", request.ExpectedSha256)
+		if request.ExpectedSha256 != "" {
+			t.Errorf("single-object inspection must omit expected sha256, got %q", request.ExpectedSha256)
 		}
 		if request.Organization != "" || request.Project != "" || request.Key != "" || request.Scheme != "" {
 			t.Errorf("unexpected key-mode fields in URL request: %+v", request)

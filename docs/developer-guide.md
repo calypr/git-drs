@@ -9,13 +9,13 @@ This guide describes the current `git-drs` architecture after the CLI and intern
 Use the tools at the right layer:
 
 - use `git` for commits, branches, merges, `git pull`, and plain `git push`
-- use `git-drs` for remote configuration, tracking rules, object hydration, object registration/upload, and tracked-file delete reconciliation
+- use `git-drs` for remote configuration, tracking rules, object hydration, and object registration/upload
 
 The important command split is:
 
 - `git pull` updates Git history and checkout state
 - `git drs pull` hydrates tracked pointer files already present in the checkout
-- `git drs push` performs the managed data push path: metadata registration, upload when needed, delete reconciliation, and then the Git push flow
+- `git drs push` performs the managed data push path: metadata registration, upload when needed, and then the Git push flow
 - plain `git push` is plain Git only
 
 ## Current Package Ownership
@@ -28,7 +28,6 @@ The current codebase is organized around a few clear owners:
 - `internal/transfer`
   - upload/download execution
   - pull/push progress rendering
-  - delete reconciliation derived from pushed Git history
 - `internal/filter`
   - clean/smudge logic
   - long-running Git filter-process protocol handling
@@ -104,6 +103,39 @@ The managed push path runs directly through the current Syfon client/runtime sta
 - hydrates worktree files
 
 It does not run `git pull`.
+
+Go callers that need to pull payloads without invoking the binary or opening a
+Git checkout can use the public `client` package:
+
+```go
+import (
+	"context"
+
+	"github.com/calypr/git-drs/client"
+)
+
+drs, err := client.New(client.Options{
+	Endpoint:     "https://syfon.example.org",
+	AccessToken:  token,
+	Organization: "org",
+	Project:      "project",
+})
+if err != nil {
+	return err
+}
+
+err = drs.Pull(ctx, client.PullOptions{
+	Root: "/executor/input",
+	Files: []client.File{
+		{Path: "data/sample.bam", OID: sha256, Size: size},
+	},
+})
+```
+
+This API takes the DRS scope and destination explicitly. It does not read
+Git configuration, inspect the current checkout, populate the Git-LFS cache,
+or update the Git index. The existing CLI `git drs pull` remains the
+checkout-oriented adapter.
 
 ### Filter path
 

@@ -26,7 +26,6 @@ type Change struct {
 	Kind    ChangeKind
 	OldPath string
 	NewPath string
-	Status  string
 }
 
 func run(ctx context.Context) error {
@@ -114,7 +113,7 @@ func run(ctx context.Context) error {
 				return err
 			}
 		case KindDelete:
-			if err := handleDelete(ctx, cache, tombsDir, ch.NewPath, now); err != nil {
+			if err := handleDelete(cache, tombsDir, ch.NewPath, now); err != nil {
 				return err
 			}
 		}

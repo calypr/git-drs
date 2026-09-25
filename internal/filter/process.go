@@ -128,7 +128,7 @@ func (f *GitFilter) processOne(ctx context.Context) error {
 
 func (f *GitFilter) handleSmudge(ctx context.Context, req FilterRequest, content []byte) error {
 	if f.smudge == nil {
-		return f.passthroughSmudge(content)
+		return f.writeSuccessResponse(content)
 	}
 
 	var dst bytes.Buffer
@@ -140,7 +140,7 @@ func (f *GitFilter) handleSmudge(ctx context.Context, req FilterRequest, content
 
 func (f *GitFilter) handleClean(ctx context.Context, req FilterRequest, content []byte) error {
 	if f.clean == nil {
-		return f.passthroughClean(content)
+		return f.writeSuccessResponse(content)
 	}
 
 	var dst bytes.Buffer
@@ -148,14 +148,6 @@ func (f *GitFilter) handleClean(ctx context.Context, req FilterRequest, content 
 		return err
 	}
 	return f.writeSuccessResponse(dst.Bytes())
-}
-
-func (f *GitFilter) passthroughSmudge(content []byte) error {
-	return f.writeSuccessResponse(content)
-}
-
-func (f *GitFilter) passthroughClean(content []byte) error {
-	return f.writeSuccessResponse(content)
 }
 
 func (f *GitFilter) writeSuccessResponse(data []byte) error {

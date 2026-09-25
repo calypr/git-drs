@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -14,9 +15,10 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
@@ -29,6 +31,7 @@ type batchSyncSession struct {
 	oids               []string
 	drsObjByOID        map[string]*drsapi.DrsObject
 	existingByHash     map[string][]drsapi.DrsObject
+	presentInScope     map[string]bool
 	uploadRequired     map[string]bool
 	skippedUnavailable int
 }
@@ -52,12 +55,8 @@ type uploadCandidate struct {
 }
 
 const metadataLookupBatchSize = 500
+const metadataExistenceBatchSize = 10000
 const metadataRegisterBatchSize = 250
-
-func BatchSyncForPush(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) error {
-	_, err := BatchSyncForPushWithSummary(cl, ctx, files, reporter)
-	return err
-}
 
 func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Context, files map[string]lfs.LfsFileInfo, reporter UploadProgressReporter) (PushSyncSummary, error) {
 	session := &batchSyncSession{
@@ -66,11 +65,17 @@ func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Conte
 		reporter:       reporter,
 		drsObjByOID:    make(map[string]*drsapi.DrsObject),
 		existingByHash: make(map[string][]drsapi.DrsObject),
+		presentInScope: make(map[string]bool),
 		uploadRequired: make(map[string]bool),
 	}
 	if len(files) == 0 {
 		return PushSyncSummary{}, nil
 	}
+	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	if err != nil {
+		return PushSyncSummary{}, fmt.Errorf("resolve LFS objects root: %w", err)
+	}
+	session.rt.ObjectsRoot = objectsRoot
 
 	session.debug("normalizing push files")
 	session.normalizeFiles(files)
@@ -127,6 +132,78 @@ func (s *batchSyncSession) normalizeFiles(files map[string]lfs.LfsFileInfo) {
 
 func (s *batchSyncSession) lookupMetadata() error {
 	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
+	s.presentInScope = make(map[string]bool, len(s.oids))
+	if strings.TrimSpace(s.rt.Scope.Organization) == "" || strings.TrimSpace(s.rt.Scope.Project) == "" {
+		s.debug("bulk missing sha256 check requires an organization and project; using legacy metadata lookup")
+		return s.lookupMetadataLegacy()
+	}
+	batches := chunkStrings(s.oids, metadataExistenceBatchSize)
+	for idx, batch := range batches {
+		fmt.Fprintf(os.Stdout, "DRS: checking remote metadata existence batch %d/%d (%d object(s))\n", idx+1, len(batches), len(batch))
+		s.debug("metadata existence lookup batch", "batch", idx+1, "batches", len(batches), "size", len(batch))
+		missing, err := lookup.MissingSHA256ForScope(s.ctx, s.rt.API, batch)
+		if err != nil {
+			if errors.Is(err, lookup.ErrBulkMissingSHA256Unsupported) {
+				fmt.Fprintln(os.Stdout, "DRS: remote Syfon does not support bulk SHA-256 existence checks; falling back to legacy metadata lookup")
+				s.debug("bulk missing sha256 endpoint unsupported; using legacy metadata lookup")
+				return s.lookupMetadataLegacy()
+			}
+			return fmt.Errorf("batch metadata existence check failed: %w", err)
+		}
+		missingSet := make(map[string]struct{}, len(missing))
+		for _, oid := range missing {
+			missingSet[localdrsobject.NormalizeOid(oid)] = struct{}{}
+		}
+		for _, oid := range batch {
+			_, isMissing := missingSet[oid]
+			s.presentInScope[oid] = !isMissing
+		}
+	}
+
+	missingOIDs := make([]string, 0)
+	for _, oid := range s.oids {
+		if !s.presentInScope[oid] {
+			missingOIDs = append(missingOIDs, oid)
+		}
+	}
+	if len(missingOIDs) > 0 {
+		fmt.Fprintf(os.Stdout, "DRS: checking reusable metadata for %d missing object(s)\n", len(missingOIDs))
+		for idx, batch := range chunkStrings(missingOIDs, metadataLookupBatchSize) {
+			s.debug("reusable metadata lookup batch", "batch", idx+1, "batches", (len(missingOIDs)+metadataLookupBatchSize-1)/metadataLookupBatchSize, "size", len(batch))
+			objectsByHash, err := lookup.ObjectsByHashes(s.ctx, s.rt.API, batch)
+			if err != nil {
+				return fmt.Errorf("reusable metadata lookup failed: %w", err)
+			}
+			for _, oid := range batch {
+				s.existingByHash[oid] = append(s.existingByHash[oid], objectsByHash[oid]...)
+			}
+		}
+	}
+
+	urlOIDs := make([]string, 0)
+	for _, oid := range s.oids {
+		if !s.presentInScope[oid] {
+			continue
+		}
+		localObj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+		if err == nil && localObj != nil && firstAccessURL(localObj) != "" {
+			urlOIDs = append(urlOIDs, oid)
+		}
+	}
+	for _, batch := range chunkStrings(urlOIDs, metadataLookupBatchSize) {
+		objectsByHash, err := lookup.ObjectsByHashesForScope(s.ctx, s.rt.API, batch)
+		if err != nil {
+			return fmt.Errorf("targeted metadata lookup failed: %w", err)
+		}
+		for _, oid := range batch {
+			s.existingByHash[oid] = objectsByHash[oid]
+		}
+	}
+	return nil
+}
+
+func (s *batchSyncSession) lookupMetadataLegacy() error {
+	s.existingByHash = make(map[string][]drsapi.DrsObject, len(s.oids))
 	batches := chunkStrings(s.oids, metadataLookupBatchSize)
 	for idx, batch := range batches {
 		fmt.Fprintf(os.Stdout, "DRS: checking remote metadata batch %d/%d (%d checksum(s), one Syfon request)\n", idx+1, len(batches), len(batch))
@@ -137,6 +214,11 @@ func (s *batchSyncSession) lookupMetadata() error {
 		}
 		for _, oid := range batch {
 			s.existingByHash[oid] = append(s.existingByHash[oid], objectsByHash[oid]...)
+		}
+	}
+	for _, oid := range s.oids {
+		if match, err := lookup.FindMatchingRecord(s.existingByHash[oid], s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
+			s.presentInScope[oid] = true
 		}
 	}
 	return nil
@@ -174,6 +256,20 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		s.drsObjByOID[oid] = obj
 
 		recs := s.existingByHash[oid]
+		if s.presentInScope[oid] {
+			if match, err := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
+				localURL := firstAccessURL(obj)
+				if localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); readErr == nil {
+					localURL = firstAccessURL(localObj)
+				}
+				if localURL != "" && localURL != firstAccessURL(match) {
+					s.drsObjByOID[oid] = obj
+					toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+				}
+			}
+			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+			continue
+		}
 		if len(recs) == 0 {
 			// add-url deliberately does not place payload bytes in the local LFS
 			// cache. Its locally stored DRS object is nevertheless actionable
@@ -189,7 +285,9 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// A pointer in Git history is not actionable unless this checkout
 			// has the payload bytes. Do not create orphan metadata for historical
 			// pointers that the caller cannot upload.
-			if !s.hasLocalPayload(oid) {
+			file := s.filesByOID[oid]
+			_, hasPayload, payloadErr := resolveUploadSourcePathAt(s.rt.ObjectsRoot, oid, file.Name, file.IsPointer)
+			if payloadErr != nil || !hasPayload {
 				s.skippedUnavailable++
 				s.debug("skipping pointer without local payload", "oid", oid)
 				continue
@@ -338,7 +436,7 @@ func objectSHA256(obj *drsapi.DrsObject) string {
 	for _, checksum := range obj.Checksums {
 		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
 		if checksumType == "sha256" || checksumType == "sha-256" {
-			return localdrsobject.NormalizeChecksum(checksum.Checksum)
+			return hash.NormalizeChecksum(checksum.Checksum)
 		}
 	}
 	return ""
@@ -510,16 +608,12 @@ func parseStorageURL(raw string) (bucket string, key string, ok bool) {
 func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error) {
 	candidates := make([]uploadCandidate, 0)
 	for _, oid := range s.oids {
-		needsUpload, err := s.needsUpload(oid)
-		if err != nil {
-			return nil, err
-		}
-		if !needsUpload {
+		if !s.rt.Tuning.ForceUpload && !s.uploadRequired[oid] {
 			continue
 		}
 
 		file := s.filesByOID[oid]
-		srcPath, canUpload, err := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
+		srcPath, canUpload, err := resolveUploadSourcePathAt(s.rt.ObjectsRoot, oid, file.Name, file.IsPointer)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve upload source for oid %s: %w", oid, err)
 		}
@@ -544,20 +638,6 @@ func (s *batchSyncSession) identifyUploadCandidates() ([]uploadCandidate, error)
 	}
 	return candidates, nil
 }
-
-func (s *batchSyncSession) hasLocalPayload(oid string) bool {
-	file := s.filesByOID[oid]
-	_, ok, err := resolveUploadSourcePath(oid, file.Name, file.IsPointer)
-	return err == nil && ok
-}
-
-func (s *batchSyncSession) needsUpload(oid string) (bool, error) {
-	if s.rt.Tuning.ForceUpload {
-		return true, nil
-	}
-	return s.uploadRequired[oid], nil
-}
-
 func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
 	if obj == nil || obj.AccessMethods == nil || len(*obj.AccessMethods) == 0 {
 		return false
@@ -602,7 +682,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 			eg.Go(func() error {
 				s.reportUploadStarted(c)
 				uploadCtx := s.progressContextForCandidate(egCtx, c)
-				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
 					return err
 				}
 				s.reportUploadCompleted(c)
@@ -617,7 +697,7 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	for _, c := range large {
 		s.reportUploadStarted(c)
 		uploadCtx := s.progressContextForCandidate(s.ctx, c)
-		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src, false); err != nil {
+		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
 			return err
 		}
 		s.reportUploadCompleted(c)

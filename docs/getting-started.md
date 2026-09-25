@@ -9,7 +9,7 @@ Quick Start gets you running. This page explains how to think about `git-drs` on
 Use the tools at the right layer:
 
 - use `git` for commits, branches, merges, and `git pull`
-- use `git-drs` for remote configuration, tracking rules, object hydration, upload/registration, and tracked-file delete reconciliation
+- use `git-drs` for remote configuration, tracking rules, object hydration, upload/registration, and removing tracked paths from Git
 
 The most important distinction is:
 
@@ -171,7 +171,7 @@ git commit -m "Remove sample"
 git drs push
 ```
 
-That is the supported delete flow for tracked `git-drs` objects. For the fuller decision tree, see [Removing Files](remove-files.md).
+This removes the tracked path from Git. It does not delete the remote DRS record or stored payload. For the fuller decision tree, see [Removing Files](remove-files.md).
 
 ### Change a credential source
 

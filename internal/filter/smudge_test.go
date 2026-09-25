@@ -3,12 +3,15 @@ package filter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
@@ -30,7 +33,7 @@ func TestSmudgeContentPassthroughNonPointer(t *testing.T) {
 
 func TestSmudgeContentUsesCacheWhenPresent(t *testing.T) {
 	repo := setupSmudgeTestRepo(t)
-	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	oid := checksumForTestContent("cached-content")
 	cachePath := mustObjectPath(t, oid)
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 		t.Fatalf("mkdir cache dir: %v", err)
@@ -56,13 +59,13 @@ func TestSmudgeContentUsesCacheWhenPresent(t *testing.T) {
 }
 
 func TestSmudgeContentDownloadsWhenCacheMiss(t *testing.T) {
-	oid := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	oid := checksumForTestContent("downloaded-bytes")
 	setupSmudgeTestRepo(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	var out bytes.Buffer
 	called := 0
 
-	err := SmudgeContent(context.Background(), "file.bin", bytes.NewBufferString(pointerForOID(oid, 15)), &out, logger, func(ctx context.Context, gotOID, cachePath string) error {
+	err := SmudgeContent(context.Background(), "file.bin", bytes.NewBufferString(pointerForOID(oid, 16)), &out, logger, func(ctx context.Context, gotOID, cachePath string) error {
 		called++
 		if gotOID != oid {
 			return errors.New("unexpected oid")
@@ -81,6 +84,43 @@ func TestSmudgeContentDownloadsWhenCacheMiss(t *testing.T) {
 	if got := out.String(); got != "downloaded-bytes" {
 		t.Fatalf("unexpected output: got %q", got)
 	}
+}
+
+func TestSmudgeContentReplacesCorruptCache(t *testing.T) {
+	const payload = "correct-payload"
+	oid := checksumForTestContent(payload)
+	objectsRoot := filepath.Join(t.TempDir(), "objects")
+	cachePath, err := lfs.ObjectPath(objectsRoot, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, []byte("xxxxxxxxxxxxxxx"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	called := false
+	err = SmudgeContentWithObjectsRoot(t.Context(), objectsRoot, "file.bin", strings.NewReader(pointerForOID(oid, int64(len(payload)))), &out, slog.New(slog.NewTextHandler(io.Discard, nil)), func(_ context.Context, _ string, destination string) error {
+		called = true
+		if _, err := os.Stat(destination); !os.IsNotExist(err) {
+			return fmt.Errorf("corrupt cache still exists before download: %v", err)
+		}
+		return os.WriteFile(destination, []byte(payload), 0o644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called || out.String() != payload {
+		t.Fatalf("corrupt cache was not replaced: called=%v output=%q", called, out.String())
+	}
+}
+
+func checksumForTestContent(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
 }
 
 func setupSmudgeTestRepo(t *testing.T) string {

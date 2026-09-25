@@ -10,6 +10,7 @@ type pullProgressPhase string
 const (
 	pullProgressPending     pullProgressPhase = "pending"
 	pullProgressDownloading pullProgressPhase = "downloading"
+	pullProgressVerifying   pullProgressPhase = "verifying"
 	pullProgressCheckingOut pullProgressPhase = "checking_out"
 	pullProgressCompleted   pullProgressPhase = "completed"
 )
@@ -99,6 +100,9 @@ func (r *PullProgressRenderer) OnDownloadProgress(id string, bytesSoFar int64, t
 		item.current = bytesSoFar
 	}
 	item.phase = pullProgressDownloading
+	if item.total > 0 && item.current >= item.total {
+		item.phase = pullProgressVerifying
+	}
 	r.render(false)
 }
 
@@ -179,6 +183,17 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 	bar := RenderProgressBar(current, total, 24)
 	pct := RenderPercent(current, total)
 	bytesLabel := RenderByteProgress(current, total, current >= total)
+	phaseLabel := ""
+	if file != nil {
+		switch file.phase {
+		case pullProgressVerifying:
+			phaseLabel = " verifying"
+		case pullProgressCheckingOut:
+			phaseLabel = " checking out"
+		case pullProgressCompleted:
+			phaseLabel = " complete"
+		}
+	}
 
-	return fmt.Sprintf("%s%s %s %s %s", prefix, label, bar, pct, bytesLabel)
+	return fmt.Sprintf("%s%s %s %s %s%s", prefix, label, bar, pct, bytesLabel, phaseLabel)
 }

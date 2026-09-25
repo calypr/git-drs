@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -50,6 +50,22 @@ func TestParseScopeArg(t *testing.T) {
 }
 
 func TestResolveBucketScopeFromServer(t *testing.T) {
+	t.Run("rejects missing endpoint or token", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, endpoint, token, want string
+		}{
+			{name: "endpoint", endpoint: "", token: "test-token", want: "missing API endpoint"},
+			{name: "token", endpoint: "http://example.test", token: "", want: "missing access token"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := resolveBucketScopeFromServer(context.Background(), tc.endpoint, tc.token, "org", "project", "")
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("error = %v, want substring %q", err, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("matches project resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/data/buckets" {
@@ -58,6 +74,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 				t.Fatalf("unexpected auth header: %q", got)
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/HTAN_INT/project/BForePC"]}}}`))
 		}))
 		defer srv.Close()
@@ -73,6 +90,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 
 	t.Run("falls back to org resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/HTAN_INT"]}}}`))
 		}))
 		defer srv.Close()

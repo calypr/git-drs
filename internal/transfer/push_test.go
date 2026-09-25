@@ -1,12 +1,20 @@
 package transfer
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	syclient "github.com/calypr/syfon/client"
 )
 
 func TestBatchSyncSessionNormalizeFilesDeduplicatesByOID(t *testing.T) {
@@ -66,15 +74,12 @@ func TestBatchSyncSessionNormalizeFilesExcludesDRSURIReferences(t *testing.T) {
 	}
 }
 
-func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
+func TestAddURLObjectDoesNotProduceUploadCandidate(t *testing.T) {
 	t.Chdir(t.TempDir())
 	oid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	accessMethods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeS3,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "s3://bucket/external/object"},
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/external/object"},
 	}}
 	obj := &drsapi.DrsObject{
 		Checksums:     []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
@@ -89,15 +94,16 @@ func TestAddURLObjectRegistersWithoutLocalPayloadUpload(t *testing.T) {
 
 	session := &batchSyncSession{
 		rt:             &pushRuntime{},
+		oids:           []string{oid},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/external.dat"}},
 		uploadRequired: map[string]bool{oid: false},
-		existingByHash: map[string][]drsapi.DrsObject{oid: nil},
 	}
-	needsUpload, err := session.needsUpload(oid)
+	candidates, err := session.identifyUploadCandidates()
 	if err != nil {
-		t.Fatalf("needsUpload: %v", err)
+		t.Fatalf("identifyUploadCandidates: %v", err)
 	}
-	if needsUpload {
-		t.Fatal("add-url metadata must be registered without scheduling a local payload upload")
+	if len(candidates) != 0 {
+		t.Fatalf("add-url metadata scheduled upload candidates: %+v", candidates)
 	}
 }
 
@@ -136,11 +142,8 @@ func TestClonedPlaceholderKeepsRemoteMetadata(t *testing.T) {
 	realOID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	controlled := []string{"/organization/example/project/tutorial"}
 	methods := []drsapi.AccessMethod{{
-		Type: drsapi.AccessMethodTypeGlobus,
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: "globus://source/data/file.dat"},
+		Type:      drsapi.AccessMethodTypeGlobus,
+		AccessUrl: &drsapi.AccessURL{Url: "globus://source/data/file.dat"},
 	}}
 	match := drsapi.DrsObject{
 		Id:               "remote-object",
@@ -162,5 +165,76 @@ func TestClonedPlaceholderKeepsRemoteMetadata(t *testing.T) {
 	}
 	if got := session.drsObjByOID[oid]; got == nil || got.Id != match.Id || firstAccessURL(got) != firstAccessURL(&match) {
 		t.Fatalf("remote placeholder metadata was not retained: %+v", got)
+	}
+}
+
+func TestPushLookupFindsReusableRecordOutsideTargetScope(t *testing.T) {
+	missingOID := strings.Repeat("a", 64)
+	presentOID := strings.Repeat("b", 64)
+	controlled := []string{"/organization/other/project/source"}
+	methods := []drsapi.AccessMethod{{
+		Type:      drsapi.AccessMethodTypeS3,
+		AccessUrl: &drsapi.AccessURL{Url: "s3://source-bucket/object"},
+	}}
+	hashes := internalapi.HashInfo{"sha256": missingOID}
+	var globalQueries [][]string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/index/bulk/sha256/missing":
+			var request internalapi.BulkMissingSHA256Request
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode scoped request: %v", err)
+				return
+			}
+			if request.Organization != "org" || request.Project != "target" || !reflect.DeepEqual(request.Sha256, []string{missingOID, presentOID}) {
+				t.Errorf("scoped request = %+v", request)
+			}
+			_, _ = w.Write([]byte(`{"checked":2,"missing_sha256":["` + missingOID + `"]}`))
+		case "/index/bulk/hashes":
+			var request internalapi.BulkHashesRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode global request: %v", err)
+				return
+			}
+			globalQueries = append(globalQueries, request.Hashes)
+			if err := json.NewEncoder(w).Encode(struct {
+				Results map[string][]internalapi.InternalRecord `json:"results"`
+			}{Results: map[string][]internalapi.InternalRecord{
+				missingOID: {{Did: "reusable", ControlledAccess: &controlled, AccessMethods: &methods, Hashes: &hashes}},
+			}}); err != nil {
+				t.Errorf("encode global response: %v", err)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response.Result(), nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &batchSyncSession{
+		ctx:  t.Context(),
+		rt:   &pushRuntime{API: &remoteruntime.GitContext{Client: client, Organization: "org", ProjectId: "target"}, Scope: pushScope{Organization: "org", Project: "target"}},
+		oids: []string{missingOID, presentOID},
+	}
+	if err := session.lookupMetadata(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(globalQueries, [][]string{{missingOID}}) {
+		t.Fatalf("global queries = %v, want only the OID missing in target scope", globalQueries)
+	}
+	if session.presentInScope[missingOID] || !session.presentInScope[presentOID] {
+		t.Fatalf("scope presence = %v", session.presentInScope)
+	}
+	if reusable := session.findReusableRecord(session.existingByHash[missingOID]); reusable == nil || firstAccessURL(reusable) != "s3://source-bucket/object" {
+		t.Fatalf("missing OID has no reusable source record: %+v", reusable)
 	}
 }

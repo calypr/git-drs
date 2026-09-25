@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/go-git/go-git/v5"
 	"gopkg.in/yaml.v3"
 )
 
@@ -209,11 +208,6 @@ func (c Config) listRemoteNames() []string {
 	return names
 }
 
-// getRepo opens the current git repository
-func getRepo() (*git.Repository, error) {
-	return gitrepo.GetRepo()
-}
-
 // updates and git adds a Git DRS config file
 // this should handle three cases:
 // 1. create a new config file if it does not exist / is empty
@@ -221,7 +215,7 @@ func getRepo() (*git.Repository, error) {
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
 // UpdateRemote updates and saves configuration using go-git
 func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +500,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 
 // LoadConfig loads configuration using go-git
 func LoadConfig() (*Config, error) {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return nil, err
 	}
@@ -593,13 +587,13 @@ func CreateEmptyConfig() error {
 	// With go-git, we just verify we are in a repo?
 	// Existing behavior was ensuring file existence.
 	// We can check if we can open the repo.
-	_, err := getRepo()
+	_, err := gitrepo.GetRepo()
 	return err
 }
 
 // SaveConfig writes the configuration using go-git
 func SaveConfig(cfg *Config) error {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return err
 	}

@@ -14,6 +14,17 @@ import (
 	"testing"
 )
 
+func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, error) {
+	u, err := trustedEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("HTTP client is required")
+	}
+	return &AnVILResolver{endpoint: u, client: client}, nil
+}
+
 func TestAnVILResolverContract(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

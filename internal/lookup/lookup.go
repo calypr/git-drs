@@ -2,24 +2,60 @@ package lookup
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/http"
 	"path"
 	"strings"
 	"time"
 
-	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
-	syfoncommon "github.com/calypr/syfon/common"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	"github.com/calypr/syfon/apigen/errorapi"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	syaccess "github.com/calypr/syfon/client/access"
+	"github.com/calypr/syfon/client/apierror"
+	"github.com/calypr/syfon/client/hash"
 )
+
+// ErrBulkMissingSHA256Unsupported indicates that the connected Syfon server
+// predates the project-scoped missing-SHA256 endpoint.
+var ErrBulkMissingSHA256Unsupported = errors.New("bulk missing sha256 endpoint is not supported")
+
+// MissingSHA256ForScope asks Syfon which checksums are not registered in the
+// requested project. It returns only missing values and does not hydrate DRS
+// records. Older servers return 404; callers can fall back to the legacy
+// record lookup in that case.
+func MissingSHA256ForScope(ctx context.Context, drsCtx *remoteruntime.GitContext, checksums []string) ([]string, error) {
+	if drsCtx == nil || drsCtx.Client == nil {
+		return nil, fmt.Errorf("DRS client unavailable")
+	}
+	if len(checksums) == 0 {
+		return []string{}, nil
+	}
+
+	resp, err := drsCtx.Client.InternalAPI().InternalBulkMissingSHA256WithResponse(ctx, internalapi.BulkMissingSHA256Request{
+		Organization: drsCtx.Organization,
+		Project:      drsCtx.ProjectId,
+		Sha256:       checksums,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.JSON200 == nil {
+		apiErr := apierror.FromResponse(resp.HTTPResponse, resp.Body)
+		if errors.Is(apiErr, errorapi.ErrNotFound) {
+			return nil, ErrBulkMissingSHA256Unsupported
+		}
+		return nil, apiErr
+	}
+	return resp.JSON200.MissingSha256, nil
+}
 
 func ObjectsByHash(ctx context.Context, drsCtx *remoteruntime.GitContext, checksum string) ([]drsapi.DrsObject, error) {
 	if drsCtx == nil || drsCtx.Client == nil {
 		return nil, fmt.Errorf("DRS client unavailable")
 	}
-	checksum = drsobject.NormalizeChecksum(checksum)
+	checksum = hash.NormalizeChecksum(checksum)
 	if checksum == "" {
 		return nil, nil
 	}
@@ -37,7 +73,7 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 	normalizedToOriginal := make(map[string]string, len(checksums))
 	queryChecksums := make([]string, 0, len(checksums))
 	for _, checksum := range checksums {
-		normalized := drsobject.NormalizeChecksum(checksum)
+		normalized := hash.NormalizeChecksum(checksum)
 		if normalized == "" {
 			continue
 		}
@@ -51,17 +87,18 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 		return map[string][]drsapi.DrsObject{}, nil
 	}
 
-	var response struct {
-		Results map[string][]internalapi.InternalRecord `json:"results"`
-	}
-	if err := drsCtx.Client.Requestor().Do(ctx, http.MethodPost, "/index/bulk/hashes", internalapi.BulkHashesRequest{Hashes: queryChecksums}, &response); err != nil {
+	resp, err := drsCtx.Client.InternalAPI().InternalBulkHashesWithResponse(ctx, internalapi.BulkHashesRequest{Hashes: queryChecksums})
+	if err != nil {
 		return nil, fmt.Errorf("batch objects by checksum: %w", err)
+	}
+	if resp.JSON200 == nil {
+		return nil, apierror.FromResponse(resp.HTTPResponse, resp.Body)
 	}
 
 	results := make(map[string][]drsapi.DrsObject, len(normalizedToOriginal))
 	for normalized, original := range normalizedToOriginal {
-		objects := make([]drsapi.DrsObject, 0, len(response.Results[normalized]))
-		for _, record := range response.Results[normalized] {
+		objects := make([]drsapi.DrsObject, 0, len(resp.JSON200.Results[normalized]))
+		for _, record := range resp.JSON200.Results[normalized] {
 			objects = append(objects, internalRecordToDRSObject(record))
 		}
 		results[original] = objects
@@ -94,7 +131,7 @@ func internalRecordToDRSObject(record internalapi.InternalRecord) drsapi.DrsObje
 		}
 	}
 	if record.ControlledAccess != nil {
-		controlled := syfoncommon.NormalizeAccessResources(*record.ControlledAccess)
+		controlled := syaccess.NormalizeAccessResources(*record.ControlledAccess)
 		obj.ControlledAccess = &controlled
 	}
 	if record.AccessMethods != nil {

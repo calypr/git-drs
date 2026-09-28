@@ -79,8 +79,13 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 
 	out.Reset()
 	r.OnCheckoutStart(file)
-	if got := out.String(); !strings.Contains(got, "Checking out file") || strings.Contains(got, " [") {
-		t.Fatalf("checkout must be visible after download, got %q", got)
+	if got := out.String(); !strings.Contains(got, "0 B/100 B checking out file") || !strings.Contains(got, " [") {
+		t.Fatalf("checkout must start a separate copy bar, got %q", got)
+	}
+	out.Reset()
+	r.OnCheckoutProgress(file.Name, 50)
+	if got := out.String(); !strings.Contains(got, "50.0% 50 B/100 B checking out file") {
+		t.Fatalf("checkout bar must report bytes copied, got %q", got)
 	}
 
 	out.Reset()

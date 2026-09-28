@@ -28,6 +28,7 @@ type pullFileProgress struct {
 	total      int64
 	current    int64
 	verified   int64
+	checkedOut int64
 	phase      pullProgressPhase
 	phaseSince time.Time
 	lastBytes  time.Time
@@ -256,9 +257,21 @@ func (r *PullProgressRenderer) OnCheckoutStart(file PullFile) {
 	}
 	item.phase = pullProgressCheckingOut
 	item.phaseSince = r.now()
+	item.checkedOut = 0
 	if item.total == 0 && file.Size > 0 {
 		item.total = file.Size
 	}
+	r.render(false)
+}
+
+func (r *PullProgressRenderer) OnCheckoutProgress(id string, bytesSoFar int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[id]
+	if item == nil || !r.planned {
+		return
+	}
+	item.checkedOut = bytesSoFar
 	r.render(false)
 }
 
@@ -335,7 +348,7 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 	case pullProgressVerifying:
 		return fmt.Sprintf("%s%s %s %s %s verifying download (%s)", prefix, label, RenderProgressBar(file.verified, file.total, 24), RenderPercent(file.verified, file.total), RenderByteProgress(file.verified, file.total, false), r.elapsed(file.phaseSince))
 	case pullProgressCheckingOut:
-		return fmt.Sprintf("%s%s: Checking out file (%s)", prefix, label, r.elapsed(file.phaseSince))
+		return fmt.Sprintf("%s%s %s %s %s checking out file (%s)", prefix, label, RenderProgressBar(file.checkedOut, file.total, 24), RenderPercent(file.checkedOut, file.total), RenderByteProgress(file.checkedOut, file.total, false), r.elapsed(file.phaseSince))
 	case pullProgressDownloading:
 		status := "downloading"
 		if !file.lastBytes.IsZero() && r.now().Sub(file.lastBytes) >= 5*time.Second {

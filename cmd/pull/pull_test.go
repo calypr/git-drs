@@ -42,7 +42,7 @@ func TestReplaceCheckoutFilePreservesPreviousFileOnCopyFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial new payload")), checkoutFailingReader{}))
-	err := replaceCheckoutFile(dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444)
+	err := replaceCheckoutFile(context.Background(), dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444, nil)
 	if err == nil || !strings.Contains(err.Error(), "injected copy failure") {
 		t.Fatalf("replaceCheckoutFile error = %v, want copy failure", err)
 	}
@@ -66,6 +66,33 @@ func TestReplaceCheckoutFilePreservesPreviousFileOnCopyFailure(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("temporary checkout file remains: %+v", entries)
+	}
+}
+
+func TestReplaceCheckoutFileReportsCopyAndCleansCanceledStage(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(dst, []byte("pointer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("downloaded content")
+	sum := sha256.Sum256(payload)
+	pointer := pointerFile{Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+	var progress []int64
+	if err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, func(n int64) { progress = append(progress, n) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) == 0 || progress[len(progress)-1] != int64(len(payload)) {
+		t.Fatalf("copy progress = %v, want %d bytes", progress, len(payload))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := replaceCheckoutFile(ctx, dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled checkout = %v, want context.Canceled", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("canceled checkout left a temporary file: %v, %v", entries, err)
 	}
 }
 
@@ -216,7 +243,7 @@ func TestReplaceCheckoutFileRejectsWrongHashBeforePromotion(t *testing.T) {
 	}
 	want := sha256.Sum256([]byte("expected"))
 	pointer := pointerFile{Oid: hex.EncodeToString(want[:]), Size: int64(len("bad data"))}
-	if err := replaceCheckoutFile(dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644); err == nil {
+	if err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644, nil); err == nil {
 		t.Fatal("incorrect checkout content was accepted")
 	}
 	got, err := os.ReadFile(dst)
@@ -504,7 +531,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath)
+	err = checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -546,7 +573,7 @@ func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
 		}
 		files := []pointerFile{{Name: name, Oid: oid, Size: int64(len(payload))}}
 		progress.OnPlan(toPullFiles(files))
-		if err := checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath); err == nil {
+		if err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err == nil {
 			t.Fatalf("checkoutDownloadedFiles accepted unsafe path %q", name)
 		}
 	}
@@ -594,7 +621,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath); err != nil {
+	if err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -649,7 +676,7 @@ func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *test
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, true, gitrepo.LFSObjectsPath); err != nil {
+	if err := checkoutDownloadedFiles(context.Background(), files, progress, true, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -305,7 +306,7 @@ var Cmd = &cobra.Command{
 		}
 
 		readOnly := drsCtx.IsReadOnly()
-		if err := checkoutDownloadedFiles(pointers, progress, readOnly, objectsRoot); err != nil {
+		if err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot); err != nil {
 			return err
 		}
 		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
@@ -669,7 +670,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 	return nil
 }
 
-func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) error {
+func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) error {
 	worktreeRoot, err := gitrepo.GitTopLevel()
 	if err != nil {
 		// Unit-level callers may provide an isolated checkout directory without
@@ -729,7 +730,7 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if readOnly {
 			mode = 0o444
 		}
-		if err := replaceCheckoutFile(dstPath, src, f, mode); err != nil {
+		if err := replaceCheckoutFile(ctx, dstPath, src, f, mode, func(n int64) { progress.OnCheckoutProgress(f.Name, n) }); err != nil {
 			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
 		}
 		progress.OnCompleted(toPullFile(f))
@@ -737,7 +738,30 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 	return nil
 }
 
-func replaceCheckoutFile(dstPath string, src io.ReadCloser, pointer pointerFile, mode os.FileMode) error {
+type checkoutProgressWriter struct {
+	ctx        context.Context
+	dst        io.Writer
+	onProgress func(int64)
+	bytes      int64
+	reported   int64
+}
+
+func (w *checkoutProgressWriter) Write(p []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := w.dst.Write(p)
+	w.bytes += int64(n)
+	if w.onProgress != nil && w.bytes-w.reported >= 64<<20 {
+		w.onProgress(w.bytes)
+		w.reported = w.bytes
+	}
+	return n, err
+}
+
+func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser, pointer pointerFile, mode os.FileMode, onProgress func(int64)) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
 	defer func() {
 		if src != nil {
 			_ = src.Close()
@@ -750,10 +774,14 @@ func replaceCheckoutFile(dstPath string, src io.ReadCloser, pointer pointerFile,
 	stagePath := stage.Name()
 	defer os.Remove(stagePath)
 	hasher := sha256.New()
-	copied, err := io.Copy(io.MultiWriter(stage, hasher), src)
+	writer := &checkoutProgressWriter{ctx: ctx, dst: io.MultiWriter(stage, hasher), onProgress: onProgress}
+	copied, err := io.Copy(writer, src)
 	if err != nil {
 		stage.Close()
 		return err
+	}
+	if onProgress != nil {
+		onProgress(copied)
 	}
 	if err := stage.Close(); err != nil {
 		return err

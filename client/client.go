@@ -125,7 +125,10 @@ func (c *Client) Pull(ctx context.Context, opts PullOptions) error {
 			return fmt.Errorf("size must not be negative for %q", file.Path)
 		}
 
-		dst := filepath.Join(root, rel)
+		dst, err := safeDestination(root, rel)
+		if err != nil {
+			return err
+		}
 		if !opts.Overwrite {
 			if _, statErr := os.Stat(dst); statErr == nil {
 				return fmt.Errorf("destination already exists: %s", dst)
@@ -133,16 +136,43 @@ func (c *Client) Pull(ctx context.Context, opts PullOptions) error {
 				return fmt.Errorf("stat destination %s: %w", dst, statErr)
 			}
 		}
+		var destinationMode os.FileMode
+		preserveMode := false
+		if opts.Overwrite {
+			if info, statErr := os.Stat(dst); statErr == nil && info.Mode().IsRegular() {
+				destinationMode = info.Mode().Perm()
+				preserveMode = true
+			} else if statErr != nil && !os.IsNotExist(statErr) {
+				return fmt.Errorf("stat destination %s: %w", dst, statErr)
+			}
+		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return fmt.Errorf("create destination directory for %s: %w", file.Path, err)
 		}
-		if err := c.downloadFile(ctx, file.OID, dst); err != nil {
+		stageDir, err := os.MkdirTemp(filepath.Dir(dst), ".git-drs-pull-*")
+		if err != nil {
+			return fmt.Errorf("create temporary download directory for %s: %w", file.Path, err)
+		}
+		stagePath := filepath.Join(stageDir, "payload")
+		if err := c.downloadFile(ctx, file.OID, stagePath); err != nil {
+			_ = os.RemoveAll(stageDir)
 			return fmt.Errorf("pull %s: %w", file.Path, err)
 		}
-		if err := verifyFile(dst, file.OID, file.Size); err != nil {
-			_ = os.Remove(dst)
+		if err := verifyFile(stagePath, file.OID, file.Size); err != nil {
+			_ = os.RemoveAll(stageDir)
 			return fmt.Errorf("verify %s: %w", file.Path, err)
 		}
+		if preserveMode {
+			if err := os.Chmod(stagePath, destinationMode); err != nil {
+				_ = os.RemoveAll(stageDir)
+				return fmt.Errorf("preserve destination mode for %s: %w", file.Path, err)
+			}
+		}
+		if err := os.Rename(stagePath, dst); err != nil {
+			_ = os.RemoveAll(stageDir)
+			return fmt.Errorf("replace destination %s: %w", file.Path, err)
+		}
+		_ = os.RemoveAll(stageDir)
 	}
 	return nil
 }
@@ -167,11 +197,60 @@ func (c *Client) downloadFile(ctx context.Context, oid, dst string) error {
 }
 
 func safeRelativePath(path string) (string, error) {
-	path = filepath.Clean(filepath.FromSlash(strings.TrimSpace(path)))
+	path = filepath.Clean(filepath.FromSlash(path))
 	if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path must be relative to pull root: %q", path)
 	}
 	return path, nil
+}
+
+func safeDestination(root, rel string) (string, error) {
+	resolvedRoot, err := resolvePath(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve pull root %s: %w", root, err)
+	}
+	resolvedDestination, err := resolvePath(filepath.Join(root, rel))
+	if err != nil {
+		return "", fmt.Errorf("resolve destination %s: %w", rel, err)
+	}
+	within, err := filepath.Rel(resolvedRoot, resolvedDestination)
+	if err != nil {
+		return "", fmt.Errorf("compare destination to pull root: %w", err)
+	}
+	if within == ".." || filepath.IsAbs(within) || strings.HasPrefix(within, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("destination for %q escapes pull root", rel)
+	}
+	return resolvedDestination, nil
+}
+
+func resolvePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	current := filepath.Clean(absolute)
+	var missing []string
+	for {
+		if _, err := os.Lstat(current); err == nil {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err != nil {
+				return "", err
+			}
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Clean(resolved), nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("no existing ancestor for %s", absolute)
+		}
+		missing = append(missing, filepath.Base(current))
+		current = parent
+	}
 }
 
 func verifyFile(path, expectedOID string, expectedSize int64) error {

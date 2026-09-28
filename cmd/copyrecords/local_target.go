@@ -2,6 +2,7 @@ package copyrecords
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -31,7 +32,10 @@ func (localIndexAPI) BulkHashes(ctx context.Context, hashes []string) (copyBulkH
 		}
 		obj, err := readLocalDRSObject(oid)
 		if err != nil {
-			continue
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return copyBulkHashesResponse{}, fmt.Errorf("read local DRS object for oid %s: %w", oid, err)
 		}
 		results[query] = []copyRecord{copyRecordFromLocalObject(obj)}
 	}

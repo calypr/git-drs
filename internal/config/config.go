@@ -250,7 +250,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 			remoteSubsection.SetOption("organization", remote.Gen3.Organization)
 		}
 		if remote.Gen3.StoragePrefix != "" {
-			remoteSubsection.SetOption("storage_prefix", remote.Gen3.StoragePrefix)
+			remoteSubsection.SetOption("storage-prefix", remote.Gen3.StoragePrefix)
 		}
 	} else if remote.Terra != nil {
 		remoteSubsection.SetOption("type", "terra")
@@ -274,7 +274,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 			remoteSubsection.SetOption("organization", remote.Local.Organization)
 		}
 		if remote.Local.StoragePrefix != "" {
-			remoteSubsection.SetOption("storage_prefix", remote.Local.StoragePrefix)
+			remoteSubsection.SetOption("storage-prefix", remote.Local.StoragePrefix)
 		}
 	} else if remote.Generic != nil {
 		r := remote.Generic
@@ -473,7 +473,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 				scalars["project"],
 				scalars["bucket"],
 				scalars["organization"],
-				scalars["storage_prefix"],
+				scalars["storage-prefix"],
 				scalars["auth"],
 				scalars["mode"],
 			)
@@ -552,7 +552,7 @@ func LoadConfig() (*Config, error) {
 					subsection.Option("project"),
 					subsection.Option("bucket"),
 					subsection.Option("organization"),
-					subsection.Option("storage_prefix"),
+					subsection.Option("storage-prefix"),
 					subsection.Option("auth"),
 					subsection.Option("mode"),
 				)
@@ -628,7 +628,7 @@ func RemoveRemote(name Remote) (*Config, error) {
 		fmt.Sprintf("drs.remote.%s.project", name),
 		fmt.Sprintf("drs.remote.%s.bucket", name),
 		fmt.Sprintf("drs.remote.%s.organization", name),
-		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
+		fmt.Sprintf("drs.remote.%s.storage-prefix", name),
 		fmt.Sprintf("drs.remote.%s.auth", name),
 		fmt.Sprintf("drs.remote.%s.mode", name),
 		fmt.Sprintf("drs.remote.%s.provider", name),

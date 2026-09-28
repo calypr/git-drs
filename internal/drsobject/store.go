@@ -58,17 +58,17 @@ func WriteObject(basePath string, drsObj *drsapi.DrsObject, oid string) error {
 func ReadObject(basePath string, oid string) (*drsapi.DrsObject, error) {
 	path, err := objectPath(basePath, oid)
 	if err != nil {
-		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error getting object path for oid %s: %w", oid, err)
 	}
 
 	drsObjBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error reading DRS object for oid %s: %w", oid, err)
 	}
 
 	var drsObject drsapi.DrsObject
 	if err := sonic.ConfigFastest.Unmarshal(drsObjBytes, &drsObject); err != nil {
-		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %w", oid, err)
 	}
 
 	return &drsObject, nil

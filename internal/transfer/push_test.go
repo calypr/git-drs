@@ -88,12 +88,12 @@ func TestAddURLObjectDoesNotProduceUploadCandidate(t *testing.T) {
 	if err := localdrsobject.WriteObject(gitrepo.DRSObjectsPath, obj, oid); err != nil {
 		t.Fatalf("write add-url object: %v", err)
 	}
-	if !localObjectHasResolvableAccessMethod(oid) {
+	if !localObjectHasResolvableAccessMethod(gitrepo.DRSObjectsPath, oid) {
 		t.Fatal("expected local add-url metadata to provide a resolvable external payload")
 	}
 
 	session := &batchSyncSession{
-		rt:             &pushRuntime{},
+		rt:             &pushRuntime{DRSObjectsRoot: gitrepo.DRSObjectsPath},
 		oids:           []string{oid},
 		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/external.dat"}},
 		uploadRequired: map[string]bool{oid: false},

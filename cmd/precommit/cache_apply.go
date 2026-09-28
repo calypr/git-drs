@@ -11,7 +11,7 @@ import (
 func handleUpsert(ctx context.Context, cache *precommit_cache.Cache, path, now string) error {
 	oid, isLFS, err := stagedLFSOID(ctx, path)
 	if err != nil {
-		return nil
+		return fmt.Errorf("read staged pointer for %q: %w", path, err)
 	}
 	if !isLFS {
 		return nil

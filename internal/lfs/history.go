@@ -20,7 +20,7 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 		return map[string]LfsFileInfo{}, nil
 	}
 
-	args := []string{"rev-list", "--objects"}
+	args := []string{"rev-list", "--objects", "-z"}
 	args = append(args, targets...)
 	if len(exclusions) > 0 {
 		args = append(args, "--not")
@@ -34,25 +34,24 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 	pathsByOID := make(map[string]string)
 	var objectIDs []string
 	seen := make(map[string]struct{})
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+	var currentOID string
+	for _, record := range bytes.Split(out, []byte{0}) {
+		if len(record) == 0 {
 			continue
 		}
-		oid := strings.TrimSpace(parts[0])
+		if bytes.HasPrefix(record, []byte("path=")) {
+			if currentOID != "" && pathsByOID[currentOID] == "" {
+				pathsByOID[currentOID] = string(record[len("path="):])
+			}
+			continue
+		}
+		oid := string(record)
+		currentOID = oid
 		if _, ok := seen[oid]; ok {
 			continue
 		}
 		seen[oid] = struct{}{}
 		objectIDs = append(objectIDs, oid)
-		if len(parts) == 2 {
-			pathsByOID[oid] = strings.TrimSpace(parts[1])
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 	if len(objectIDs) == 0 {
 		return map[string]LfsFileInfo{}, nil

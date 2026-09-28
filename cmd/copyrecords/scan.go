@@ -2,7 +2,9 @@ package copyrecords
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,12 +20,26 @@ import (
 )
 
 var (
-	loadTrackedLfsFiles = lfs.GetTrackedLfsFiles
-	readLocalDRSObject  = func(oid string) (*drsapi.DrsObject, error) {
-		return drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	loadTrackedLfsFiles = func(logger *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		root, err := gitrepo.GitTopLevel()
+		if err != nil {
+			return nil, fmt.Errorf("resolve repository root: %w", err)
+		}
+		return lfs.GetTrackedLfsFilesAt(logger, root)
+	}
+	readLocalDRSObject = func(oid string) (*drsapi.DrsObject, error) {
+		root, err := gitrepo.ResolveDRSObjectsDir(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("resolve local DRS objects: %w", err)
+		}
+		return drsobject.ReadObject(root, oid)
 	}
 	writeLocalDRSObject = func(oid string, obj *drsapi.DrsObject) error {
-		return drsobject.WriteObject(gitrepo.DRSObjectsPath, obj, oid)
+		root, err := gitrepo.ResolveDRSObjectsDir(context.Background())
+		if err != nil {
+			return fmt.Errorf("resolve local DRS objects: %w", err)
+		}
+		return drsobject.WriteObject(root, obj, oid)
 	}
 )
 
@@ -70,11 +86,15 @@ func lastCopyRecordDID(records []copyRecord) string {
 }
 
 func loadLocalSourceRecords(org, project string) ([]copyRecord, error) {
-	return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, nil, gitrepo.LFSObjectsPath)
+	return loadLocalSourceRecordsIncluding(org, project, nil)
 }
 
 func loadLocalSourceRecordsIncluding(org, project string, include []string) ([]copyRecord, error) {
-	return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, include, gitrepo.LFSObjectsPath)
+	objectsRoot, err := lfs.ResolveObjectsRoot(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("resolve LFS objects root: %w", err)
+	}
+	return loadLocalSourceRecordsIncludingWithObjectsRoot(org, project, include, objectsRoot)
 }
 
 func loadLocalSourceRecordsIncludingWithObjectsRoot(org, project string, include []string, objectsRoot string) ([]copyRecord, error) {
@@ -109,6 +129,9 @@ func loadLocalSourceRecordsIncludingWithObjectsRoot(org, project string, include
 
 		obj, err := readLocalDRSObject(oid)
 		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("read local DRS metadata for tracked oid %s at %s: %w", oid, path, err)
+			}
 			obj, err = localDRSObjectFromPayload(path, info, oid, objectsRoot)
 			if err != nil {
 				return nil, fmt.Errorf("tracked oid %s for path %s is missing local DRS metadata and no matching local payload was found: %w", oid, path, err)
@@ -153,7 +176,7 @@ func includedLocalSHA256(include []string) (map[string]struct{}, error) {
 func normalizeIncludedPaths(paths []string) ([]string, error) {
 	out := make([]string, 0, len(paths))
 	for _, raw := range paths {
-		path := filepath.ToSlash(filepath.Clean(strings.TrimSpace(raw)))
+		path := filepath.ToSlash(filepath.Clean(raw))
 		path = strings.TrimPrefix(path, "./")
 		if path == "" || path == "." {
 			return nil, fmt.Errorf("invalid --include-path %q: expected a repository-relative file or directory", raw)
@@ -180,9 +203,15 @@ func isIncludedLocalPath(path string, include []string) bool {
 }
 
 func localDRSObjectFromPayload(path string, info lfs.LfsFileInfo, oid string, objectsRoot ...string) (*drsapi.DrsObject, error) {
-	cacheRoot := gitrepo.LFSObjectsPath
+	cacheRoot := ""
 	if len(objectsRoot) > 0 && strings.TrimSpace(objectsRoot[0]) != "" {
 		cacheRoot = objectsRoot[0]
+	} else {
+		var err error
+		cacheRoot, err = lfs.ResolveObjectsRoot(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("resolve LFS objects root: %w", err)
+		}
 	}
 	candidates := []string{path}
 	if cachePath, err := lfs.ObjectPath(cacheRoot, oid); err == nil {

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
@@ -71,11 +70,12 @@ func BatchSyncForPushWithSummary(cl *remoteruntime.GitContext, ctx context.Conte
 	if len(files) == 0 {
 		return PushSyncSummary{}, nil
 	}
-	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	gitCommonDir, lfsRoot, err := lfs.GetGitRootDirectories(ctx)
 	if err != nil {
-		return PushSyncSummary{}, fmt.Errorf("resolve LFS objects root: %w", err)
+		return PushSyncSummary{}, fmt.Errorf("resolve Git object roots: %w", err)
 	}
-	session.rt.ObjectsRoot = objectsRoot
+	session.rt.ObjectsRoot = filepath.Join(lfsRoot, "objects")
+	session.rt.DRSObjectsRoot = filepath.Join(gitCommonDir, "drs", "lfs", "objects")
 
 	session.debug("normalizing push files")
 	session.normalizeFiles(files)
@@ -185,7 +185,7 @@ func (s *batchSyncSession) lookupMetadata() error {
 		if !s.presentInScope[oid] {
 			continue
 		}
-		localObj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+		localObj, err := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid)
 		if err == nil && localObj != nil && firstAccessURL(localObj) != "" {
 			urlOIDs = append(urlOIDs, oid)
 		}
@@ -244,10 +244,19 @@ func chunkStrings(items []string, size int) [][]string {
 
 func (s *batchSyncSession) ensureMetadataRegistered() error {
 	toRegister := make([]internalapi.InternalRecord, 0)
+	toRegisterOIDs := make([]string, 0)
+	registerMetadata := func(oid string, obj *drsapi.DrsObject) {
+		toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+		toRegisterOIDs = append(toRegisterOIDs, oid)
+	}
 
 	for idx, oid := range s.oids {
 		if idx > 0 && idx%500 == 0 {
 			s.debug("processing metadata object", "object", idx, "total", len(s.oids))
+		}
+		pendingUpload, err := hasPendingPushUpload(s.rt, oid)
+		if err != nil {
+			return fmt.Errorf("check pending upload for oid %s: %w", oid, err)
 		}
 		obj, err := s.getOrCreateDRSObjectCandidate(oid)
 		if err != nil {
@@ -259,15 +268,15 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 		if s.presentInScope[oid] {
 			if match, err := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
 				localURL := firstAccessURL(obj)
-				if localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); readErr == nil {
+				if localObj, readErr := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid); readErr == nil {
 					localURL = firstAccessURL(localObj)
 				}
 				if localURL != "" && localURL != firstAccessURL(match) {
 					s.drsObjByOID[oid] = obj
-					toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+					registerMetadata(oid, obj)
 				}
 			}
-			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+			s.uploadRequired[oid] = s.rt.Tuning.ForceUpload || pendingUpload
 			continue
 		}
 		if len(recs) == 0 {
@@ -275,10 +284,10 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// cache. Its locally stored DRS object is nevertheless actionable
 			// because it points at an existing external object. Register that
 			// metadata without scheduling an upload.
-			if localObjectHasResolvableAccessMethod(oid) {
+			if localObjectHasResolvableAccessMethod(s.rt.DRSObjectsRoot, oid) {
 				s.drsObjByOID[oid] = obj
-				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
-				s.uploadRequired[oid] = false
+				registerMetadata(oid, obj)
+				s.uploadRequired[oid] = pendingUpload
 				continue
 			}
 
@@ -292,7 +301,7 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 				s.debug("skipping pointer without local payload", "oid", oid)
 				continue
 			}
-			toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+			registerMetadata(oid, obj)
 			s.uploadRequired[oid] = true
 			continue
 		}
@@ -302,11 +311,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			// example one created by add-url) is an intentional metadata change,
 			// however, and must be propagated even when the server can already
 			// resolve the object by checksum.
-			localObj, readErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+			localObj, readErr := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid)
 			localSHA256 := objectSHA256(obj)
 			if s.filesByOID[oid].Placeholder && readErr != nil && (localSHA256 == "" || strings.EqualFold(localSHA256, oid)) {
 				s.drsObjByOID[oid] = match
-				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload || pendingUpload
 				continue
 			}
 			localURL := firstAccessURL(obj)
@@ -320,11 +329,11 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 			}
 			if (localURL != "" && localURL != firstAccessURL(match)) || !placeholderRegistered || missingSHA256Checksum(obj, match) {
 				s.drsObjByOID[oid] = obj
-				toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
-				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+				registerMetadata(oid, obj)
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload || pendingUpload
 			} else {
 				s.drsObjByOID[oid] = match
-				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload
+				s.uploadRequired[oid] = s.rt.Tuning.ForceUpload || pendingUpload
 			}
 			continue
 		}
@@ -336,16 +345,25 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 				return err
 			}
 			s.drsObjByOID[oid] = reuseObj
-			toRegister = append(toRegister, s.metadataRecordForOID(oid, reuseObj))
+			registerMetadata(oid, reuseObj)
+			s.uploadRequired[oid] = pendingUpload
 			continue
 		}
 
-		toRegister = append(toRegister, s.metadataRecordForOID(oid, obj))
+		registerMetadata(oid, obj)
 		s.uploadRequired[oid] = true
 	}
 
 	if len(toRegister) == 0 {
 		return nil
+	}
+	for _, oid := range toRegisterOIDs {
+		if !s.uploadRequired[oid] {
+			continue
+		}
+		if err := markPendingPushUpload(s.rt, oid); err != nil {
+			return fmt.Errorf("record pending upload for oid %s: %w", oid, err)
+		}
 	}
 
 	if s.reporter != nil {
@@ -466,7 +484,7 @@ func (s *batchSyncSession) buildReusableScopedObject(oid string, existing *drsap
 
 func (s *batchSyncSession) getOrCreateDRSObjectCandidate(oid string) (*drsapi.DrsObject, error) {
 	file := s.filesByOID[oid]
-	if localObj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid); err == nil && localObj != nil {
+	if localObj, err := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid); err == nil && localObj != nil {
 		obj, err := scopedDRSObjectForPush(s.rt, oid, file.Name, file.Size, localObj)
 		if err != nil {
 			return nil, err
@@ -653,8 +671,8 @@ func hasResolvableAccessMethod(obj *drsapi.DrsObject) bool {
 	return false
 }
 
-func localObjectHasResolvableAccessMethod(oid string) bool {
-	obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+func localObjectHasResolvableAccessMethod(objectsRoot, oid string) bool {
+	obj, err := localdrsobject.ReadObject(objectsRoot, oid)
 	return err == nil && hasResolvableAccessMethod(obj)
 }
 
@@ -680,10 +698,16 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 		for _, c := range small {
 			c := c
 			eg.Go(func() error {
+				if err := markPendingPushUpload(s.rt, c.oid); err != nil {
+					return fmt.Errorf("record pending upload for oid %s: %w", c.oid, err)
+				}
 				s.reportUploadStarted(c)
 				uploadCtx := s.progressContextForCandidate(egCtx, c)
-				if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
+				if err := uploadFileForCandidate(s.rt, uploadCtx, c); err != nil {
 					return err
+				}
+				if err := clearPendingPushUpload(s.rt, c.oid); err != nil {
+					return fmt.Errorf("clear pending upload for oid %s: %w", c.oid, err)
 				}
 				s.reportUploadCompleted(c)
 				return nil
@@ -695,10 +719,16 @@ func (s *batchSyncSession) executeUploadPlan(candidates []uploadCandidate) error
 	}
 
 	for _, c := range large {
+		if err := markPendingPushUpload(s.rt, c.oid); err != nil {
+			return fmt.Errorf("record pending upload for oid %s: %w", c.oid, err)
+		}
 		s.reportUploadStarted(c)
 		uploadCtx := s.progressContextForCandidate(s.ctx, c)
-		if err := uploadFileForObject(s.rt, uploadCtx, c.obj, c.src); err != nil {
+		if err := uploadFileForCandidate(s.rt, uploadCtx, c); err != nil {
 			return err
+		}
+		if err := clearPendingPushUpload(s.rt, c.oid); err != nil {
+			return fmt.Errorf("clear pending upload for oid %s: %w", c.oid, err)
 		}
 		s.reportUploadCompleted(c)
 	}

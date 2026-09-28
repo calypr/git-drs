@@ -54,6 +54,43 @@ func TestPointerInventoryForObjectsFindsHistoricalDeletedPointer(t *testing.T) {
 	}
 }
 
+func TestPointerInventoryForObjectsPreservesPathBytes(t *testing.T) {
+	repo := t.TempDir()
+	gitTestCommand(t, repo, "init", "-q")
+	gitTestCommand(t, repo, "config", "user.email", "test@example.com")
+	gitTestCommand(t, repo, "config", "user.name", "test")
+	for i, name := range []string{" lead.bin", "line\nbreak.bin"} {
+		id := strings.Repeat("a", 64)
+		if i == 1 {
+			id = strings.Repeat("b", 64)
+		}
+		if err := os.WriteFile(filepath.Join(repo, name), []byte("version https://git-lfs.github.com/spec/v1\noid sha256:"+id+"\nsize 12\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitTestCommand(t, repo, "add", name)
+	}
+	gitTestCommand(t, repo, "commit", "-qm", "add pointers")
+
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+
+	files, err := PointerInventoryForObjects(context.Background(), []string{"HEAD"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{" lead.bin", "line\nbreak.bin"} {
+		if _, ok := files[name]; !ok {
+			t.Fatalf("missing exact path %q in %+v", name, files)
+		}
+	}
+}
+
 func gitTestCommand(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)

@@ -326,6 +326,17 @@ func TestRunAddURL_WritesPointerAndLFSObject(t *testing.T) {
 	if len(drsObject.Checksums) != 0 {
 		t.Fatalf("expected unknown sha256 add-url metadata not to fabricate checksums, got %+v", drsObject.Checksums)
 	}
+
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(tempDir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Run(cmd, []string{"s3://bucket/path/to/file.bin", "linked/escaped.bin"}); err == nil {
+		t.Fatal("symlinked destination was accepted")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "escaped.bin")); !os.IsNotExist(err) {
+		t.Fatalf("pointer escaped checkout through symlink: %v", err)
+	}
 }
 
 func TestPlaceholderOIDForUnknownSHA(t *testing.T) {

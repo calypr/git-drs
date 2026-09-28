@@ -10,8 +10,8 @@ import (
 
 // FileMatchesPointer reports whether path contains a complete payload for the
 // supplied pointer. SHA-256 pointers are checked against their OID; DRS
-// pointers use their optional sha256 extension and otherwise fall back to the
-// authoritative size recorded by the pointer.
+// pointers and placeholder OIDs use their optional sha256 extension and
+// otherwise fall back to the size recorded by the pointer.
 func FileMatchesPointer(path string, pointerData []byte) (bool, error) {
 	pointer, ok := parseLFSPointer(string(pointerData))
 	if !ok {
@@ -25,7 +25,7 @@ func FileMatchesPointer(path string, pointerData []byte) (bool, error) {
 		return false, nil
 	}
 	want := pointer.SHA256
-	if pointer.OidType == "sha256" {
+	if pointer.OidType == "sha256" && !pointer.Placeholder {
 		want = pointer.Oid
 	}
 	if want == "" {

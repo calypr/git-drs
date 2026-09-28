@@ -2,14 +2,17 @@ package transfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
@@ -36,13 +39,14 @@ type pushTuning struct {
 }
 
 type pushRuntime struct {
-	API         *remoteruntime.GitContext
-	Backend     sytransfer.MultipartBackend
-	Credential  *conf.Credential
-	Logger      *slog.Logger
-	Scope       pushScope
-	Tuning      pushTuning
-	ObjectsRoot string
+	API            *remoteruntime.GitContext
+	Backend        sytransfer.MultipartBackend
+	Credential     *conf.Credential
+	Logger         *slog.Logger
+	Scope          pushScope
+	Tuning         pushTuning
+	ObjectsRoot    string
+	DRSObjectsRoot string
 }
 
 func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
@@ -70,8 +74,107 @@ func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},
-		ObjectsRoot: gitrepo.LFSObjectsPath,
 	}
+}
+
+func pendingPushUploadPath(rt *pushRuntime, oid string) (string, error) {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
+		return "", fmt.Errorf("DRS objects root is required for pending upload state")
+	}
+	oid = localdrsobject.NormalizeOid(oid)
+	if oid == "" {
+		return "", fmt.Errorf("empty oid for pending upload state")
+	}
+	endpoint := ""
+	if rt.API != nil {
+		endpoint = strings.TrimRight(strings.TrimSpace(rt.API.Endpoint), "/")
+	}
+	identity := strings.Join([]string{
+		endpoint,
+		strings.TrimSpace(rt.Scope.Organization),
+		strings.TrimSpace(rt.Scope.Project),
+		strings.TrimSpace(rt.Scope.Bucket),
+		strings.TrimSpace(rt.Scope.StoragePref),
+		oid,
+	}, "\x00")
+	sum := sha256.Sum256([]byte(identity))
+	return filepath.Join(filepath.Dir(rt.DRSObjectsRoot), "push-pending", hex.EncodeToString(sum[:])), nil
+}
+
+func hasPendingPushUpload(rt *pushRuntime, oid string) (bool, error) {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
+		return false, nil
+	}
+	path, err := pendingPushUploadPath(rt, oid)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func markPendingPushUpload(rt *pushRuntime, oid string) error {
+	path, err := pendingPushUploadPath(rt, oid)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	marker, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if os.IsExist(err) {
+		marker, err = os.OpenFile(path, os.O_RDWR, 0o600)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := marker.WriteString("pending\n"); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Sync(); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Close(); err != nil {
+		return err
+	}
+	return syncPushMarkerDirectory(dir)
+}
+
+func clearPendingPushUpload(rt *pushRuntime, oid string) error {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
+		return nil
+	}
+	path, err := pendingPushUploadPath(rt, oid)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return syncPushMarkerDirectory(filepath.Dir(path))
+}
+
+func syncPushMarkerDirectory(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix string) string {
@@ -108,7 +211,11 @@ func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix str
 }
 
 func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (string, bool, error) {
-	return resolveUploadSourcePathAt(gitrepo.LFSObjectsPath, oid, worktreePath, isPointer)
+	objectsRoot, err := lfs.ResolveObjectsRoot(context.Background())
+	if err != nil {
+		return "", false, fmt.Errorf("resolve LFS objects root: %w", err)
+	}
+	return resolveUploadSourcePathAt(objectsRoot, oid, worktreePath, isPointer)
 }
 
 func resolveUploadSourcePathAt(objectsRoot string, oid string, worktreePath string, isPointer bool) (string, bool, error) {
@@ -147,9 +254,37 @@ func resolveUploadSourcePathAt(objectsRoot string, oid string, worktreePath stri
 	return worktreePath, true, nil
 }
 
-func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string) error {
+func uploadFileForCandidate(rt *pushRuntime, ctx context.Context, candidate uploadCandidate) error {
+	return uploadFileForObjectWithSHA256(rt, ctx, candidate.obj, candidate.src, uploadChecksumForCandidate(candidate.file, candidate.obj))
+}
+
+func uploadChecksumForCandidate(file lfs.LfsFileInfo, drsObject *drsapi.DrsObject) string {
+	want := objectSHA256(drsObject)
+	if !file.Placeholder {
+		return want
+	}
+	placeholderOID := localdrsobject.NormalizeOid(file.Oid)
+	if pointerSHA256 := hash.NormalizeChecksum(file.SHA256); pointerSHA256 != "" && pointerSHA256 != placeholderOID {
+		return pointerSHA256
+	}
+	if want == placeholderOID {
+		return ""
+	}
+	return want
+}
+
+func uploadFileForObjectWithSHA256(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath, expectedSHA256 string) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
 	rt.Logger.DebugContext(ctx, fmt.Sprintf("uploading file %s", hInfo.SHA256))
+	if expectedSHA256 != "" {
+		matches, err := lfs.FileMatchesSHA256(filePath, expectedSHA256)
+		if err != nil {
+			return fmt.Errorf("verify upload source %s against SHA-256 %s: %w", filePath, expectedSHA256, err)
+		}
+		if !matches {
+			return fmt.Errorf("upload source %s does not match SHA-256 %s", filePath, expectedSHA256)
+		}
+	}
 	multiPartThreshold := int64(5 * 1024 * 1024 * 1024)
 	if rt.Tuning.MultiPartThreshold > 0 {
 		multiPartThreshold = rt.Tuning.MultiPartThreshold

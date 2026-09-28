@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/calypr/git-drs/cmd/internal/confirm"
 	"github.com/calypr/git-drs/internal/config"
@@ -27,6 +28,9 @@ var Cmd = &cobra.Command{
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectId := args[0]
+		if strings.TrimSpace(projectId) == "" {
+			return fmt.Errorf("project ID must not be empty")
+		}
 		logger := drslog.GetLogger()
 
 		cfg, err := config.LoadConfig()

@@ -246,18 +246,19 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 	}
 	if token == "" {
 		if prof, err := configure.Load(remoteName); err == nil {
-			token = strings.TrimSpace(prof.AccessToken)
-			if token == "" {
-				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-				ensureErr := remoteruntime.EnsureValidCredential(ctx, prof, drslog.GetLogger())
-				cancel()
-				if ensureErr == nil {
-					if err := configure.Save(prof); err != nil {
-						return "", "", fmt.Errorf("failed to save refreshed credential for remote %q: %w", remoteName, err)
-					}
-					token = strings.TrimSpace(prof.AccessToken)
+			previousToken := prof.AccessToken
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ensureErr := remoteruntime.EnsureValidCredential(ctx, prof, drslog.GetLogger())
+			cancel()
+			if ensureErr != nil {
+				return "", "", fmt.Errorf("validate credential for remote %q: %w", remoteName, ensureErr)
+			}
+			if prof.AccessToken != previousToken {
+				if err := configure.Save(prof); err != nil {
+					return "", "", fmt.Errorf("failed to save refreshed credential for remote %q: %w", remoteName, err)
 				}
 			}
+			token = strings.TrimSpace(prof.AccessToken)
 		}
 	}
 	if token == "" {

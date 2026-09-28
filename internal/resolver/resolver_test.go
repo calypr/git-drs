@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,8 @@ import (
 )
 
 func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, error) {
-	u, err := trustedEndpoint(endpoint)
+	// Local HTTP test servers use a caller supplied client without ADC tokens.
+	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -23,6 +25,15 @@ func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, e
 		return nil, fmt.Errorf("HTTP client is required")
 	}
 	return &AnVILResolver{endpoint: u, client: client}, nil
+}
+
+func TestAnVILTrustedEndpointRequiresHTTPS(t *testing.T) {
+	if _, err := trustedEndpoint("http://resolver.example"); err == nil {
+		t.Fatal("HTTP resolver accepted for ADC bearer token requests")
+	}
+	if _, err := trustedEndpoint("https://resolver.example"); err != nil {
+		t.Fatalf("HTTPS resolver rejected: %v", err)
+	}
 }
 
 func TestAnVILResolverContract(t *testing.T) {

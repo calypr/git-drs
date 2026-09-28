@@ -20,8 +20,8 @@ jobs:
         include:
           - { os: linux, arch: amd64, runner: ubuntu-latest }
           - { os: linux, arch: arm64, runner: ubuntu-24.04-arm }
-          - { os: darwin, arch: amd64, runner: macos-latest }
-          - { os: darwin, arch: arm64, runner: macos-latest }
+          - { os: darwin, arch: amd64, runner: macos-15-intel }
+          - { os: darwin, arch: arm64, runner: macos-15 }
 
     steps:
       - name: Checkout Code
@@ -31,7 +31,14 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
+          actual_arch=$(uname -m)
+          case "$actual_arch" in
+            x86_64) actual_arch=amd64 ;;
+            aarch64) actual_arch=arm64 ;;
+          esac
+          test "$actual_arch" = "$EXPECTED_ARCH"
           ./install.sh
           # GITHUB_PATH is updated by the script, but we might need to refresh for the current step 
           # but usually it's better to just use identifying path or rely on next steps

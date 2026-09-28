@@ -204,7 +204,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 			OID:       info.Oid,
 			ShortOID:  shortOID(info.Oid),
 			Path:      path,
-			Localized: isLocalized(path),
+			Localized: isLocalized(path, info),
 		}
 		row.Status = "-"
 		if row.Localized {
@@ -268,11 +268,15 @@ func shortDRSOID(id string) string {
 	return id
 }
 
-func isLocalized(path string) bool {
-	payload, err := os.ReadFile(path)
+func isLocalized(path string, info lfs.LfsFileInfo) bool {
+	if info.IsPointer {
+		return false
+	}
+	file, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	_, _, ok := lfs.ParseLFSPointer(payload)
-	return !ok
+	defer file.Close()
+	stat, err := file.Stat()
+	return err == nil && stat.Mode().IsRegular()
 }

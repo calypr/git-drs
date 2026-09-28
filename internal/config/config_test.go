@@ -182,6 +182,68 @@ func TestUpdateRemoteAndLoadConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateRemoteStoragePrefixPersistence(t *testing.T) {
+	for name, remote := range map[string]RemoteSelect{
+		"gen3": {
+			Gen3: &Gen3Remote{
+				Endpoint:      "https://gen3.example",
+				ProjectID:     "project",
+				Bucket:        "bucket",
+				StoragePrefix: "old-prefix",
+			},
+		},
+		"local": {
+			Local: &LocalRemote{
+				BaseURL:       "http://localhost:8080",
+				StoragePrefix: "old-prefix",
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := setupTestRepo(t)
+			remoteName := Remote("origin")
+			cfg, err := UpdateRemote(remoteName, remote)
+			if err != nil {
+				t.Fatalf("UpdateRemote failed: %v", err)
+			}
+
+			var gotPrefix string
+			switch got := cfg.GetRemote(remoteName).(type) {
+			case *Gen3Remote:
+				gotPrefix = got.StoragePrefix
+			case *LocalRemote:
+				gotPrefix = got.StoragePrefix
+			default:
+				t.Fatalf("remote type = %T", cfg.GetRemote(remoteName))
+			}
+			if gotPrefix != "old-prefix" {
+				t.Fatalf("loaded storage prefix = %q, want old-prefix", gotPrefix)
+			}
+
+			cmd := exec.Command("git", "config", "--local", "--get", "drs.remote.origin.storage-prefix")
+			cmd.Dir = dir
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("read Git storage-prefix key: %v: %s", err, out)
+			} else if got := strings.TrimSpace(string(out)); got != "old-prefix" {
+				t.Fatalf("stored storage-prefix = %q, want old-prefix", got)
+			}
+
+			cfg, err = RemoveRemote(remoteName)
+			if err != nil {
+				t.Fatalf("RemoveRemote failed: %v", err)
+			}
+			if _, ok := cfg.Remotes[remoteName]; ok {
+				t.Fatalf("remote %q still present after removal", remoteName)
+			}
+			cmd = exec.Command("git", "config", "--local", "--get", "drs.remote.origin.storage-prefix")
+			cmd.Dir = dir
+			if out, err := cmd.CombinedOutput(); err == nil {
+				t.Fatalf("storage-prefix remained after remote removal: %s", out)
+			}
+		})
+	}
+}
+
 func TestLoadConfigPreservesGlobusRouteMaps(t *testing.T) {
 	dir := setupTestRepo(t)
 	commands := [][]string{

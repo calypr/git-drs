@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/calypr/git-drs/internal/gitrepo"
 )
 
 // runGitAllowMissing treats "key not found" as empty output, not an error.
@@ -76,21 +78,11 @@ func userHomeDir() (string, error) {
 }
 
 func gitRevParseGitCommonDir(ctx context.Context) (string, error) {
-	out, err := runGit(ctx, "rev-parse", "--git-common-dir")
+	commonDir, err := gitrepo.ResolveGitCommonDir(ctx)
 	if err != nil {
-		return "", fmt.Errorf("git rev-parse --git-common-dir failed: %w", err)
+		return "", fmt.Errorf("resolve Git common directory: %w", err)
 	}
-	dir := strings.TrimSpace(out)
-	if dir == "" {
-		return "", errors.New("git rev-parse returned empty --git-common-dir")
-	}
-	if !filepath.IsAbs(dir) {
-		abs, err := filepath.Abs(dir)
-		if err == nil {
-			dir = abs
-		}
-	}
-	return dir, nil
+	return commonDir, nil
 }
 
 // GetGitRootDirectories returns the Git common directory and LFS object root.

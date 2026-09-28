@@ -2,14 +2,57 @@ package bucket
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
 )
+
+func TestResolveEndpointAndTokenRefreshesExpiredProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(filepath.Join(home, ".gen3"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	jwt := func(exp int64) string {
+		header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+		claims := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"exp":%d,"iat":%d}`, exp, time.Now().Unix()-7200)))
+		return header + "." + claims + ".c2ln"
+	}
+	expired := jwt(time.Now().Unix() - 3600)
+	apiKey := jwt(time.Now().Unix() + 3600)
+	fresh := jwt(time.Now().Unix() + 7200)
+	profile := fmt.Sprintf("[origin]\naccess_token=%s\napi_key=%s\napi_endpoint=https://example.test\n", expired, apiKey)
+	if err := os.WriteFile(filepath.Join(home, ".gen3", "gen3_client_config.ini"), []byte(profile), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldToken, oldCred, oldURL := flagToken, flagCred, flagDRSURL
+	flagToken, flagCred, flagDRSURL = "", "", "https://example.test"
+	t.Cleanup(func() { flagToken, flagCred, flagDRSURL = oldToken, oldCred, oldURL })
+	oldTransport := http.DefaultTransport
+	refreshes := 0
+	http.DefaultTransport = bucketRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		refreshes++
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"access_token":%q}`, fresh))), Header: make(http.Header), Request: r}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
+
+	_, got, err := resolveEndpointAndToken("origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != fresh || refreshes != 1 {
+		t.Fatalf("token = %q, refreshes = %d; want new token and one refresh", got, refreshes)
+	}
+}
 
 type bucketRoundTripFunc func(*http.Request) (*http.Response, error)
 

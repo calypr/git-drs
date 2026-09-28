@@ -13,6 +13,7 @@ import (
 
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/globusauth"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 )
@@ -71,21 +72,38 @@ func parseGlobusURL(raw string) (globusLocator, error) {
 	return globusLocator{Collection: u.Host, Path: p}, nil
 }
 
-func globusDestinationForCachePath(drsCtx *remoteruntime.GitContext, sourceCollection, cachePath string, roots ...string) (globusLocator, error) {
+func globusDestinationForCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, sourceCollection, cachePath string, roots ...string) (globusLocator, error) {
 	collection, repositoryPath, err := resolveGlobusDestination(drsCtx, sourceCollection)
 	if err != nil {
 		return globusLocator{}, err
 	}
-	objectsRoot := gitrepo.LFSObjectsPath
-	if len(roots) > 0 && strings.TrimSpace(roots[0]) != "" {
+	objectsRoot := ""
+	if len(roots) > 0 {
 		objectsRoot = roots[0]
 	}
-	repositoryRoot, err := os.Getwd()
-	if err != nil {
-		return globusLocator{}, fmt.Errorf("resolve Globus repository root: %w", err)
-	}
-	if len(roots) > 1 && strings.TrimSpace(roots[1]) != "" {
+	repositoryRoot := ""
+	if len(roots) > 1 {
 		repositoryRoot = roots[1]
+	}
+	if drsCtx != nil {
+		if objectsRoot == "" {
+			objectsRoot = drsCtx.LFSObjectsRoot
+		}
+		if repositoryRoot == "" {
+			repositoryRoot = drsCtx.RepositoryRoot
+		}
+	}
+	if objectsRoot == "" {
+		objectsRoot, err = lfs.ResolveObjectsRoot(ctx)
+		if err != nil {
+			return globusLocator{}, fmt.Errorf("resolve Globus LFS objects root: %w", err)
+		}
+	}
+	if repositoryRoot == "" {
+		repositoryRoot, err = gitrepo.GitTopLevel()
+		if err != nil {
+			return globusLocator{}, fmt.Errorf("resolve Globus repository root: %w", err)
+		}
 	}
 	objectsRoot, err = filepath.Abs(objectsRoot)
 	if err != nil {
@@ -187,7 +205,7 @@ func transferGlobusToCachePath(ctx context.Context, drsCtx *remoteruntime.GitCon
 	if err != nil {
 		return err
 	}
-	dst, err := globusDestinationForCachePath(drsCtx, src.Collection, cachePath, roots...)
+	dst, err := globusDestinationForCachePath(ctx, drsCtx, src.Collection, cachePath, roots...)
 	if err != nil {
 		return err
 	}
@@ -230,7 +248,7 @@ func DownloadGlobusBatch(ctx context.Context, drsCtx *remoteruntime.GitContext, 
 		if download.ObjectsRoot != "" || download.RepositoryRoot != "" {
 			roots = []string{download.ObjectsRoot, download.RepositoryRoot}
 		}
-		dst, err := globusDestinationForCachePath(drsCtx, src.Collection, download.CachePath, roots...)
+		dst, err := globusDestinationForCachePath(ctx, drsCtx, src.Collection, download.CachePath, roots...)
 		if err != nil {
 			return err
 		}

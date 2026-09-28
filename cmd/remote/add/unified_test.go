@@ -103,6 +103,29 @@ func TestUnifiedAddRejectsGlobusAuthenticationBeforeInitializing(t *testing.T) {
 	}
 }
 
+func TestUnifiedAddRejectsStdinCredentialBeforePersisting(t *testing.T) {
+	repo := testutils.SetupTestGitRepo(t)
+	resetUnifiedFlags(t)
+	providerFlag = "gen3"
+	authFlag = "bearer"
+	credentialFlag = "stdin"
+	scopeFlag = "ORG/PROJECT"
+
+	if err := runUnified(Cmd, []string{"https://gen3.example"}); err == nil {
+		t.Fatal("expected unsupported credential source to be rejected")
+	}
+	if _, err := os.Stat(repo + "/.git-drs"); !os.IsNotExist(err) {
+		t.Fatalf("remote validation modified repository state: %v", err)
+	}
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Remotes) != 0 {
+		t.Fatalf("invalid remote was persisted: %+v", cfg.Remotes)
+	}
+}
+
 func resetUnifiedFlags(t *testing.T) {
 	old := []string{scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag}
 	scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag = "", "auto", "", "auto", "", ""

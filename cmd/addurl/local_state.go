@@ -35,8 +35,8 @@ func drsobjectBuilder(bucket, organization, project, storagePrefix string) drsob
 	return builder
 }
 
-func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectPath string) (*drsapi.DrsObject, error) {
-	existing, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, file.Oid)
+func writeAddURLDrsObject(objectsRoot string, builder drsobject.Builder, file addURLDrsFile, objectPath string) (*drsapi.DrsObject, error) {
+	existing, err := drsobject.ReadObject(objectsRoot, file.Oid)
 	var drsObj *drsapi.DrsObject
 	if err == nil && existing != nil {
 		drsObj = existing
@@ -77,7 +77,7 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 		}
 	}
 
-	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, drsObj, file.Oid); err != nil {
+	if err := drsobject.WriteObject(objectsRoot, drsObj, file.Oid); err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %w", file.Oid, err)
 	}
 	return drsObj, nil

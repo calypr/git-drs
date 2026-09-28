@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,22 +11,60 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 )
 
 type SmudgeDownloadFunc func(ctx context.Context, oid, cachePath string) error
 
 func SmudgeContent(ctx context.Context, pathname string, ptr io.Reader, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
-	return SmudgeContentWithObjectsRoot(ctx, gitrepo.LFSObjectsPath, pathname, ptr, dst, logger, download)
-}
-
-func SmudgeContentWithObjectsRoot(ctx context.Context, objectsRoot, pathname string, ptr io.Reader, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
-	ptrBytes, err := io.ReadAll(ptr)
+	ptrBytes, tooLarge, err := readSmudgePointer(ptr)
 	if err != nil {
 		return fmt.Errorf("smudge: read pointer: %w", err)
 	}
+	if tooLarge {
+		return writeSmudgePassthrough(ptrBytes, ptr, dst)
+	}
+	if _, _, ok := lfs.ParseLFSPointer(ptrBytes); !ok {
+		return smudgeContentBytes(ctx, "", pathname, ptrBytes, dst, logger, download)
+	}
+	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	if err != nil {
+		return fmt.Errorf("smudge: resolve LFS objects root: %w", err)
+	}
+	return smudgeContentBytes(ctx, objectsRoot, pathname, ptrBytes, dst, logger, download)
+}
 
+func SmudgeContentWithObjectsRoot(ctx context.Context, objectsRoot, pathname string, ptr io.Reader, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
+	ptrBytes, tooLarge, err := readSmudgePointer(ptr)
+	if err != nil {
+		return fmt.Errorf("smudge: read pointer: %w", err)
+	}
+	if tooLarge {
+		return writeSmudgePassthrough(ptrBytes, ptr, dst)
+	}
+	return smudgeContentBytes(ctx, objectsRoot, pathname, ptrBytes, dst, logger, download)
+}
+
+func readSmudgePointer(ptr io.Reader) ([]byte, bool, error) {
+	limited := &io.LimitedReader{R: ptr, N: lfs.MaxPointerFileBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, false, err
+	}
+	return data, int64(len(data)) > lfs.MaxPointerFileBytes, nil
+}
+
+func writeSmudgePassthrough(prefix []byte, remainder io.Reader, dst io.Writer) error {
+	if _, err := io.Copy(dst, bytes.NewReader(prefix)); err != nil {
+		return fmt.Errorf("smudge: passthrough write: %w", err)
+	}
+	if _, err := io.Copy(dst, remainder); err != nil {
+		return fmt.Errorf("smudge: passthrough write: %w", err)
+	}
+	return nil
+}
+
+func smudgeContentBytes(ctx context.Context, objectsRoot, pathname string, ptrBytes []byte, dst io.Writer, logger *slog.Logger, download SmudgeDownloadFunc) error {
 	oid, size, ok := lfs.ParseLFSPointer(ptrBytes)
 	if !ok {
 		_, err := dst.Write(ptrBytes)

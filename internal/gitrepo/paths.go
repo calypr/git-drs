@@ -1,8 +1,10 @@
 package gitrepo
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -15,6 +17,83 @@ const (
 	DRSLogFile     = ".git/drs/git-drs.log"
 	DRSDir         = ".git/drs"
 )
+
+// RepositoryPaths separates paths that belong to one worktree from paths
+// shared by every worktree in the same repository.
+type RepositoryPaths struct {
+	GitDir    string
+	CommonDir string
+	HooksDir  string
+}
+
+// ResolveRepositoryPaths asks Git for the active worktree's metadata paths.
+// The hooks path is resolved by Git so core.hooksPath is honored.
+func ResolveRepositoryPaths(ctx context.Context) (RepositoryPaths, error) {
+	gitDir, err := resolveGitPath(ctx, "--git-dir")
+	if err != nil {
+		return RepositoryPaths{}, fmt.Errorf("resolve Git directory: %w", err)
+	}
+	commonDir, err := resolveGitPath(ctx, "--git-common-dir")
+	if err != nil {
+		return RepositoryPaths{}, fmt.Errorf("resolve Git common directory: %w", err)
+	}
+	hooksDir, err := resolveGitPath(ctx, "--git-path", "hooks")
+	if err != nil {
+		return RepositoryPaths{}, fmt.Errorf("resolve Git hooks path: %w", err)
+	}
+	return RepositoryPaths{GitDir: gitDir, CommonDir: commonDir, HooksDir: hooksDir}, nil
+}
+
+func ResolveDRSDir(ctx context.Context) (string, error) {
+	commonDir, err := ResolveGitCommonDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(commonDir, "drs"), nil
+}
+
+func ResolveDRSObjectsDir(ctx context.Context) (string, error) {
+	commonDir, err := ResolveGitCommonDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(commonDir, "drs", "lfs", "objects"), nil
+}
+
+// ResolveGitCommonDir returns the shared Git metadata directory. This is the
+// storage anchor shared by linked worktrees.
+func ResolveGitCommonDir(ctx context.Context) (string, error) {
+	return resolveGitPath(ctx, "--git-common-dir")
+}
+
+func resolveGitPath(ctx context.Context, args ...string) (string, error) {
+	cmdArgs := append([]string{"rev-parse", "--path-format=absolute"}, args...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	value := strings.TrimSuffix(string(output), "\n")
+	if value == "" || !filepath.IsAbs(value) {
+		return "", fmt.Errorf("Git returned invalid path %q", value)
+	}
+	return filepath.Clean(value), nil
+}
+
+// DRSDir returns the shared directory for repository metadata.
+func (p RepositoryPaths) DRSDir() string {
+	return filepath.Join(p.CommonDir, "drs")
+}
+
+// DRSObjectsDir returns the shared directory for local DRS object records.
+func (p RepositoryPaths) DRSObjectsDir() string {
+	return filepath.Join(p.DRSDir(), "lfs", "objects")
+}
+
+// DRSLogFile returns the log path scoped to the active worktree.
+func (p RepositoryPaths) DRSLogFile() string {
+	return filepath.Join(p.GitDir, "drs", "git-drs.log")
+}
 
 // SafeWorktreePath validates a repository-relative path and rejects symlinked
 // components before a caller writes through it. Callers should re-check the

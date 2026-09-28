@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log/slog"
 	"os"
@@ -56,12 +58,13 @@ func (b *uploadMetadataBackend) InitMultipartUploadWithMetadata(_ context.Contex
 }
 
 func uploadTestObject(size int64) *drsapi.DrsObject {
+	sum := sha256.Sum256([]byte("payload"))
 	return &drsapi.DrsObject{
 		Id:   "did:example:upload",
 		Size: size,
 		Checksums: []drsapi.Checksum{{
 			Type:     "sha256",
-			Checksum: strings.Repeat("a", 64),
+			Checksum: hex.EncodeToString(sum[:]),
 		}},
 	}
 }
@@ -88,7 +91,7 @@ func TestUploadFileForObjectPassesScopeToSingleResolver(t *testing.T) {
 		Tuning: pushTuning{MultiPartThreshold: 1024},
 	}
 
-	if err := uploadFileForObject(rt, context.Background(), uploadTestObject(7), path); err != nil {
+	if err := uploadFileForCandidate(rt, context.Background(), uploadCandidate{obj: uploadTestObject(7), src: path}); err != nil {
 		t.Fatalf("uploadFileForObject: %v", err)
 	}
 
@@ -114,7 +117,7 @@ func TestUploadFileForObjectPassesScopeToMultipartInitializer(t *testing.T) {
 		Tuning: pushTuning{MultiPartThreshold: 1},
 	}
 
-	if err := uploadFileForObject(rt, context.Background(), uploadTestObject(7), path); err != nil {
+	if err := uploadFileForCandidate(rt, context.Background(), uploadCandidate{obj: uploadTestObject(7), src: path}); err != nil {
 		t.Fatalf("uploadFileForObject: %v", err)
 	}
 
@@ -158,7 +161,7 @@ func TestUploadFileForObjectRequiresBackend(t *testing.T) {
 	path := writeUploadTestFile(t, "payload")
 	rt := &pushRuntime{Logger: slog.Default()}
 
-	err := uploadFileForObject(rt, context.Background(), uploadTestObject(7), path)
+	err := uploadFileForCandidate(rt, context.Background(), uploadCandidate{obj: uploadTestObject(7), src: path})
 	if err == nil || !strings.Contains(err.Error(), "upload backend is required") {
 		t.Fatalf("uploadFileForObject error = %v, want missing backend error", err)
 	}

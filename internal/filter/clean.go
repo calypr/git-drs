@@ -19,7 +19,7 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
-func writeDrsMap(pathname string, oid string, size int64) error {
+func writeDrsMap(objectsRoot, pathname string, oid string, size int64) error {
 	name := filepath.Base(pathname)
 	drsObj := &drsapi.DrsObject{
 		Name: &name,
@@ -28,7 +28,7 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		},
 	}
-	if existing, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid); err == nil && existing != nil {
+	if existing, err := drsobject.ReadObject(objectsRoot, oid); err == nil && existing != nil {
 		drsObj = existing
 		drsObj.Name = &name
 		drsObj.Size = size
@@ -36,10 +36,18 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		}
 	}
-	return drsobject.WriteObject(gitrepo.DRSObjectsPath, drsObj, oid)
+	return drsobject.WriteObject(objectsRoot, drsObj, oid)
 }
 
-func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+	objectsRoot, err := gitrepo.ResolveDRSObjectsDir(ctx)
+	if err != nil {
+		return fmt.Errorf("clean: resolve DRS object store: %w", err)
+	}
+	return CleanContentWithRoots(ctx, lfsRoot, objectsRoot, pathname, content, dst, logger)
+}
+
+func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
 	objDir := filepath.Join(lfsRoot, "objects")
 	if err := os.MkdirAll(objDir, 0o755); err != nil {
 		return fmt.Errorf("clean: mkdir LFS objects: %w", err)
@@ -92,7 +100,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 				// DRS URI pointers already carry their durable lookup identity. The
 				// SHA256-keyed sidecar map is only applicable to SHA256 pointers.
 				if !lfs.IsDRSURI(pointerOID) && !lfs.IsPlaceholderPointer(data) {
-					if mapErr := writeDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
+					if mapErr := writeDrsMap(drsObjectsRoot, pathname, pointerOID, pointerSize); mapErr != nil {
 						logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
 					}
 				}
@@ -123,7 +131,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 		return fmt.Errorf("clean: write pointer: %w", err)
 	}
 
-	if mapErr := writeDrsMap(pathname, oid, size); mapErr != nil {
+	if mapErr := writeDrsMap(drsObjectsRoot, pathname, oid, size); mapErr != nil {
 		logger.Warn("clean: failed to write DRS map entry", "pathname", pathname, "error", mapErr)
 	}
 

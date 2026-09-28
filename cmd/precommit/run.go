@@ -73,7 +73,7 @@ func run(ctx context.Context) error {
 		}
 		newOID, newIsLFS, err := stagedLFSOID(ctx, ch.NewPath)
 		if err != nil {
-			continue
+			return fmt.Errorf("read staged rename %q: %w", ch.NewPath, err)
 		}
 
 		oldPathFile := precommit_cache.PathEntryPath(cache, ch.OldPath)

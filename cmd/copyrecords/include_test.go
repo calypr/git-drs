@@ -26,6 +26,19 @@ func TestIncludedLocalPaths(t *testing.T) {
 	}
 }
 
+func TestIncludedLocalPathsPreserveLeadingSpace(t *testing.T) {
+	include, err := normalizeIncludedPaths([]string{" lead.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(include) != 1 || include[0] != " lead.bin" {
+		t.Fatalf("normalized path = %q, want literal leading space", include)
+	}
+	if !isIncludedLocalPath(" lead.bin", include) || isIncludedLocalPath("lead.bin", include) {
+		t.Fatalf("include filter selected the wrong filename: %q", include)
+	}
+}
+
 func TestCopyRecordMatchesIncludedSHA256(t *testing.T) {
 	rec := copyRecord{Hashes: &copyHashInfo{"sha256": "ABC123"}}
 	if !copyRecordMatchesIncludedSHA256(rec, map[string]struct{}{"abc123": {}}) {

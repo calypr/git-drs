@@ -31,6 +31,8 @@ type LfsFileInfo struct {
 	Placeholder bool   `json:"placeholder,omitempty"`
 }
 
+const MaxPointerFileBytes int64 = 64 << 10
+
 func IsLFSTracked(path string) (bool, error) {
 	if path == "" {
 		return false, fmt.Errorf("path is empty")
@@ -98,7 +100,6 @@ func GetReachablePointerFilesForRefInRepository(ctx context.Context, repositoryR
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	repositoryRoot = strings.TrimSpace(repositoryRoot)
 	if repositoryRoot == "" {
 		return nil, fmt.Errorf("repository root is required")
 	}
@@ -118,12 +119,17 @@ func GetReachablePointerFilesForRefInRepository(ctx context.Context, repositoryR
 // worktree when still present, or from the index when the worktree has already
 // been hydrated.
 func GetTrackedLfsFiles(logger *slog.Logger) (map[string]LfsFileInfo, error) {
-	if logger == nil {
-		return nil, fmt.Errorf("logger is required")
-	}
 	repoDir, err := os.Getwd()
 	if err != nil {
 		return nil, err
+	}
+	return GetTrackedLfsFilesAt(logger, repoDir)
+}
+
+// GetTrackedLfsFilesAt scans from a caller-selected repository directory.
+func GetTrackedLfsFilesAt(logger *slog.Logger, repoDir string) (map[string]LfsFileInfo, error) {
+	if logger == nil {
+		return nil, fmt.Errorf("logger is required")
 	}
 	logger.Debug("Scanning current worktree for LFS-tracked files")
 	ctx := context.Background()
@@ -189,10 +195,40 @@ func readRefBlobsBatch(ctx context.Context, repoDir, ref string, paths []string)
 	if len(paths) == 0 {
 		return map[string]string{}, nil
 	}
+	tree, err := runGitCommand(ctx, repoDir, "ls-tree", "-r", "-z", "--full-tree", ref)
+	if err != nil {
+		return nil, fmt.Errorf("git ls-tree for %s: %w", ref, err)
+	}
+	wanted := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		wanted[path] = struct{}{}
+	}
+	objectIDs := make(map[string]string, len(paths))
+	for _, entry := range strings.Split(tree, "\x00") {
+		metadata, path, ok := strings.Cut(entry, "\t")
+		if !ok {
+			continue
+		}
+		if _, ok := wanted[path]; !ok {
+			continue
+		}
+		fields := strings.Fields(metadata)
+		if len(fields) == 3 && fields[1] == "blob" {
+			objectIDs[path] = fields[2]
+		}
+	}
+	specs := make([]string, 0, len(paths))
+	for _, path := range paths {
+		oid, ok := objectIDs[path]
+		if !ok {
+			return nil, fmt.Errorf("pointer path %q is absent from ref %s", path, ref)
+		}
+		specs = append(specs, oid)
+	}
 
 	cmd := exec.CommandContext(ctx, "git", "cat-file", "--batch")
 	cmd.Dir = repoDir
-	cmd.Stdin = strings.NewReader(joinBatchSpecs(ref, paths))
+	cmd.Stdin = strings.NewReader(strings.Join(specs, "\n") + "\n")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -228,17 +264,6 @@ func readRefBlobsBatch(ctx context.Context, repoDir, ref string, paths []string)
 		blobs[path] = string(payload)
 	}
 	return blobs, nil
-}
-
-func joinBatchSpecs(ref string, paths []string) string {
-	var b strings.Builder
-	for _, path := range paths {
-		b.WriteString(ref)
-		b.WriteByte(':')
-		b.WriteString(path)
-		b.WriteByte('\n')
-	}
-	return b.String()
 }
 
 func readBatchHeader(r *bytes.Reader) (string, error) {
@@ -286,7 +311,6 @@ func listTrackedWorktreeFiles(ctx context.Context, repoDir string) ([]string, er
 	raw := strings.Split(out, "\x00")
 	paths := make([]string, 0, len(raw))
 	for _, entry := range raw {
-		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
@@ -317,7 +341,7 @@ func filterLfsTrackedPaths(ctx context.Context, repoDir string, paths []string) 
 	raw := strings.Split(stdout.String(), "\x00")
 	filtered := make([]string, 0, len(paths))
 	for i := 0; i+2 < len(raw); i += 3 {
-		path := strings.TrimSpace(raw[i])
+		path := raw[i]
 		attr := strings.TrimSpace(raw[i+1])
 		value := strings.TrimSpace(raw[i+2])
 		if path == "" || attr != "filter" {
@@ -340,8 +364,17 @@ func isTrackedFilter(value string) bool {
 }
 
 func readWorktreePointerInfo(repoDir, path string) (LfsFileInfo, bool) {
-	payload, err := os.ReadFile(filepath.Join(repoDir, filepath.FromSlash(path)))
+	file, err := os.Open(filepath.Join(repoDir, filepath.FromSlash(path)))
 	if err != nil {
+		return LfsFileInfo{}, false
+	}
+	defer file.Close()
+	stat, err := file.Stat()
+	if err != nil || !stat.Mode().IsRegular() || stat.Size() > MaxPointerFileBytes {
+		return LfsFileInfo{}, false
+	}
+	payload, err := io.ReadAll(io.LimitReader(file, MaxPointerFileBytes+1))
+	if err != nil || int64(len(payload)) > MaxPointerFileBytes {
 		return LfsFileInfo{}, false
 	}
 	pointer, ok := parseLFSPointer(string(payload))
@@ -404,7 +437,6 @@ func grepPointerPaths(ctx context.Context, repoDir, ref string) ([]string, error
 	paths := make([]string, 0, len(raw))
 	prefix := ref + ":"
 	for _, entry := range raw {
-		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
@@ -538,8 +570,15 @@ func CreateDRSPointer(drsObj *drsapi.DrsObject, dst string, drsURI string) error
 	if checksum := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(drsObj.Checksums).SHA256); checksum != "" {
 		pointerContent += fmt.Sprintf("sha256 %s\n", strings.ToLower(checksum))
 	}
-	if err := os.WriteFile(dst, []byte(pointerContent), 0644); err != nil {
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
 		return fmt.Errorf("failed to write DRS pointer file: %w", err)
+	}
+	_, writeErr := io.WriteString(f, pointerContent)
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(dst)
+		return fmt.Errorf("failed to write DRS pointer file: %w", errors.Join(writeErr, closeErr))
 	}
 	return nil
 }

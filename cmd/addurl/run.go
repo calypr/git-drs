@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -134,7 +135,23 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := writePointerFile(input.path, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
+	worktreeRoot, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("resolve worktree root: %w", err)
+	}
+	absolutePath, err := filepath.Abs(input.path)
+	if err != nil {
+		return fmt.Errorf("resolve destination path: %w", err)
+	}
+	relativePath, err := filepath.Rel(worktreeRoot, absolutePath)
+	if err != nil {
+		return fmt.Errorf("resolve repository destination: %w", err)
+	}
+	safePath, err := gitrepo.SafeWorktreePath(worktreeRoot, relativePath)
+	if err != nil {
+		return fmt.Errorf("invalid add-url destination: %w", err)
+	}
+	if err := writePointerFile(safePath, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
 		return err
 	}
 
@@ -153,7 +170,8 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		Oid:           oid,
 		ContentSHA256: input.sha256,
 	}
-	if _, err := writeAddURLDrsObject(builder, file, input.objectURL); err != nil {
+	objectsRoot := filepath.Join(gitCommonDir, "drs", "lfs", "objects")
+	if _, err := writeAddURLDrsObject(objectsRoot, builder, file, input.objectURL); err != nil {
 		return fmt.Errorf("write local DRS object: %w", err)
 	}
 

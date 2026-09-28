@@ -2,6 +2,7 @@ package deleteproject
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -55,6 +56,16 @@ func TestDeleteProjectRunERejectsMismatchedConfirm(t *testing.T) {
 	}
 	if deleteRequests != 0 {
 		t.Fatalf("expected no delete request after confirmation mismatch, got %d", deleteRequests)
+	}
+}
+
+func TestDeleteProjectRejectsEmptyProjectBeforeRemoteAccess(t *testing.T) {
+	for _, id := range []string{"", " \t "} {
+		t.Run(fmt.Sprintf("%q", id), func(t *testing.T) {
+			if err := Cmd.RunE(Cmd, []string{id}); err == nil || !strings.Contains(err.Error(), "project ID must not be empty") {
+				t.Fatalf("expected empty project ID error, got %v", err)
+			}
+		})
 	}
 }
 

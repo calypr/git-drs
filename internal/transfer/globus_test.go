@@ -21,6 +21,12 @@ type fakeGlobusClient struct {
 	onWait  func(string) error
 }
 
+func newGlobusTestRoots(t *testing.T) (string, string) {
+	t.Helper()
+	repo := t.TempDir()
+	return repo, filepath.Join(repo, ".git", "lfs", "objects")
+}
+
 func (f *fakeGlobusClient) SubmitTransfer(context.Context, string, string, string, string, string) (string, error) {
 	return "task", nil
 }
@@ -74,14 +80,20 @@ func TestParseGlobusURLRejectsDecodedTraversalAndUserinfo(t *testing.T) {
 
 func TestGlobusDestinationForCachePathRequiresCollection(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "")
-	if _, err := globusDestinationForCachePath(nil, "source", filepath.Join(".git", "drs", "objects", "aa")); err == nil {
+	if _, err := globusDestinationForCachePath(context.Background(), nil, "source", filepath.Join(".git", "drs", "objects", "aa")); err == nil {
 		t.Fatal("expected missing destination collection to fail")
 	}
 }
 
 func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "dest-collection")
-	loc, err := globusDestinationForCachePath(nil, "source", filepath.Join(".git", "lfs", "objects", "aa", "bb"))
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectsRoot := filepath.Join(repo, ".git", "lfs", "objects")
+	cachePath := filepath.Join(objectsRoot, "aa", "bb")
+	loc, err := globusDestinationForCachePath(context.Background(), nil, "source", cachePath, objectsRoot, repo)
 	if err != nil {
 		t.Fatalf("globusDestinationForCachePath returned error: %v", err)
 	}
@@ -96,8 +108,13 @@ func TestGlobusDestinationForCachePathUsesLFSCachePath(t *testing.T) {
 
 func TestGlobusDestinationForCachePathRejectsNonCachePath(t *testing.T) {
 	t.Setenv(globusDestCollectionEnv, "dest-collection")
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectsRoot := filepath.Join(repo, ".git", "lfs", "objects")
 	for _, destination := range []string{"file.bin", filepath.Join(t.TempDir(), ".git", "lfs", "objects", "aa")} {
-		if _, err := globusDestinationForCachePath(nil, "source", destination); err == nil {
+		if _, err := globusDestinationForCachePath(context.Background(), nil, "source", destination, objectsRoot, repo); err == nil {
 			t.Fatalf("expected destination %q to be rejected", destination)
 		}
 	}
@@ -108,7 +125,7 @@ func TestGlobusDestinationForCachePathRejectsExternalCanonicalStorage(t *testing
 	repo := t.TempDir()
 	externalObjects := filepath.Join(t.TempDir(), "lfs", "objects")
 	cachePath := filepath.Join(externalObjects, "aa", "bb", strings.Repeat("a", 64))
-	if _, err := globusDestinationForCachePath(nil, "source", cachePath, externalObjects, repo); err == nil {
+	if _, err := globusDestinationForCachePath(context.Background(), nil, "source", cachePath, externalObjects, repo); err == nil {
 		t.Fatal("expected Globus mapping to reject storage outside repository anchor")
 	}
 }
@@ -119,7 +136,12 @@ func TestGlobusDestinationUsesSourceRouteAndRepositoryPath(t *testing.T) {
 		GlobusCollections:      map[string]string{"source-a": "destination-west"},
 		GlobusDestinationPaths: map[string]string{"destination-west": "/projects/research/repository"},
 	}
-	loc, err := globusDestinationForCachePath(ctx, "SOURCE-A", filepath.Join(".git", "lfs", "objects", "aa", "bb"))
+	repo, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectsRoot := filepath.Join(repo, ".git", "lfs", "objects")
+	loc, err := globusDestinationForCachePath(context.Background(), ctx, "SOURCE-A", filepath.Join(objectsRoot, "aa", "bb"), objectsRoot, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,12 +182,7 @@ func TestIsGlobusURL(t *testing.T) {
 }
 
 func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
-	repo := t.TempDir()
-	oldWD, _ := os.Getwd()
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	repo, objectsRoot := newGlobusTestRoots(t)
 	t.Setenv(globusDestCollectionEnv, "destination")
 	fake := &fakeGlobusClient{}
 	old := newGlobusClient
@@ -175,7 +192,7 @@ func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
 	for i, source := range []string{"source-a", "source-a", "source-b"} {
 		payload := []byte(fmt.Sprintf("file-%d", i))
 		sum := fmt.Sprintf("%x", sha256.Sum256(payload))
-		cachePath := filepath.Join(".git", "lfs", "objects", sum[:2], sum[2:4], sum)
+		cachePath := filepath.Join(objectsRoot, sum[:2], sum[2:4], sum)
 		if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +200,7 @@ func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		obj := &drsapi.DrsObject{Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: sum}}}
-		downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://" + source + "/file"})
+		downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://" + source + "/file", ObjectsRoot: objectsRoot, RepositoryRoot: repo})
 	}
 	downloads = append(downloads, downloads[0])
 	if err := DownloadGlobusBatch(t.Context(), nil, downloads); err != nil {
@@ -202,12 +219,7 @@ func TestDownloadGlobusBatchGroupsCompatibleFiles(t *testing.T) {
 }
 
 func TestDownloadGlobusBatchMockTransferE2E(t *testing.T) {
-	repo := t.TempDir()
-	oldWD, _ := os.Getwd()
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	repo, objectsRoot := newGlobusTestRoots(t)
 	t.Setenv(globusDestCollectionEnv, "")
 
 	const (
@@ -218,7 +230,7 @@ func TestDownloadGlobusBatchMockTransferE2E(t *testing.T) {
 	)
 	payload := []byte("mock Globus payload\n")
 	oid := fmt.Sprintf("%x", sha256.Sum256(payload))
-	cachePath := filepath.Join(".git", "lfs", "objects", oid[:2], oid[2:4], oid)
+	cachePath := filepath.Join(objectsRoot, oid[:2], oid[2:4], oid)
 
 	fake := &fakeGlobusClient{}
 	fake.onWait = func(taskID string) error {
@@ -255,7 +267,9 @@ func TestDownloadGlobusBatchMockTransferE2E(t *testing.T) {
 				Size:      int64(len(payload)),
 				Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}},
 			},
-			AccessURL: "globus://" + sourceCollection + sourcePath,
+			AccessURL:      "globus://" + sourceCollection + sourcePath,
+			ObjectsRoot:    objectsRoot,
+			RepositoryRoot: repo,
 		},
 	}
 
@@ -281,12 +295,7 @@ func TestDownloadGlobusBatchRemovesFailedGroup(t *testing.T) {
 		{name: "verification failure", corrupt: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := t.TempDir()
-			oldWD, _ := os.Getwd()
-			if err := os.Chdir(repo); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = os.Chdir(oldWD) })
+			repo, objectsRoot := newGlobusTestRoots(t)
 			t.Setenv(globusDestCollectionEnv, "destination")
 			fake := &fakeGlobusClient{waitErr: tc.waitErr}
 			old := newGlobusClient
@@ -297,7 +306,7 @@ func TestDownloadGlobusBatchRemovesFailedGroup(t *testing.T) {
 			for i := range 2 {
 				payload := []byte(fmt.Sprintf("file-%d", i))
 				sum := fmt.Sprintf("%x", sha256.Sum256(payload))
-				cachePath := filepath.Join(".git", "lfs", "objects", sum[:2], sum[2:4], sum)
+				cachePath := filepath.Join(objectsRoot, sum[:2], sum[2:4], sum)
 				if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -309,7 +318,7 @@ func TestDownloadGlobusBatchRemovesFailedGroup(t *testing.T) {
 					t.Fatal(err)
 				}
 				obj := &drsapi.DrsObject{Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: sum}}}
-				downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://source/file"})
+				downloads = append(downloads, GlobusDownload{OID: sum, CachePath: cachePath, Object: obj, AccessURL: "globus://source/file", ObjectsRoot: objectsRoot, RepositoryRoot: repo})
 			}
 
 			if err := DownloadGlobusBatch(t.Context(), nil, downloads); err == nil {

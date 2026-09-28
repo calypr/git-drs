@@ -2,10 +2,7 @@ package precommit
 
 import "github.com/spf13/cobra"
 
-const (
-	lfsSpecLine                         = "version https://git-lfs.github.com/spec/v1"
-	defaultDirectCommitWarningThreshold = int64(10 * 1024 * 1024)
-)
+const defaultDirectCommitWarningThreshold = int64(10 * 1024 * 1024)
 
 var (
 	directCommitWarningThresholdBytes = defaultDirectCommitWarningThreshold

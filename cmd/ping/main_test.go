@@ -11,12 +11,48 @@ import (
 	"strings"
 	"testing"
 
+	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/testutils"
 )
+
+type pingRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f pingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestCheckScopeAccessVerifiesBucketWithoutOrganization(t *testing.T) {
+	var bucketRequests int
+	transport := pingRoundTripper(func(req *http.Request) (*http.Response, error) {
+		body := `{"records":[]}`
+		if strings.Contains(req.URL.Path, "bucket") {
+			bucketRequests++
+			body = `{"S3_BUCKETS":{"visible":{}}}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+	})
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gc := &remoteruntime.GitContext{Client: client, ProjectId: "project", BucketName: "missing"}
+	if _, err := checkScopeAccess(t.Context(), gc); err == nil || !strings.Contains(err.Error(), "not visible") {
+		t.Fatalf("expected missing bucket error, got %v", err)
+	}
+	if bucketRequests != 1 {
+		t.Fatalf("bucket listing called %d times, want 1", bucketRequests)
+	}
+	gc.BucketName = "visible"
+	info, err := checkScopeAccess(t.Context(), gc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Checked || !info.ProjectReadable || info.VisibleBucket != "visible" {
+		t.Fatalf("unexpected scope result: %+v", info)
+	}
+}
 
 func TestPingCmdArgs(t *testing.T) {
 	if err := Cmd.Args(Cmd, nil); err != nil {

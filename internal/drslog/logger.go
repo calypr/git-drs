@@ -1,6 +1,8 @@
 package drslog
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -53,12 +55,14 @@ func NewLogger(filename string, logToStderr bool) (*slog.Logger, error) {
 	var writers []io.Writer
 
 	if filename == "" {
-		// create drs dir if it doesn't exist
-		if err := os.MkdirAll(gitrepo.DRSDir, 0755); err != nil {
+		paths, err := gitrepo.ResolveRepositoryPaths(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("resolve repository log path: %w", err)
+		}
+		filename = paths.DRSLogFile()
+		if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
 			return nil, err
 		}
-
-		filename = gitrepo.DRSLogFile
 	}
 
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

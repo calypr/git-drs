@@ -9,6 +9,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
@@ -67,6 +68,12 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
+	worktreeRoot, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("smudge: resolve worktree root: %w", err)
+	}
+	drsCtx.LFSObjectsRoot = objectsRoot
+	drsCtx.RepositoryRoot = worktreeRoot
 
 	var downloadFn internalfilter.SmudgeDownloadFunc
 	if !internalfilter.ShouldSkipSmudge() {

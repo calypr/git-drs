@@ -204,6 +204,15 @@ func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeA
 		if bucket != "" && !strings.EqualFold(strings.TrimSpace(visibleBucket), bucket) {
 			return scopeAccessInfo{}, fmt.Errorf("server exposes bucket %q for configured scope, but repo is configured for bucket %q", visibleBucket, bucket)
 		}
+	} else if bucket != "" {
+		payload, err := gc.Client.Buckets().List(ctx)
+		if err != nil {
+			return scopeAccessInfo{}, fmt.Errorf("bucket visibility lookup failed: %w", err)
+		}
+		if _, ok := payload.S3BUCKETS[bucket]; !ok {
+			return scopeAccessInfo{}, fmt.Errorf("configured bucket %q is not visible", bucket)
+		}
+		info.VisibleBucket = bucket
 	}
 
 	if project != "" {

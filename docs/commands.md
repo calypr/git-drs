@@ -71,7 +71,7 @@ git drs remote add research https://gen3.example.org \
 For a preset, its alias becomes the default local name; for a URL, the name is
 derived from the host. Use the two-argument form to choose a name explicitly.
 `--credential` accepts `env:VARIABLE`, `file:PATH`, `helper:NAME`,
-`profile:NAME`, or `stdin`; it never accepts an inline secret. Other options
+or `profile:NAME`; it never accepts an inline secret. Other options
 are `--scope`, `--auth`, `--provider`, `--storage`, and `--checkout`. Checkout
 mode is `pointers` or `hydrate`.
 

@@ -8,14 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
 func TrackPatterns(_ context.Context, patterns []string, verbose bool, dryRun bool) (string, error) {
-	return trackPatternsAtPath(patterns, verbose, dryRun, ".gitattributes")
+	return trackPatternsAtPath(patterns, verbose, dryRun, ".gitattributes", false)
 }
 
-func trackPatternsAtPath(patterns []string, verbose bool, dryRun bool, attributesPath string) (string, error) {
+func trackPatternsAtPath(patterns []string, verbose bool, dryRun bool, attributesPath string, literal bool) (string, error) {
 	changedAttribLines := make(map[string]string, len(patterns))
 	var output strings.Builder
 
@@ -29,15 +30,20 @@ func trackPatternsAtPath(patterns []string, verbose bool, dryRun bool, attribute
 	for _, unsanitizedPattern := range patterns {
 		pattern := trimCurrentPrefix(cleanRootPath(unsanitizedPattern))
 		encodedArg := escapeAttrPattern(pattern)
+		if literal {
+			encodedArg = escapeLiteralAttrPattern(pattern)
+		}
+		lookupKey := attributePatternKey(encodedArg)
 
-		if knownLine, ok := knownPatterns[pattern]; ok {
-			if strings.Contains(knownLine, "filter=drs") && strings.Contains(knownLine, "diff=drs") && strings.Contains(knownLine, "merge=drs") && strings.Contains(knownLine, "-text") {
+		if knownLine, ok := knownPatterns[lookupKey]; ok {
+			knownPattern, _ := splitAttributeLine(knownLine)
+			if knownPattern == encodedArg && strings.Contains(knownLine, "filter=drs") && strings.Contains(knownLine, "diff=drs") && strings.Contains(knownLine, "merge=drs") && strings.Contains(knownLine, "-text") {
 				output.WriteString(fmt.Sprintf("%q already supported\n", pattern))
 				continue
 			}
 		}
 
-		changedAttribLines[pattern] = fmt.Sprintf("%s filter=drs diff=drs merge=drs -text", encodedArg)
+		changedAttribLines[lookupKey] = fmt.Sprintf("%s filter=drs diff=drs merge=drs -text", encodedArg)
 		output.WriteString(fmt.Sprintf("Tracking %q\n", unescapeAttrPattern(encodedArg)))
 
 		if verbose {
@@ -68,11 +74,11 @@ func ListTrackedPatterns(_ context.Context, _ bool) (string, error) {
 		if !strings.Contains(line, "filter=drs") {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		pattern, _ := splitAttributeLine(line)
+		if pattern == "" {
 			continue
 		}
-		patterns = append(patterns, unescapeAttrPattern(fields[0]))
+		patterns = append(patterns, attributePatternKey(pattern))
 	}
 	if err := scanner.Err(); err != nil {
 		return "", fmt.Errorf("git drs track failed: parse .gitattributes: %w", err)
@@ -99,10 +105,11 @@ func UntrackPatterns(_ context.Context, patterns []string, _ bool, dryRun bool) 
 		return "", nil
 	}
 
-	removeSet := make(map[string]struct{}, len(patterns))
+	removeSet := make(map[string]string, len(patterns))
 	for _, p := range patterns {
-		escaped := escapeAttrPattern(trimCurrentPrefix(p))
-		removeSet[escaped] = struct{}{}
+		path := trimCurrentPrefix(cleanRootPath(p))
+		removeSet[escapeAttrPattern(path)] = path
+		removeSet[escapeLiteralAttrPattern(path)] = path
 	}
 
 	var out strings.Builder
@@ -115,15 +122,15 @@ func UntrackPatterns(_ context.Context, patterns []string, _ bool, dryRun bool) 
 			continue
 		}
 
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		pattern, _ := splitAttributeLine(line)
+		if pattern == "" {
 			keptLines = append(keptLines, line)
 			continue
 		}
 
-		path := trimCurrentPrefix(fields[0])
-		if _, ok := removeSet[path]; ok {
-			out.WriteString(fmt.Sprintf("Untracking %q\n", unescapeAttrPattern(path)))
+		path := trimCurrentPrefix(pattern)
+		if original, ok := removeSet[path]; ok {
+			out.WriteString(fmt.Sprintf("Untracking %q\n", original))
 			continue
 		}
 
@@ -147,17 +154,29 @@ func UntrackPatterns(_ context.Context, patterns []string, _ bool, dryRun bool) 
 }
 
 func TrackReadOnly(ctx context.Context, path string) (bool, error) {
+	return trackReadOnly(ctx, path, true)
+}
+
+func TrackReadOnlyPattern(ctx context.Context, pattern string) (bool, error) {
+	return trackReadOnly(ctx, pattern, false)
+}
+
+func trackReadOnly(ctx context.Context, path string, literal bool) (bool, error) {
 	repoRoot, err := GitTopLevel()
 	if err != nil {
 		return false, err
 	}
 
 	attrPath := filepath.Join(repoRoot, ".gitattributes")
-	if _, err := trackPatternsAtPath([]string{path}, false, false, attrPath); err != nil {
+	if _, err := trackPatternsAtPath([]string{path}, false, false, attrPath, literal); err != nil {
 		return false, fmt.Errorf("git lfs track failed: %w", err)
 	}
 
-	changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{path})
+	encoded := escapeAttrPattern(path)
+	if literal {
+		encoded = escapeLiteralAttrPattern(path)
+	}
+	changed, err := UpsertDRSRouteLines(attrPath, "ro", []string{encoded})
 	if err != nil {
 		return false, err
 	}
@@ -188,11 +207,11 @@ func parseKnownLFSPatterns(content []byte) map[string]string {
 		if !strings.Contains(line, "filter=drs") {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		pattern, _ := splitAttributeLine(line)
+		if pattern == "" {
 			continue
 		}
-		known[unescapeAttrPattern(fields[0])] = line
+		known[attributePatternKey(pattern)] = line
 	}
 	return known
 }
@@ -207,9 +226,9 @@ func writeMergedGitAttributes(attributesPath string, existing []byte, changed ma
 		scanner := bufio.NewScanner(bytes.NewReader(existing))
 		for scanner.Scan() {
 			line := scanner.Text()
-			fields := strings.Fields(line)
-			if len(fields) >= 1 {
-				pat := unescapeAttrPattern(fields[0])
+			pattern, _ := splitAttributeLine(line)
+			if pattern != "" {
+				pat := attributePatternKey(pattern)
 				if newline, ok := changed[pat]; ok {
 					merged = append(merged, newline)
 					delete(changed, pat)
@@ -263,6 +282,56 @@ func escapeAttrPattern(s string) string {
 	}
 
 	return escaped
+}
+
+func escapeLiteralAttrPattern(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case '*', '?', '[', ']', '\\', '#', '!':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	encoded := b.String()
+	if strings.ContainsAny(s, " \t\r\n") {
+		return strconv.Quote(encoded)
+	}
+	return encoded
+}
+
+func attributePatternKey(pattern string) string {
+	if strings.HasPrefix(pattern, "\"") {
+		if decoded, err := strconv.Unquote(pattern); err == nil {
+			pattern = decoded
+		}
+	}
+	return unescapeAttrPattern(pattern)
+}
+
+func splitAttributeLine(line string) (string, []string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", nil
+	}
+	if line[0] != '"' {
+		fields := strings.Fields(line)
+		return fields[0], fields[1:]
+	}
+	escaped := false
+	for i := 1; i < len(line); i++ {
+		switch {
+		case escaped:
+			escaped = false
+		case line[i] == '\\':
+			escaped = true
+		case line[i] == '"':
+			return line[:i+1], strings.Fields(line[i+1:])
+		}
+	}
+	return "", nil
 }
 
 func unescapeAttrPattern(escaped string) string {

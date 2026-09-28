@@ -389,7 +389,7 @@ func TestLoadLocalSourceRecords_MissingLocalObjectFailsClearly(t *testing.T) {
 		}, nil
 	}
 	readLocalDRSObject = func(oid string) (*drsapi.DrsObject, error) {
-		return nil, errors.New("not found")
+		return nil, os.ErrNotExist
 	}
 
 	_, err := loadLocalSourceRecords("Org", "Proj")
@@ -418,7 +418,7 @@ func TestLoadLocalSourceRecords_ReconstructsMissingMetadataFromPayload(t *testin
 	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{path: {Name: path, Oid: "sha256:" + oid, Size: int64(len(payload))}}, nil
 	}
-	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) { return nil, errors.New("not found") }
+	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) { return nil, os.ErrNotExist }
 
 	records, err := loadLocalSourceRecords("Org", "Proj")
 	if err != nil {
@@ -426,6 +426,29 @@ func TestLoadLocalSourceRecords_ReconstructsMissingMetadataFromPayload(t *testin
 	}
 	if len(records) != 1 || records[0].Did == "" || records[0].Hashes == nil || (*records[0].Hashes)["sha256"] != oid || records[0].Name == nil || *records[0].Name != "data.bin" {
 		t.Fatalf("unexpected reconstructed record: %+v", records)
+	}
+}
+
+func TestLoadLocalSourceRecordsSurfacesMalformedMetadata(t *testing.T) {
+	oldTracked := loadTrackedLfsFiles
+	oldRead := readLocalDRSObject
+	t.Cleanup(func() {
+		loadTrackedLfsFiles = oldTracked
+		readLocalDRSObject = oldRead
+	})
+
+	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{
+			"data.bin": {Name: "data.bin", Oid: "sha256:" + strings.Repeat("a", 64), Size: 4},
+		}, nil
+	}
+	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) {
+		return nil, errors.New("malformed local DRS metadata")
+	}
+
+	_, err := loadLocalSourceRecords("Org", "Proj")
+	if err == nil || !strings.Contains(err.Error(), "malformed local DRS metadata") {
+		t.Fatalf("expected metadata error, got %v", err)
 	}
 }
 
@@ -591,6 +614,17 @@ func TestCmdRunE_MissingSourceRemoteListsConfiguredRemotes(t *testing.T) {
 		!strings.Contains(got, "Available remotes: origin, prod") ||
 		!strings.Contains(got, "git drs remote list") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLocalIndexAPIBulkHashesSurfacesReadErrors(t *testing.T) {
+	oldRead := readLocalDRSObject
+	t.Cleanup(func() { readLocalDRSObject = oldRead })
+	readLocalDRSObject = func(string) (*drsapi.DrsObject, error) {
+		return nil, errors.New("malformed local DRS metadata")
+	}
+	if _, err := (localIndexAPI{}).BulkHashes(context.Background(), []string{"sha256:" + strings.Repeat("a", 64)}); err == nil || !strings.Contains(err.Error(), "malformed local DRS metadata") {
+		t.Fatalf("expected metadata error, got %v", err)
 	}
 }
 

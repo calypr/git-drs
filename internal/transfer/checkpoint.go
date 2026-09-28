@@ -3,7 +3,9 @@ package transfer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -45,4 +47,36 @@ func resumableOffset(path string, expectedSize int64) int64 {
 		return 0
 	}
 	return info.Size()
+}
+
+func migratePullCheckpoint(path, identity string, expectedSize int64) error {
+	checkpointPath := path + ".syfon-download.json"
+	data, err := os.ReadFile(checkpointPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read download checkpoint: %w", err)
+	}
+	var checkpoint downloadCheckpoint
+	if json.Unmarshal(data, &checkpoint) != nil || checkpoint.Complete || checkpoint.Size != expectedSize || checkpoint.Identity != identity {
+		return nil
+	}
+	checkpoint.Identity = "git-drs:" + identity
+	temporary, err := os.CreateTemp(filepath.Dir(checkpointPath), ".git-drs-checkpoint-*")
+	if err != nil {
+		return fmt.Errorf("create download checkpoint: %w", err)
+	}
+	defer os.Remove(temporary.Name())
+	if err := json.NewEncoder(temporary).Encode(checkpoint); err != nil {
+		_ = temporary.Close()
+		return fmt.Errorf("write download checkpoint: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return fmt.Errorf("close download checkpoint: %w", err)
+	}
+	if err := os.Rename(temporary.Name(), checkpointPath); err != nil {
+		return fmt.Errorf("replace download checkpoint: %w", err)
+	}
+	return nil
 }

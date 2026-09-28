@@ -208,6 +208,14 @@ func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime
 		expectedSize: obj.Size,
 		identity:     resolvedDownloadIdentity(oid, obj),
 	}
+	if isResumableDownload(ctx) {
+		if err := migratePullCheckpoint(dstPath, src.identity, obj.Size); err != nil {
+			return err
+		}
+		// Pull checks the SHA-256 itself so it can report bytes read while verifying.
+		// Keep Syfon's resume identity stable without triggering its hidden hash pass.
+		src.identity = "git-drs:" + src.identity
+	}
 	if src.accessID != "" && strings.TrimSpace(obj.Id) != "" {
 		src.drsClient = drsCtx.Client.DRS()
 		src.objectID = strings.TrimSpace(obj.Id)

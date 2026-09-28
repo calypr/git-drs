@@ -86,6 +86,10 @@ func TestResumableDownloadPreservesPartialAndUsesRangeOnRetry(t *testing.T) {
 	if err := DownloadResolvedToPathWithAccess(ctx, &remoteruntime.GitContext{Client: client}, oid, path, object, access, opts); err != nil {
 		t.Fatalf("resumed download: %v", err)
 	}
+	checkpointData, err := os.ReadFile(path + ".syfon-download.json")
+	if err != nil || !strings.Contains(string(checkpointData), `"identity":"git-drs:sha256:`+oid+`"`) {
+		t.Fatalf("pull checkpoint was not migrated to progress-aware verification: %s, %v", checkpointData, err)
+	}
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != payload || fullRequests != 1 || rangeRequests != 1 {
 		t.Fatalf("resume result: bytes=%d full=%d range=%d err=%v", len(got), fullRequests, rangeRequests, err)

@@ -266,7 +266,7 @@ var Cmd = &cobra.Command{
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
-						if err := verifyPointerAtPath(dstPath, f); err != nil {
+						if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
 							_ = os.Remove(dstPath)
 							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 						}
@@ -290,7 +290,7 @@ var Cmd = &cobra.Command{
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
-				if err := verifyPointerAtPath(dstPath, f); err != nil {
+				if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
 					_ = os.Remove(dstPath)
 					return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 				}
@@ -407,21 +407,36 @@ func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, err
 }
 
 func verifyPointerAtPath(path string, file pointerFile) error {
+	return verifyPointerAtPathWithProgress(path, file, nil)
+}
+
+func verifyPointerAtPathWithProgress(path string, file pointerFile, onProgress func(int64)) error {
 	expectedOID := file.Oid
 	if file.Placeholder {
 		expectedOID = ""
 	}
-	if err := verifyObjectAtPath(path, expectedOID, file.Size); err != nil {
-		return err
-	}
-	if file.SHA256 == "" || (!file.Placeholder && strings.EqualFold(hash.NormalizeChecksum(expectedOID), file.SHA256)) {
-		return nil
-	}
-	actual, err := calculateFileSHA256(path)
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(actual, file.SHA256) {
+	if info.IsDir() || (file.Size >= 0 && info.Size() != file.Size) {
+		return fmt.Errorf("object at %s does not match expected oid/size", path)
+	}
+	checkOID := strings.TrimSpace(expectedOID) != "" && !lfs.IsDRSURI(expectedOID)
+	if !checkOID && file.SHA256 == "" {
+		return nil
+	}
+	if onProgress != nil {
+		onProgress(0)
+	}
+	actual, err := calculateFileSHA256WithProgress(path, onProgress)
+	if err != nil {
+		return err
+	}
+	if checkOID && !strings.EqualFold(actual, strings.TrimPrefix(expectedOID, "sha256:")) {
+		return fmt.Errorf("object at %s does not match expected oid/size", path)
+	}
+	if file.SHA256 != "" && !strings.EqualFold(actual, file.SHA256) {
 		return fmt.Errorf("sha256 mismatch: expected %s, got %s", file.SHA256, actual)
 	}
 	return nil
@@ -524,6 +539,10 @@ func verifyObjectAtPath(path, expectedOID string, expectedSize int64) error {
 }
 
 func calculateFileSHA256(path string) (string, error) {
+	return calculateFileSHA256WithProgress(path, nil)
+}
+
+func calculateFileSHA256WithProgress(path string, onProgress func(int64)) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -531,8 +550,33 @@ func calculateFileSHA256(path string) (string, error) {
 	defer file.Close()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return "", err
+	if onProgress == nil {
+		if _, err := io.Copy(hasher, file); err != nil {
+			return "", err
+		}
+	} else {
+		buf := make([]byte, 4<<20)
+		var read, reported int64
+		for {
+			n, readErr := file.Read(buf)
+			if n > 0 {
+				if _, err := hasher.Write(buf[:n]); err != nil {
+					return "", err
+				}
+				read += int64(n)
+				if read-reported >= 64<<20 {
+					onProgress(read)
+					reported = read
+				}
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				return "", readErr
+			}
+		}
+		onProgress(read)
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }

@@ -68,8 +68,13 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 
 	out.Reset()
 	r.OnDownloadProgress(file.Name, file.Size, file.Size)
-	if got := out.String(); !strings.Contains(got, "Verifying download") || strings.Contains(got, " [") {
-		t.Fatalf("full download must show verification in progress, got %q", got)
+	if got := out.String(); !strings.Contains(got, "0 B/100 B verifying download") || !strings.Contains(got, " [") {
+		t.Fatalf("full download must start a separate verification bar, got %q", got)
+	}
+	out.Reset()
+	r.OnVerificationProgress(file.Name, 50)
+	if got := out.String(); !strings.Contains(got, "50.0% 50 B/100 B verifying download") {
+		t.Fatalf("verification bar must report bytes read, got %q", got)
 	}
 
 	out.Reset()

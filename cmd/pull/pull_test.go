@@ -107,6 +107,27 @@ func TestPlaceholderPointerValidationUsesSize(t *testing.T) {
 	}
 }
 
+func TestVerifyPointerReportsHashedBytes(t *testing.T) {
+	content := []byte("downloaded payload")
+	sum := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(sum[:]), SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var progress []int64
+	if err := verifyPointerAtPathWithProgress(path, file, func(n int64) { progress = append(progress, n) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) < 2 || progress[0] != 0 || progress[len(progress)-1] != int64(len(content)) {
+		t.Fatalf("hash progress = %v, want start at zero and finish at %d", progress, len(content))
+	}
+	file.SHA256 = strings.Repeat("0", 64)
+	if err := verifyPointerAtPathWithProgress(path, file, nil); err == nil {
+		t.Fatal("distinct pointer checksum was not checked")
+	}
+}
+
 func TestCachedObjectChangedDetectsReplacement(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "object")
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {

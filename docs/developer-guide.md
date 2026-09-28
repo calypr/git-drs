@@ -188,7 +188,7 @@ When debugging behavior, validate the actual workflow split:
 
 ```bash
 git drs remote list
-git drs ls-files
+git drs ls-files --pointers
 git drs ls-files --drs
 git drs pull --dry-run
 ```

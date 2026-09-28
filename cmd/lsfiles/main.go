@@ -11,6 +11,9 @@ var gitRemote string
 var drsRemote string
 var includePatterns []string
 var showLong bool
+var longListing bool
+var humanReadable bool
+var pointers bool
 var nameOnly bool
 var jsonOutput bool
 var drsStatus bool
@@ -26,29 +29,57 @@ func validateOutputFlags() error {
 }
 
 var Cmd = &cobra.Command{
-	Use:   "ls-files [pathspec...]",
-	Short: "List tracked DRS/LFS pointer files in the repository",
-	Long:  "List tracked DRS/Git-LFS pointer files in the repository. By default this behaves like a local file inventory. Use --drs to also resolve DRS registration status.",
+	Use:   "ls-files [path...]",
+	Short: "List files in the current directory or inspect DRS pointers",
+	Long:  "List visible files and directories in the current directory. Use --pointers to inspect tracked DRS/Git-LFS pointer files, or --drs to include DRS registration details.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := validateOutputFlags(); err != nil {
-			return err
+		if pointerInventoryRequested() {
+			if err := validateModeFlags(); err != nil {
+				return err
+			}
+			if err := validateOutputFlags(); err != nil {
+				return err
+			}
+			patterns := append([]string{}, includePatterns...)
+			patterns = append(patterns, args...)
+			rows, err := collectRows(context.Background(), gitRemote, drsRemote, patterns, drsStatus)
+			if err != nil {
+				return err
+			}
+			return printRows(cmd, rows)
 		}
-		patterns := append([]string{}, includePatterns...)
-		patterns = append(patterns, args...)
-		rows, err := collectRows(context.Background(), gitRemote, drsRemote, patterns, drsStatus)
+
+		listings, err := collectBrowseListings(args)
 		if err != nil {
 			return err
 		}
-		return printRows(cmd, rows)
+		return printBrowseListings(cmd, listings, longListing, humanReadable)
 	},
 }
 
+func pointerInventoryRequested() bool {
+	return pointers || drsStatus || showLong || nameOnly || jsonOutput ||
+		len(includePatterns) > 0 || gitRemote != "" || drsRemote != ""
+}
+
+func validateModeFlags() error {
+	if pointerInventoryRequested() && (longListing || humanReadable) {
+		return fmt.Errorf("directory listing flags -l and -h cannot be used with pointer inventory flags")
+	}
+	return nil
+}
+
 func init() {
+	// Keep --help while reserving -h for human-readable sizes, as in ls.
+	Cmd.Flags().BoolP("help", "", false, "help for ls-files")
 	Cmd.Flags().StringVarP(&gitRemote, "git-remote", "r", "", "target remote Git server (default: origin)")
 	Cmd.Flags().StringVarP(&drsRemote, "drs-remote", "d", "", "target remote DRS server (default: origin)")
 	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
-	Cmd.Flags().BoolVarP(&showLong, "long", "l", false, "show full object IDs")
+	Cmd.Flags().BoolVar(&showLong, "long", false, "show full object IDs in pointer mode")
+	Cmd.Flags().BoolVarP(&longListing, "long-listing", "l", false, "show file details and sizes")
+	Cmd.Flags().BoolVarP(&humanReadable, "human-readable", "h", false, "show sizes in human-readable units with --long-listing")
 	Cmd.Flags().BoolVarP(&nameOnly, "name-only", "n", false, "show only file paths")
 	Cmd.Flags().BoolVar(&jsonOutput, "json", false, "emit JSON output")
+	Cmd.Flags().BoolVar(&pointers, "pointers", false, "list tracked DRS/Git-LFS pointer files")
 	Cmd.Flags().BoolVar(&drsStatus, "drs", false, "include DRS registration lookup details")
 }

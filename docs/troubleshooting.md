@@ -102,8 +102,8 @@ Before debugging behavior, keep the command split straight:
   - updates commits, branches, and checkout state
 - `git drs pull`
   - hydrates tracked pointer files already present in the current checkout
-- `git drs ls-files`
-  - shows tracked files and localization state
+- `git drs ls-files --pointers`
+  - shows tracked pointers and localization state
 
 If you blur those together, the failure modes get confusing.
 
@@ -128,7 +128,7 @@ Check these in order:
 3. confirm the file shows up in the tracked inventory
 
    ```bash
-   git drs ls-files
+   git drs ls-files --pointers
    ```
 
 4. inspect `.git/drs/` logs if the hook path failed
@@ -248,7 +248,7 @@ git pull
 git drs pull
 ```
 
-### `git drs ls-files` does not show my file
+### `git drs ls-files --pointers` does not show my file
 
 This is not expected for a pointer created by a current `git drs add-ref`:
 `add-ref` automatically adds its destination to `.gitattributes`. For pointers
@@ -278,7 +278,7 @@ git ls-files -- path/to/file
 4. inspect the local view:
 
 ```bash
-git drs ls-files -l
+git drs ls-files --long
 ```
 
 ### `git add ... git drs add-ref --remote ...` reports `unknown option 'remote'`
@@ -327,7 +327,7 @@ That usually means one of these:
 Check:
 
 ```bash
-git drs ls-files
+git drs ls-files --pointers
 git drs ls-files -I "*.bam"
 git drs pull --dry-run -I "*.bam"
 ```
@@ -503,7 +503,7 @@ When behavior is unclear, use this sequence:
 ```bash
 git drs remote list
 git drs track
-git drs ls-files -l
+git drs ls-files --long
 git drs ls-files --drs
 git drs pull --dry-run
 ```
@@ -522,7 +522,7 @@ Useful checks:
 ```bash
 git drs remote list
 git drs track
-git drs ls-files -l
+git drs ls-files --long
 git drs ls-files --drs
 ls -la .git/drs/
 ```

@@ -313,7 +313,7 @@ for dir in */ ; do
       exit 1
     fi
 
-    original_oid=$(git drs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    original_oid=$(git drs ls-files --long | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$original_oid" ]; then
       echo "error: unable to find LFS OID for $target_file" >&2
       exit 1
@@ -324,7 +324,7 @@ for dir in */ ; do
     git add "$target_file"
     git commit -m "Update content for $target_file"
 
-    updated_oid=$(git drs ls-files -l | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
+    updated_oid=$(git drs ls-files --long | awk -v path="$target_file" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$updated_oid" ]; then
       echo "error: unable to find updated LFS OID for $target_file" >&2
       exit 1
@@ -342,7 +342,7 @@ for dir in */ ; do
     git mv "$target_file" "$renamed_path"
     git commit -m "Rename $target_file to $renamed_path"
 
-    renamed_oid=$(git drs ls-files -l | awk -v path="$renamed_path" '$0 ~ (" " path "$") {print $1; exit}')
+    renamed_oid=$(git drs ls-files --long | awk -v path="$renamed_path" '$0 ~ (" " path "$") {print $1; exit}')
     if [ -z "$renamed_oid" ]; then
       echo "error: unable to find LFS OID for renamed path $renamed_path" >&2
       exit 1
@@ -351,7 +351,7 @@ for dir in */ ; do
       echo "error: expected same OID after rename for $renamed_path" >&2
       exit 1
     fi
-    if git drs ls-files -l | grep -Fq " $target_file"; then
+    if git drs ls-files --long | grep -Fq " $target_file"; then
       echo "error: expected old path $target_file to be absent after rename" >&2
       exit 1
     fi

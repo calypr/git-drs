@@ -245,13 +245,19 @@ Stop tracking a pattern.
 git drs untrack "*.bam"
 ```
 
-### `git drs ls-files [pathspec...]`
+### `git drs ls-files [path...]`
 
-List tracked files in the current checkout.
+List visible entries from the current directory or from the requested paths.
+Directory paths list their immediate contents. File paths list the file itself.
+The default listing includes untracked files and directories and omits hidden
+entries.
 
 ```bash
 git drs ls-files
-git drs ls-files -l
+git drs ls-files results/
+git drs ls-files -lh results/
+git drs ls-files --pointers
+git drs ls-files --long
 git drs ls-files --drs
 git drs ls-files -I "*.bam"
 git drs ls-files -n results/**
@@ -259,18 +265,31 @@ git drs ls-files -n results/**
 
 Important behavior:
 
-- default mode is local-first and cheap
+- default mode lists the current directory and does not query Git or DRS
+- path operands can name files or directories
+- `-l` adds permissions, size, modification time, and path
+- `-h` formats sizes in readable units when used with `-l`
+- hidden entries are omitted from directory listings
+- `--pointers` selects the tracked DRS/Git-LFS pointer inventory
 - `*` means localized/hydrated in the worktree
 - `-` means the worktree still contains a pointer
-- `--drs` adds DRS registration checks
+- `--drs` selects pointer inventory and adds DRS registration checks
+- pointer inventory flags such as `--long`, `--json`, `-I`, `-n`, and remote
+  options also select pointer mode
 
 Common flags:
 
 - `-I, --include <pattern>`: include filter; may be repeated
-- `-l, --long`: long output
+- `-l, --long-listing`: show file details in directory mode
+- `-h, --human-readable`: format sizes in readable units with `-l`
+- `--pointers`: list tracked DRS/Git-LFS pointers
+- `--long`: show full object IDs in pointer mode
 - `-n, --name-only`: path-only output
 - `--json`: structured output
 - `--drs`: include DRS lookup details
+- `-r, --git-remote`: select the Git remote for pointer inventory
+- `-d, --drs-remote`: select the DRS remote for lookup
+- `--help`: show command help
 
 ## Hydration and Push
 

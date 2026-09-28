@@ -185,6 +185,10 @@ func (s *batchSyncSession) lookupMetadata() error {
 		if !s.presentInScope[oid] {
 			continue
 		}
+		if s.rt.Tuning.ForceUpload {
+			urlOIDs = append(urlOIDs, oid)
+			continue
+		}
 		localObj, err := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid)
 		if err == nil && localObj != nil && firstAccessURL(localObj) != "" {
 			urlOIDs = append(urlOIDs, oid)
@@ -266,12 +270,18 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 
 		recs := s.existingByHash[oid]
 		if s.presentInScope[oid] {
-			if match, err := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project); err == nil && match != nil {
+			match, matchErr := lookup.FindMatchingRecord(recs, s.rt.Scope.Organization, s.rt.Scope.Project)
+			if s.rt.Tuning.ForceUpload && (matchErr != nil || match == nil) {
+				return fmt.Errorf("force upload requires the existing scoped record for oid %s", oid)
+			}
+			if matchErr == nil && match != nil {
+				s.drsObjByOID[oid] = match
 				localURL := firstAccessURL(obj)
 				if localObj, readErr := localdrsobject.ReadObject(s.rt.DRSObjectsRoot, oid); readErr == nil {
 					localURL = firstAccessURL(localObj)
 				}
 				if localURL != "" && localURL != firstAccessURL(match) {
+					obj.Id = match.Id
 					s.drsObjByOID[oid] = obj
 					registerMetadata(oid, obj)
 				}

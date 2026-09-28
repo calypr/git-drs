@@ -160,6 +160,9 @@ func includedLocalSHA256(include []string) (map[string]struct{}, error) {
 		}
 		matchedPaths++
 		oid := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(info.Oid, "sha256:")))
+		if lfs.IsDRSURI(oid) {
+			oid = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(info.SHA256, "sha256:")))
+		}
 		if oid != "" {
 			hashes[oid] = struct{}{}
 		}
@@ -168,7 +171,7 @@ func includedLocalSHA256(include []string) (map[string]struct{}, error) {
 		return nil, fmt.Errorf("--include-path matched no tracked files in the current repository")
 	}
 	if len(hashes) == 0 {
-		return nil, fmt.Errorf("files matched by --include-path have no SHA-256 OIDs")
+		return nil, fmt.Errorf("files matched by --include-path have no SHA-256 checksums")
 	}
 	return hashes, nil
 }

@@ -238,3 +238,86 @@ func TestPushLookupFindsReusableRecordOutsideTargetScope(t *testing.T) {
 		t.Fatalf("missing OID has no reusable source record: %+v", reusable)
 	}
 }
+
+func TestForceUploadKeepsExistingScopedDID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	oid := strings.Repeat("a", 64)
+	controlled := []string{"/organization/org/project/target"}
+	hashes := internalapi.HashInfo{"sha256": oid}
+	lookupCalls := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/index/bulk/sha256/missing":
+			_, _ = w.Write([]byte(`{"checked":1,"missing_sha256":[]}`))
+		case "/index/bulk/hashes":
+			lookupCalls++
+			if err := json.NewEncoder(w).Encode(struct {
+				Results map[string][]internalapi.InternalRecord `json:"results"`
+			}{Results: map[string][]internalapi.InternalRecord{
+				oid: {{Did: "imported-scoped-did", ControlledAccess: &controlled, Hashes: &hashes}},
+			}}); err != nil {
+				t.Errorf("encode scoped response: %v", err)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	})
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, r)
+		return response.Result(), nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &batchSyncSession{
+		ctx: t.Context(),
+		rt: &pushRuntime{
+			API:            &remoteruntime.GitContext{Client: client, Organization: "org", ProjectId: "target"},
+			Scope:          pushScope{Organization: "org", Project: "target"},
+			Tuning:         pushTuning{ForceUpload: true},
+			DRSObjectsRoot: t.TempDir(),
+		},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/file.bin", Size: 10}},
+		oids:           []string{oid},
+		drsObjByOID:    make(map[string]*drsapi.DrsObject),
+		uploadRequired: make(map[string]bool),
+	}
+	if err := session.lookupMetadata(); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.ensureMetadataRegistered(); err != nil {
+		t.Fatal(err)
+	}
+	if lookupCalls != 1 {
+		t.Fatalf("scoped metadata lookups = %d, want 1", lookupCalls)
+	}
+	if obj := session.drsObjByOID[oid]; obj == nil || obj.Id != "imported-scoped-did" || !session.uploadRequired[oid] {
+		t.Fatalf("force upload targeted %+v, required=%v", obj, session.uploadRequired[oid])
+	}
+}
+
+func TestForceUploadRejectsMissingScopedRecord(t *testing.T) {
+	t.Chdir(t.TempDir())
+	oid := strings.Repeat("a", 64)
+	session := &batchSyncSession{
+		ctx: t.Context(),
+		rt: &pushRuntime{
+			Scope:          pushScope{Organization: "org", Project: "target"},
+			Tuning:         pushTuning{ForceUpload: true},
+			DRSObjectsRoot: t.TempDir(),
+		},
+		filesByOID:     map[string]lfs.LfsFileInfo{oid: {Oid: oid, Name: "data/file.bin", Size: 10}},
+		oids:           []string{oid},
+		drsObjByOID:    make(map[string]*drsapi.DrsObject),
+		existingByHash: make(map[string][]drsapi.DrsObject),
+		presentInScope: map[string]bool{oid: true},
+		uploadRequired: make(map[string]bool),
+	}
+	if err := session.ensureMetadataRegistered(); err == nil || !strings.Contains(err.Error(), "existing scoped record") {
+		t.Fatalf("force upload error = %v, want missing scoped record error", err)
+	}
+}

@@ -74,6 +74,36 @@ func TestIncludedLocalSHA256UsesRepositoryPaths(t *testing.T) {
 	}
 }
 
+func TestIncludedLocalSHA256UsesDRSPointerChecksum(t *testing.T) {
+	oldLoad := loadTrackedLfsFiles
+	t.Cleanup(func() { loadTrackedLfsFiles = oldLoad })
+	checksum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{
+			"data/reference.bin": {Oid: "drs://example.org/object", SHA256: checksum},
+		}, nil
+	}
+	hashes, err := includedLocalSHA256([]string{"data/reference.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hashes) != 1 {
+		t.Fatalf("selected checksums = %#v, want one", hashes)
+	}
+	if _, ok := hashes[checksum]; !ok {
+		t.Fatalf("DRS pointer checksum missing from %#v", hashes)
+	}
+
+	loadTrackedLfsFiles = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{
+			"data/reference.bin": {Oid: "drs://example.org/object"},
+		}, nil
+	}
+	if _, err := includedLocalSHA256([]string{"data/reference.bin"}); err == nil {
+		t.Fatal("DRS pointer without a checksum should not select a URI as SHA-256")
+	}
+}
+
 func TestNormalizeIncludedPathsRejectsPathsOutsideRepository(t *testing.T) {
 	for _, path := range []string{"../META", "/META", "."} {
 		if _, err := normalizeIncludedPaths([]string{path}); err == nil {

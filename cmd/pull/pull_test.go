@@ -756,6 +756,7 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	}
 
 	worktreePath := filepath.Join(repo, "sample.bin")
+	unrelatedPath := filepath.Join(repo, "unrelated.bin")
 	payload := []byte("hello world payload")
 	oid := "drs://drs.anv0:v2_example-without-sha256"
 	pointer := "version https://calypr.github.io/spec/v1\n" +
@@ -764,8 +765,9 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	if err := os.WriteFile(worktreePath, []byte(pointer), 0o644); err != nil {
 		t.Fatalf("write DRS pointer: %v", err)
 	}
+	writePointerFile(t, unrelatedPath, strings.Repeat("a", 64), "37")
 
-	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin")
+	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin", "unrelated.bin")
 	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")
 
 	repoLFSRoot := filepath.Join(repo, ".git", "lfs", "objects")
@@ -806,6 +808,14 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	}
 	tmpDir := t.TempDir()
 	t.Setenv("TMPDIR", tmpDir)
+	// A selected-path git add can run clean filters for other tracked files
+	// whose stat data changed. Keep this unrelated indexed pointer as raw
+	// pointer text to verify it follows ordinary clean behavior.
+	if err := os.Chtimes(unrelatedPath, time.Now().Add(2*time.Second), time.Now().Add(2*time.Second)); err != nil {
+		t.Fatalf("touch unrelated pointer: %v", err)
+	}
+	t.Setenv(internalfilter.IndexRefreshEnv, "stale")
+	t.Setenv(internalfilter.IndexRefreshReceiptsEnv, filepath.Join(t.TempDir(), "stale-manifest.json"))
 	if err := refreshGitIndexForHydratedFiles(files, receipts); err != nil {
 		t.Fatalf("refreshGitIndexForHydratedFiles: %v", err)
 	}
@@ -826,6 +836,10 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	cached := runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("expected no staged semantic diff after refresh, got %q", cached)
+	}
+	unrelatedStatus := runGitOutputTest(t, repo, "status", "--short", "--", "unrelated.bin")
+	if strings.TrimSpace(unrelatedStatus) != "" {
+		t.Fatalf("unrelated indexed pointer became dirty after refresh: %q", unrelatedStatus)
 	}
 
 	changed := append([]byte(nil), payload...)

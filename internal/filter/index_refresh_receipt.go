@@ -3,14 +3,15 @@ package filter
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 const (
-	IndexRefreshReceiptsEnv    = "GIT_DRS_INDEX_REFRESH_RECEIPTS"
-	indexRefreshReceiptVersion = 1
+	IndexRefreshReceiptsEnv     = "GIT_DRS_INDEX_REFRESH_RECEIPTS"
+	indexRefreshManifestVersion = 2
 )
 
 // IndexRefreshReceipt records the hash computed while pull checked out a file.
@@ -28,6 +29,7 @@ type IndexRefreshReceipt struct {
 
 type indexRefreshReceiptManifest struct {
 	Version  int                   `json:"version"`
+	Paths    []string              `json:"paths"`
 	Receipts []IndexRefreshReceipt `json:"receipts"`
 }
 
@@ -74,25 +76,58 @@ func SameIndexRefreshFile(before, after os.FileInfo) bool {
 	return beforeOK && afterOK && beforeDevice == afterDevice && beforeInode == afterInode
 }
 
-func MarshalIndexRefreshReceipts(receipts []IndexRefreshReceipt) ([]byte, error) {
-	return json.Marshal(indexRefreshReceiptManifest{Version: indexRefreshReceiptVersion, Receipts: receipts})
+func MarshalIndexRefreshManifest(paths []string, receipts []IndexRefreshReceipt) ([]byte, error) {
+	manifest := indexRefreshReceiptManifest{
+		Version:  indexRefreshManifestVersion,
+		Paths:    make([]string, 0, len(paths)),
+		Receipts: receipts,
+	}
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		normalized, err := normalizeIndexRefreshPath(path)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		manifest.Paths = append(manifest.Paths, normalized)
+	}
+	return json.Marshal(manifest)
 }
 
-func readIndexRefreshReceipts() (map[string]IndexRefreshReceipt, error) {
+func normalizeIndexRefreshPath(path string) (string, error) {
+	path = filepath.ToSlash(filepath.Clean(path))
+	if path == "." || path == ".." || filepath.IsAbs(path) || strings.HasPrefix(path, "../") {
+		return "", fmt.Errorf("invalid index refresh path %q", path)
+	}
+	return path, nil
+}
+
+func readIndexRefreshManifest() (map[string]struct{}, map[string]IndexRefreshReceipt, error) {
 	manifestPath := os.Getenv(IndexRefreshReceiptsEnv)
 	if manifestPath == "" {
-		return nil, nil
+		return nil, nil, fmt.Errorf("index refresh manifest path is not set")
 	}
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var manifest indexRefreshReceiptManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if manifest.Version != indexRefreshReceiptVersion {
-		return nil, nil
+	if manifest.Version != indexRefreshManifestVersion || manifest.Paths == nil {
+		return nil, nil, fmt.Errorf("invalid index refresh manifest version or paths")
+	}
+	paths := make(map[string]struct{}, len(manifest.Paths))
+	for _, path := range manifest.Paths {
+		normalized, err := normalizeIndexRefreshPath(path)
+		if err != nil || normalized != path {
+			return nil, nil, fmt.Errorf("invalid index refresh manifest path %q", path)
+		}
+		paths[path] = struct{}{}
 	}
 	receipts := make(map[string]IndexRefreshReceipt, len(manifest.Receipts))
 	duplicates := make(map[string]struct{})
@@ -112,5 +147,5 @@ func readIndexRefreshReceipts() (map[string]IndexRefreshReceipt, error) {
 		}
 		receipts[path] = receipt
 	}
-	return receipts, nil
+	return paths, receipts, nil
 }

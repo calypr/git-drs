@@ -51,7 +51,17 @@ func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Read
 
 func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
 	if os.Getenv(IndexRefreshEnv) == "1" {
-		return cleanIndexedPointerForRefresh(ctx, lfsRoot, pathname, content, dst)
+		paths, receipts, err := readIndexRefreshManifest()
+		if err != nil {
+			return fmt.Errorf("clean: load index refresh manifest: %w", err)
+		}
+		refreshPath, err := normalizeIndexRefreshPath(pathname)
+		if err != nil {
+			return fmt.Errorf("clean: %w", err)
+		}
+		if _, selected := paths[refreshPath]; selected {
+			return cleanIndexedPointerForRefresh(ctx, lfsRoot, pathname, content, dst, receipts)
+		}
 	}
 	objDir := filepath.Join(lfsRoot, "objects")
 	if err := os.MkdirAll(objDir, 0o755); err != nil {
@@ -143,11 +153,11 @@ func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathnam
 	return nil
 }
 
-func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer) error {
-	return cleanIndexedPointerForRefreshWithHasher(ctx, lfsRoot, pathname, content, dst, hashIndexedRefreshContent)
+func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, receipts map[string]IndexRefreshReceipt) error {
+	return cleanIndexedPointerForRefreshWithHasher(ctx, lfsRoot, pathname, content, dst, receipts, hashIndexedRefreshContent)
 }
 
-func cleanIndexedPointerForRefreshWithHasher(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, hashContent func(io.Reader) (int64, string, error)) error {
+func cleanIndexedPointerForRefreshWithHasher(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, receipts map[string]IndexRefreshReceipt, hashContent func(io.Reader) (int64, string, error)) error {
 	pathname = filepath.ToSlash(filepath.Clean(pathname))
 	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
 		return fmt.Errorf("refresh index: invalid path %q", pathname)
@@ -160,7 +170,7 @@ func cleanIndexedPointerForRefreshWithHasher(ctx context.Context, lfsRoot, pathn
 	if !ok {
 		return fmt.Errorf("refresh index: %s is not an indexed DRS pointer", pathname)
 	}
-	if receipt, ok := matchingIndexRefreshReceipt(pathname, pointerOID, pointerSize, pointer); ok {
+	if receipt, ok := matchingIndexRefreshReceipt(receipts, pathname, pointerOID, pointerSize, pointer); ok {
 		before, err := os.Lstat(pathname)
 		if err == nil && receipt.Matches(pathname, before) {
 			size, copyErr := io.Copy(io.Discard, content)
@@ -207,11 +217,7 @@ func hashIndexedRefreshContent(content io.Reader) (int64, string, error) {
 	return size, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func matchingIndexRefreshReceipt(pathname, pointerOID string, pointerSize int64, pointer []byte) (IndexRefreshReceipt, bool) {
-	receipts, err := readIndexRefreshReceipts()
-	if err != nil {
-		return IndexRefreshReceipt{}, false
-	}
+func matchingIndexRefreshReceipt(receipts map[string]IndexRefreshReceipt, pathname, pointerOID string, pointerSize int64, pointer []byte) (IndexRefreshReceipt, bool) {
 	receipt, ok := receipts[pathname]
 	if !ok || receipt.OID != pointerOID || receipt.Size != pointerSize {
 		return IndexRefreshReceipt{}, false

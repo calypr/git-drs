@@ -886,29 +886,26 @@ func refreshGitIndexForHydratedFiles(files []pointerFile, receipts []internalfil
 		}
 	}
 	envOverrides := map[string]string{
-		internalfilter.IndexRefreshEnv:         "1",
-		internalfilter.IndexRefreshReceiptsEnv: "",
+		internalfilter.IndexRefreshEnv: "1",
 	}
-	if len(trustedReceipts) > 0 {
-		data, err := internalfilter.MarshalIndexRefreshReceipts(trustedReceipts)
-		if err != nil {
-			return fmt.Errorf("encode index refresh receipts: %w", err)
-		}
-		manifest, err := os.CreateTemp("", "git-drs-index-refresh-*.json")
-		if err != nil {
-			return fmt.Errorf("create index refresh receipt manifest: %w", err)
-		}
-		manifestPath := manifest.Name()
-		defer os.Remove(manifestPath)
-		if _, err := manifest.Write(data); err != nil {
-			_ = manifest.Close()
-			return fmt.Errorf("write index refresh receipt manifest: %w", err)
-		}
-		if err := manifest.Close(); err != nil {
-			return fmt.Errorf("close index refresh receipt manifest: %w", err)
-		}
-		envOverrides[internalfilter.IndexRefreshReceiptsEnv] = manifestPath
+	data, err := internalfilter.MarshalIndexRefreshManifest(paths, trustedReceipts)
+	if err != nil {
+		return fmt.Errorf("encode index refresh manifest: %w", err)
 	}
+	manifest, err := os.CreateTemp("", "git-drs-index-refresh-*.json")
+	if err != nil {
+		return fmt.Errorf("create index refresh manifest: %w", err)
+	}
+	manifestPath := manifest.Name()
+	defer os.Remove(manifestPath)
+	if _, err := manifest.Write(data); err != nil {
+		_ = manifest.Close()
+		return fmt.Errorf("write index refresh manifest: %w", err)
+	}
+	if err := manifest.Close(); err != nil {
+		return fmt.Errorf("close index refresh manifest: %w", err)
+	}
+	envOverrides[internalfilter.IndexRefreshReceiptsEnv] = manifestPath
 	cmd.Env = commandEnvWithOverrides(os.Environ(), envOverrides)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

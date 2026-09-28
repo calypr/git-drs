@@ -114,6 +114,8 @@ func TestIndexRefreshCleanPreservesPointerWithoutCacheCopy(t *testing.T) {
 		t.Fatalf("git add pointer: %v: %s", err, out)
 	}
 	t.Setenv(IndexRefreshEnv, "1")
+	manifest := writeIndexRefreshManifestTest(t, []string{"data.bin"}, nil)
+	t.Setenv(IndexRefreshReceiptsEnv, manifest)
 	lfsRoot := filepath.Join(repo, ".git", "lfs")
 	var out bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -167,7 +169,7 @@ func TestIndexRefreshReceiptSkipsHashAndFallsBackAfterSameSizeEdit(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := MarshalIndexRefreshReceipts([]IndexRefreshReceipt{receipt})
+	data, err := MarshalIndexRefreshManifest([]string{"data.bin"}, []IndexRefreshReceipt{receipt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +181,17 @@ func TestIndexRefreshReceiptSkipsHashAndFallsBackAfterSameSizeEdit(t *testing.T)
 	}
 	t.Setenv(IndexRefreshEnv, "1")
 	t.Setenv(IndexRefreshReceiptsEnv, manifest.Name())
+	_, receipts, err := readIndexRefreshManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var out bytes.Buffer
 	hashCalls := 0
 	noHash := func(io.Reader) (int64, string, error) {
 		hashCalls++
 		return 0, "", fmt.Errorf("unexpected content hash")
 	}
-	if err := cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(payload), &out, noHash); err != nil {
+	if err := cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(payload), &out, receipts, noHash); err != nil {
 		t.Fatalf("clean with valid receipt: %v", err)
 	}
 	if got := out.String(); got != pointer {
@@ -203,10 +209,53 @@ func TestIndexRefreshReceiptSkipsHashAndFallsBackAfterSameSizeEdit(t *testing.T)
 		t.Fatal(err)
 	}
 	out.Reset()
-	err = cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(changed), &out, hashIndexedRefreshContent)
+	err = cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(changed), &out, receipts, hashIndexedRefreshContent)
 	if err == nil || out.Len() != 0 {
 		t.Fatalf("same-size edit accepted: output=%q err=%v", out.String(), err)
 	}
+}
+
+func TestIndexRefreshFailsClosedWithoutScopedManifest(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	t.Setenv(IndexRefreshEnv, "1")
+
+	for _, test := range []struct {
+		name string
+		data string
+	}{
+		{name: "missing"},
+		{name: "corrupt", data: "{"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manifestPath := ""
+			if test.data != "" {
+				manifestPath = filepath.Join(t.TempDir(), "manifest.json")
+				if err := os.WriteFile(manifestPath, []byte(test.data), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv(IndexRefreshReceiptsEnv, manifestPath)
+			var out bytes.Buffer
+			err := CleanContentWithRoots(t.Context(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "data.bin", strings.NewReader("payload"), &out, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if err == nil || out.Len() != 0 {
+				t.Fatalf("clean without valid scoped manifest: output=%q err=%v", out.String(), err)
+			}
+		})
+	}
+}
+
+func writeIndexRefreshManifestTest(t *testing.T, paths []string, receipts []IndexRefreshReceipt) string {
+	t.Helper()
+	data, err := MarshalIndexRefreshManifest(paths, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {

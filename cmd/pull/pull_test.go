@@ -42,7 +42,7 @@ func TestReplaceCheckoutFilePreservesPreviousFileOnCopyFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial new payload")), checkoutFailingReader{}))
-	err := replaceCheckoutFile(context.Background(), dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444, nil)
+	_, _, err := replaceCheckoutFile(context.Background(), dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444, nil)
 	if err == nil || !strings.Contains(err.Error(), "injected copy failure") {
 		t.Fatalf("replaceCheckoutFile error = %v, want copy failure", err)
 	}
@@ -79,7 +79,7 @@ func TestReplaceCheckoutFileReportsCopyAndCleansCanceledStage(t *testing.T) {
 	sum := sha256.Sum256(payload)
 	pointer := pointerFile{Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
 	var progress []int64
-	if err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, func(n int64) { progress = append(progress, n) }); err != nil {
+	if _, _, err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, func(n int64) { progress = append(progress, n) }); err != nil {
 		t.Fatal(err)
 	}
 	if len(progress) == 0 || progress[len(progress)-1] != int64(len(payload)) {
@@ -87,7 +87,7 @@ func TestReplaceCheckoutFileReportsCopyAndCleansCanceledStage(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := replaceCheckoutFile(ctx, dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, nil); !errors.Is(err, context.Canceled) {
+	if _, _, err := replaceCheckoutFile(ctx, dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled checkout = %v, want context.Canceled", err)
 	}
 	entries, err := os.ReadDir(dir)
@@ -243,7 +243,7 @@ func TestReplaceCheckoutFileRejectsWrongHashBeforePromotion(t *testing.T) {
 	}
 	want := sha256.Sum256([]byte("expected"))
 	pointer := pointerFile{Oid: hex.EncodeToString(want[:]), Size: int64(len("bad data"))}
-	if err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644, nil); err == nil {
+	if _, _, err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644, nil); err == nil {
 		t.Fatal("incorrect checkout content was accepted")
 	}
 	got, err := os.ReadFile(dst)
@@ -531,7 +531,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath)
+	_, err = checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -570,7 +570,7 @@ func TestCheckoutDownloadedFilesReusesVerifiedWorktreeFile(t *testing.T) {
 	}
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	progress.OnPlan(toPullFiles([]pointerFile{file}))
-	if err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.Stat(dst)
@@ -580,7 +580,7 @@ func TestCheckoutDownloadedFilesReusesVerifiedWorktreeFile(t *testing.T) {
 	if err := os.WriteFile(dst, bytes.Repeat([]byte("x"), len(payload)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(dst)
@@ -622,7 +622,7 @@ func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
 		}
 		files := []pointerFile{{Name: name, Oid: oid, Size: int64(len(payload))}}
 		progress.OnPlan(toPullFiles(files))
-		if err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err == nil {
+		if _, err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err == nil {
 			t.Fatalf("checkoutDownloadedFiles accepted unsafe path %q", name)
 		}
 	}
@@ -670,7 +670,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -725,7 +725,7 @@ func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *test
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(context.Background(), files, progress, true, gitrepo.LFSObjectsPath); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), files, progress, true, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -794,25 +794,29 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 		_ = os.Chdir(oldWD)
 	})
 
-	src, err := os.Open(cachePath)
+	files := []pointerFile{{Name: "sample.bin", Oid: oid, Size: int64(len(payload))}}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles(files))
+	receipts, err := checkoutDownloadedFiles(context.Background(), files, progress, false, repoLFSRoot)
 	if err != nil {
-		t.Fatalf("open cache payload: %v", err)
+		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
-	defer src.Close()
-	dst, err := os.OpenFile(filepath.Join(repo, "sample.bin"), os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		t.Fatalf("open worktree file: %v", err)
+	if len(receipts) != len(files) {
+		t.Fatalf("checkout receipts = %d, want %d", len(receipts), len(files))
 	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		t.Fatalf("copy cache to worktree: %v", err)
-	}
-	if err := dst.Close(); err != nil {
-		t.Fatalf("close worktree file: %v", err)
-	}
-
-	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: "sample.bin", Oid: oid, Size: int64(len(payload))}}); err != nil {
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+	if err := refreshGitIndexForHydratedFiles(files, receipts); err != nil {
 		t.Fatalf("refreshGitIndexForHydratedFiles: %v", err)
+	}
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("read temporary receipt directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "git-drs-index-refresh-") {
+			t.Fatalf("receipt manifest remained after git add: %s", entry.Name())
+		}
 	}
 
 	after := runGitOutputTest(t, repo, "status", "--short", "--", "sample.bin")
@@ -822,6 +826,20 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	cached := runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("expected no staged semantic diff after refresh, got %q", cached)
+	}
+
+	changed := append([]byte(nil), payload...)
+	changed[0] ^= 1
+	if err := os.WriteFile(filepath.Join(repo, "sample.bin"), changed, 0o644); err != nil {
+		t.Fatalf("edit hydrated worktree file: %v", err)
+	}
+	modified := runGitOutputTest(t, repo, "status", "--short", "--", "sample.bin")
+	if !strings.Contains(modified, "sample.bin") || !strings.Contains(modified, " M") {
+		t.Fatalf("same-size edit was not reported as modified: %q", modified)
+	}
+	cached = runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
+	if strings.TrimSpace(cached) != "" {
+		t.Fatalf("same-size worktree edit unexpectedly changed the index: %q", cached)
 	}
 }
 
@@ -840,7 +858,7 @@ func TestRefreshGitIndexPreservesLeadingSpacePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldWD) })
-	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: path}}); err != nil {
+	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: path}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	staged := runGitOutputTest(t, repo, "diff", "--cached", "--name-only", "-z")

@@ -144,6 +144,10 @@ func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathnam
 }
 
 func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer) error {
+	return cleanIndexedPointerForRefreshWithHasher(ctx, lfsRoot, pathname, content, dst, hashIndexedRefreshContent)
+}
+
+func cleanIndexedPointerForRefreshWithHasher(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, hashContent func(io.Reader) (int64, string, error)) error {
 	pathname = filepath.ToSlash(filepath.Clean(pathname))
 	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
 		return fmt.Errorf("refresh index: invalid path %q", pathname)
@@ -156,12 +160,27 @@ func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string
 	if !ok {
 		return fmt.Errorf("refresh index: %s is not an indexed DRS pointer", pathname)
 	}
-	h := sha256.New()
-	size, err := io.Copy(h, content)
+	if receipt, ok := matchingIndexRefreshReceipt(pathname, pointerOID, pointerSize, pointer); ok {
+		before, err := os.Lstat(pathname)
+		if err == nil && receipt.Matches(pathname, before) {
+			size, copyErr := io.Copy(io.Discard, content)
+			if copyErr != nil {
+				return fmt.Errorf("refresh index: read %s: %w", pathname, copyErr)
+			}
+			after, statErr := os.Lstat(pathname)
+			if statErr != nil || !receipt.Matches(pathname, after) || size != receipt.Size {
+				return fmt.Errorf("refresh index: %s changed during checkout index refresh", pathname)
+			}
+			if _, err := dst.Write(pointer); err != nil {
+				return fmt.Errorf("refresh index: write pointer for %s: %w", pathname, err)
+			}
+			return nil
+		}
+	}
+	size, actual, err := hashContent(content)
 	if err != nil {
 		return fmt.Errorf("refresh index: read %s: %w", pathname, err)
 	}
-	actual := hex.EncodeToString(h.Sum(nil))
 	if size != pointerSize {
 		return fmt.Errorf("refresh index: %s changed size during checkout", pathname)
 	}
@@ -177,6 +196,43 @@ func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string
 		return fmt.Errorf("refresh index: write pointer for %s: %w", pathname, err)
 	}
 	return nil
+}
+
+func hashIndexedRefreshContent(content io.Reader) (int64, string, error) {
+	h := sha256.New()
+	size, err := io.Copy(h, content)
+	if err != nil {
+		return 0, "", err
+	}
+	return size, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func matchingIndexRefreshReceipt(pathname, pointerOID string, pointerSize int64, pointer []byte) (IndexRefreshReceipt, bool) {
+	receipts, err := readIndexRefreshReceipts()
+	if err != nil {
+		return IndexRefreshReceipt{}, false
+	}
+	receipt, ok := receipts[pathname]
+	if !ok || receipt.OID != pointerOID || receipt.Size != pointerSize {
+		return IndexRefreshReceipt{}, false
+	}
+	if pointerSHA256 := indexedPointerSHA256(pointer); pointerSHA256 != "" && !strings.EqualFold(pointerSHA256, receipt.SHA256) {
+		return IndexRefreshReceipt{}, false
+	}
+	if !lfs.IsDRSURI(pointerOID) && !lfs.IsPlaceholderPointer(pointer) && !strings.EqualFold(pointerOID, receipt.SHA256) {
+		return IndexRefreshReceipt{}, false
+	}
+	return receipt, true
+}
+
+func indexedPointerSHA256(pointer []byte) string {
+	for _, line := range strings.Split(string(pointer), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "sha256") {
+			return strings.TrimPrefix(strings.ToLower(fields[1]), "sha256:")
+		}
+	}
+	return ""
 }
 
 func matchingIndexedDRSPointer(pathname, contentOID string, size int64, lfsRoot string) ([]byte, bool) {

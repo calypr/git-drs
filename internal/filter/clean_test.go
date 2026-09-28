@@ -132,6 +132,83 @@ func TestIndexRefreshCleanPreservesPointerWithoutCacheCopy(t *testing.T) {
 	}
 }
 
+func TestIndexRefreshReceiptSkipsHashAndFallsBackAfterSameSizeEdit(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit("init")
+	payload := []byte("hydrated content")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	pointer := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n", oid, len(payload))
+	if err := os.WriteFile("data.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "--", "data.bin")
+	if err := os.WriteFile("data.bin", payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat("data.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, ok := NewIndexRefreshReceipt("data.bin", oid, oid, int64(len(payload)), info)
+	if !ok {
+		t.Skip("filesystem does not provide ctime/dev/inode identity")
+	}
+	manifest, err := os.CreateTemp(t.TempDir(), "receipts-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := MarshalIndexRefreshReceipts([]IndexRefreshReceipt{receipt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manifest.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(IndexRefreshEnv, "1")
+	t.Setenv(IndexRefreshReceiptsEnv, manifest.Name())
+	var out bytes.Buffer
+	hashCalls := 0
+	noHash := func(io.Reader) (int64, string, error) {
+		hashCalls++
+		return 0, "", fmt.Errorf("unexpected content hash")
+	}
+	if err := cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(payload), &out, noHash); err != nil {
+		t.Fatalf("clean with valid receipt: %v", err)
+	}
+	if got := out.String(); got != pointer {
+		t.Fatalf("clean output = %q, want indexed pointer %q", got, pointer)
+	}
+	if hashCalls != 0 {
+		t.Fatalf("content hasher called %d times with a valid receipt", hashCalls)
+	}
+
+	changed := []byte("changed content!")
+	if len(changed) != len(payload) {
+		t.Fatalf("test edit size = %d, want %d", len(changed), len(payload))
+	}
+	if err := os.WriteFile("data.bin", changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	err = cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(changed), &out, hashIndexedRefreshContent)
+	if err == nil || out.Len() != 0 {
+		t.Fatalf("same-size edit accepted: output=%q err=%v", out.String(), err)
+	}
+}
+
 func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
 	repo := t.TempDir()
 	t.Chdir(repo)

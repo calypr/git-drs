@@ -307,11 +307,12 @@ var Cmd = &cobra.Command{
 		}
 
 		readOnly := drsCtx.IsReadOnly()
-		if err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot); err != nil {
+		receipts, err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot)
+		if err != nil {
 			return err
 		}
 		progress.OnIndexRefreshStart()
-		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
+		if err := refreshGitIndexForHydratedFiles(pointers, receipts); err != nil {
 			return err
 		}
 		for _, f := range pointers {
@@ -675,7 +676,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 	return nil
 }
 
-func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) error {
+func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) ([]internalfilter.IndexRefreshReceipt, error) {
 	worktreeRoot, err := gitrepo.GitTopLevel()
 	if err != nil {
 		// Unit-level callers may provide an isolated checkout directory without
@@ -683,39 +684,46 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 		// so this fallback preserves that helper's historical behavior.
 		worktreeRoot, err = os.Getwd()
 		if err != nil {
-			return fmt.Errorf("resolve checkout worktree root: %w", err)
+			return nil, fmt.Errorf("resolve checkout worktree root: %w", err)
 		}
 	}
+	receipts := make([]internalfilter.IndexRefreshReceipt, 0, len(files))
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
 		}
 		srcPath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 		if err != nil {
-			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
+			return nil, fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
 		state, err := inspectCachedPointer(srcPath, f)
 		if err != nil {
-			return fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
+			return nil, fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
 		}
 		if !state.complete {
-			return fmt.Errorf("refusing to checkout invalid cached object for %s", f.Oid)
+			return nil, fmt.Errorf("refusing to checkout invalid cached object for %s", f.Oid)
 		}
 		src, err := os.Open(srcPath)
 		if err != nil {
-			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
+			return nil, fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
 		}
 		dstPath, err := gitrepo.SafeWorktreePath(worktreeRoot, f.Name)
 		if err != nil {
 			src.Close()
-			return fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
+			return nil, fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
 		}
 		if expectedPointerSHA256(f) != "" {
 			if info, statErr := os.Lstat(dstPath); statErr == nil && info.Mode().IsRegular() && info.Size() == f.Size {
 				progress.OnExistingFileVerificationStart(toPullFile(f))
+				before := info
 				if verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnExistingFileProgress(f.Name, n) }) == nil {
+					if after, statErr := os.Lstat(dstPath); statErr == nil {
+						if receipt, ok := internalfilter.NewIndexRefreshReceipt(f.Name, f.Oid, expectedPointerSHA256(f), f.Size, after); ok && receipt.Matches(f.Name, before) {
+							receipts = append(receipts, receipt)
+						}
+					}
 					if err := src.Close(); err != nil {
-						return fmt.Errorf("close cached object for %s: %w", f.Name, err)
+						return nil, fmt.Errorf("close cached object for %s: %w", f.Name, err)
 					}
 					continue
 				}
@@ -725,32 +733,36 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 		if dir := filepath.Dir(dstPath); dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				src.Close()
-				return fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
+				return nil, fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
 			}
 		}
 		mode := os.FileMode(0o644)
 		if info, statErr := os.Lstat(dstPath); statErr == nil {
 			if info.Mode()&os.ModeSymlink != 0 {
 				src.Close()
-				return fmt.Errorf("refusing to checkout through symlink %s", f.Name)
+				return nil, fmt.Errorf("refusing to checkout through symlink %s", f.Name)
 			}
 			mode = info.Mode().Perm() | 0o200
 		} else if !os.IsNotExist(statErr) {
 			src.Close()
-			return fmt.Errorf("failed to inspect checkout path %s: %w", f.Name, statErr)
+			return nil, fmt.Errorf("failed to inspect checkout path %s: %w", f.Name, statErr)
 		}
 		if dstPath, err = gitrepo.SafeWorktreePath(worktreeRoot, f.Name); err != nil {
 			src.Close()
-			return fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
+			return nil, fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
 		}
 		if readOnly {
 			mode = 0o444
 		}
-		if err := replaceCheckoutFile(ctx, dstPath, src, f, mode, func(n int64) { progress.OnCheckoutProgress(f.Name, n) }); err != nil {
-			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
+		receipt, hasReceipt, err := replaceCheckoutFile(ctx, dstPath, src, f, mode, func(n int64) { progress.OnCheckoutProgress(f.Name, n) })
+		if err != nil {
+			return nil, fmt.Errorf("failed to checkout %s: %w", f.Name, err)
+		}
+		if hasReceipt {
+			receipts = append(receipts, receipt)
 		}
 	}
-	return nil
+	return receipts, nil
 }
 
 type checkoutProgressWriter struct {
@@ -774,7 +786,7 @@ func (w *checkoutProgressWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser, pointer pointerFile, mode os.FileMode, onProgress func(int64)) error {
+func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser, pointer pointerFile, mode os.FileMode, onProgress func(int64)) (internalfilter.IndexRefreshReceipt, bool, error) {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 	defer func() {
@@ -784,7 +796,7 @@ func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser,
 	}()
 	stage, err := os.CreateTemp(filepath.Dir(dstPath), ".git-drs-checkout-*")
 	if err != nil {
-		return err
+		return internalfilter.IndexRefreshReceipt{}, false, err
 	}
 	stagePath := stage.Name()
 	defer os.Remove(stagePath)
@@ -793,37 +805,56 @@ func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser,
 	copied, err := io.Copy(writer, src)
 	if err != nil {
 		stage.Close()
-		return err
+		return internalfilter.IndexRefreshReceipt{}, false, err
 	}
 	if onProgress != nil {
 		onProgress(copied)
 	}
 	if err := stage.Close(); err != nil {
-		return err
+		return internalfilter.IndexRefreshReceipt{}, false, err
 	}
 	if err := src.Close(); err != nil {
-		return err
+		return internalfilter.IndexRefreshReceipt{}, false, err
 	}
 	src = nil
 	if pointer.Size >= 0 && copied != pointer.Size {
-		return fmt.Errorf("checkout size mismatch: expected %d, got %d", pointer.Size, copied)
+		return internalfilter.IndexRefreshReceipt{}, false, fmt.Errorf("checkout size mismatch: expected %d, got %d", pointer.Size, copied)
 	}
 	actual := hex.EncodeToString(hasher.Sum(nil))
 	if !pointer.Placeholder && strings.TrimSpace(pointer.Oid) != "" && !lfs.IsDRSURI(pointer.Oid) && !strings.EqualFold(hash.NormalizeChecksum(pointer.Oid), actual) {
-		return fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.Oid, actual)
+		return internalfilter.IndexRefreshReceipt{}, false, fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.Oid, actual)
 	}
 	if pointer.SHA256 != "" && !strings.EqualFold(pointer.SHA256, actual) {
-		return fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.SHA256, actual)
+		return internalfilter.IndexRefreshReceipt{}, false, fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.SHA256, actual)
 	}
 	if err := os.Chmod(stagePath, mode); err != nil {
-		return err
+		return internalfilter.IndexRefreshReceipt{}, false, err
 	}
-	return os.Rename(stagePath, dstPath)
+	stagedInfo, err := os.Lstat(stagePath)
+	if err != nil {
+		return internalfilter.IndexRefreshReceipt{}, false, err
+	}
+	if err := os.Rename(stagePath, dstPath); err != nil {
+		return internalfilter.IndexRefreshReceipt{}, false, err
+	}
+	checkedOutInfo, err := os.Lstat(dstPath)
+	if err != nil {
+		return internalfilter.IndexRefreshReceipt{}, false, nil
+	}
+	if !internalfilter.SameIndexRefreshFile(stagedInfo, checkedOutInfo) {
+		return internalfilter.IndexRefreshReceipt{}, false, nil
+	}
+	receipt, ok := internalfilter.NewIndexRefreshReceipt(pointer.Name, pointer.Oid, actual, copied, checkedOutInfo)
+	if !ok {
+		return internalfilter.IndexRefreshReceipt{}, false, nil
+	}
+	return receipt, true, nil
 }
 
-func refreshGitIndexForHydratedFiles(files []pointerFile) error {
+func refreshGitIndexForHydratedFiles(files []pointerFile, receipts []internalfilter.IndexRefreshReceipt) error {
 	paths := make([]string, 0, len(files))
 	seen := make(map[string]struct{}, len(files))
+	pathSet := make(map[string]struct{}, len(files))
 	for _, f := range files {
 		path := f.Name
 		if path == "" {
@@ -834,6 +865,7 @@ func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 		}
 		seen[path] = struct{}{}
 		paths = append(paths, path)
+		pathSet[filepath.ToSlash(filepath.Clean(path))] = struct{}{}
 	}
 	if len(paths) == 0 {
 		return nil
@@ -845,7 +877,39 @@ func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 	// semantic no-op that only clears the false-dirty state.
 	args := append([]string{"add", "--"}, paths...)
 	cmd := exec.Command("git", args...)
-	cmd.Env = append(os.Environ(), internalfilter.IndexRefreshEnv+"=1")
+	trustedReceipts := make([]internalfilter.IndexRefreshReceipt, 0, len(receipts))
+	for _, receipt := range receipts {
+		path := filepath.ToSlash(filepath.Clean(receipt.Path))
+		if _, ok := pathSet[path]; ok {
+			receipt.Path = path
+			trustedReceipts = append(trustedReceipts, receipt)
+		}
+	}
+	envOverrides := map[string]string{
+		internalfilter.IndexRefreshEnv:         "1",
+		internalfilter.IndexRefreshReceiptsEnv: "",
+	}
+	if len(trustedReceipts) > 0 {
+		data, err := internalfilter.MarshalIndexRefreshReceipts(trustedReceipts)
+		if err != nil {
+			return fmt.Errorf("encode index refresh receipts: %w", err)
+		}
+		manifest, err := os.CreateTemp("", "git-drs-index-refresh-*.json")
+		if err != nil {
+			return fmt.Errorf("create index refresh receipt manifest: %w", err)
+		}
+		manifestPath := manifest.Name()
+		defer os.Remove(manifestPath)
+		if _, err := manifest.Write(data); err != nil {
+			_ = manifest.Close()
+			return fmt.Errorf("write index refresh receipt manifest: %w", err)
+		}
+		if err := manifest.Close(); err != nil {
+			return fmt.Errorf("close index refresh receipt manifest: %w", err)
+		}
+		envOverrides[internalfilter.IndexRefreshReceiptsEnv] = manifestPath
+	}
+	cmd.Env = commandEnvWithOverrides(os.Environ(), envOverrides)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -855,6 +919,25 @@ func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 		return fmt.Errorf("failed to refresh git index for hydrated files: %w: %s", err, msg)
 	}
 	return nil
+}
+
+func commandEnvWithOverrides(env []string, overrides map[string]string) []string {
+	result := make([]string, 0, len(env)+len(overrides))
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok {
+			if _, replaced := overrides[key]; replaced {
+				continue
+			}
+		}
+		result = append(result, entry)
+	}
+	for key, value := range overrides {
+		if value != "" {
+			result = append(result, key+"="+value)
+		}
+	}
+	return result
 }
 
 func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.GitContext, oid string) string {

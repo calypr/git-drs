@@ -120,7 +120,7 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 	}
 	out.Reset()
 	r.OnIndexRefreshStart()
-	if got := out.String(); !strings.Contains(got, "Refreshing Git index; checking file content") || strings.Contains(got, "complete") {
+	if got := out.String(); !strings.Contains(got, "Refreshing Git index; rereading checked-out file") || strings.Contains(got, "complete") {
 		t.Fatalf("index refresh must remain visible before completion, got %q", got)
 	}
 

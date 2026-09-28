@@ -406,7 +406,7 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 	case pullProgressCheckingOut:
 		return fmt.Sprintf("%s%s %s %s %s checking out file (%s)", prefix, label, RenderProgressBar(file.checkedOut, file.total, 24), RenderPercent(file.checkedOut, file.total), RenderByteProgress(file.checkedOut, file.total, false), r.elapsed(file.phaseSince))
 	case pullProgressIndexing:
-		return fmt.Sprintf("%s%s: Refreshing Git index; checking file content (%s)", prefix, label, r.elapsed(file.phaseSince))
+		return fmt.Sprintf("%s%s: Refreshing Git index; rereading checked-out file (%s)", prefix, label, r.elapsed(file.phaseSince))
 	case pullProgressDownloading:
 		status := "downloading"
 		if !file.lastBytes.IsZero() && r.now().Sub(file.lastBytes) >= 5*time.Second {

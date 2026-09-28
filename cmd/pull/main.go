@@ -147,6 +147,9 @@ var Cmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
+			if _, err := os.Stat(cachePath); err == nil {
+				progress.OnStage("Verifying cached file")
+			}
 			state, err := inspectCachedPointer(cachePath, f)
 			if err == nil && state.complete {
 				continue
@@ -162,6 +165,7 @@ var Cmd = &cobra.Command{
 
 		prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 		if len(missingOIDs) > 0 {
+			progress.OnStage("Looking up DRS records")
 			checksumOIDs := make([]string, 0, len(missingOIDs))
 			for _, oid := range missingOIDs {
 				if lfs.IsDRSURI(oid) {
@@ -190,6 +194,7 @@ var Cmd = &cobra.Command{
 
 			prefetchedAccess := make(map[string]internaltransfer.ResolvedAccess, len(prefetched))
 			if len(prefetched) > 0 {
+				progress.OnStage("Requesting download access")
 				objects := make([]drsapi.DrsObject, 0, len(prefetched))
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
@@ -219,7 +224,7 @@ var Cmd = &cobra.Command{
 				}
 				objCopy := obj
 				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: access.AccessURL.Url, Placeholder: f.Placeholder, ObjectsRoot: objectsRoot, RepositoryRoot: worktreeRoot})
-				progress.OnDownloadStart(toPullFile(f))
+				progress.OnExternalTransferStart(toPullFile(f))
 			}
 			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
 				return fmt.Errorf("Globus batch download failed: %w", err)
@@ -394,6 +399,12 @@ func progressContextForPointer(ctx context.Context, progress *internaltransfer.P
 	ctx = sycommon.WithOid(ctx, file.Name)
 	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
 		if ev.Event != "progress" {
+			switch ev.Event {
+			case "access-resolved":
+				progress.OnConnectionStart(file.Name)
+			case "transfer-start":
+				progress.OnTransferStart(file.Name)
+			}
 			return nil
 		}
 		progress.OnDownloadProgress(file.Name, ev.BytesSoFar, file.Size)

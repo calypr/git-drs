@@ -208,6 +208,11 @@ func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime
 		src.drsClient = drsCtx.Client.DRS()
 		src.objectID = strings.TrimSpace(obj.Id)
 	}
+	if callback := sycommon.GetProgress(ctx); callback != nil {
+		if err := callback(sycommon.ProgressEvent{Event: "access-resolved", Oid: sycommon.GetOid(ctx)}); err != nil {
+			return err
+		}
+	}
 	var backend sytransfer.ReadBackend = src
 	if callback := sycommon.GetProgress(ctx); callback != nil {
 		backend = newStreamingProgressSource(src, callback, sycommon.GetOid(ctx), obj.Size)

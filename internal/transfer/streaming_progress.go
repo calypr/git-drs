@@ -38,12 +38,20 @@ func (s *streamingProgressSource) GetReader(ctx context.Context, guid string) (i
 	if err != nil {
 		return nil, err
 	}
+	if err := s.callback(sycommon.ProgressEvent{Event: "transfer-start", Oid: s.oid}); err != nil {
+		_ = body.Close()
+		return nil, err
+	}
 	return &progressBody{ReadCloser: body, source: s}, nil
 }
 
 func (s *streamingProgressSource) GetRangeReader(ctx context.Context, guid string, offset, length int64) (io.ReadCloser, error) {
 	body, err := s.ReadBackend.GetRangeReader(ctx, guid, offset, length)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.callback(sycommon.ProgressEvent{Event: "transfer-start", Oid: s.oid}); err != nil {
+		_ = body.Close()
 		return nil, err
 	}
 	return &progressBody{ReadCloser: body, source: s, offset: offset}, nil

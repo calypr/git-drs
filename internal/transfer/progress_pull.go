@@ -13,6 +13,10 @@ type pullProgressPhase string
 
 const (
 	pullProgressPending     pullProgressPhase = "pending"
+	pullProgressResolving   pullProgressPhase = "resolving"
+	pullProgressConnecting  pullProgressPhase = "connecting"
+	pullProgressWaiting     pullProgressPhase = "waiting"
+	pullProgressExternal    pullProgressPhase = "external"
 	pullProgressDownloading pullProgressPhase = "downloading"
 	pullProgressVerifying   pullProgressPhase = "verifying"
 	pullProgressCheckingOut pullProgressPhase = "checking_out"
@@ -39,6 +43,7 @@ type PullProgressRenderer struct {
 	heartbeatDone     chan struct{}
 	now               func() time.Time
 	heartbeatInterval time.Duration
+	stage             string
 }
 
 func NewPullProgressRenderer(out io.Writer) *PullProgressRenderer {
@@ -96,6 +101,7 @@ func (r *PullProgressRenderer) OnPlan(files []PullFile) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.planned = len(files) > 0
+	r.stage = "Checking local object cache"
 	r.files = make(map[string]*pullFileProgress, len(files))
 	r.fileOrder = r.fileOrder[:0]
 	for _, file := range files {
@@ -112,6 +118,18 @@ func (r *PullProgressRenderer) OnPlan(files []PullFile) {
 	}
 }
 
+func (r *PullProgressRenderer) OnStage(stage string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stage = stage
+	for _, item := range r.files {
+		if item.phase == pullProgressPending {
+			item.phaseSince = r.now()
+		}
+	}
+	r.render(false)
+}
+
 func (r *PullProgressRenderer) OnDownloadStart(file PullFile) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,9 +144,45 @@ func (r *PullProgressRenderer) OnDownloadStart(file PullFile) {
 	if file.Size > 0 {
 		item.total = file.Size
 	}
-	item.phase = pullProgressDownloading
+	item.phase = pullProgressResolving
 	item.phaseSince = r.now()
 	item.lastBytes = time.Time{}
+	r.render(false)
+}
+
+func (r *PullProgressRenderer) OnTransferStart(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[id]
+	if item == nil || !r.planned || item.phase == pullProgressDownloading {
+		return
+	}
+	item.phase = pullProgressWaiting
+	item.phaseSince = r.now()
+	r.render(false)
+}
+
+func (r *PullProgressRenderer) OnConnectionStart(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[id]
+	if item == nil || !r.planned || item.current > 0 {
+		return
+	}
+	item.phase = pullProgressConnecting
+	item.phaseSince = r.now()
+	r.render(false)
+}
+
+func (r *PullProgressRenderer) OnExternalTransferStart(file PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[file.Name]
+	if item == nil || !r.planned {
+		return
+	}
+	item.phase = pullProgressExternal
+	item.phaseSince = r.now()
 	r.render(false)
 }
 
@@ -226,53 +280,37 @@ func (r *PullProgressRenderer) Finish() error {
 }
 
 func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
-	label := "preparing pull"
-	if file != nil && file.path != "" {
-		label = TrimLabel(file.path, 48)
+	if file == nil {
+		return ""
 	}
-
-	prefix := ""
-	if file != nil {
-		switch file.phase {
-		case pullProgressDownloading, pullProgressCheckingOut:
-			if !(file.total > 0 && file.current >= file.total) {
-				prefix = r.base.Spinner() + " "
-			}
+	label := TrimLabel(file.path, 48)
+	if file.phase == pullProgressCompleted {
+		return label + ": complete"
+	}
+	prefix := r.base.Spinner() + " "
+	switch file.phase {
+	case pullProgressPending:
+		return fmt.Sprintf("%s%s: %s (%s)", prefix, label, r.stage, r.elapsed(file.phaseSince))
+	case pullProgressResolving:
+		return fmt.Sprintf("%s%s: Resolving download source (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressConnecting:
+		return fmt.Sprintf("%s%s: Opening download connection (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressWaiting:
+		return fmt.Sprintf("%s%s: Connected; waiting for data (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressExternal:
+		return fmt.Sprintf("%s%s: Globus transfer running (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressVerifying:
+		return fmt.Sprintf("%s%s: Verifying download (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressCheckingOut:
+		return fmt.Sprintf("%s%s: Checking out file (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressDownloading:
+		status := "downloading"
+		if !file.lastBytes.IsZero() && r.now().Sub(file.lastBytes) >= 5*time.Second {
+			status = "no new data for " + r.elapsed(file.lastBytes)
 		}
+		return fmt.Sprintf("%s%s %s %s %s %s", prefix, label, RenderProgressBar(file.current, file.total, 24), RenderPercent(file.current, file.total), RenderByteProgress(file.current, file.total, false), status)
 	}
-
-	current := int64(0)
-	total := int64(0)
-	if file != nil {
-		current = file.current
-		total = file.total
-	}
-	bar := RenderProgressBar(current, total, 24)
-	pct := RenderPercent(current, total)
-	bytesLabel := RenderByteProgress(current, total, current >= total)
-	phaseLabel := ""
-	if file != nil {
-		switch file.phase {
-		case pullProgressVerifying:
-			phaseLabel = " verifying (" + r.elapsed(file.phaseSince) + ")"
-		case pullProgressCheckingOut:
-			phaseLabel = " checking out (" + r.elapsed(file.phaseSince) + ")"
-		case pullProgressCompleted:
-			phaseLabel = " complete"
-		case pullProgressPending:
-			phaseLabel = " preparing (" + r.elapsed(file.phaseSince) + ")"
-		case pullProgressDownloading:
-			if file.lastBytes.IsZero() {
-				phaseLabel = " waiting for data (" + r.elapsed(file.phaseSince) + ")"
-			} else if r.now().Sub(file.lastBytes) >= 5*time.Second {
-				phaseLabel = " no new data for " + r.elapsed(file.lastBytes)
-			} else {
-				phaseLabel = " downloading"
-			}
-		}
-	}
-
-	return fmt.Sprintf("%s%s %s %s %s%s", prefix, label, bar, pct, bytesLabel, phaseLabel)
+	return label
 }
 
 func (r *PullProgressRenderer) elapsed(since time.Time) string {

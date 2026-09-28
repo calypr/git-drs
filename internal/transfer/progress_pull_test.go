@@ -40,7 +40,7 @@ func TestPullProgressRendererNonTTYThrottles(t *testing.T) {
 	file := PullFile{Name: "a.bin", Oid: "oid-1", Size: 100}
 	r.OnPlan([]PullFile{file})
 	initial := out.String()
-	if !strings.Contains(initial, "a.bin") {
+	if !strings.Contains(initial, "a.bin: Checking local object cache") || strings.Contains(initial, "[") {
 		t.Fatalf("expected initial non-tty progress line, got %q", initial)
 	}
 
@@ -53,7 +53,7 @@ func TestPullProgressRendererNonTTYThrottles(t *testing.T) {
 	now = now.Add(NonTTYProgressInterval)
 	r.OnCompleted(file)
 	got := out.String()
-	if !strings.Contains(got, "100.0% 100 B/100 B") {
+	if !strings.Contains(got, "a.bin: complete") {
 		t.Fatalf("expected rendered completion after interval, got %q", got)
 	}
 }
@@ -68,13 +68,13 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 
 	out.Reset()
 	r.OnDownloadProgress(file.Name, file.Size, file.Size)
-	if got := out.String(); !strings.Contains(got, "verifying") {
+	if got := out.String(); !strings.Contains(got, "Verifying download") || strings.Contains(got, " [") {
 		t.Fatalf("full download must show verification in progress, got %q", got)
 	}
 
 	out.Reset()
 	r.OnCheckoutStart(file)
-	if got := out.String(); !strings.Contains(got, "checking out") {
+	if got := out.String(); !strings.Contains(got, "Checking out file") || strings.Contains(got, " [") {
 		t.Fatalf("checkout must be visible after download, got %q", got)
 	}
 
@@ -93,6 +93,7 @@ func TestPullProgressRendererHeartbeatDuringZeroByteWait(t *testing.T) {
 	file := PullFile{Name: "large.bin", Size: 100}
 	r.OnPlan([]PullFile{file})
 	r.OnDownloadStart(file)
+	r.OnTransferStart(file.Name)
 	r.StartHeartbeat()
 	time.Sleep(35 * time.Millisecond)
 	if err := r.Finish(); err != nil {
@@ -100,5 +101,25 @@ func TestPullProgressRendererHeartbeatDuringZeroByteWait(t *testing.T) {
 	}
 	if got := out.String(); strings.Count(got, "waiting for data") < 2 {
 		t.Fatalf("expected timed zero-byte updates, got %q", got)
+	}
+}
+
+func TestPullProgressRendererOnlyShowsBarAfterBytesArrive(t *testing.T) {
+	var out bytes.Buffer
+	r := NewPullProgressRenderer(&out)
+	r.base.SetTTY(true)
+	file := PullFile{Name: "large.bin", Size: 100}
+	r.OnPlan([]PullFile{file})
+	r.OnStage("Looking up DRS records")
+	r.OnDownloadStart(file)
+	r.OnConnectionStart(file.Name)
+	r.OnTransferStart(file.Name)
+	if got := out.String(); strings.Contains(got, " [") || !strings.Contains(got, "Looking up DRS records") || !strings.Contains(got, "Opening download connection") || !strings.Contains(got, "Connected; waiting for data") {
+		t.Fatalf("expected precise status without a bar before data, got %q", got)
+	}
+	out.Reset()
+	r.OnDownloadProgress(file.Name, 10, 100)
+	if got := out.String(); !strings.Contains(got, "[==") || !strings.Contains(got, "10 B/100 B") {
+		t.Fatalf("expected bar once bytes arrive, got %q", got)
 	}
 }

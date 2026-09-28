@@ -255,8 +255,9 @@ entries.
 ```bash
 git drs ls-files
 git drs ls-files results/
-git drs ls-files -lh results/
+git drs ls-files -l --human-readable results/
 git drs ls-files --pointers
+git drs ls-files --pointers UMB/
 git drs ls-files --long
 git drs ls-files --drs
 git drs ls-files -I "*.bam"
@@ -268,9 +269,10 @@ Important behavior:
 - default mode lists the current directory and does not query Git or DRS
 - path operands can name files or directories
 - `-l` adds permissions, size, modification time, and path
-- `-h` formats sizes in readable units when used with `-l`
+- `--human-readable` formats sizes in readable units when used with `-l`
 - hidden entries are omitted from directory listings
 - `--pointers` selects the tracked DRS/Git-LFS pointer inventory
+- a directory operand in pointer mode includes tracked pointers beneath it
 - `*` means localized/hydrated in the worktree
 - `-` means the worktree still contains a pointer
 - `--drs` selects pointer inventory and adds DRS registration checks
@@ -281,7 +283,7 @@ Common flags:
 
 - `-I, --include <pattern>`: include filter; may be repeated
 - `-l, --long-listing`: show file details in directory mode
-- `-h, --human-readable`: format sizes in readable units with `-l`
+- `--human-readable`: format sizes in readable units with `-l`
 - `--pointers`: list tracked DRS/Git-LFS pointers
 - `--long`: show full object IDs in pointer mode
 - `-n, --name-only`: path-only output
@@ -289,7 +291,7 @@ Common flags:
 - `--drs`: include DRS lookup details
 - `-r, --git-remote`: select the Git remote for pointer inventory
 - `-d, --drs-remote`: select the DRS remote for lookup
-- `--help`: show command help
+- `-h, --help`: show command help
 
 ## Hydration and Push
 

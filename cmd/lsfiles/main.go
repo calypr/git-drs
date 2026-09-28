@@ -64,20 +64,18 @@ func pointerInventoryRequested() bool {
 
 func validateModeFlags() error {
 	if pointerInventoryRequested() && (longListing || humanReadable) {
-		return fmt.Errorf("directory listing flags -l and -h cannot be used with pointer inventory flags")
+		return fmt.Errorf("directory listing flags -l and --human-readable cannot be used with pointer inventory flags")
 	}
 	return nil
 }
 
 func init() {
-	// Keep --help while reserving -h for human-readable sizes, as in ls.
-	Cmd.Flags().BoolP("help", "", false, "help for ls-files")
 	Cmd.Flags().StringVarP(&gitRemote, "git-remote", "r", "", "target remote Git server (default: origin)")
 	Cmd.Flags().StringVarP(&drsRemote, "drs-remote", "d", "", "target remote DRS server (default: origin)")
 	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
 	Cmd.Flags().BoolVar(&showLong, "long", false, "show full object IDs in pointer mode")
 	Cmd.Flags().BoolVarP(&longListing, "long-listing", "l", false, "show file details and sizes")
-	Cmd.Flags().BoolVarP(&humanReadable, "human-readable", "h", false, "show sizes in human-readable units with --long-listing")
+	Cmd.Flags().BoolVar(&humanReadable, "human-readable", false, "show sizes in human-readable units with --long-listing")
 	Cmd.Flags().BoolVarP(&nameOnly, "name-only", "n", false, "show only file paths")
 	Cmd.Flags().BoolVar(&jsonOutput, "json", false, "emit JSON output")
 	Cmd.Flags().BoolVar(&pointers, "pointers", false, "list tracked DRS/Git-LFS pointer files")

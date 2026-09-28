@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -180,7 +181,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		oids := make([]string, 0, len(keys))
 		seenOIDs := make(map[string]struct{}, len(keys))
 		for _, path := range keys {
-			if !pathspec.MatchesAnyPattern(path, patterns) {
+			if !matchesPointerPath(path, patterns) {
 				continue
 			}
 			oid := lfsFiles[path].Oid
@@ -196,7 +197,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		drsResults, drsLookupErr = lookupScopedObjectsBatch(ctx, client, oids)
 	}
 	for _, path := range keys {
-		if !pathspec.MatchesAnyPattern(path, patterns) {
+		if !matchesPointerPath(path, patterns) {
 			continue
 		}
 		info := lfsFiles[path]
@@ -234,6 +235,29 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 	}
 
 	return rows, nil
+}
+
+func matchesPointerPath(path string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if pathspec.MatchesPattern(path, pattern) {
+			return true
+		}
+		if strings.ContainsAny(pattern, "*?[") {
+			continue
+		}
+		directory := filepath.ToSlash(filepath.Clean(pattern))
+		if directory == "." || strings.HasPrefix(path, directory+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func shortOID(oid string) string {

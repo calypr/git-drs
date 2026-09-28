@@ -56,7 +56,7 @@ func TestBrowseFlagsCannotBeSilentlyIgnoredInPointerMode(t *testing.T) {
 	longListing = false
 	humanReadable = true
 	if err := validateModeFlags(); err == nil {
-		t.Fatal("expected -h to be rejected in pointer mode")
+		t.Fatal("expected --human-readable to be rejected in pointer mode")
 	}
 	resetFlagsForTest()
 }
@@ -74,13 +74,14 @@ func TestLSFlagShorthandsKeepHelpAvailable(t *testing.T) {
 	}
 	if flag := Cmd.Flags().Lookup("human-readable"); flag == nil {
 		t.Fatal("--human-readable flag is missing")
-	} else if flag.Shorthand != "h" {
-		t.Fatalf("--human-readable shorthand = %q, want h", flag.Shorthand)
+	} else if flag.Shorthand != "" {
+		t.Fatalf("--human-readable shorthand = %q, want none", flag.Shorthand)
 	}
+	Cmd.InitDefaultHelpFlag()
 	if flag := Cmd.Flags().Lookup("help"); flag == nil {
 		t.Fatal("--help flag is missing")
-	} else if flag.Shorthand != "" {
-		t.Fatalf("--help shorthand = %q, want none", flag.Shorthand)
+	} else if flag.Shorthand != "h" {
+		t.Fatalf("--help shorthand = %q, want h", flag.Shorthand)
 	}
 }
 

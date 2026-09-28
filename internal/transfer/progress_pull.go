@@ -174,6 +174,20 @@ func (r *PullProgressRenderer) OnConnectionStart(id string) {
 	r.render(false)
 }
 
+func (r *PullProgressRenderer) OnDownloadRestart(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[id]
+	if item == nil || !r.planned {
+		return
+	}
+	item.current = 0
+	item.lastBytes = time.Time{}
+	item.phase = pullProgressConnecting
+	item.phaseSince = r.now()
+	r.render(false)
+}
+
 func (r *PullProgressRenderer) OnExternalTransferStart(file PullFile) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

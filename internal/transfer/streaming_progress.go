@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sort"
 	"sync"
@@ -22,6 +23,7 @@ type streamingProgressSource struct {
 	callback sycommon.ProgressCallback
 	oid      string
 	total    int64
+	initial  int64
 	mu       sync.Mutex
 	ranges   []byteRange
 	current  int64
@@ -29,8 +31,8 @@ type streamingProgressSource struct {
 	last     time.Time
 }
 
-func newStreamingProgressSource(source sytransfer.ReadBackend, callback sycommon.ProgressCallback, oid string, total int64) *streamingProgressSource {
-	return &streamingProgressSource{ReadBackend: source, callback: callback, oid: oid, total: total}
+func newStreamingProgressSource(source sytransfer.ReadBackend, callback sycommon.ProgressCallback, oid string, total, initial int64) *streamingProgressSource {
+	return &streamingProgressSource{ReadBackend: source, callback: callback, oid: oid, total: total, initial: initial, reported: initial}
 }
 
 func (s *streamingProgressSource) GetReader(ctx context.Context, guid string) (io.ReadCloser, error) {
@@ -48,6 +50,13 @@ func (s *streamingProgressSource) GetReader(ctx context.Context, guid string) (i
 func (s *streamingProgressSource) GetRangeReader(ctx context.Context, guid string, offset, length int64) (io.ReadCloser, error) {
 	body, err := s.ReadBackend.GetRangeReader(ctx, guid, offset, length)
 	if err != nil {
+		if errors.Is(err, sytransfer.ErrRangeIgnored) {
+			s.mu.Lock()
+			s.initial, s.current, s.reported = 0, 0, 0
+			s.ranges = nil
+			s.mu.Unlock()
+			_ = s.callback(sycommon.ProgressEvent{Event: "transfer-restart", Oid: s.oid})
+		}
 		return nil, err
 	}
 	if err := s.callback(sycommon.ProgressEvent{Event: "transfer-start", Oid: s.oid}); err != nil {
@@ -104,10 +113,10 @@ func (s *streamingProgressSource) add(start, end int64, flush bool) error {
 		s.ranges = append(s.ranges[:insert], append([]byteRange{merged}, s.ranges[last:]...)...)
 		s.current += merged.end - merged.start
 	}
-	if s.current == s.reported || (!flush && time.Since(s.last) < streamingProgressInterval) {
+	if s.initial+s.current == s.reported || (!flush && time.Since(s.last) < streamingProgressInterval) {
 		return nil
 	}
-	current := s.current
+	current := s.initial + s.current
 	if s.total > 0 && current > s.total {
 		current = s.total
 	}

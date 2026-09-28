@@ -181,6 +181,10 @@ func compatibilityResolvedAccess(obj *drsapi.DrsObject, accessURL *drsapi.Access
 }
 
 func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime.GitContext, oid, dstPath string, obj *drsapi.DrsObject, access ResolvedAccess, opts sydownload.DownloadOptions, cacheRoots ...string) error {
+	if isResumableDownload(ctx) {
+		opts.MultipartThreshold = int64(1<<63 - 1)
+		opts.Concurrency = 1
+	}
 	cacheRoots = resolvedCacheRoots(drsCtx, cacheRoots)
 	if strings.TrimSpace(access.AccessURL.Url) != "" && isGlobusURL(access.AccessURL.Url) {
 		return downloadGlobusResolved(ctx, drsCtx, access.AccessURL.Url, dstPath, oid, obj, cacheRoots...)
@@ -215,7 +219,16 @@ func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime
 	}
 	var backend sytransfer.ReadBackend = src
 	if callback := sycommon.GetProgress(ctx); callback != nil {
-		backend = newStreamingProgressSource(src, callback, sycommon.GetOid(ctx), obj.Size)
+		initial := int64(0)
+		if isResumableDownload(ctx) {
+			initial = resumableOffset(dstPath, obj.Size)
+		}
+		backend = newStreamingProgressSource(src, callback, sycommon.GetOid(ctx), obj.Size, initial)
+		if initial > 0 {
+			if err := callback(sycommon.ProgressEvent{Event: "progress", Oid: sycommon.GetOid(ctx), BytesSoFar: initial}); err != nil {
+				return err
+			}
+		}
 		// The syfon engine emits its buffered progress again after the transfer.
 		ctx = sycommon.WithProgress(ctx, func(event sycommon.ProgressEvent) error {
 			if event.Event == "progress" {
@@ -225,7 +238,7 @@ func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime
 		})
 	}
 	err := sydownload.DownloadToPathWithOptions(ctx, backend, oid, dstPath, opts)
-	if err != nil && !hadDestination {
+	if err != nil && !hadDestination && !isResumableDownload(ctx) {
 		// The transfer engine creates its resume checkpoint before the first
 		// request. Do not leave a failed new download looking resumable to a
 		// caller; an existing partial destination remains available for retry.

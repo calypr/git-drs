@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
@@ -132,6 +133,74 @@ func TestCachedObjectChangedDetectsReplacement(t *testing.T) {
 	changed, err = cachedObjectChanged(path, state)
 	if err != nil || !changed {
 		t.Fatalf("replaced cache reported changed=%t, err=%v", changed, err)
+	}
+}
+
+func TestCachedVerificationSkipsUnchangedFileAndRejectsModification(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	content := []byte("verified content")
+	digest := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(digest[:]), Size: int64(len(content))}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.complete {
+		t.Fatalf("first verification = %+v, %v", state, err)
+	}
+	if _, ok := verifiedCacheInfo(path, file); !ok {
+		t.Fatal("verified cache marker was not recorded")
+	}
+	if err := os.WriteFile(path, []byte("corrupt content!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	modified := state.info.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := verifiedCacheInfo(path, file); ok {
+		t.Fatal("modified cache retained its verification")
+	}
+	state, err = inspectCachedPointer(path, file)
+	if err != nil || state.complete {
+		t.Fatalf("modified cache accepted: state=%+v err=%v", state, err)
+	}
+}
+
+func TestIncompletePreallocatedDownloadIsNotVerifiedAsCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	content := []byte("verified content")
+	digest := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(digest[:]), Size: int64(len(content))}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := inspectCachedPointer(path, file); err != nil || !state.complete {
+		t.Fatalf("initial cache verification = %+v, %v", state, err)
+	}
+	checkpoint := `{"identity":"sha256:` + file.Oid + `","size":` + strconv.FormatInt(file.Size, 10) + `,"complete":false}`
+	if err := os.WriteFile(path+".syfon-download.json", []byte(checkpoint), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.exists || state.complete {
+		t.Fatalf("incomplete transfer was accepted as cached: %+v, %v", state, err)
+	}
+}
+
+func TestReplaceCheckoutFileRejectsWrongHashBeforePromotion(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dst, []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte("expected"))
+	pointer := pointerFile{Oid: hex.EncodeToString(want[:]), Size: int64(len("bad data"))}
+	if err := replaceCheckoutFile(dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644); err == nil {
+		t.Fatal("incorrect checkout content was accepted")
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || string(got) != "previous" {
+		t.Fatalf("destination changed after checksum failure: %q, %v", got, err)
 	}
 }
 

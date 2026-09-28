@@ -252,7 +252,7 @@ var Cmd = &cobra.Command{
 				} else if err != nil {
 					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
 				}
-				if state.exists {
+				if state.exists && !internaltransfer.IncompleteDownloadCheckpoint(dstPath, f.Size) {
 					if err := os.Remove(dstPath); err != nil && !os.IsNotExist(err) {
 						return fmt.Errorf("failed to remove incomplete cached object %s: %w", dstPath, err)
 					}
@@ -270,6 +270,7 @@ var Cmd = &cobra.Command{
 							_ = os.Remove(dstPath)
 							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 						}
+						rememberVerifiedPath(dstPath, f)
 						downloadedOIDs[f.Oid] = true
 						continue
 					}
@@ -293,6 +294,7 @@ var Cmd = &cobra.Command{
 					_ = os.Remove(dstPath)
 					return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 				}
+				rememberVerifiedPath(dstPath, f)
 				downloadedOIDs[f.Oid] = true
 			}
 		} else {
@@ -372,19 +374,35 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 }
 
 func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {
+	if internaltransfer.IncompleteDownloadCheckpoint(path, file.Size) {
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			return cachedObjectState{}, nil
+		}
+		if err != nil {
+			return cachedObjectState{}, err
+		}
+		return cachedObjectState{exists: true, info: info}, nil
+	}
+	if info, ok := verifiedCacheInfo(path, file); ok {
+		return cachedObjectState{exists: true, complete: true, info: info}, nil
+	}
 	expectedOID := file.Oid
 	if file.Placeholder {
 		expectedOID = ""
 	}
 	state, err := inspectCachedObject(path, expectedOID, file.Size)
-	if err != nil || !state.complete || file.SHA256 == "" || (!file.Placeholder && strings.EqualFold(hash.NormalizeChecksum(expectedOID), file.SHA256)) {
+	if err != nil || !state.complete {
 		return state, err
 	}
-	actual, err := calculateFileSHA256(path)
-	if err != nil {
-		return state, err
+	if file.SHA256 != "" && (file.Placeholder || !strings.EqualFold(hash.NormalizeChecksum(expectedOID), file.SHA256)) {
+		actual, err := calculateFileSHA256(path)
+		if err != nil {
+			return state, err
+		}
+		state.complete = strings.EqualFold(actual, file.SHA256)
 	}
-	state.complete = strings.EqualFold(actual, file.SHA256)
+	rememberVerifiedCache(path, file, state)
 	return state, nil
 }
 
@@ -410,6 +428,7 @@ func verifyPointerAtPath(path string, file pointerFile) error {
 }
 
 func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {
+	ctx = internaltransfer.WithResumableDownload(ctx)
 	ctx = sycommon.WithOid(ctx, file.Name)
 	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
 		if ev.Event != "progress" {
@@ -418,6 +437,8 @@ func progressContextForPointer(ctx context.Context, progress *internaltransfer.P
 				progress.OnConnectionStart(file.Name)
 			case "transfer-start":
 				progress.OnTransferStart(file.Name)
+			case "transfer-restart":
+				progress.OnDownloadRestart(file.Name)
 			}
 			return nil
 		}
@@ -548,9 +569,12 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 		if err != nil {
 			return err
 		}
-		actual, err := calculateFileSHA256(cachePath)
-		if err != nil {
-			return fmt.Errorf("calculate sha256 for placeholder oid %s: %w", file.Oid, err)
+		actual := file.SHA256
+		if actual == "" {
+			actual, err = calculateFileSHA256(cachePath)
+			if err != nil {
+				return fmt.Errorf("calculate sha256 for placeholder oid %s: %w", file.Oid, err)
+			}
 		}
 		file.SHA256 = actual
 		saved[file.Oid] = actual
@@ -596,6 +620,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 		if err := localdrsobject.WriteObject(drsObjectsRoot, &obj, file.Oid); err != nil {
 			return fmt.Errorf("save sha256 for placeholder oid %s: %w", file.Oid, err)
 		}
+		rememberVerifiedPath(cachePath, *file)
 	}
 	return nil
 }
@@ -619,8 +644,12 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
-		if err := verifyPointerAtPath(srcPath, f); err != nil {
+		state, err := inspectCachedPointer(srcPath, f)
+		if err != nil {
 			return fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
+		}
+		if !state.complete {
+			return fmt.Errorf("refusing to checkout invalid cached object for %s", f.Oid)
 		}
 		src, err := os.Open(srcPath)
 		if err != nil {
@@ -676,7 +705,9 @@ func replaceCheckoutFile(dstPath string, src io.ReadCloser, pointer pointerFile,
 	}
 	stagePath := stage.Name()
 	defer os.Remove(stagePath)
-	if _, err := io.Copy(stage, src); err != nil {
+	hasher := sha256.New()
+	copied, err := io.Copy(io.MultiWriter(stage, hasher), src)
+	if err != nil {
 		stage.Close()
 		return err
 	}
@@ -687,8 +718,15 @@ func replaceCheckoutFile(dstPath string, src io.ReadCloser, pointer pointerFile,
 		return err
 	}
 	src = nil
-	if err := verifyPointerAtPath(stagePath, pointer); err != nil {
-		return err
+	if pointer.Size >= 0 && copied != pointer.Size {
+		return fmt.Errorf("checkout size mismatch: expected %d, got %d", pointer.Size, copied)
+	}
+	actual := hex.EncodeToString(hasher.Sum(nil))
+	if !pointer.Placeholder && strings.TrimSpace(pointer.Oid) != "" && !lfs.IsDRSURI(pointer.Oid) && !strings.EqualFold(hash.NormalizeChecksum(pointer.Oid), actual) {
+		return fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.Oid, actual)
+	}
+	if pointer.SHA256 != "" && !strings.EqualFold(pointer.SHA256, actual) {
+		return fmt.Errorf("checkout sha256 mismatch: expected %s, got %s", pointer.SHA256, actual)
 	}
 	if err := os.Chmod(stagePath, mode); err != nil {
 		return err

@@ -13,7 +13,7 @@ func TestStreamingProgressReportsBeforeBodyClosesAndDeduplicatesRetries(t *testi
 	source := newStreamingProgressSource(nil, func(event sycommon.ProgressEvent) error {
 		events = append(events, event)
 		return nil
-	}, "large.bin", 12)
+	}, "large.bin", 12, 0)
 
 	first := &progressBody{ReadCloser: io.NopCloser(strings.NewReader("abcdefgh")), source: source}
 	buf := make([]byte, 4)

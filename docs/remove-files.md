@@ -1,11 +1,12 @@
 # Removing Files
 
-There are two different questions when you remove a file from a `git-drs` repository:
+There are three different questions when you remove a file from a `git-drs` repository:
 
 1. Do you just want to remove the path from Git?
-2. Do you also want the pushed deletion to reconcile remote DRS state for that object?
+2. Do you want to delete its remote DRS metadata record?
+3. Do you want to delete its stored payload?
 
-For tracked `git-drs` files, the recommended command is `git drs rm`.
+These are separate operations. For tracked `git-drs` paths, use `git drs rm`.
 
 ## Which Command To Use
 
@@ -15,7 +16,7 @@ For tracked `git-drs` files, the recommended command is `git drs rm`.
 git drs rm DATA/subject-123/vcf/sample1.vcf.gz
 ```
 
-Use this when you want the supported Git-DRS delete workflow.
+Use this when you want to remove a tracked path from Git.
 
 What it does immediately:
 
@@ -25,10 +26,11 @@ What it does immediately:
 
 What happens later, when the deletion is committed and pushed:
 
-- `git-drs` derives deleted pointers from the pushed Git commit delta
-- if the object is still live somewhere else in the pushed repo state, only the local path deletion is reconciled
-- if the scoped record has exactly one `controlled_access` resource, the remote record is deleted
-- if the record has multiple `controlled_access` resources, only the current `organization/project` resource is removed
+- the pointer is removed from the pushed Git tip
+- `git drs push` does not delete the remote DRS record or stored payload
+- historical Git commits can continue to refer to the DRS object
+
+Use `git drs delete` when you explicitly intend to delete a DRS metadata record. Stored-payload cleanup is handled by the storage audit and retention system, not by `git drs rm` or normal push.
 
 ### Use `git rm` for ordinary Git-managed files
 
@@ -46,7 +48,7 @@ git commit -m "Remove sample"
 git drs push
 ```
 
-That is the supported tracked-object delete flow.
+That is the supported tracked-path removal flow. The remote DRS record and stored payload remain unchanged.
 
 ## Best Practice
 
@@ -57,3 +59,5 @@ git drs rm <path>
 git commit -m "Remove tracked object"
 git drs push
 ```
+
+Run a separate explicit metadata deletion only when the record should no longer exist. Do not rely on normal push to infer remote retention from one Git ref update.

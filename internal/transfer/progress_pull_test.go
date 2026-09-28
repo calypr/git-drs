@@ -57,3 +57,30 @@ func TestPullProgressRendererNonTTYThrottles(t *testing.T) {
 		t.Fatalf("expected rendered completion after interval, got %q", got)
 	}
 }
+
+func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
+	var out bytes.Buffer
+	r := NewPullProgressRenderer(&out)
+	r.base.SetTTY(true)
+	file := PullFile{Name: "large.bin", Oid: "oid-1", Size: 100}
+	r.OnPlan([]PullFile{file})
+	r.OnDownloadStart(file)
+
+	out.Reset()
+	r.OnDownloadProgress(file.Name, file.Size, file.Size)
+	if got := out.String(); !strings.Contains(got, "verifying") {
+		t.Fatalf("full download must show verification in progress, got %q", got)
+	}
+
+	out.Reset()
+	r.OnCheckoutStart(file)
+	if got := out.String(); !strings.Contains(got, "checking out") {
+		t.Fatalf("checkout must be visible after download, got %q", got)
+	}
+
+	out.Reset()
+	r.OnCompleted(file)
+	if got := out.String(); !strings.Contains(got, "complete") {
+		t.Fatalf("completed pull must be distinguishable from in-progress work, got %q", got)
+	}
+}

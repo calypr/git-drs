@@ -3,7 +3,7 @@ package lookup
 import (
 	"testing"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestParseOrgProject(t *testing.T) {

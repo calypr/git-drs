@@ -31,27 +31,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: git-drs/go.mod
+          go-version: '1.26.6'
 
-      - name: Resolve Syfon ref from pinned module version
+      - name: Read pinned Syfon ref
         id: syfon-ref
         working-directory: git-drs
         shell: bash
         run: |
-          version="$(go list -m -f '{{ .Version }}' github.com/calypr/syfon)"
-          if [[ -z "$version" || "$version" == "<nil>" ]]; then
-            echo "error: could not resolve pinned syfon version" >&2
+          ref="$(tr -d '[:space:]' < tests/integration/docker_syfon/syfon.ref)"
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "error: tests/integration/docker_syfon/syfon.ref must contain one lowercase 40-hex commit" >&2
             exit 1
           fi
 
-          ref="$version"
-          if [[ "$version" =~ -([0-9a-f]{12,40})$ ]]; then
-            ref="${BASH_REMATCH[1]}"
-          fi
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
-          echo "Using Syfon module version $version; checking out local ref $ref"
+          echo "Using pinned Syfon commit $ref"
 
       - name: Check out Syfon
         uses: actions/checkout@v4

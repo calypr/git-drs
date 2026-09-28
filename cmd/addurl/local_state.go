@@ -15,7 +15,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/precommit_cache"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -35,8 +35,8 @@ func drsobjectBuilder(bucket, organization, project, storagePrefix string) drsob
 	return builder
 }
 
-func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectPath string) (*drsapi.DrsObject, error) {
-	existing, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, file.Oid)
+func writeAddURLDrsObject(objectsRoot string, builder drsobject.Builder, file addURLDrsFile, objectPath string) (*drsapi.DrsObject, error) {
+	existing, err := drsobject.ReadObject(objectsRoot, file.Oid)
 	var drsObj *drsapi.DrsObject
 	if err == nil && existing != nil {
 		drsObj = existing
@@ -68,22 +68,16 @@ func writeAddURLDrsObject(builder drsobject.Builder, file addURLDrsFile, objectP
 		if drsObj.AccessMethods != nil && len(*drsObj.AccessMethods) > 0 {
 			am := &(*drsObj.AccessMethods)[0]
 			am.Type = methodType
-			am.AccessUrl = &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: objectPath}
+			am.AccessUrl = &drsapi.AccessURL{Url: objectPath}
 		} else {
 			drsObj.AccessMethods = &[]drsapi.AccessMethod{{
-				Type: methodType,
-				AccessUrl: &struct {
-					Headers *[]string `json:"headers,omitempty"`
-					Url     string    `json:"url"`
-				}{Url: objectPath},
+				Type:      methodType,
+				AccessUrl: &drsapi.AccessURL{Url: objectPath},
 			}}
 		}
 	}
 
-	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, drsObj, file.Oid); err != nil {
+	if err := drsobject.WriteObject(objectsRoot, drsObj, file.Oid); err != nil {
 		return nil, fmt.Errorf("error writing DRS object for oid %s: %w", file.Oid, err)
 	}
 	return drsObj, nil

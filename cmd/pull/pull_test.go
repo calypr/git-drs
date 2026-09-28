@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -23,8 +24,49 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
+
+type checkoutFailingReader struct{}
+
+func (checkoutFailingReader) Read([]byte) (int, error) {
+	return 0, errors.New("injected copy failure")
+}
+
+func TestReplaceCheckoutFilePreservesPreviousFileOnCopyFailure(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "data.bin")
+	oldContent := []byte("original pointer")
+	if err := os.WriteFile(dst, oldContent, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	src := io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial new payload")), checkoutFailingReader{}))
+	err := replaceCheckoutFile(dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444)
+	if err == nil || !strings.Contains(err.Error(), "injected copy failure") {
+		t.Fatalf("replaceCheckoutFile error = %v, want copy failure", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, oldContent) {
+		t.Fatalf("destination after failed copy = %q, want %q", got, oldContent)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o444 {
+		t.Fatalf("destination mode after failed copy = %o, want 444", info.Mode().Perm())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("temporary checkout file remains: %+v", entries)
+	}
+}
 
 func resetPullFlagsForTest() {
 	includePatterns = nil
@@ -40,7 +82,7 @@ func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
 		"misc/c.bin": {Name: "misc/c.bin", Oid: "cccc", Size: 3},
 	}
 
-	files := collectPointerFiles(inventory, []string{"data/**"})
+	files := collectPointerFiles(inventory, []string{"data/**"}, gitrepo.DRSObjectsPath)
 	if len(files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(files))
 	}
@@ -84,7 +126,7 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := []pointerFile{{Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true}}
-	if err := savePlaceholderChecksums(t.Context(), nil, files, nil); err != nil {
+	if err := savePlaceholderChecksums(t.Context(), nil, files, nil, gitrepo.LFSObjectsPath, gitrepo.DRSObjectsPath); err != nil {
 		t.Fatal(err)
 	}
 	obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, temporaryOID)
@@ -93,7 +135,7 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 	}
 	learned := collectPointerFiles(map[string]lfs.LfsFileInfo{
 		"data/file.bin": {Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true},
-	}, nil)
+	}, nil, gitrepo.DRSObjectsPath)
 	corrupt := append([]byte(nil), payload...)
 	corrupt[0]++
 	if err := os.WriteFile(cachePath, corrupt, 0o644); err != nil {
@@ -107,6 +149,9 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 
 func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	resetPullFlagsForTest()
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGitCmdTest(t, repo, "init")
 
 	oldLoadCfg := loadCfg
 	oldResolveRemote := resolveRemote
@@ -340,7 +385,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(files, progress, false)
+	err = checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -349,8 +394,55 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	}
 }
 
+func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test skipped on Windows")
+	}
+	repo := t.TempDir()
+	t.Chdir(repo)
+	cacheRoot := gitrepo.LFSObjectsPath
+	payload := []byte("safe payload")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	cachePath, err := lfs.ObjectPath(cacheRoot, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	for _, name := range []string{"../outside.txt", "link/outside.txt"} {
+		if name == "link/outside.txt" {
+			if err := os.Symlink(filepath.Dir(outside), filepath.Join(repo, "link")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		files := []pointerFile{{Name: name, Oid: oid, Size: int64(len(payload))}}
+		progress.OnPlan(toPullFiles(files))
+		if err := checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath); err == nil {
+			t.Fatalf("checkoutDownloadedFiles accepted unsafe path %q", name)
+		}
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "sentinel" {
+		t.Fatalf("outside sentinel was changed to %q", got)
+	}
+}
+
 func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -383,7 +475,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, false); err != nil {
+	if err := checkoutDownloadedFiles(files, progress, false, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -438,7 +530,7 @@ func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *test
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, true); err != nil {
+	if err := checkoutDownloadedFiles(files, progress, true, gitrepo.LFSObjectsPath); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -535,6 +627,30 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	cached := runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("expected no staged semantic diff after refresh, got %q", cached)
+	}
+}
+
+func TestRefreshGitIndexPreservesLeadingSpacePath(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	const path = " lead.bin"
+	if err := os.WriteFile(filepath.Join(repo, path), []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: path}}); err != nil {
+		t.Fatal(err)
+	}
+	staged := runGitOutputTest(t, repo, "diff", "--cached", "--name-only", "-z")
+	if staged != path+"\x00" {
+		t.Fatalf("staged path = %q, want exact leading-space path", staged)
 	}
 }
 

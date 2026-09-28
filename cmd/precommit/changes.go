@@ -1,63 +1,67 @@
 package precommit
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/calypr/git-drs/internal/lfs"
 )
 
-// stagedChanges parses: git diff --cached --name-status -M
+// stagedChanges parses NUL-delimited Git paths without changing filename bytes.
 func stagedChanges(ctx context.Context) ([]Change, error) {
-	out, err := git(ctx, "diff", "--cached", "--name-status", "-M")
+	out, err := git(ctx, "diff", "--cached", "--name-status", "-z", "-M")
 	if err != nil {
 		return nil, err
 	}
 	var changes []Change
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		line := sc.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
+	fields := bytes.Split(out, []byte{0})
+	for i := 0; i < len(fields)-1; {
+		status := string(fields[i])
+		i++
+		if i >= len(fields)-1 {
+			return nil, fmt.Errorf("incomplete staged change for status %q", status)
 		}
-		parts := strings.Split(line, "\t")
-		if len(parts) < 2 {
-			continue
-		}
-		status := parts[0]
+		path := string(fields[i])
+		i++
 		switch {
 		case status == "A":
-			changes = append(changes, Change{Kind: KindAdd, NewPath: parts[1], Status: status})
-		case status == "M":
-			changes = append(changes, Change{Kind: KindModify, NewPath: parts[1], Status: status})
+			changes = append(changes, Change{Kind: KindAdd, NewPath: path})
+		case status == "M" || status == "T":
+			changes = append(changes, Change{Kind: KindModify, NewPath: path})
 		case status == "D":
-			changes = append(changes, Change{Kind: KindDelete, NewPath: parts[1], Status: status})
-		case strings.HasPrefix(status, "R") && len(parts) >= 3:
-			changes = append(changes, Change{Kind: KindRename, OldPath: parts[1], NewPath: parts[2], Status: status})
+			changes = append(changes, Change{Kind: KindDelete, NewPath: path})
+		case strings.HasPrefix(status, "R"):
+			if i >= len(fields)-1 {
+				return nil, fmt.Errorf("incomplete staged rename for %q", path)
+			}
+			changes = append(changes, Change{Kind: KindRename, OldPath: path, NewPath: string(fields[i])})
+			i++
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return nil, err
 	}
 	return changes, nil
 }
 
 func stagedLFSOID(ctx context.Context, path string) (string, bool, error) {
-	out, err := git(ctx, "show", ":"+path)
+	size, err := stagedBlobSize(ctx, path)
 	if err != nil {
 		return "", false, err
 	}
-
+	if size > lfs.MaxPointerFileBytes {
+		return "", false, nil
+	}
+	out, err := git(ctx, "show", stagedObjectSpec(path))
+	if err != nil {
+		return "", false, err
+	}
 	var hasSpec bool
 	var oid string
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	for sc.Scan() {
-		line := sc.Text()
-		if line == lfsSpecLine {
+	for _, raw := range bytes.Split(out, []byte{'\n'}) {
+		line := string(bytes.TrimSuffix(raw, []byte{'\r'}))
+		if line == "version https://git-lfs.github.com/spec/v1" {
 			hasSpec = true
-			continue
 		}
 		if strings.HasPrefix(line, "oid sha256:") {
 			hex := strings.TrimSpace(strings.TrimPrefix(line, "oid sha256:"))
@@ -66,20 +70,14 @@ func stagedLFSOID(ctx context.Context, path string) (string, bool, error) {
 			}
 		}
 		if hasSpec && oid != "" {
-			break
+			return oid, true, nil
 		}
-	}
-	if err := sc.Err(); err != nil {
-		return "", false, err
-	}
-	if hasSpec && oid != "" {
-		return oid, true, nil
 	}
 	return "", false, nil
 }
 
 func stagedBlobSize(ctx context.Context, path string) (int64, error) {
-	out, err := git(ctx, "cat-file", "-s", ":"+path)
+	out, err := git(ctx, "cat-file", "-s", stagedObjectSpec(path))
 	if err != nil {
 		return 0, err
 	}
@@ -88,4 +86,10 @@ func stagedBlobSize(ctx context.Context, path string) (int64, error) {
 		return 0, fmt.Errorf("parse staged blob size for %s: %w", path, err)
 	}
 	return size, nil
+}
+
+// The ./ prefix prevents a filename such as 0:big.bin from being parsed as
+// Git's :<stage>:<path> index selector.
+func stagedObjectSpec(path string) string {
+	return ":./" + path
 }

@@ -31,19 +31,19 @@ func TestRequestMatchesEndpointHost(t *testing.T) {
 	}{
 		{
 			name:     "matches exact host",
-			req:      credentialRequest{Host: "example.org"},
+			req:      credentialRequest{Protocol: "https", Host: "example.org"},
 			endpoint: "https://example.org/api/v1",
 			want:     true,
 		},
 		{
 			name:     "matches host with port",
-			req:      credentialRequest{Host: "127.0.0.1:8080"},
+			req:      credentialRequest{Protocol: "http", Host: "127.0.0.1:8080"},
 			endpoint: "http://127.0.0.1:8080/drs",
 			want:     true,
 		},
 		{
 			name:     "rejects different host",
-			req:      credentialRequest{Host: "gogs.local"},
+			req:      credentialRequest{Protocol: "http", Host: "gogs.local"},
 			endpoint: "http://127.0.0.1:8080/drs",
 			want:     false,
 		},
@@ -51,6 +51,12 @@ func TestRequestMatchesEndpointHost(t *testing.T) {
 			name:     "rejects empty host",
 			req:      credentialRequest{},
 			endpoint: "http://127.0.0.1:8080/drs",
+			want:     false,
+		},
+		{
+			name:     "rejects mismatched protocol",
+			req:      credentialRequest{Protocol: "http", Host: "example.org"},
+			endpoint: "https://example.org/api/v1",
 			want:     false,
 		},
 	}

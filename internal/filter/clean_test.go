@@ -17,7 +17,7 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
@@ -37,11 +37,8 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{
 		Size: 21,
 		AccessMethods: &[]drsapi.AccessMethod{{
-			Type: drsapi.AccessMethodTypeS3,
-			AccessUrl: &struct {
-				Headers *[]string `json:"headers,omitempty"`
-				Url     string    `json:"url"`
-			}{Url: explicitURL},
+			Type:      drsapi.AccessMethodTypeS3,
+			AccessUrl: &drsapi.AccessURL{Url: explicitURL},
 		}},
 	}, oid); err != nil {
 		t.Fatalf("seed DRS object: %v", err)
@@ -49,7 +46,7 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 
 	var out bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := CleanContent(context.Background(), lfsRoot, "data/from-bucket.bin", bytes.NewBufferString(pointer), &out, logger); err != nil {
+	if err := CleanContentWithRoots(context.Background(), lfsRoot, gitrepo.DRSObjectsPath, "data/from-bucket.bin", bytes.NewBufferString(pointer), &out, logger); err != nil {
 		t.Fatalf("CleanContent returned error: %v", err)
 	}
 	if out.String() != pointer {
@@ -73,6 +70,32 @@ func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
 	}
 }
 
+func TestCleanContentUsesConfiguredLFSRoot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	customRoot := filepath.Join(t.TempDir(), "custom-lfs")
+	const payload = "configured storage payload"
+	var out bytes.Buffer
+	if err := CleanContentWithRoots(t.Context(), customRoot, gitrepo.DRSObjectsPath, "data.bin", strings.NewReader(payload), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(sum[:])
+	customPath, err := lfs.ObjectPath(filepath.Join(customRoot, "objects"), oid)
+	if err != nil {
+		t.Fatalf("custom ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("configured LFS object missing at %s: %v", customPath, err)
+	}
+	defaultPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("default ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("default LFS object was written at %s: err=%v", defaultPath, err)
+	}
+}
+
 func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
 	repo := t.TempDir()
 	t.Chdir(repo)
@@ -82,7 +105,7 @@ func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := CleanContent(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", strings.NewReader(pointer), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+	if err := CleanContentWithRoots(t.Context(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "data.bin", strings.NewReader(pointer), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatal(err)
 	}
 	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
@@ -129,7 +152,7 @@ func TestCleanContentPreservesIndexedDRSPointerForHydratedPayload(t *testing.T) 
 	}
 	var out bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewReader(payload), &out, logger); err != nil {
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewReader(payload), &out, logger); err != nil {
 		t.Fatalf("CleanContent: %v", err)
 	}
 	if out.String() != pointer {
@@ -138,7 +161,7 @@ func TestCleanContentPreservesIndexedDRSPointerForHydratedPayload(t *testing.T) 
 
 	changed := bytes.Repeat([]byte("x"), len(payload))
 	out.Reset()
-	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewReader(changed), &out, logger); err != nil {
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewReader(changed), &out, logger); err != nil {
 		t.Fatalf("CleanContent changed payload: %v", err)
 	}
 	if out.String() == pointer {
@@ -163,7 +186,7 @@ func TestCleanContentPassesThroughDRSURIWithoutSHA256MapWarning(t *testing.T) {
 	var out bytes.Buffer
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	if err := CleanContent(context.Background(), filepath.Join(repo, ".git", "lfs"), "population_descriptor.tsv", bytes.NewBufferString(pointer), &out, logger); err != nil {
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewBufferString(pointer), &out, logger); err != nil {
 		t.Fatalf("CleanContent returned error: %v", err)
 	}
 	if out.String() != pointer {

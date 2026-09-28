@@ -77,7 +77,7 @@ func runUnified(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if credentialFlag != "" && !validCredentialSource(credentialFlag) {
-		return fmt.Errorf("invalid credential source %q; use env:, file:, helper:, profile:, or stdin", credentialFlag)
+		return fmt.Errorf("invalid credential source %q; use env:, file:, helper:, or profile:", credentialFlag)
 	}
 	if checkoutFlag != "" && !validChoice(checkoutFlag, "pointers", "hydrate") {
 		return fmt.Errorf("--checkout must be pointers or hydrate")
@@ -144,9 +144,6 @@ func validateProviderAuth(provider, auth string) error {
 	return fmt.Errorf("authentication method %q is not supported by the Gen3 remote adapter; use bearer or provider-helper:gen3-profile", auth)
 }
 func validCredentialSource(v string) bool {
-	if v == "stdin" {
-		return true
-	}
 	for _, p := range []string{"env:", "file:", "helper:", "profile:"} {
 		if strings.HasPrefix(v, p) && len(v) > len(p) {
 			return true

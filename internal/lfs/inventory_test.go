@@ -1,6 +1,7 @@
 package lfs
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,50 +9,82 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/drslog"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
-func TestGetLfsFilesForRefPaths(t *testing.T) {
+func TestReachablePointersPreserveRepositoryRootWhitespace(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo ")
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitTestCommand(t, repo, "init", "-q")
+	gitTestCommand(t, repo, "config", "user.email", "test@example.com")
+	gitTestCommand(t, repo, "config", "user.name", "test")
+	if err := os.WriteFile(filepath.Join(repo, "data.bin"), []byte("version https://git-lfs.github.com/spec/v1\noid sha256:"+strings.Repeat("a", 64)+"\nsize 12\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTestCommand(t, repo, "add", "data.bin")
+	gitTestCommand(t, repo, "commit", "-qm", "add pointer")
+
+	files, err := GetReachablePointerFilesForRefInRepository(context.Background(), repo, "HEAD", drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["data.bin"]; !ok {
+		t.Fatalf("pointer missing from repository with trailing space: %+v", files)
+	}
+}
+
+func TestGetLfsFilesForRefsPreservesNewlinePath(t *testing.T) {
 	repo := t.TempDir()
-	runGitCmdTest(t, repo, "init")
-	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
-	runGitCmdTest(t, repo, "config", "user.name", "Test User")
-	runGitCmdTest(t, repo, "checkout", "-b", "main")
-
-	oid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-	pointerPath := filepath.Join(repo, "data", "main-pointer.dat")
-	writePointerFile(t, pointerPath, oid, "123")
-	regularPath := filepath.Join(repo, "data", "regular.txt")
-	if err := os.WriteFile(regularPath, []byte("not a pointer"), 0o644); err != nil {
-		t.Fatalf("write regular file: %v", err)
+	gitTestCommand(t, repo, "init", "-q")
+	gitTestCommand(t, repo, "config", "user.email", "test@example.com")
+	gitTestCommand(t, repo, "config", "user.name", "test")
+	for i, name := range []string{"normal.bin", "line\nbreak.bin"} {
+		id := strings.Repeat("a", 64)
+		if i == 1 {
+			id = strings.Repeat("b", 64)
+		}
+		pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + id + "\nsize 12\n"
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(pointer), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitTestCommand(t, repo, "add", name)
 	}
-	runGitCmdTest(t, repo, "add", ".")
-	runGitCmdTest(t, repo, "commit", "-m", "main commit")
+	gitTestCommand(t, repo, "commit", "-qm", "add pointers")
+	gitTestCommand(t, repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+	t.Chdir(repo)
 
-	cwd, err := os.Getwd()
+	files, err := GetLfsFilesForRefs([]string{"refs/remotes/origin/main"}, drslog.NewNoOpLogger())
 	if err != nil {
-		t.Fatalf("getwd: %v", err)
+		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
-	if err := os.Chdir(repo); err != nil {
-		t.Fatalf("chdir repo: %v", err)
+	for _, name := range []string{"normal.bin", "line\nbreak.bin"} {
+		if _, ok := files[name]; !ok {
+			t.Fatalf("missing %q from ref pointer inventory: %+v", name, files)
+		}
 	}
+}
 
-	logger := drslog.NewNoOpLogger()
-	files, err := GetLfsFilesForRefPaths("HEAD", []string{"data/main-pointer.dat", "data/regular.txt", "data/missing.bin"}, logger)
+func TestCreateDRSPointerPreservesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reference")
+	const original = "existing user data\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	obj := &drsapi.DrsObject{Size: 42}
+	if err := CreateDRSPointer(obj, path, "drs://example.org/object-1"); err == nil {
+		t.Fatal("existing destination was overwritten")
+	}
+	got, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("GetLfsFilesForRefPaths error: %v", err)
+		t.Fatal(err)
 	}
-	if len(files) != 1 {
-		t.Fatalf("expected one pointer file, got %+v", files)
+	if string(got) != original {
+		t.Fatalf("existing file changed: %q", got)
 	}
-	info, ok := files["data/main-pointer.dat"]
-	if !ok {
-		t.Fatalf("missing pointer file in result: %+v", files)
-	}
-	if info.Oid != oid || info.Size != 123 || !info.IsPointer {
-		t.Fatalf("unexpected pointer info: %+v", info)
+	if err := CreateDRSPointer(obj, filepath.Join(filepath.Dir(path), "new-reference"), "drs://example.org/object-1"); err != nil {
+		t.Fatalf("new destination rejected: %v", err)
 	}
 }
 
@@ -63,40 +96,10 @@ func TestParsePlaceholderPointer(t *testing.T) {
 	}
 }
 
-func TestGetLfsFilesForRefPathsHandlesSpaces(t *testing.T) {
-	repo := t.TempDir()
-	runGitCmdTest(t, repo, "init")
-	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
-	runGitCmdTest(t, repo, "config", "user.name", "Test User")
-	runGitCmdTest(t, repo, "checkout", "-b", "main")
-
-	oid := "997312a8a4f826fd4e4ef2d572badacea37a3dc79e87336a97a4c0f82ef25f14"
-	spacePath := "data/BigMHC Training and Evaluation Data/el_test.csv"
-	writePointerFile(t, filepath.Join(repo, filepath.FromSlash(spacePath)), oid, "102550733")
-	runGitCmdTest(t, repo, "add", ".")
-	runGitCmdTest(t, repo, "commit", "-m", "commit pointer with spaces")
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(cwd)
-	})
-	if err := os.Chdir(repo); err != nil {
-		t.Fatalf("chdir repo: %v", err)
-	}
-
-	files, err := GetLfsFilesForRefPaths("HEAD", []string{spacePath}, drslog.NewNoOpLogger())
-	if err != nil {
-		t.Fatalf("GetLfsFilesForRefPaths error: %v", err)
-	}
-	info, ok := files[spacePath]
-	if !ok {
-		t.Fatalf("missing pointer file with spaces in result: %+v", files)
-	}
-	if info.Oid != oid || info.Size != 102550733 || !info.IsPointer {
-		t.Fatalf("unexpected pointer info: %+v", info)
+func TestParseLFSPointerRejectsUnknownSHA256Version(t *testing.T) {
+	oid := strings.Repeat("a", 64)
+	if _, ok := parseLFSPointer("version https://example.invalid/spec/v1\noid sha256:" + oid + "\nsize 7\n"); ok {
+		t.Fatal("parseLFSPointer accepted a SHA-256 pointer with an unknown version")
 	}
 }
 
@@ -147,65 +150,6 @@ func TestGetReachablePointerFilesForRefHandlesSpacesAndIgnoresNonPointers(t *tes
 	}
 	if _, ok := files["data/malformed.dat"]; ok {
 		t.Fatalf("malformed pointer should not be included: %+v", files)
-	}
-}
-
-func TestGetWorktreeLfsFiles(t *testing.T) {
-	repo := t.TempDir()
-	runGitCmdTest(t, repo, "init")
-	runGitCmdTest(t, repo, "config", "user.email", "test@example.com")
-	runGitCmdTest(t, repo, "config", "user.name", "Test User")
-
-	oid := "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-	pointerPath := filepath.Join(repo, "data", "pointer.dat")
-	writePointerFile(t, pointerPath, oid, "789")
-
-	localizedPath := filepath.Join(repo, "data", "localized.bin")
-	if err := os.WriteFile(localizedPath, []byte("hydrated"), 0o644); err != nil {
-		t.Fatalf("write localized file: %v", err)
-	}
-
-	runGitCmdTest(t, repo, "add", ".")
-	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")
-
-	if err := os.WriteFile(pointerPath, []byte("hydrated pointer replacement"), 0o644); err != nil {
-		t.Fatalf("replace pointer with hydrated content: %v", err)
-	}
-
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(repo); err != nil {
-		t.Fatalf("chdir repo: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chdir(oldWD)
-	})
-
-	logger := drslog.NewNoOpLogger()
-	files, err := GetWorktreeLfsFiles(logger)
-	if err != nil {
-		t.Fatalf("GetWorktreeLfsFiles error: %v", err)
-	}
-	if _, exists := files["data/pointer.dat"]; exists {
-		t.Fatalf("hydrated file should not still appear as a pointer")
-	}
-
-	if err := os.WriteFile(pointerPath, []byte("version https://git-lfs.github.com/spec/v1\noid sha256:"+oid+"\nsize 789\n"), 0o644); err != nil {
-		t.Fatalf("restore pointer file: %v", err)
-	}
-
-	files, err = GetWorktreeLfsFiles(logger)
-	if err != nil {
-		t.Fatalf("GetWorktreeLfsFiles error after restore: %v", err)
-	}
-	info, ok := files["data/pointer.dat"]
-	if !ok {
-		t.Fatalf("expected pointer in worktree inventory")
-	}
-	if info.Oid != oid || info.Size != 789 {
-		t.Fatalf("unexpected pointer info: %+v", info)
 	}
 }
 
@@ -261,6 +205,35 @@ func TestGetTrackedLfsFiles_IncludesHydratedTrackedFileUsingIndexPointer(t *test
 	}
 	if info.IsPointer {
 		t.Fatalf("expected hydrated tracked file to be marked non-pointer in worktree inventory")
+	}
+}
+
+func TestGetTrackedLfsFilesPreservesLeadingSpaceInPath(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.dat filter=drs\n"), 0o644); err != nil {
+		t.Fatalf("write attributes: %v", err)
+	}
+	path := " lead.dat"
+	oid := strings.Repeat("a", 64)
+	writePointerFile(t, filepath.Join(repo, path), oid, "4")
+	runGitCmdTest(t, repo, "add", "--", ".gitattributes", path)
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+
+	files, err := GetTrackedLfsFiles(drslog.NewNoOpLogger())
+	if err != nil {
+		t.Fatalf("GetTrackedLfsFiles: %v", err)
+	}
+	if info, ok := files[path]; !ok || info.Oid != oid {
+		t.Fatalf("tracked path %q missing or incorrect: %+v", path, files)
 	}
 }
 

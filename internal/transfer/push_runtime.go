@@ -5,42 +5,24 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
-	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	internalapi "github.com/calypr/syfon/apigen/client/internalapi"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	syaccess "github.com/calypr/syfon/client/access"
 	sycommon "github.com/calypr/syfon/client/common"
 	conf "github.com/calypr/syfon/client/config"
 	"github.com/calypr/syfon/client/hash"
-	syrequest "github.com/calypr/syfon/client/request"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	syupload "github.com/calypr/syfon/client/transfer/upload"
 )
-
-var uploadBackendForRuntime = func(rt *pushRuntime) sytransfer.MultipartBackend {
-	if rt == nil || rt.API == nil || rt.API.Client == nil {
-		return nil
-	}
-	return rt.API.Client.Data()
-}
-
-type scopedUploadURLBackend struct {
-	sytransfer.MultipartBackend
-	rt *pushRuntime
-}
-
-func (b *scopedUploadURLBackend) ResolveUploadURL(ctx context.Context, guid string, filename string, metadata sycommon.FileMetadata, bucket string) (string, error) {
-	return resolveScopedUploadURL(b.rt, ctx, b.MultipartBackend, guid, filename)
-}
 
 type pushScope struct {
 	Organization string
@@ -57,20 +39,27 @@ type pushTuning struct {
 }
 
 type pushRuntime struct {
-	API        *remoteruntime.GitContext
-	Credential *conf.Credential
-	Logger     *slog.Logger
-	Scope      pushScope
-	Tuning     pushTuning
-	ProbeURL   func(context.Context, string) error
+	API            *remoteruntime.GitContext
+	Backend        sytransfer.MultipartBackend
+	Credential     *conf.Credential
+	Logger         *slog.Logger
+	Scope          pushScope
+	Tuning         pushTuning
+	ObjectsRoot    string
+	DRSObjectsRoot string
 }
 
 func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 	if cl == nil {
 		return &pushRuntime{}
 	}
+	var backend sytransfer.MultipartBackend
+	if cl.Client != nil {
+		backend = cl.Client.Data()
+	}
 	return &pushRuntime{
 		API:        cl,
+		Backend:    backend,
 		Credential: cl.Credential,
 		Logger:     cl.Logger,
 		Scope: pushScope{
@@ -85,24 +74,107 @@ func newPushRuntime(cl *remoteruntime.GitContext) *pushRuntime {
 			MultiPartThreshold: cl.MultiPartThreshold,
 			UploadConcurrency:  cl.UploadConcurrency,
 		},
-		ProbeURL: newDownloadProbe(cl),
 	}
 }
 
-func isFileDownloadable(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject) (bool, error) {
-	if drsObject.AccessMethods == nil || len(*drsObject.AccessMethods) == 0 {
+func pendingPushUploadPath(rt *pushRuntime, oid string) (string, error) {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
+		return "", fmt.Errorf("DRS objects root is required for pending upload state")
+	}
+	oid = localdrsobject.NormalizeOid(oid)
+	if oid == "" {
+		return "", fmt.Errorf("empty oid for pending upload state")
+	}
+	endpoint := ""
+	if rt.API != nil {
+		endpoint = strings.TrimRight(strings.TrimSpace(rt.API.Endpoint), "/")
+	}
+	identity := strings.Join([]string{
+		endpoint,
+		strings.TrimSpace(rt.Scope.Organization),
+		strings.TrimSpace(rt.Scope.Project),
+		strings.TrimSpace(rt.Scope.Bucket),
+		strings.TrimSpace(rt.Scope.StoragePref),
+		oid,
+	}, "\x00")
+	sum := sha256.Sum256([]byte(identity))
+	return filepath.Join(filepath.Dir(rt.DRSObjectsRoot), "push-pending", hex.EncodeToString(sum[:])), nil
+}
+
+func hasPendingPushUpload(rt *pushRuntime, oid string) (bool, error) {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
 		return false, nil
 	}
-	accessType := (*drsObject.AccessMethods)[0].Type
-	res, err := rt.API.Client.DRS().GetAccessURL(ctx, drsObject.Id, string(accessType))
+	path, err := pendingPushUploadPath(rt, oid)
 	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(path)
+	if os.IsNotExist(err) {
 		return false, nil
 	}
-	if rt.ProbeURL == nil {
-		rt.ProbeURL = newDownloadProbe(rt.API)
+	if err != nil {
+		return false, err
 	}
-	err = rt.ProbeURL(ctx, res.Url)
-	return err == nil, nil
+	return true, nil
+}
+
+func markPendingPushUpload(rt *pushRuntime, oid string) error {
+	path, err := pendingPushUploadPath(rt, oid)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	marker, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if os.IsExist(err) {
+		marker, err = os.OpenFile(path, os.O_RDWR, 0o600)
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := marker.WriteString("pending\n"); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Sync(); err != nil {
+		_ = marker.Close()
+		return err
+	}
+	if err := marker.Close(); err != nil {
+		return err
+	}
+	return syncPushMarkerDirectory(dir)
+}
+
+func clearPendingPushUpload(rt *pushRuntime, oid string) error {
+	if rt == nil || strings.TrimSpace(rt.DRSObjectsRoot) == "" {
+		return nil
+	}
+	path, err := pendingPushUploadPath(rt, oid)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return syncPushMarkerDirectory(filepath.Dir(path))
+}
+
+func syncPushMarkerDirectory(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix string) string {
@@ -139,12 +211,20 @@ func uploadKeyFromObject(obj *drsapi.DrsObject, bucket string, storagePrefix str
 }
 
 func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (string, bool, error) {
+	objectsRoot, err := lfs.ResolveObjectsRoot(context.Background())
+	if err != nil {
+		return "", false, fmt.Errorf("resolve LFS objects root: %w", err)
+	}
+	return resolveUploadSourcePathAt(objectsRoot, oid, worktreePath, isPointer)
+}
+
+func resolveUploadSourcePathAt(objectsRoot string, oid string, worktreePath string, isPointer bool) (string, bool, error) {
 	oid = localdrsobject.NormalizeOid(oid)
 	if oid == "" {
 		return "", false, fmt.Errorf("empty oid")
 	}
 
-	lfsObjPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	lfsObjPath, err := lfs.ObjectPath(objectsRoot, oid)
 	if err == nil {
 		if st, statErr := os.Stat(lfsObjPath); statErr == nil && !st.IsDir() && st.Size() > 0 {
 			return lfsObjPath, true, nil
@@ -157,7 +237,7 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 		// hydrated file instead of assuming every pointer path is pointer-form
 		// in the worktree.
 		if st, statErr := os.Stat(worktreePath); statErr == nil && !st.IsDir() {
-			if matches, hashErr := fileMatchesSHA256(worktreePath, oid); hashErr == nil && matches {
+			if matches, hashErr := lfs.FileMatchesSHA256(worktreePath, oid); hashErr == nil && matches {
 				return worktreePath, true, nil
 			}
 		}
@@ -174,41 +254,37 @@ func resolveUploadSourcePath(oid string, worktreePath string, isPointer bool) (s
 	return worktreePath, true, nil
 }
 
-func fileMatchesSHA256(path string, oid string) (bool, error) {
-	want := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(oid), "sha256:"))
-	if len(want) != sha256.Size*2 {
-		return false, nil
-	}
-	if _, err := hex.DecodeString(want); err != nil {
-		return false, nil
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer file.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return false, err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)) == want, nil
+func uploadFileForCandidate(rt *pushRuntime, ctx context.Context, candidate uploadCandidate) error {
+	return uploadFileForObjectWithSHA256(rt, ctx, candidate.obj, candidate.src, uploadChecksumForCandidate(candidate.file, candidate.obj))
 }
 
-func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath string, skipIfDownloadable bool) error {
+func uploadChecksumForCandidate(file lfs.LfsFileInfo, drsObject *drsapi.DrsObject) string {
+	want := objectSHA256(drsObject)
+	if !file.Placeholder {
+		return want
+	}
+	placeholderOID := localdrsobject.NormalizeOid(file.Oid)
+	if pointerSHA256 := hash.NormalizeChecksum(file.SHA256); pointerSHA256 != "" && pointerSHA256 != placeholderOID {
+		return pointerSHA256
+	}
+	if want == placeholderOID {
+		return ""
+	}
+	return want
+}
+
+func uploadFileForObjectWithSHA256(rt *pushRuntime, ctx context.Context, drsObject *drsapi.DrsObject, filePath, expectedSHA256 string) error {
 	hInfo := hash.ConvertDrsChecksumsToHashInfo(drsObject.Checksums)
-	if skipIfDownloadable {
-		rt.Logger.DebugContext(ctx, fmt.Sprintf("checking if oid %s is already downloadable", hInfo.SHA256))
-		downloadable, err := isFileDownloadable(rt, ctx, drsObject)
+	rt.Logger.DebugContext(ctx, fmt.Sprintf("uploading file %s", hInfo.SHA256))
+	if expectedSHA256 != "" {
+		matches, err := lfs.FileMatchesSHA256(filePath, expectedSHA256)
 		if err != nil {
-			return fmt.Errorf("error checking if file is downloadable: oid %s %v", hInfo.SHA256, err)
+			return fmt.Errorf("verify upload source %s against SHA-256 %s: %w", filePath, expectedSHA256, err)
 		}
-		if downloadable {
-			rt.Logger.DebugContext(ctx, fmt.Sprintf("file %s is already available for download, skipping upload", hInfo.SHA256))
-			return nil
+		if !matches {
+			return fmt.Errorf("upload source %s does not match SHA-256 %s", filePath, expectedSHA256)
 		}
 	}
-
-	rt.Logger.DebugContext(ctx, fmt.Sprintf("file %s is not downloadable, proceeding to upload", hInfo.SHA256))
 	multiPartThreshold := int64(5 * 1024 * 1024 * 1024)
 	if rt.Tuning.MultiPartThreshold > 0 {
 		multiPartThreshold = rt.Tuning.MultiPartThreshold
@@ -241,59 +317,19 @@ func uploadFileForObject(rt *pushRuntime, ctx context.Context, drsObject *drsapi
 		"threshold", multiPartThreshold,
 		"forceMultipart", forceMultipart,
 	)
-	backend := uploadBackendForRuntime(rt)
-	if backend == nil {
+	if rt.Backend == nil {
 		return fmt.Errorf("upload backend is required")
 	}
-	if strings.TrimSpace(rt.Scope.Organization) != "" && strings.TrimSpace(rt.Scope.Project) != "" {
-		backend = &scopedUploadURLBackend{MultipartBackend: backend, rt: rt}
-	}
 	if forceMultipart {
-		if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
+		if err := syupload.Upload(ctx, rt.Backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, true); err != nil {
 			return fmt.Errorf("upload error: %w", err)
 		}
 		return nil
 	}
-	if err := syupload.Upload(ctx, backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
+	if err := syupload.Upload(ctx, rt.Backend, filePath, objectKey, drsObject.Id, rt.Scope.Bucket, scopedUploadMetadata(rt), false, false); err != nil {
 		return fmt.Errorf("upload error: %w", err)
 	}
 	return nil
-}
-
-func resolveScopedUploadURL(rt *pushRuntime, ctx context.Context, backend sytransfer.MultipartBackend, did, objectKey string) (string, error) {
-	organization := strings.TrimSpace(rt.Scope.Organization)
-	project := strings.TrimSpace(rt.Scope.Project)
-	if organization == "" || project == "" {
-		return "", fmt.Errorf("upload scope organization/project is required")
-	}
-
-	if rt.API != nil && rt.API.Client != nil && rt.API.Client.Requestor() != nil {
-		query := url.Values{}
-		query.Set("organization", organization)
-		query.Set("project", project)
-		query.Set("key", objectKey)
-		var out internalapi.InternalSignedURL
-		if err := rt.API.Client.Requestor().Do(ctx, http.MethodGet, "/data/upload/"+url.PathEscape(did), nil, &out, syrequest.WithQueryValues(query)); err != nil {
-			return "", err
-		}
-		if out.Url == nil || strings.TrimSpace(*out.Url) == "" {
-			return "", fmt.Errorf("response missing URL")
-		}
-		return *out.Url, nil
-	}
-
-	resolver, ok := backend.(interface {
-		ResolveUploadURL(context.Context, string, string, sycommon.FileMetadata, string) (string, error)
-	})
-	if !ok {
-		return "", fmt.Errorf("upload backend cannot resolve upload URLs")
-	}
-	metadata := sycommon.FileMetadata{
-		Authorizations: map[string][]string{
-			organization: {project},
-		},
-	}
-	return resolver.ResolveUploadURL(ctx, did, objectKey, metadata, "")
 }
 
 func scopedUploadMetadata(rt *pushRuntime) sycommon.FileMetadata {
@@ -303,38 +339,6 @@ func scopedUploadMetadata(rt *pushRuntime) sycommon.FileMetadata {
 		return sycommon.FileMetadata{}
 	}
 	return sycommon.FileMetadata{
-		Authorizations: map[string][]string{
-			organization: {project},
-		},
+		Authorizations: syaccess.AuthzMapFromScope(organization, project),
 	}
-}
-
-func newDownloadProbe(cl *remoteruntime.GitContext) func(context.Context, string) error {
-	httpClient := http.DefaultClient
-	if cl != nil && cl.Client != nil && cl.Client.HTTPClient() != nil {
-		httpClient = cl.Client.HTTPClient()
-	}
-	return func(ctx context.Context, rawURL string) error {
-		return probeDownloadURL(ctx, httpClient, rawURL)
-	}
-}
-
-func probeDownloadURL(ctx context.Context, httpClient *http.Client, rawURL string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Range", "bytes=0-0")
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("download probe failed with status %d", resp.StatusCode)
-	}
-	return nil
 }

@@ -83,11 +83,13 @@ func (s *AddURLService) runGlobus(ctx context.Context, cmd *cobra.Command, logge
 		return nil
 	}
 	trackPattern := input.path
+	track := gitrepo.TrackReadOnly
 	if source.tree {
 		if err := ensureReadOnlyTree(input.path); err != nil {
 			return err
 		}
 		trackPattern = filepath.ToSlash(filepath.Join(input.path, "**"))
+		track = gitrepo.TrackReadOnlyPattern
 	}
 	cfg, err := s.loadConfig()
 	if err != nil {
@@ -106,6 +108,10 @@ func (s *AddURLService) runGlobus(ctx context.Context, cmd *cobra.Command, logge
 		return err
 	}
 	builder := drsobjectBuilder(scope.Bucket, org, project, scope.Prefix)
+	paths, err := gitrepo.ResolveRepositoryPaths(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve local DRS objects: %w", err)
+	}
 	for _, entry := range entries {
 		if err := writePointerFile(entry.destination, entry.oid, entry.size, entry.sha256 == ""); err != nil {
 			return err
@@ -113,11 +119,11 @@ func (s *AddURLService) runGlobus(ctx context.Context, cmd *cobra.Command, logge
 		if err := updatePrecommitCache(ctx, logger, entry.destination, entry.oid, entry.source); err != nil {
 			logger.Warn("pre-commit cache update skipped", "path", entry.destination, "error", err)
 		}
-		if _, err := writeAddURLDrsObject(builder, addURLDrsFile{Name: entry.destination, Size: entry.size, Oid: entry.oid, ContentSHA256: entry.sha256}, entry.source); err != nil {
+		if _, err := writeAddURLDrsObject(paths.DRSObjectsDir(), builder, addURLDrsFile{Name: entry.destination, Size: entry.size, Oid: entry.oid, ContentSHA256: entry.sha256}, entry.source); err != nil {
 			return err
 		}
 	}
-	if _, err := gitrepo.TrackReadOnly(ctx, trackPattern); err != nil {
+	if _, err := track(ctx, trackPattern); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%d object(s) added; stage %s and .gitattributes, then run git drs push\n", len(entries), input.path)
@@ -135,6 +141,14 @@ func parseGlobusSource(raw string) (globusSource, error) {
 	u, err := url.Parse(parseRaw)
 	if err != nil || !strings.EqualFold(u.Scheme, "globus") || u.Host == "" || u.Path == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return globusSource{}, fmt.Errorf("invalid Globus URL %q; expected globus://<collection-id>/<path>", raw)
+	}
+	if strings.ContainsAny(u.Path, "\x00\\") {
+		return globusSource{}, fmt.Errorf("invalid Globus URL %q; source path contains invalid characters", raw)
+	}
+	for _, part := range strings.Split(u.Path, "/") {
+		if part == ".." {
+			return globusSource{}, fmt.Errorf("invalid Globus URL %q; source path contains traversal", raw)
+		}
 	}
 	clean := path.Clean("/" + strings.TrimPrefix(u.Path, "/"))
 	source := globusSource{collection: u.Host, root: clean}
@@ -274,7 +288,11 @@ func globusEntries(files []globusauth.File, source globusSource, destination, sh
 }
 
 func normalizeSHA256(raw string) (string, error) {
-	sha := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(raw), "sha256:"))
+	sha := strings.TrimSpace(raw)
+	if len(sha) >= len("sha256:") && strings.EqualFold(sha[:len("sha256:")], "sha256:") {
+		sha = sha[len("sha256:"):]
+	}
+	sha = strings.ToLower(strings.TrimSpace(sha))
 	if len(sha) != 64 || strings.Trim(sha, "0123456789abcdef") != "" {
 		return "", fmt.Errorf("invalid SHA-256 %q; expected 64 hexadecimal characters", raw)
 	}

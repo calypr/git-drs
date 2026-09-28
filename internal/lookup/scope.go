@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	syfoncommon "github.com/calypr/syfon/common"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	syfoncommon "github.com/calypr/syfon/client/access"
 )
 
 func ParseOrgProject(org, project string) (string, string) {
@@ -23,7 +23,28 @@ func ParseOrgProject(org, project string) (string, string) {
 }
 
 func MatchesScope(obj *drsapi.DrsObject, organization, project string) bool {
-	return syfoncommon.DrsObjectMatchesScope(obj, organization, project)
+	if obj == nil || obj.ControlledAccess == nil {
+		return false
+	}
+	authzMap := syfoncommon.ControlledAccessToAuthzMap(*obj.ControlledAccess)
+	organization = strings.TrimSpace(organization)
+	project = strings.TrimSpace(project)
+	if organization == "" {
+		return false
+	}
+	projects, ok := authzMap[organization]
+	if !ok {
+		return false
+	}
+	if len(projects) == 0 {
+		return true
+	}
+	for _, candidate := range projects {
+		if strings.TrimSpace(candidate) == project {
+			return true
+		}
+	}
+	return false
 }
 
 func FindMatchingRecord(records []drsapi.DrsObject, organization, projectID string) (*drsapi.DrsObject, error) {

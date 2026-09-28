@@ -8,6 +8,7 @@ venv*
 .gocache/
 .gomodcache/
 .gopath/
+.audit/
 tests/venv/
 tests/monorepos/TEST/
 coverage/*.out

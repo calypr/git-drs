@@ -1,21 +1,38 @@
 package drsobject
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/bytedance/sonic"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func objectPath(basePath string, oid string) (string, error) {
-	oid = strings.TrimPrefix(oid, "sha256:")
+	if basePath == "" {
+		return "", fmt.Errorf("object base path is required")
+	}
+	oid = strings.TrimSpace(oid)
+	if len(oid) >= len("sha256:") && strings.EqualFold(oid[:len("sha256:")], "sha256:") {
+		oid = oid[len("sha256:"):]
+	}
 	if len(oid) != 64 {
 		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
 	}
-	return filepath.Join(basePath, oid[:2], oid[2:4], oid), nil
+	if _, err := hex.DecodeString(oid); err != nil {
+		return "", fmt.Errorf("error: %s is not a valid sha256 hash", oid)
+	}
+	oid = strings.ToLower(oid)
+	basePath = filepath.Clean(basePath)
+	objectPath := filepath.Join(basePath, oid[:2], oid[2:4], oid)
+	rel, err := filepath.Rel(basePath, objectPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("error: object path escapes base path")
+	}
+	return objectPath, nil
 }
 
 func WriteObject(basePath string, drsObj *drsapi.DrsObject, oid string) error {
@@ -41,17 +58,17 @@ func WriteObject(basePath string, drsObj *drsapi.DrsObject, oid string) error {
 func ReadObject(basePath string, oid string) (*drsapi.DrsObject, error) {
 	path, err := objectPath(basePath, oid)
 	if err != nil {
-		return nil, fmt.Errorf("error getting object path for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error getting object path for oid %s: %w", oid, err)
 	}
 
 	drsObjBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("error reading DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error reading DRS object for oid %s: %w", oid, err)
 	}
 
 	var drsObject drsapi.DrsObject
 	if err := sonic.ConfigFastest.Unmarshal(drsObjBytes, &drsObject); err != nil {
-		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %v", oid, err)
+		return nil, fmt.Errorf("error unmarshaling DRS object for oid %s: %w", oid, err)
 	}
 
 	return &drsObject, nil

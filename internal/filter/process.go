@@ -1,11 +1,11 @@
 package filter
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 
@@ -102,19 +102,27 @@ func (f *GitFilter) processOne(ctx context.Context) error {
 		return err
 	}
 	f.logger.Debug("Received filter request", "command", req.Command, "pathname", req.Pathname)
-	content, err := f.readContent()
+	content := pktline.NewPktlineReaderFromPktline(f.pl, pktline.MaxPacketLength)
+	response, err := os.CreateTemp("", "git-drs-filter-response-*")
 	if err != nil {
-		return fmt.Errorf("reading content for %s %s: %w", req.Command, req.Pathname, err)
+		return fmt.Errorf("creating response spool for %s %s: %w", req.Command, req.Pathname, err)
 	}
+	defer func() {
+		_ = response.Close()
+		_ = os.Remove(response.Name())
+	}()
 
 	var handlerErr error
 	switch req.Command {
 	case "smudge":
-		handlerErr = f.handleSmudge(ctx, req, content)
+		handlerErr = f.handleSmudge(ctx, req, content, response)
 	case "clean":
-		handlerErr = f.handleClean(ctx, req, content)
+		handlerErr = f.handleClean(ctx, req, content, response)
 	default:
 		handlerErr = fmt.Errorf("unknown command %q", req.Command)
+	}
+	if _, err := io.Copy(io.Discard, content); err != nil {
+		return fmt.Errorf("reading content for %s %s: %w", req.Command, req.Pathname, err)
 	}
 
 	if handlerErr != nil {
@@ -123,51 +131,36 @@ func (f *GitFilter) processOne(ctx context.Context) error {
 		}
 		return nil
 	}
-	return nil
+	if _, err := response.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewinding response spool for %s %s: %w", req.Command, req.Pathname, err)
+	}
+	return f.writeSuccessResponse(response)
 }
 
-func (f *GitFilter) handleSmudge(ctx context.Context, req FilterRequest, content []byte) error {
+func (f *GitFilter) handleSmudge(ctx context.Context, req FilterRequest, content io.Reader, dst io.Writer) error {
 	if f.smudge == nil {
-		return f.passthroughSmudge(content)
-	}
-
-	var dst bytes.Buffer
-	if err := f.smudge(ctx, req, bytes.NewReader(content), &dst); err != nil {
+		_, err := io.Copy(dst, content)
 		return err
 	}
-	return f.writeSuccessResponse(dst.Bytes())
+	return f.smudge(ctx, req, content, dst)
 }
 
-func (f *GitFilter) handleClean(ctx context.Context, req FilterRequest, content []byte) error {
+func (f *GitFilter) handleClean(ctx context.Context, req FilterRequest, content io.Reader, dst io.Writer) error {
 	if f.clean == nil {
-		return f.passthroughClean(content)
-	}
-
-	var dst bytes.Buffer
-	if err := f.clean(ctx, req, bytes.NewReader(content), &dst); err != nil {
+		_, err := io.Copy(dst, content)
 		return err
 	}
-	return f.writeSuccessResponse(dst.Bytes())
+	return f.clean(ctx, req, content, dst)
 }
 
-func (f *GitFilter) passthroughSmudge(content []byte) error {
-	return f.writeSuccessResponse(content)
-}
-
-func (f *GitFilter) passthroughClean(content []byte) error {
-	return f.writeSuccessResponse(content)
-}
-
-func (f *GitFilter) writeSuccessResponse(data []byte) error {
+func (f *GitFilter) writeSuccessResponse(data io.Reader) error {
 	if err := f.pl.WritePacketList([]string{"status=success"}); err != nil {
 		return err
 	}
 
 	w := pktline.NewPktlineWriter(f.out, pktline.MaxPacketLength)
-	if len(data) > 0 {
-		if _, err := w.Write(data); err != nil {
-			return err
-		}
+	if _, err := io.Copy(w, data); err != nil {
+		return err
 	}
 	if err := w.Flush(); err != nil {
 		return err
@@ -194,8 +187,4 @@ func (f *GitFilter) readRequest() (FilterRequest, error) {
 		}
 	}
 	return req, nil
-}
-
-func (f *GitFilter) readContent() ([]byte, error) {
-	return io.ReadAll(pktline.NewPktlineReaderFromPktline(f.pl, pktline.MaxPacketLength))
 }

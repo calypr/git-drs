@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -22,11 +21,13 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
+	"github.com/calypr/git-drs/internal/pathspec"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	sycommon "github.com/calypr/syfon/client/common"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
 
@@ -56,12 +57,20 @@ var Cmd = &cobra.Command{
 	},
 	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		logg := drslog.GetLogger()
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
 
 		inventory, err := loadWorktreeInventory(logg)
 		if err != nil {
 			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
 		}
-		pointers := collectPointerFiles(inventory, includePatterns)
+		gitPaths, err := gitrepo.ResolveRepositoryPaths(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve Git repository paths: %w", err)
+		}
+		pointers := collectPointerFiles(inventory, includePatterns, gitPaths.DRSObjectsDir())
 		if len(pointers) == 0 {
 			logg.Debug("no matching pointer files to hydrate")
 			return nil
@@ -103,7 +112,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
 		}
 		if drsCtx.IsReadOnly() {
-			anvil, err = resolver.NewAnVIL(cmd.Context(), drsCtx.Endpoint)
+			anvil, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
 			if err != nil {
 				return err
 			}
@@ -120,11 +129,20 @@ var Cmd = &cobra.Command{
 			}
 		}()
 
-		ctx := context.Background()
+		objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve LFS objects root: %w", err)
+		}
+		worktreeRoot, err := gitrepo.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
+		}
+		drsCtx.LFSObjectsRoot = objectsRoot
+		drsCtx.RepositoryRoot = worktreeRoot
 		missingOIDs := make([]string, 0, len(pointers))
 		seenMissing := make(map[string]struct{}, len(pointers))
 		for _, f := range pointers {
-			cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+			cachePath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 			}
@@ -145,7 +163,7 @@ var Cmd = &cobra.Command{
 		if len(missingOIDs) > 0 {
 			checksumOIDs := make([]string, 0, len(missingOIDs))
 			for _, oid := range missingOIDs {
-				if isDRSPointerOID(oid) {
+				if lfs.IsDRSURI(oid) {
 					if anvil == nil {
 						obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
 						if err == nil {
@@ -169,13 +187,13 @@ var Cmd = &cobra.Command{
 				logg.Debug("bulk prefetch found no scoped objects; continuing per-object")
 			}
 
-			prefetchedAccess := make(map[string]drsapi.AccessURL, len(prefetched))
+			prefetchedAccess := make(map[string]internaltransfer.ResolvedAccess, len(prefetched))
 			if len(prefetched) > 0 {
 				objects := make([]drsapi.DrsObject, 0, len(prefetched))
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
 				}
-				if resolved, err := internaltransfer.BulkAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
+				if resolved, err := internaltransfer.BulkResolvedAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
 					prefetchedAccess = resolved
 					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
 				} else if errors.Is(err, internaltransfer.ErrAccessMethodSelection) {
@@ -190,23 +208,23 @@ var Cmd = &cobra.Command{
 				if !ok {
 					continue
 				}
-				accessURL, ok := prefetchedAccess[obj.Id]
-				if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(accessURL.Url)), "globus://") {
+				access, ok := prefetchedAccess[obj.Id]
+				if !ok || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(access.AccessURL.Url)), "globus://") {
 					continue
 				}
-				cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+				cachePath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 				if err != nil {
 					return err
 				}
 				objCopy := obj
-				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: accessURL.Url, Placeholder: f.Placeholder})
+				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: access.AccessURL.Url, Placeholder: f.Placeholder, ObjectsRoot: objectsRoot, RepositoryRoot: worktreeRoot})
 				progress.OnDownloadStart(toPullFile(f))
 			}
 			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
 				return fmt.Errorf("Globus batch download failed: %w", err)
 			}
 			for _, f := range pointers {
-				dstPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+				dstPath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
@@ -224,9 +242,9 @@ var Cmd = &cobra.Command{
 				progress.OnDownloadStart(toPullFile(f))
 				downloadCtx := progressContextForPointer(ctx, progress, f)
 				if obj, ok := prefetched[f.Oid]; ok {
-					if accessURL, ok := prefetchedAccess[obj.Id]; ok {
+					if access, ok := prefetchedAccess[obj.Id]; ok {
 						objCopy := obj
-						if err := internaltransfer.DownloadResolvedToCachePath(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, &accessURL); err != nil {
+						if err := internaltransfer.DownloadResolvedToCachePathWithAccess(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, access, objectsRoot, worktreeRoot); err != nil {
 							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 						}
@@ -237,7 +255,7 @@ var Cmd = &cobra.Command{
 						continue
 					}
 				}
-				if isDRSPointerOID(f.Oid) {
+				if lfs.IsDRSURI(f.Oid) {
 					var downloadErr error
 					if anvil != nil {
 						downloadErr = resolver.DownloadToCache(downloadCtx, anvil, normalizeDRSPointerOID(f.Oid), dstPath)
@@ -260,12 +278,12 @@ var Cmd = &cobra.Command{
 		} else {
 			logg.Debug("no missing pointer objects to download")
 		}
-		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched); err != nil {
+		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched, objectsRoot, gitPaths.DRSObjectsDir()); err != nil {
 			return err
 		}
 
 		readOnly := drsCtx.IsReadOnly()
-		if err := checkoutDownloadedFiles(pointers, progress, readOnly); err != nil {
+		if err := checkoutDownloadedFiles(pointers, progress, readOnly, objectsRoot); err != nil {
 			return err
 		}
 		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
@@ -309,10 +327,10 @@ type pointerFile struct {
 	Placeholder bool
 }
 
-func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string) []pointerFile {
+func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string, drsObjectsRoot string) []pointerFile {
 	keys := make([]string, 0, len(inventory))
 	for path := range inventory {
-		if !matchesAnyPattern(path, patterns) {
+		if !pathspec.MatchesAnyPattern(path, patterns) {
 			continue
 		}
 		keys = append(keys, path)
@@ -324,7 +342,7 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 		info := inventory[path]
 		sha256 := info.SHA256
 		if info.Placeholder && sha256 == "" {
-			if obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, info.Oid); err == nil {
+			if obj, err := localdrsobject.ReadObject(drsObjectsRoot, info.Oid); err == nil {
 				sha256 = objectSHA256(obj)
 			}
 		}
@@ -371,11 +389,6 @@ func verifyPointerAtPath(path string, file pointerFile) error {
 	return nil
 }
 
-func isDRSPointerOID(oid string) bool {
-	oid = strings.TrimSpace(oid)
-	return strings.HasPrefix(oid, "//") || strings.HasPrefix(strings.ToLower(oid), "drs://")
-}
-
 func progressContextForPointer(ctx context.Context, progress *internaltransfer.PullProgressRenderer, file pointerFile) context.Context {
 	ctx = sycommon.WithOid(ctx, file.Name)
 	return sycommon.WithProgress(ctx, func(ev sycommon.ProgressEvent) error {
@@ -397,23 +410,6 @@ func toPullFiles(files []pointerFile) []internaltransfer.PullFile {
 
 func toPullFile(file pointerFile) internaltransfer.PullFile {
 	return internaltransfer.PullFile{Name: file.Name, Oid: file.Oid, Size: file.Size}
-}
-
-func matchesAnyPattern(path string, patterns []string) bool {
-	if len(patterns) == 0 {
-		return true
-	}
-	normalized := filepath.ToSlash(filepath.Clean(path))
-	for _, pattern := range patterns {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		if matchesPattern(normalized, pattern) {
-			return true
-		}
-	}
-	return false
 }
 
 type cachedObjectState struct {
@@ -487,7 +483,7 @@ func objectSHA256(obj *drsapi.DrsObject) string {
 		if checksumType != "sha256" && checksumType != "sha-256" {
 			continue
 		}
-		sha256 := strings.ToLower(localdrsobject.NormalizeChecksum(checksum.Checksum))
+		sha256 := strings.ToLower(hash.NormalizeChecksum(checksum.Checksum))
 		if len(sha256) == 64 && strings.Trim(sha256, "0123456789abcdef") == "" {
 			return sha256
 		}
@@ -495,7 +491,7 @@ func objectSHA256(obj *drsapi.DrsObject) string {
 	return ""
 }
 
-func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject) error {
+func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitContext, files []pointerFile, objects map[string]drsapi.DrsObject, objectsRoot, drsObjectsRoot string) error {
 	saved := make(map[string]string)
 	for i := range files {
 		file := &files[i]
@@ -506,7 +502,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 			file.SHA256 = actual
 			continue
 		}
-		cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, file.Oid)
+		cachePath, err := lfs.ObjectPath(objectsRoot, file.Oid)
 		if err != nil {
 			return err
 		}
@@ -518,7 +514,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 		saved[file.Oid] = actual
 
 		var obj drsapi.DrsObject
-		local, localErr := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, file.Oid)
+		local, localErr := localdrsobject.ReadObject(drsObjectsRoot, file.Oid)
 		if localErr == nil {
 			obj = *local
 		}
@@ -555,57 +551,29 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 			}
 		}
 		obj.Checksums = append(checksums, drsapi.Checksum{Type: "sha256", Checksum: actual})
-		if err := localdrsobject.WriteObject(gitrepo.DRSObjectsPath, &obj, file.Oid); err != nil {
+		if err := localdrsobject.WriteObject(drsObjectsRoot, &obj, file.Oid); err != nil {
 			return fmt.Errorf("save sha256 for placeholder oid %s: %w", file.Oid, err)
 		}
 	}
 	return nil
 }
 
-func matchesPattern(path, pattern string) bool {
-	pattern = filepath.ToSlash(filepath.Clean(pattern))
-	if !strings.ContainsAny(pattern, "*?[") {
-		return path == pattern
-	}
-	re, err := regexp.Compile(globToRegexp(pattern))
+func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) error {
+	worktreeRoot, err := gitrepo.GitTopLevel()
 	if err != nil {
-		return false
-	}
-	return re.MatchString(path)
-}
-
-func globToRegexp(pattern string) string {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		switch ch {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-				continue
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
-		default:
-			b.WriteByte(ch)
+		// Unit-level callers may provide an isolated checkout directory without
+		// initializing Git. The command path always has an inventory from Git,
+		// so this fallback preserves that helper's historical behavior.
+		worktreeRoot, err = os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve checkout worktree root: %w", err)
 		}
 	}
-	b.WriteString("$")
-	return b.String()
-}
-
-func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool) error {
 	for _, f := range files {
 		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Oid) == "" {
 			continue
 		}
-		srcPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, f.Oid)
+		srcPath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 		if err != nil {
 			return fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
@@ -616,62 +584,81 @@ func checkoutDownloadedFiles(files []pointerFile, progress *internaltransfer.Pul
 		if err != nil {
 			return fmt.Errorf("failed to read cached object %s: %w", srcPath, err)
 		}
+		dstPath, err := gitrepo.SafeWorktreePath(worktreeRoot, f.Name)
+		if err != nil {
+			src.Close()
+			return fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
+		}
 		progress.OnCheckoutStart(toPullFile(f))
-		if dir := filepath.Dir(f.Name); dir != "." {
+		if dir := filepath.Dir(dstPath); dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				src.Close()
 				return fmt.Errorf("failed to create directory for %s: %w", f.Name, err)
 			}
 		}
-		// A previous pull may have made this path read-only. Temporarily restore
-		// owner write permission so that a later pull can safely replace it.
-		if info, statErr := os.Stat(f.Name); statErr == nil {
-			if err := os.Chmod(f.Name, info.Mode().Perm()|0o200); err != nil {
+		mode := os.FileMode(0o644)
+		if info, statErr := os.Lstat(dstPath); statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
 				src.Close()
-				return fmt.Errorf("failed to make %s writable for checkout: %w", f.Name, err)
+				return fmt.Errorf("refusing to checkout through symlink %s", f.Name)
 			}
+			mode = info.Mode().Perm() | 0o200
 		} else if !os.IsNotExist(statErr) {
 			src.Close()
 			return fmt.Errorf("failed to inspect checkout path %s: %w", f.Name, statErr)
 		}
-		dst, err := os.OpenFile(f.Name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-		if err != nil {
+		if dstPath, err = gitrepo.SafeWorktreePath(worktreeRoot, f.Name); err != nil {
 			src.Close()
-			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
-		}
-		if _, err := io.Copy(dst, src); err != nil {
-			dst.Close()
-			src.Close()
-			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
-		}
-		if err := dst.Close(); err != nil {
-			src.Close()
-			return fmt.Errorf("failed to finalize checkout for %s: %w", f.Name, err)
-		}
-		if err := src.Close(); err != nil {
-			return fmt.Errorf("failed to close cached object %s: %w", srcPath, err)
-		}
-		if err := verifyPointerAtPath(f.Name, f); err != nil {
-			if removeErr := os.Remove(f.Name); removeErr != nil && !os.IsNotExist(removeErr) {
-				return fmt.Errorf("checked out invalid content for %s: %w (cleanup failed: %v)", f.Name, err, removeErr)
-			}
-			return fmt.Errorf("checked out invalid content for %s: %w", f.Name, err)
+			return fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
 		}
 		if readOnly {
-			if err := os.Chmod(f.Name, 0o444); err != nil {
-				return fmt.Errorf("failed to make pulled file %s read-only: %w", f.Name, err)
-			}
+			mode = 0o444
+		}
+		if err := replaceCheckoutFile(dstPath, src, f, mode); err != nil {
+			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
 		}
 		progress.OnCompleted(toPullFile(f))
 	}
 	return nil
 }
 
+func replaceCheckoutFile(dstPath string, src io.ReadCloser, pointer pointerFile, mode os.FileMode) error {
+	defer func() {
+		if src != nil {
+			_ = src.Close()
+		}
+	}()
+	stage, err := os.CreateTemp(filepath.Dir(dstPath), ".git-drs-checkout-*")
+	if err != nil {
+		return err
+	}
+	stagePath := stage.Name()
+	defer os.Remove(stagePath)
+	if _, err := io.Copy(stage, src); err != nil {
+		stage.Close()
+		return err
+	}
+	if err := stage.Close(); err != nil {
+		return err
+	}
+	if err := src.Close(); err != nil {
+		return err
+	}
+	src = nil
+	if err := verifyPointerAtPath(stagePath, pointer); err != nil {
+		return err
+	}
+	if err := os.Chmod(stagePath, mode); err != nil {
+		return err
+	}
+	return os.Rename(stagePath, dstPath)
+}
+
 func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 	paths := make([]string, 0, len(files))
 	seen := make(map[string]struct{}, len(files))
 	for _, f := range files {
-		path := strings.TrimSpace(f.Name)
+		path := f.Name
 		if path == "" {
 			continue
 		}

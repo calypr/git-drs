@@ -17,10 +17,12 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
@@ -70,15 +72,25 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	_, lfsRoot, err := lfs.GetGitRootDirectories(ctx)
+	gitCommonDir, lfsRoot, err := lfs.GetGitRootDirectories(ctx)
 	if err != nil {
 		return fmt.Errorf("filter: resolve LFS root: %w", err)
 	}
 	logger.Debug("Resolved LFS root directory", "lfsRoot", lfsRoot)
+	objectsRoot := filepath.Join(lfsRoot, "objects")
+	drsObjectsRoot := filepath.Join(gitCommonDir, "drs", "lfs", "objects")
+	if drsCtx != nil {
+		worktreeRoot, err := gitrepo.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("filter: resolve worktree root: %w", err)
+		}
+		drsCtx.LFSObjectsRoot = objectsRoot
+		drsCtx.RepositoryRoot = worktreeRoot
+	}
 	// Build the filter and register handlers.
 	f := internalfilter.NewGitFilter(os.Stdin, os.Stdout, logger).
-		OnSmudge(makeSmudgeHandler(drsCtx, terraResolver, logger)).
-		OnClean(makeCleanHandler(lfsRoot, logger))
+		OnSmudge(makeSmudgeHandlerWithRoot(drsCtx, terraResolver, objectsRoot, logger)).
+		OnClean(makeCleanHandler(lfsRoot, drsObjectsRoot, logger))
 
 	return f.Run(ctx)
 }
@@ -88,6 +100,17 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 // --------------------------------------------------------------------------
 
 func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, logger *slog.Logger) internalfilter.SmudgeFunc {
+	objectsRoot, resolveErr := lfs.ResolveObjectsRoot(context.Background())
+	handler := makeSmudgeHandlerWithRoot(drsCtx, terraResolver, objectsRoot, logger)
+	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
+		if resolveErr != nil {
+			return fmt.Errorf("filter: resolve LFS objects root: %w", resolveErr)
+		}
+		return handler(ctx, req, ptr, dst)
+	}
+}
+
+func makeSmudgeHandlerWithRoot(drsCtx *remoteruntime.GitContext, terraResolver resolver.Resolver, objectsRoot string, logger *slog.Logger) internalfilter.SmudgeFunc {
 	return func(ctx context.Context, req internalfilter.FilterRequest, ptr io.Reader, dst io.Writer) error {
 		logger.Debug("smudge handler invoked", "pathname", req.Pathname)
 		var downloadFn internalfilter.SmudgeDownloadFunc
@@ -99,7 +122,7 @@ func makeSmudgeHandler(drsCtx *remoteruntime.GitContext, terraResolver resolver.
 				return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
 			}
 		}
-		return internalfilter.SmudgeContent(ctx, req.Pathname, ptr, dst, logger, downloadFn)
+		return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, req.Pathname, ptr, dst, logger, downloadFn)
 	}
 }
 
@@ -114,10 +137,10 @@ func normalizeDRSOID(oid string) string {
 // Clean handler — stage: real file content → LFS pointer
 // --------------------------------------------------------------------------
 
-func makeCleanHandler(lfsRoot string, logger *slog.Logger) internalfilter.CleanFunc {
+func makeCleanHandler(lfsRoot, drsObjectsRoot string, logger *slog.Logger) internalfilter.CleanFunc {
 	return func(ctx context.Context, req internalfilter.FilterRequest, content io.Reader, dst io.Writer) error {
 		logger.Debug("clean", "pathname", req.Pathname)
-		return internalfilter.CleanContent(ctx, lfsRoot, req.Pathname, content, dst, logger)
+		return internalfilter.CleanContentWithRoots(ctx, lfsRoot, drsObjectsRoot, req.Pathname, content, dst, logger)
 	}
 }
 

@@ -1,6 +1,7 @@
 package precommit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/precommit_cache"
 )
 
@@ -46,6 +48,62 @@ func TestHandleUpsertIgnoresNonLFSFile(t *testing.T) {
 	pathEntry := precommit_cache.PathEntryPath(cache, "data/file.txt")
 	if _, err := os.Stat(pathEntry); !os.IsNotExist(err) {
 		t.Fatalf("expected no cache entry for non-LFS file, got err=%v", err)
+	}
+}
+
+func TestStagedBlobLookupUsesLiteralColonPrefixedPath(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	const largeName = "0:big.bin"
+	const largeSize = 2 << 20
+	if err := os.WriteFile(filepath.Join(repo, largeName), bytes.Repeat([]byte{'x'}, largeSize), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + strings.Repeat("a", 64) + "\nsize 7\n"
+	if err := os.WriteFile(filepath.Join(repo, "big.bin"), []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, repo, "add", "--", largeName, "big.bin")
+
+	size, err := stagedBlobSize(context.Background(), largeName)
+	if err != nil || size != largeSize {
+		t.Fatalf("staged size for %q = %d, %v; want %d", largeName, size, err, largeSize)
+	}
+	if oid, isPointer, err := stagedLFSOID(context.Background(), largeName); err != nil || isPointer {
+		t.Fatalf("staged file selected sibling pointer: oid=%q isPointer=%v err=%v", oid, isPointer, err)
+	}
+}
+
+func TestTypeChangeFromSymlinkWarnsForStagedRegularFile(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+	path := filepath.Join(repo, "data.bin")
+	if err := os.Symlink("old-target", path); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, repo, "add", "data.bin")
+	gitCmd(t, repo, "commit", "-m", "add symlink")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("oversized plain data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, repo, "add", "data.bin")
+
+	changes, err := stagedChanges(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := collectOversizedPlainGitStagedFiles(context.Background(), changes, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Path != "data.bin" || files[0].Size != int64(len("oversized plain data")) {
+		t.Fatalf("type change omitted from warning: changes=%+v files=%+v", changes, files)
 	}
 }
 
@@ -115,6 +173,81 @@ func TestHandleUpsertWritesLFSPointerCache(t *testing.T) {
 	}
 	if len(oidCache.Paths) != 1 || oidCache.Paths[0] != "data/file.bin" {
 		t.Fatalf("expected oid paths to include data/file.bin, got %v", oidCache.Paths)
+	}
+}
+
+func TestRunWritesTombstoneForDeletedLFSPointer(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := filepath.Join(repo, "data", "file.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	lfsPointer := strings.Join([]string{
+		"version https://git-lfs.github.com/spec/v1",
+		"oid sha256:deadbeef",
+		"size 12",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(lfsPointer), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	gitCmd(t, repo, "add", "data/file.bin")
+	gitCmd(t, repo, "commit", "-m", "add pointer")
+
+	cache, err := precommit_cache.Open(context.Background())
+	if err != nil {
+		t.Fatalf("open cache: %v", err)
+	}
+	if err := precommit_cache.EnsureLayout(cache); err != nil {
+		t.Fatalf("ensure cache layout: %v", err)
+	}
+	if err := precommit_cache.WritePathEntry(cache, precommit_cache.PathEntry{
+		Path:      "data/file.bin",
+		LFSOID:    "sha256:deadbeef",
+		UpdatedAt: "2026-01-01T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("write path entry: %v", err)
+	}
+	if err := precommit_cache.UpsertOIDPath(cache, "sha256:deadbeef", "", "data/file.bin", "", "2026-01-01T00:00:00Z", false); err != nil {
+		t.Fatalf("write oid entry: %v", err)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove working tree file: %v", err)
+	}
+	gitCmd(t, repo, "add", "-u")
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if _, err := os.Stat(precommit_cache.PathEntryPath(cache, "data/file.bin")); !os.IsNotExist(err) {
+		t.Fatalf("expected deleted path entry to be removed, got err=%v", err)
+	}
+	tombstone := filepath.Join(cache.Root, "tombstones", precommit_cache.EncodePath("data/file.bin")+".json")
+	data, err := os.ReadFile(tombstone)
+	if err != nil {
+		t.Fatalf("read tombstone: %v", err)
+	}
+	var tombstoneEntry map[string]string
+	if err := json.Unmarshal(data, &tombstoneEntry); err != nil {
+		t.Fatalf("unmarshal tombstone: %v", err)
+	}
+	if tombstoneEntry["path"] != "data/file.bin" {
+		t.Fatalf("expected tombstone path data/file.bin, got %q", tombstoneEntry["path"])
+	}
+	if tombstoneEntry["deleted_at"] == "" {
+		t.Fatal("expected tombstone deleted_at")
+	}
+	if info, err := os.Stat(tombstone); err != nil {
+		t.Fatalf("stat tombstone: %v", err)
+	} else if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("expected tombstone permissions 0644, got %o", got)
+	}
+	if _, err := os.Stat(tombstone + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("expected tombstone temporary file to be removed, got err=%v", err)
 	}
 }
 
@@ -194,6 +327,141 @@ func TestRunAbortsWhenOversizedPlainGitCommitIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "commit aborted") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunWarnsForOversizedFileWithNewlineInPath(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := "large\nfile.bin"
+	if err := os.WriteFile(filepath.Join(repo, path), []byte("plain oversized payload"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	gitCmd(t, repo, "add", "--", path)
+
+	oldThreshold := directCommitWarningThresholdBytes
+	oldPrompt := confirmOversizedDirectGitCommit
+	t.Cleanup(func() {
+		directCommitWarningThresholdBytes = oldThreshold
+		confirmOversizedDirectGitCommit = oldPrompt
+	})
+	directCommitWarningThresholdBytes = 1
+	called := false
+	confirmOversizedDirectGitCommit = func(files []OversizedStagedFile) (bool, error) {
+		called = true
+		if len(files) != 1 || files[0].Path != path {
+			t.Fatalf("unexpected warning files: %+v", files)
+		}
+		return false, nil
+	}
+
+	err := run(context.Background())
+	if !called || err == nil || !strings.Contains(err.Error(), "commit aborted") {
+		t.Fatalf("expected warning to abort commit for %q, called=%v err=%v", path, called, err)
+	}
+}
+
+func TestRunWarnsForActualOversizedStagedBlob(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := "large\nfile.bin"
+	file, err := os.Create(filepath.Join(repo, path))
+	if err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := file.Truncate(defaultDirectCommitWarningThreshold + 1); err != nil {
+		_ = file.Close()
+		t.Fatalf("truncate file: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close file: %v", err)
+	}
+	gitCmd(t, repo, "add", "--", path)
+
+	oldPrompt := confirmOversizedDirectGitCommit
+	t.Cleanup(func() { confirmOversizedDirectGitCommit = oldPrompt })
+	called := false
+	confirmOversizedDirectGitCommit = func(files []OversizedStagedFile) (bool, error) {
+		called = true
+		if len(files) != 1 || files[0].Path != path || files[0].Size <= defaultDirectCommitWarningThreshold {
+			t.Fatalf("unexpected warning files: %+v", files)
+		}
+		return false, nil
+	}
+
+	err = run(context.Background())
+	if !called || err == nil || !strings.Contains(err.Error(), "commit aborted") {
+		t.Fatalf("expected warning to abort oversized commit, called=%v err=%v", called, err)
+	}
+}
+
+func TestRunAcceptsPlainBlobAtPointerReadLimit(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := "single-line.bin"
+	if err := os.WriteFile(filepath.Join(repo, path), bytes.Repeat([]byte{'x'}, int(lfs.MaxPointerFileBytes)), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	gitCmd(t, repo, "add", "--", path)
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("plain staged blob should pass: %v", err)
+	}
+}
+
+func TestRunCachesPointerWithNewlineInPath(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	path := "pointer\nfile.bin"
+	oid := strings.Repeat("a", 64)
+	pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize 4\n"
+	if err := os.WriteFile(filepath.Join(repo, path), []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write pointer: %v", err)
+	}
+	gitCmd(t, repo, "add", "--", path)
+	if err := run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	cache, err := precommit_cache.Open(context.Background())
+	if err != nil {
+		t.Fatalf("open cache: %v", err)
+	}
+	entry, ok, err := precommit_cache.ReadPathEntry(cache, path)
+	if err != nil || !ok || entry.LFSOID != "sha256:"+oid {
+		t.Fatalf("missing pointer cache entry for %q: entry=%+v ok=%v err=%v", path, entry, ok, err)
+	}
+}
+
+func TestStagedChangesPreservesRenamedPathWithNewline(t *testing.T) {
+	repo := setupGitRepo(t)
+	oldwd := mustChdir(t, repo)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	oldPath := "old.bin"
+	newPath := "new\nname.bin"
+	if err := os.WriteFile(filepath.Join(repo, oldPath), []byte("pointer content"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	gitCmd(t, repo, "add", "--", oldPath)
+	gitCmd(t, repo, "commit", "-m", "add file")
+	if err := os.Rename(filepath.Join(repo, oldPath), filepath.Join(repo, newPath)); err != nil {
+		t.Fatalf("rename file: %v", err)
+	}
+	gitCmd(t, repo, "add", "-A")
+
+	changes, err := stagedChanges(context.Background())
+	if err != nil {
+		t.Fatalf("stagedChanges: %v", err)
+	}
+	if len(changes) != 1 || changes[0] != (Change{Kind: KindRename, OldPath: oldPath, NewPath: newPath}) {
+		t.Fatalf("unexpected staged changes: %+v", changes)
 	}
 }
 

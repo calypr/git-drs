@@ -106,6 +106,35 @@ func TestPlaceholderPointerValidationUsesSize(t *testing.T) {
 	}
 }
 
+func TestCachedObjectChangedDetectsReplacement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedObject(path, "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := cachedObjectChanged(path, state)
+	if err != nil || changed {
+		t.Fatalf("unchanged cache reported changed=%t, err=%v", changed, err)
+	}
+	replacement := filepath.Join(filepath.Dir(path), "replacement")
+	if err := os.WriteFile(replacement, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, path); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = cachedObjectChanged(path, state)
+	if err != nil || !changed {
+		t.Fatalf("replaced cache reported changed=%t, err=%v", changed, err)
+	}
+}
+
 func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 	t.Chdir(t.TempDir())
 	payload := []byte("downloaded without a published checksum")

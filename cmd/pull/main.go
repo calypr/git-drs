@@ -141,8 +141,9 @@ var Cmd = &cobra.Command{
 		drsCtx.LFSObjectsRoot = objectsRoot
 		drsCtx.RepositoryRoot = worktreeRoot
 		missingOIDs := make([]string, 0, len(pointers))
+		initialStates := make([]cachedObjectState, len(pointers))
 		seenMissing := make(map[string]struct{}, len(pointers))
-		for _, f := range pointers {
+		for i, f := range pointers {
 			cachePath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 			if err != nil {
 				return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
@@ -151,6 +152,7 @@ var Cmd = &cobra.Command{
 				progress.OnStage("Verifying cached file")
 			}
 			state, err := inspectCachedPointer(cachePath, f)
+			initialStates[i] = state
 			if err == nil && state.complete {
 				continue
 			} else if err != nil {
@@ -209,6 +211,7 @@ var Cmd = &cobra.Command{
 				}
 			}
 			var globusDownloads []internaltransfer.GlobusDownload
+			globusOIDs := make(map[string]bool)
 			for _, f := range pointers {
 				obj, ok := prefetched[f.Oid]
 				if !ok {
@@ -224,17 +227,26 @@ var Cmd = &cobra.Command{
 				}
 				objCopy := obj
 				globusDownloads = append(globusDownloads, internaltransfer.GlobusDownload{OID: f.Oid, CachePath: cachePath, Object: &objCopy, AccessURL: access.AccessURL.Url, Placeholder: f.Placeholder, ObjectsRoot: objectsRoot, RepositoryRoot: worktreeRoot})
+				globusOIDs[f.Oid] = true
 				progress.OnExternalTransferStart(toPullFile(f))
 			}
 			if err := internaltransfer.DownloadGlobusBatch(ctx, drsCtx, globusDownloads); err != nil {
 				return fmt.Errorf("Globus batch download failed: %w", err)
 			}
-			for _, f := range pointers {
+			downloadedOIDs := make(map[string]bool)
+			for i, f := range pointers {
 				dstPath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
 				}
-				state, err := inspectCachedPointer(dstPath, f)
+				state := initialStates[i]
+				changed, err := cachedObjectChanged(dstPath, state)
+				if err != nil {
+					return fmt.Errorf("failed to stat cache path %s: %w", dstPath, err)
+				}
+				if globusOIDs[f.Oid] || downloadedOIDs[f.Oid] || changed {
+					state, err = inspectCachedPointer(dstPath, f)
+				}
 				if err == nil && state.complete {
 					continue
 				} else if err != nil {
@@ -258,6 +270,7 @@ var Cmd = &cobra.Command{
 							_ = os.Remove(dstPath)
 							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 						}
+						downloadedOIDs[f.Oid] = true
 						continue
 					}
 				}
@@ -280,6 +293,7 @@ var Cmd = &cobra.Command{
 					_ = os.Remove(dstPath)
 					return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
 				}
+				downloadedOIDs[f.Oid] = true
 			}
 		} else {
 			logg.Debug("no missing pointer objects to download")
@@ -363,7 +377,7 @@ func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, err
 		expectedOID = ""
 	}
 	state, err := inspectCachedObject(path, expectedOID, file.Size)
-	if err != nil || !state.complete || file.SHA256 == "" {
+	if err != nil || !state.complete || file.SHA256 == "" || (!file.Placeholder && strings.EqualFold(hash.NormalizeChecksum(expectedOID), file.SHA256)) {
 		return state, err
 	}
 	actual, err := calculateFileSHA256(path)
@@ -382,7 +396,7 @@ func verifyPointerAtPath(path string, file pointerFile) error {
 	if err := verifyObjectAtPath(path, expectedOID, file.Size); err != nil {
 		return err
 	}
-	if file.SHA256 == "" {
+	if file.SHA256 == "" || (!file.Placeholder && strings.EqualFold(hash.NormalizeChecksum(expectedOID), file.SHA256)) {
 		return nil
 	}
 	actual, err := calculateFileSHA256(path)
@@ -427,6 +441,21 @@ func toPullFile(file pointerFile) internaltransfer.PullFile {
 type cachedObjectState struct {
 	exists   bool
 	complete bool
+	info     os.FileInfo
+}
+
+func cachedObjectChanged(path string, state cachedObjectState) (bool, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return state.exists, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if state.info == nil {
+		return true, nil
+	}
+	return !os.SameFile(info, state.info) || info.Size() != state.info.Size() || !info.ModTime().Equal(state.info.ModTime()), nil
 }
 
 func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedObjectState, error) {
@@ -439,6 +468,7 @@ func inspectCachedObject(path, expectedOID string, expectedSize int64) (cachedOb
 		return state, err
 	}
 	state.exists = true
+	state.info = info
 	if info.IsDir() {
 		return state, fmt.Errorf("cached object path is a directory: %s", path)
 	}

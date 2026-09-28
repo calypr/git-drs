@@ -84,3 +84,21 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 		t.Fatalf("completed pull must be distinguishable from in-progress work, got %q", got)
 	}
 }
+
+func TestPullProgressRendererHeartbeatDuringZeroByteWait(t *testing.T) {
+	var out bytes.Buffer
+	r := NewPullProgressRenderer(&out)
+	r.base.SetTTY(true)
+	r.heartbeatInterval = 10 * time.Millisecond
+	file := PullFile{Name: "large.bin", Size: 100}
+	r.OnPlan([]PullFile{file})
+	r.OnDownloadStart(file)
+	r.StartHeartbeat()
+	time.Sleep(35 * time.Millisecond)
+	if err := r.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); strings.Count(got, "waiting for data") < 2 {
+		t.Fatalf("expected timed zero-byte updates, got %q", got)
+	}
+}

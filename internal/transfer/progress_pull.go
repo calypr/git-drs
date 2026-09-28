@@ -3,7 +3,11 @@ package transfer
 import (
 	"fmt"
 	"io"
+	"sync"
+	"time"
 )
+
+const pullHeartbeatInterval = 2 * time.Second
 
 type pullProgressPhase string
 
@@ -16,25 +20,61 @@ const (
 )
 
 type pullFileProgress struct {
-	path    string
-	total   int64
-	current int64
-	phase   pullProgressPhase
+	path       string
+	total      int64
+	current    int64
+	phase      pullProgressPhase
+	phaseSince time.Time
+	lastBytes  time.Time
 }
 
 type PullProgressRenderer struct {
-	base      *Renderer
-	err       error
-	planned   bool
-	files     map[string]*pullFileProgress
-	fileOrder []string
+	base              *Renderer
+	err               error
+	planned           bool
+	files             map[string]*pullFileProgress
+	fileOrder         []string
+	mu                sync.Mutex
+	stopHeartbeat     chan struct{}
+	heartbeatDone     chan struct{}
+	now               func() time.Time
+	heartbeatInterval time.Duration
 }
 
 func NewPullProgressRenderer(out io.Writer) *PullProgressRenderer {
 	return &PullProgressRenderer{
-		base:  NewRenderer(out),
-		files: make(map[string]*pullFileProgress),
+		base:              NewRenderer(out),
+		files:             make(map[string]*pullFileProgress),
+		now:               time.Now,
+		heartbeatInterval: pullHeartbeatInterval,
 	}
+}
+
+func (r *PullProgressRenderer) StartHeartbeat() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.stopHeartbeat != nil || !r.planned {
+		return
+	}
+	r.stopHeartbeat = make(chan struct{})
+	r.heartbeatDone = make(chan struct{})
+	stop, done := r.stopHeartbeat, r.heartbeatDone
+	interval := r.heartbeatInterval
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				r.mu.Lock()
+				r.render(false)
+				r.mu.Unlock()
+			case <-stop:
+				return
+			}
+		}
+	}()
 }
 
 func (r *PullProgressRenderer) render(force bool) {
@@ -53,14 +93,17 @@ func (r *PullProgressRenderer) render(force bool) {
 }
 
 func (r *PullProgressRenderer) OnPlan(files []PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.planned = len(files) > 0
 	r.files = make(map[string]*pullFileProgress, len(files))
 	r.fileOrder = r.fileOrder[:0]
 	for _, file := range files {
 		r.files[file.Name] = &pullFileProgress{
-			path:  file.Name,
-			total: file.Size,
-			phase: pullProgressPending,
+			path:       file.Name,
+			total:      file.Size,
+			phase:      pullProgressPending,
+			phaseSince: r.now(),
 		}
 		r.fileOrder = append(r.fileOrder, file.Name)
 	}
@@ -70,6 +113,8 @@ func (r *PullProgressRenderer) OnPlan(files []PullFile) {
 }
 
 func (r *PullProgressRenderer) OnDownloadStart(file PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.planned {
 		return
 	}
@@ -82,10 +127,14 @@ func (r *PullProgressRenderer) OnDownloadStart(file PullFile) {
 		item.total = file.Size
 	}
 	item.phase = pullProgressDownloading
+	item.phaseSince = r.now()
+	item.lastBytes = time.Time{}
 	r.render(false)
 }
 
 func (r *PullProgressRenderer) OnDownloadProgress(id string, bytesSoFar int64, total int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.planned {
 		return
 	}
@@ -98,15 +147,19 @@ func (r *PullProgressRenderer) OnDownloadProgress(id string, bytesSoFar int64, t
 	}
 	if bytesSoFar > item.current {
 		item.current = bytesSoFar
+		item.lastBytes = r.now()
 	}
 	item.phase = pullProgressDownloading
 	if item.total > 0 && item.current >= item.total {
 		item.phase = pullProgressVerifying
+		item.phaseSince = r.now()
 	}
 	r.render(false)
 }
 
 func (r *PullProgressRenderer) OnCheckoutStart(file PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.planned {
 		return
 	}
@@ -115,6 +168,7 @@ func (r *PullProgressRenderer) OnCheckoutStart(file PullFile) {
 		return
 	}
 	item.phase = pullProgressCheckingOut
+	item.phaseSince = r.now()
 	if item.total == 0 && file.Size > 0 {
 		item.total = file.Size
 	}
@@ -122,6 +176,8 @@ func (r *PullProgressRenderer) OnCheckoutStart(file PullFile) {
 }
 
 func (r *PullProgressRenderer) OnCompleted(file PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.planned {
 		return
 	}
@@ -136,10 +192,21 @@ func (r *PullProgressRenderer) OnCompleted(file PullFile) {
 		item.current = item.total
 	}
 	item.phase = pullProgressCompleted
+	item.phaseSince = r.now()
 	r.render(false)
 }
 
 func (r *PullProgressRenderer) Finish() error {
+	r.mu.Lock()
+	stop, done := r.stopHeartbeat, r.heartbeatDone
+	r.stopHeartbeat, r.heartbeatDone = nil, nil
+	r.mu.Unlock()
+	if stop != nil {
+		close(stop)
+		<-done
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.planned {
 		return r.err
 	}
@@ -187,13 +254,34 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 	if file != nil {
 		switch file.phase {
 		case pullProgressVerifying:
-			phaseLabel = " verifying"
+			phaseLabel = " verifying (" + r.elapsed(file.phaseSince) + ")"
 		case pullProgressCheckingOut:
-			phaseLabel = " checking out"
+			phaseLabel = " checking out (" + r.elapsed(file.phaseSince) + ")"
 		case pullProgressCompleted:
 			phaseLabel = " complete"
+		case pullProgressPending:
+			phaseLabel = " preparing (" + r.elapsed(file.phaseSince) + ")"
+		case pullProgressDownloading:
+			if file.lastBytes.IsZero() {
+				phaseLabel = " waiting for data (" + r.elapsed(file.phaseSince) + ")"
+			} else if r.now().Sub(file.lastBytes) >= 5*time.Second {
+				phaseLabel = " no new data for " + r.elapsed(file.lastBytes)
+			} else {
+				phaseLabel = " downloading"
+			}
 		}
 	}
 
 	return fmt.Sprintf("%s%s %s %s %s%s", prefix, label, bar, pct, bytesLabel, phaseLabel)
+}
+
+func (r *PullProgressRenderer) elapsed(since time.Time) string {
+	if since.IsZero() {
+		return "0s"
+	}
+	elapsed := r.now().Sub(since)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	return elapsed.Truncate(time.Second).String()
 }

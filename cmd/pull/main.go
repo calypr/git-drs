@@ -123,6 +123,7 @@ var Cmd = &cobra.Command{
 
 		progress := internaltransfer.NewPullProgressRenderer(os.Stderr)
 		progress.OnPlan(toPullFiles(pointers))
+		progress.StartHeartbeat()
 		defer func() {
 			if finishErr := progress.Finish(); retErr == nil && finishErr != nil {
 				retErr = fmt.Errorf("finalize pull progress: %w", finishErr)

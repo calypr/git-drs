@@ -208,7 +208,18 @@ func DownloadResolvedToPathWithAccess(ctx context.Context, drsCtx *remoteruntime
 		src.drsClient = drsCtx.Client.DRS()
 		src.objectID = strings.TrimSpace(obj.Id)
 	}
-	err := sydownload.DownloadToPathWithOptions(ctx, src, oid, dstPath, opts)
+	var backend sytransfer.ReadBackend = src
+	if callback := sycommon.GetProgress(ctx); callback != nil {
+		backend = newStreamingProgressSource(src, callback, sycommon.GetOid(ctx), obj.Size)
+		// The syfon engine emits its buffered progress again after the transfer.
+		ctx = sycommon.WithProgress(ctx, func(event sycommon.ProgressEvent) error {
+			if event.Event == "progress" {
+				return nil
+			}
+			return callback(event)
+		})
+	}
+	err := sydownload.DownloadToPathWithOptions(ctx, backend, oid, dstPath, opts)
 	if err != nil && !hadDestination {
 		// The transfer engine creates its resume checkpoint before the first
 		// request. Do not leave a failed new download looking resumable to a

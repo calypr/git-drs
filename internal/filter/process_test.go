@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"reflect"
 	"runtime"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/git-lfs/pktline"
 )
@@ -26,25 +26,22 @@ func TestGitFilterStreamsLargePayloadWithBoundedHeap(t *testing.T) {
 		_ = outputWriter.Close()
 	})
 
+	copyComplete := make(chan error, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandler()
 	filter := NewGitFilter(inputReader, outputWriter, slog.New(slog.NewTextHandler(io.Discard, nil))).OnClean(
 		func(_ context.Context, _ FilterRequest, content io.Reader, dst io.Writer) error {
 			_, err := io.Copy(dst, content)
+			copyComplete <- err
+			<-release
 			return err
 		},
 	)
 	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	stopHeapSampler := make(chan struct{})
-	peakHeapDone := make(chan uint64, 1)
-	go samplePeakHeap(stopHeapSampler, peakHeapDone)
-	defer func() {
-		select {
-		case <-stopHeapSampler:
-		default:
-			close(stopHeapSampler)
-		}
-	}()
 	filterErr := make(chan error, 1)
 	go func() {
 		err := filter.Run(context.Background())
@@ -77,6 +74,19 @@ func TestGitFilterStreamsLargePayloadWithBoundedHeap(t *testing.T) {
 	if !reflect.DeepEqual(capabilities, []string{"capability=clean", "capability=smudge"}) {
 		t.Fatalf("unexpected capabilities: %v", capabilities)
 	}
+	if err := <-copyComplete; err != nil {
+		t.Fatalf("copy request content: %v", err)
+	}
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	retained := uint64(0)
+	if after.HeapAlloc > before.HeapAlloc {
+		retained = after.HeapAlloc - before.HeapAlloc
+	}
+	if retained >= payloadSize/2 {
+		t.Fatalf("retained %d heap bytes after copying %d-byte request, want less than %d", retained, payloadSize, payloadSize/2)
+	}
+	releaseHandler()
 	status, err := response.ReadPacketList()
 	if err != nil {
 		t.Fatalf("read response status: %v", err)
@@ -119,37 +129,9 @@ func TestGitFilterStreamsLargePayloadWithBoundedHeap(t *testing.T) {
 	if err := <-filterErr; err != nil {
 		t.Fatalf("run filter: %v", err)
 	}
-	close(stopHeapSampler)
-	peakHeap := <-peakHeapDone
 	runtime.ReadMemStats(&after)
 	allocated := after.TotalAlloc - before.TotalAlloc
-	peakDelta := uint64(0)
-	if peakHeap > before.HeapAlloc {
-		peakDelta = peakHeap - before.HeapAlloc
-	}
-	t.Logf("streamed %d-byte request and response with %d allocated bytes and %d peak live heap bytes", payloadSize, allocated, peakDelta)
-	if peakDelta >= payloadSize*3/4 {
-		t.Fatalf("retained %d peak heap bytes for %d-byte round trip, want less than %d", peakDelta, payloadSize, payloadSize*3/4)
-	}
-}
-
-func samplePeakHeap(stop <-chan struct{}, done chan<- uint64) {
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	var peak uint64
-	for {
-		var stats runtime.MemStats
-		runtime.ReadMemStats(&stats)
-		if stats.HeapAlloc > peak {
-			peak = stats.HeapAlloc
-		}
-		select {
-		case <-stop:
-			done <- peak
-			return
-		case <-ticker.C:
-		}
-	}
+	t.Logf("streamed %d-byte request and response with %d allocated bytes and %d retained bytes after copying", payloadSize, allocated, retained)
 }
 
 func TestGitFilterDrainsFailedRequestBeforeNextRequest(t *testing.T) {

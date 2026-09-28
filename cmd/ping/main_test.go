@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/testutils"
+	syclient "github.com/calypr/syfon/client"
 )
 
 type pingRoundTripper func(*http.Request) (*http.Response, error)

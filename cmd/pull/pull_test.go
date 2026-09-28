@@ -540,6 +540,55 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	}
 }
 
+func TestCheckoutDownloadedFilesReusesVerifiedWorktreeFile(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	payload := []byte("already hydrated data")
+	sum := sha256.Sum256(payload)
+	file := pointerFile{Name: "data/file.bin", Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+	cacheRoot := gitrepo.LFSObjectsPath
+	cachePath, err := lfs.ObjectPath(cacheRoot, file.Oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(repo, file.Name)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles([]pointerFile{file}))
+	if err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(dst)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("verified worktree file was replaced: before=%v after=%v err=%v", before, after, err)
+	}
+	if err := os.WriteFile(dst, bytes.Repeat([]byte("x"), len(payload)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("changed worktree file was not restored: %q, %v", got, err)
+	}
+}
+
 func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink test skipped on Windows")

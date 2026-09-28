@@ -96,6 +96,42 @@ func TestCleanContentUsesConfiguredLFSRoot(t *testing.T) {
 	}
 }
 
+func TestIndexRefreshCleanPreservesPointerWithoutCacheCopy(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	cmd := exec.Command("git", "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	payload := []byte("hydrated content")
+	sum := sha256.Sum256(payload)
+	pointer := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sum, len(payload))
+	if err := os.WriteFile("data.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "add", "--", "data.bin")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add pointer: %v: %s", err, out)
+	}
+	t.Setenv(IndexRefreshEnv, "1")
+	lfsRoot := filepath.Join(repo, ".git", "lfs")
+	var out bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := CleanContentWithRoots(t.Context(), lfsRoot, gitrepo.DRSObjectsPath, "data.bin", bytes.NewReader(payload), &out, logger); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("indexed pointer changed: %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(lfsRoot, "objects")); !os.IsNotExist(err) {
+		t.Fatalf("index refresh created a cache copy: %v", err)
+	}
+	out.Reset()
+	if err := CleanContentWithRoots(t.Context(), lfsRoot, gitrepo.DRSObjectsPath, "data.bin", strings.NewReader("changed content!"), &out, logger); err == nil || out.Len() != 0 {
+		t.Fatalf("changed content was accepted: output=%q err=%v", out.String(), err)
+	}
+}
+
 func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
 	repo := t.TempDir()
 	t.Chdir(repo)

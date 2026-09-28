@@ -19,7 +19,9 @@ const (
 	pullProgressExternal    pullProgressPhase = "external"
 	pullProgressDownloading pullProgressPhase = "downloading"
 	pullProgressVerifying   pullProgressPhase = "verifying"
+	pullProgressExisting    pullProgressPhase = "existing"
 	pullProgressCheckingOut pullProgressPhase = "checking_out"
+	pullProgressIndexing    pullProgressPhase = "indexing"
 	pullProgressCompleted   pullProgressPhase = "completed"
 )
 
@@ -264,6 +266,30 @@ func (r *PullProgressRenderer) OnCheckoutStart(file PullFile) {
 	r.render(false)
 }
 
+func (r *PullProgressRenderer) OnExistingFileVerificationStart(file PullFile) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[file.Name]
+	if item == nil || !r.planned {
+		return
+	}
+	item.phase = pullProgressExisting
+	item.phaseSince = r.now()
+	item.verified = 0
+	r.render(true)
+}
+
+func (r *PullProgressRenderer) OnExistingFileProgress(id string, bytesSoFar int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item := r.files[id]
+	if item == nil || !r.planned {
+		return
+	}
+	item.verified = bytesSoFar
+	r.render(false)
+}
+
 func (r *PullProgressRenderer) OnCheckoutProgress(id string, bytesSoFar int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -273,6 +299,16 @@ func (r *PullProgressRenderer) OnCheckoutProgress(id string, bytesSoFar int64) {
 	}
 	item.checkedOut = bytesSoFar
 	r.render(false)
+}
+
+func (r *PullProgressRenderer) OnIndexRefreshStart() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, item := range r.files {
+		item.phase = pullProgressIndexing
+		item.phaseSince = r.now()
+	}
+	r.render(true)
 }
 
 func (r *PullProgressRenderer) OnCompleted(file PullFile) {
@@ -293,7 +329,14 @@ func (r *PullProgressRenderer) OnCompleted(file PullFile) {
 	}
 	item.phase = pullProgressCompleted
 	item.phaseSince = r.now()
-	r.render(false)
+	allComplete := true
+	for _, file := range r.files {
+		if file.phase != pullProgressCompleted {
+			allComplete = false
+			break
+		}
+	}
+	r.render(allComplete)
 }
 
 func (r *PullProgressRenderer) Finish() error {
@@ -318,8 +361,19 @@ func (r *PullProgressRenderer) Finish() error {
 		}
 		lines = append(lines, r.renderLine(item))
 	}
+	allComplete := true
+	for _, item := range r.files {
+		if item.phase != pullProgressCompleted {
+			allComplete = false
+			break
+		}
+	}
 	if r.err == nil {
-		r.err = r.base.Finish(lines)
+		if allComplete {
+			r.err = r.base.Finish(nil)
+		} else {
+			r.err = r.base.Finish(lines)
+		}
 	}
 	r.planned = false
 	return r.err
@@ -347,8 +401,12 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 		return fmt.Sprintf("%s%s: Globus transfer running (%s)", prefix, label, r.elapsed(file.phaseSince))
 	case pullProgressVerifying:
 		return fmt.Sprintf("%s%s %s %s %s verifying download (%s)", prefix, label, RenderProgressBar(file.verified, file.total, 24), RenderPercent(file.verified, file.total), RenderByteProgress(file.verified, file.total, false), r.elapsed(file.phaseSince))
+	case pullProgressExisting:
+		return fmt.Sprintf("%s%s %s %s %s checking existing file (%s)", prefix, label, RenderProgressBar(file.verified, file.total, 24), RenderPercent(file.verified, file.total), RenderByteProgress(file.verified, file.total, false), r.elapsed(file.phaseSince))
 	case pullProgressCheckingOut:
 		return fmt.Sprintf("%s%s %s %s %s checking out file (%s)", prefix, label, RenderProgressBar(file.checkedOut, file.total, 24), RenderPercent(file.checkedOut, file.total), RenderByteProgress(file.checkedOut, file.total, false), r.elapsed(file.phaseSince))
+	case pullProgressIndexing:
+		return fmt.Sprintf("%s%s: Refreshing Git index; checking file content (%s)", prefix, label, r.elapsed(file.phaseSince))
 	case pullProgressDownloading:
 		status := "downloading"
 		if !file.lastBytes.IsZero() && r.now().Sub(file.lastBytes) >= 5*time.Second {

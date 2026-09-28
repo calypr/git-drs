@@ -58,6 +58,37 @@ func TestPullProgressRendererNonTTYThrottles(t *testing.T) {
 	}
 }
 
+func TestPullProgressRendererFinishesOnceAfterIndexRefresh(t *testing.T) {
+	var out bytes.Buffer
+	r := NewPullProgressRenderer(&out)
+	r.base.SetTTY(false)
+	file := PullFile{Name: "large.bin", Size: 100}
+	r.OnPlan([]PullFile{file})
+	r.OnCheckoutStart(file)
+	r.OnCheckoutProgress(file.Name, file.Size)
+	r.OnIndexRefreshStart()
+	r.OnCompleted(file)
+	if err := r.Finish(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(out.String(), "large.bin: complete"); got != 1 {
+		t.Fatalf("completion rendered %d times: %q", got, out.String())
+	}
+}
+
+func TestPullProgressRendererShowsExistingFileVerification(t *testing.T) {
+	var out bytes.Buffer
+	r := NewPullProgressRenderer(&out)
+	r.base.SetTTY(true)
+	file := PullFile{Name: "large.bin", Size: 100}
+	r.OnPlan([]PullFile{file})
+	r.OnExistingFileVerificationStart(file)
+	r.OnExistingFileProgress(file.Name, 50)
+	if got := out.String(); !strings.Contains(got, "50.0% 50 B/100 B checking existing file") {
+		t.Fatalf("existing-file verification progress missing: %q", got)
+	}
+}
+
 func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 	var out bytes.Buffer
 	r := NewPullProgressRenderer(&out)
@@ -86,6 +117,11 @@ func TestPullProgressRendererShowsWorkAfterBytesArrive(t *testing.T) {
 	r.OnCheckoutProgress(file.Name, 50)
 	if got := out.String(); !strings.Contains(got, "50.0% 50 B/100 B checking out file") {
 		t.Fatalf("checkout bar must report bytes copied, got %q", got)
+	}
+	out.Reset()
+	r.OnIndexRefreshStart()
+	if got := out.String(); !strings.Contains(got, "Refreshing Git index; checking file content") || strings.Contains(got, "complete") {
+		t.Fatalf("index refresh must remain visible before completion, got %q", got)
 	}
 
 	out.Reset()

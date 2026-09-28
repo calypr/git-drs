@@ -19,6 +19,8 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
+const IndexRefreshEnv = "GIT_DRS_INDEX_REFRESH"
+
 func writeDrsMap(objectsRoot, pathname string, oid string, size int64) error {
 	name := filepath.Base(pathname)
 	drsObj := &drsapi.DrsObject{
@@ -48,6 +50,9 @@ func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Read
 }
 
 func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+	if os.Getenv(IndexRefreshEnv) == "1" {
+		return cleanIndexedPointerForRefresh(ctx, lfsRoot, pathname, content, dst)
+	}
 	objDir := filepath.Join(lfsRoot, "objects")
 	if err := os.MkdirAll(objDir, 0o755); err != nil {
 		return fmt.Errorf("clean: mkdir LFS objects: %w", err)
@@ -135,6 +140,42 @@ func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathnam
 		logger.Warn("clean: failed to write DRS map entry", "pathname", pathname, "error", mapErr)
 	}
 
+	return nil
+}
+
+func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer) error {
+	pathname = filepath.ToSlash(filepath.Clean(pathname))
+	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
+		return fmt.Errorf("refresh index: invalid path %q", pathname)
+	}
+	pointer, err := exec.CommandContext(ctx, "git", "show", ":"+pathname).Output()
+	if err != nil {
+		return fmt.Errorf("refresh index: read indexed pointer for %s: %w", pathname, err)
+	}
+	pointerOID, pointerSize, ok := lfs.ParseLFSPointer(pointer)
+	if !ok {
+		return fmt.Errorf("refresh index: %s is not an indexed DRS pointer", pathname)
+	}
+	h := sha256.New()
+	size, err := io.Copy(h, content)
+	if err != nil {
+		return fmt.Errorf("refresh index: read %s: %w", pathname, err)
+	}
+	actual := hex.EncodeToString(h.Sum(nil))
+	if size != pointerSize {
+		return fmt.Errorf("refresh index: %s changed size during checkout", pathname)
+	}
+	if lfs.IsDRSURI(pointerOID) || lfs.IsPlaceholderPointer(pointer) {
+		cachedOID, ok := cachedObjectOID(pointerOID, size, lfsRoot)
+		if !ok || cachedOID != actual {
+			return fmt.Errorf("refresh index: %s changed after checkout", pathname)
+		}
+	} else if !strings.EqualFold(pointerOID, actual) {
+		return fmt.Errorf("refresh index: %s changed after checkout", pathname)
+	}
+	if _, err := dst.Write(pointer); err != nil {
+		return fmt.Errorf("refresh index: write pointer for %s: %w", pathname, err)
+	}
 	return nil
 }
 

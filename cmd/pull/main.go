@@ -19,6 +19,7 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	localdrsobject "github.com/calypr/git-drs/internal/drsobject"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
@@ -309,8 +310,12 @@ var Cmd = &cobra.Command{
 		if err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot); err != nil {
 			return err
 		}
+		progress.OnIndexRefreshStart()
 		if err := refreshGitIndexForHydratedFiles(pointers); err != nil {
 			return err
+		}
+		for _, f := range pointers {
+			progress.OnCompleted(toPullFile(f))
 		}
 
 		return nil
@@ -705,6 +710,17 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 			src.Close()
 			return fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
 		}
+		if expectedPointerSHA256(f) != "" {
+			if info, statErr := os.Lstat(dstPath); statErr == nil && info.Mode().IsRegular() && info.Size() == f.Size {
+				progress.OnExistingFileVerificationStart(toPullFile(f))
+				if verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnExistingFileProgress(f.Name, n) }) == nil {
+					if err := src.Close(); err != nil {
+						return fmt.Errorf("close cached object for %s: %w", f.Name, err)
+					}
+					continue
+				}
+			}
+		}
 		progress.OnCheckoutStart(toPullFile(f))
 		if dir := filepath.Dir(dstPath); dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -733,7 +749,6 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 		if err := replaceCheckoutFile(ctx, dstPath, src, f, mode, func(n int64) { progress.OnCheckoutProgress(f.Name, n) }); err != nil {
 			return fmt.Errorf("failed to checkout %s: %w", f.Name, err)
 		}
-		progress.OnCompleted(toPullFile(f))
 	}
 	return nil
 }
@@ -830,6 +845,7 @@ func refreshGitIndexForHydratedFiles(files []pointerFile) error {
 	// semantic no-op that only clears the false-dirty state.
 	args := append([]string{"add", "--"}, paths...)
 	cmd := exec.Command("git", args...)
+	cmd.Env = append(os.Environ(), internalfilter.IndexRefreshEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

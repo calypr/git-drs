@@ -102,7 +102,7 @@ Before debugging behavior, keep the command split straight:
   - updates commits, branches, and checkout state
 - `git drs pull`
   - hydrates tracked pointer files already present in the current checkout
-- `git drs ls-files --pointers`
+- `git drs ls-files --all`
   - shows tracked pointers and localization state
 
 If you blur those together, the failure modes get confusing.
@@ -128,7 +128,7 @@ Check these in order:
 3. confirm the file shows up in the tracked inventory
 
    ```bash
-   git drs ls-files --pointers
+   git drs ls-files --all
    ```
 
 4. inspect `.git/drs/` logs if the hook path failed
@@ -248,7 +248,7 @@ git pull
 git drs pull
 ```
 
-### `git drs ls-files --pointers` does not show my file
+### `git drs ls-files --all` does not show my file
 
 This is not expected for a pointer created by a current `git drs add-ref`:
 `add-ref` automatically adds its destination to `.gitattributes`. For pointers
@@ -327,7 +327,7 @@ That usually means one of these:
 Check:
 
 ```bash
-git drs ls-files --pointers
+git drs ls-files --all
 git drs ls-files -I "*.bam"
 git drs pull --dry-run -I "*.bam"
 ```

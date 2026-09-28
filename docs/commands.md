@@ -255,10 +255,9 @@ entries.
 ```bash
 git drs ls-files
 git drs ls-files results/
-git drs ls-files -l --human-readable results/
-git drs ls-files --pointers
-git drs ls-files --pointers UMB/
-git drs ls-files --long
+git drs ls-files --all
+git drs ls-files --all UMB/
+git drs ls-files -l
 git drs ls-files --drs
 git drs ls-files -I "*.bam"
 git drs ls-files -n results/**
@@ -268,10 +267,10 @@ Important behavior:
 
 - default mode lists the current directory and does not query Git or DRS
 - path operands can name files or directories
-- `-l` adds permissions, size, modification time, and path
-- `--human-readable` formats sizes in readable units when used with `-l`
 - hidden entries are omitted from directory listings
-- `--pointers` selects the tracked DRS/Git-LFS pointer inventory
+- `-a, --all` lists every tracked DRS/Git-LFS pointer in the project using the
+  original object ID, localization status, and path format
+- `--pointers` remains an alias for the pointer inventory
 - a directory operand in pointer mode includes tracked pointers beneath it
 - `*` means localized/hydrated in the worktree
 - `-` means the worktree still contains a pointer
@@ -282,10 +281,8 @@ Important behavior:
 Common flags:
 
 - `-I, --include <pattern>`: include filter; may be repeated
-- `-l, --long-listing`: show file details in directory mode
-- `--human-readable`: format sizes in readable units with `-l`
-- `--pointers`: list tracked DRS/Git-LFS pointers
-- `--long`: show full object IDs in pointer mode
+- `-a, --all`: list every tracked DRS/Git-LFS pointer
+- `-l, --long`: show full object IDs in pointer mode
 - `-n, --name-only`: path-only output
 - `--json`: structured output
 - `--drs`: include DRS lookup details

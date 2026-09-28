@@ -4,22 +4,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 )
-
-type browseEntry struct {
-	name    string
-	mode    fs.FileMode
-	size    int64
-	modTime time.Time
-}
 
 type browseListing struct {
 	operand   string
 	directory bool
-	entries   []browseEntry
+	entries   []string
 }
 
 func collectBrowseListings(paths []string) ([]browseListing, error) {
@@ -42,12 +33,7 @@ func collectBrowseListings(paths []string) ([]browseListing, error) {
 
 		listing := browseListing{operand: path, directory: info.IsDir()}
 		if !info.IsDir() {
-			listing.entries = []browseEntry{{
-				name:    path,
-				mode:    info.Mode(),
-				size:    info.Size(),
-				modTime: info.ModTime(),
-			}}
+			listing.entries = []string{path}
 			listings = append(listings, listing)
 			continue
 		}
@@ -60,33 +46,10 @@ func collectBrowseListings(paths []string) ([]browseListing, error) {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
-			entryInfo, err := entry.Info()
-			if err != nil {
-				return nil, fmt.Errorf("read file information for %s: %w", filepath.Join(path, entry.Name()), err)
-			}
-			listing.entries = append(listing.entries, browseEntry{
-				name:    entry.Name(),
-				mode:    entryInfo.Mode(),
-				size:    entryInfo.Size(),
-				modTime: entryInfo.ModTime(),
-			})
+			listing.entries = append(listing.entries, entry.Name())
 		}
 		listings = append(listings, listing)
 	}
 
 	return listings, nil
-}
-
-func formatBrowseSize(size int64, human bool) string {
-	if !human || size < 1024 {
-		return fmt.Sprintf("%d", size)
-	}
-	units := "KMGTPE"
-	value := float64(size)
-	unit := -1
-	for value >= 1024 && unit < len(units)-1 {
-		value /= 1024
-		unit++
-	}
-	return fmt.Sprintf("%.1f%c", value, units[unit])
 }

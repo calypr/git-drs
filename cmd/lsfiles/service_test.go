@@ -17,6 +17,13 @@ func TestCollectRowsMatchesDirectoryOperands(t *testing.T) {
 		}, nil
 	}
 	t.Cleanup(func() { loadLFSInventory = previous })
+	allRows, err := collectRows(context.Background(), "", "", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allRows) != 2 {
+		t.Fatalf("all pointer rows = %+v, want both tracked files", allRows)
+	}
 
 	for _, operand := range []string{"UMB/", "UMB", "./UMB/"} {
 		t.Run(operand, func(t *testing.T) {

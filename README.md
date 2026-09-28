@@ -50,7 +50,7 @@ git add .gitattributes
 git add sample.bam
 git commit -m "Add sample"
 git drs push
-git drs ls-files --pointers
+git drs ls-files --all
 git drs pull -I "*.bam"
 ```
 
@@ -64,7 +64,7 @@ The cleaned CLI intentionally removed legacy commands:
   - `git drs upload`
   - `git drs download`
 - `git drs pull` is hydration-only
-- `git drs ls-files` lists visible files and directories; use `--pointers` for
+- `git drs ls-files` lists visible files and directories; use `--all` for
   the tracked DRS/LFS pointer inventory
 - the unified `git drs remote add` takes scope through
   `--scope <organization/project>`
@@ -81,7 +81,7 @@ Current command split:
 - `git drs push` is the managed data push path
 - plain `git push` is plain Git only
 - `git drs pull` hydrates tracked pointer files already present in the checkout
-- `git drs ls-files` lists visible files and directories; use `--pointers` for
+- `git drs ls-files` lists visible files and directories; use `--all` for
   the tracked DRS/LFS pointer inventory
 - `git drs add-url` prepares pointer plus local metadata for existing provider objects
 

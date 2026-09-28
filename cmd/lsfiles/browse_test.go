@@ -1,13 +1,10 @@
 package lsfiles
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
 
 func TestCollectBrowseListingsDefaultShowsVisibleFilesAndDirectories(t *testing.T) {
@@ -27,11 +24,8 @@ func TestCollectBrowseListingsDefaultShowsVisibleFilesAndDirectories(t *testing.
 	if len(listings) != 1 {
 		t.Fatalf("got %d listings, want 1", len(listings))
 	}
-	if got, want := browseEntryNames(listings[0].entries), []string{"subdir", "visible.txt"}; !equalStrings(got, want) {
+	if got, want := listings[0].entries, []string{"subdir", "visible.txt"}; !slices.Equal(got, want) {
 		t.Fatalf("visible entries = %v, want %v", got, want)
-	}
-	if !listings[0].entries[0].mode.IsDir() {
-		t.Fatalf("first entry mode = %v, want a directory", listings[0].entries[0].mode)
 	}
 }
 
@@ -52,10 +46,10 @@ func TestCollectBrowseListingsPathOperands(t *testing.T) {
 	if len(listings) != 2 {
 		t.Fatalf("got %d listings, want 2", len(listings))
 	}
-	if got, want := browseEntryNames(listings[0].entries), []string{"inside.txt"}; !equalStrings(got, want) {
+	if got, want := listings[0].entries, []string{"inside.txt"}; !slices.Equal(got, want) {
 		t.Fatalf("directory operand entries = %v, want %v", got, want)
 	}
-	if got, want := browseEntryNames(listings[1].entries), []string{file}; !equalStrings(got, want) {
+	if got, want := listings[1].entries, []string{file}; !slices.Equal(got, want) {
 		t.Fatalf("file operand entry = %v, want %v", got, want)
 	}
 }
@@ -70,34 +64,8 @@ func TestCollectBrowseListingsExplicitBrokenSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := browseEntryNames(listings[0].entries), []string{path}; !equalStrings(got, want) {
+	if got, want := listings[0].entries, []string{path}; !slices.Equal(got, want) {
 		t.Fatalf("broken symlink operand = %v, want %v", got, want)
-	}
-}
-
-func TestPrintBrowseListingsLongHumanReadable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "large.bin")
-	writeBrowseFile(t, path, strings.Repeat("x", 1536))
-	listings, err := collectBrowseListings([]string{path})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var output bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetOut(&output)
-	if err := printBrowseListings(cmd, listings, true, true); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(output.String(), listings[0].entries[0].mode.String()) ||
-		!strings.Contains(output.String(), "1.5K") || !strings.Contains(output.String(), "large.bin") {
-		t.Fatalf("long human-readable output = %q", output.String())
-	}
-	if got := formatBrowseSize(1536, true); got != "1.5K" {
-		t.Fatalf("human size = %q, want 1.5K", got)
-	}
-	if got := formatBrowseSize(1536, false); got != "1536" {
-		t.Fatalf("byte size = %q, want 1536", got)
 	}
 }
 
@@ -122,24 +90,4 @@ func writeBrowseFile(t *testing.T, path, contents string) {
 	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func browseEntryNames(entries []browseEntry) []string {
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.name)
-	}
-	return names
-}
-
-func equalStrings(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }

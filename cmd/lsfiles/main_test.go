@@ -7,8 +7,7 @@ func resetFlagsForTest() {
 	drsRemote = ""
 	includePatterns = nil
 	showLong = false
-	longListing = false
-	humanReadable = false
+	showAll = false
 	pointers = false
 	nameOnly = false
 	jsonOutput = false
@@ -20,6 +19,7 @@ func TestPointerInventorySelectionPreservesExistingModes(t *testing.T) {
 		name  string
 		setup func()
 	}{
+		{name: "all tracked pointers", setup: func() { showAll = true }},
 		{name: "explicit pointer mode", setup: func() { pointers = true }},
 		{name: "DRS lookup", setup: func() { drsStatus = true }},
 		{name: "full object IDs", setup: func() { showLong = true }},
@@ -45,37 +45,16 @@ func TestPointerInventorySelectionPreservesExistingModes(t *testing.T) {
 	}
 }
 
-func TestBrowseFlagsCannotBeSilentlyIgnoredInPointerMode(t *testing.T) {
-	resetFlagsForTest()
-	pointers = true
-	longListing = true
-	if err := validateModeFlags(); err == nil {
-		t.Fatal("expected -l to be rejected in pointer mode")
-	}
-
-	longListing = false
-	humanReadable = true
-	if err := validateModeFlags(); err == nil {
-		t.Fatal("expected --human-readable to be rejected in pointer mode")
-	}
-	resetFlagsForTest()
-}
-
 func TestLSFlagShorthandsKeepHelpAvailable(t *testing.T) {
 	if flag := Cmd.Flags().Lookup("long"); flag == nil {
 		t.Fatal("--long flag is missing")
-	} else if flag.Shorthand != "" {
-		t.Fatalf("--long shorthand = %q, want none", flag.Shorthand)
-	}
-	if flag := Cmd.Flags().Lookup("long-listing"); flag == nil {
-		t.Fatal("--long-listing flag is missing")
 	} else if flag.Shorthand != "l" {
-		t.Fatalf("--long-listing shorthand = %q, want l", flag.Shorthand)
+		t.Fatalf("--long shorthand = %q, want l", flag.Shorthand)
 	}
-	if flag := Cmd.Flags().Lookup("human-readable"); flag == nil {
-		t.Fatal("--human-readable flag is missing")
-	} else if flag.Shorthand != "" {
-		t.Fatalf("--human-readable shorthand = %q, want none", flag.Shorthand)
+	if flag := Cmd.Flags().Lookup("all"); flag == nil {
+		t.Fatal("--all flag is missing")
+	} else if flag.Shorthand != "a" {
+		t.Fatalf("--all shorthand = %q, want a", flag.Shorthand)
 	}
 	Cmd.InitDefaultHelpFlag()
 	if flag := Cmd.Flags().Lookup("help"); flag == nil {

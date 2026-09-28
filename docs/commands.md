@@ -85,8 +85,10 @@ catalog version are saved, so a later release cannot silently redirect an
 existing remote. Only HTTPS endpoints without embedded credentials are
 accepted.
 
-The older `gen3`, `local`, and `terra` command shapes are deprecated, hidden
-compatibility forms. New scripts should use the unified command.
+`git drs remote add gen3 [remote-name] <organization/project>` remains a
+supported Gen3 setup command. It accepts `--cred <credentials.json>` or
+`--token <access-token>` and creates the local Gen3 profile. The `local` and
+`terra` command shapes are deprecated, hidden compatibility forms.
 
 ### `git drs preset list` / `git drs preset show <alias>`
 
@@ -102,9 +104,9 @@ contain no credential or secret values.
 | `synapse` | Synapse | bearer token |
 | `cgc` | Cancer Genomics Cloud | bearer token |
 
-The legacy provider-specific `remote add gen3`, `remote add local`, and
-`remote add terra` forms remain only as hidden, deprecated compatibility
-commands. Do not use them in new instructions or scripts.
+The provider-specific `remote add gen3` form remains available for Gen3
+workflows. The `remote add local` and `remote add terra` forms remain only as
+hidden, deprecated compatibility commands.
 
 ### `git drs remote list`
 

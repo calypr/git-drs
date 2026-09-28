@@ -17,7 +17,8 @@ import (
 )
 
 var Gen3Cmd = &cobra.Command{
-	Use: "gen3 [remote-name] <organization/project>",
+	Use:   "gen3 [remote-name] <organization/project>",
+	Short: "Configure a Gen3 remote and credential profile",
 	Args: func(cmd *cobra.Command, args []string) error {
 		if len(args) < 1 || len(args) > 2 {
 			cmd.SilenceUsage = false
@@ -112,6 +113,9 @@ func gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg string,
 		UseShepherd:        "false",
 		MinShepherdVersion: "",
 	}
+	if err := configure.EnsureExists(); err != nil {
+		return fmt.Errorf("prepare Gen3 credential store: %w", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -132,9 +136,6 @@ func gen3Init(remoteName, credFile, fenceToken, selectedBucket, scopeArg string,
 		return fmt.Errorf("no bucket mapping found for organization=%q project=%q", organization, project)
 	}
 
-	if err := configure.EnsureExists(); err != nil {
-		return fmt.Errorf("prepare Gen3 credential store: %w", err)
-	}
 	if err := persistGen3Remote(remoteName, organization, project, apiEndpoint, scope, func() error {
 		return configure.Save(cred)
 	}); err != nil {

@@ -167,6 +167,7 @@ var Cmd = &cobra.Command{
 		}
 
 		prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
+		unverifiedDownloads := make(map[string]bool)
 		if len(missingOIDs) > 0 {
 			prefetchedAccess := make(map[string]internaltransfer.ResolvedAccess, len(prefetched))
 			if len(missingOIDs) == 1 && anvil == nil {
@@ -248,6 +249,9 @@ var Cmd = &cobra.Command{
 			}
 			downloadedOIDs := make(map[string]bool)
 			for i, f := range pointers {
+				if unverifiedDownloads[f.Oid] {
+					continue
+				}
 				dstPath, err := lfs.ObjectPath(objectsRoot, f.Oid)
 				if err != nil {
 					return fmt.Errorf("failed to resolve LFS object path for %s: %w", f.Oid, err)
@@ -282,6 +286,10 @@ var Cmd = &cobra.Command{
 						debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
 						return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 					}
+					if !f.Placeholder && !lfs.IsDRSURI(f.Oid) && expectedPointerSHA256(f) != "" {
+						unverifiedDownloads[f.Oid] = true
+						continue
+					}
 					if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
 						_ = os.Remove(dstPath)
 						return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
@@ -310,7 +318,7 @@ var Cmd = &cobra.Command{
 		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched, objectsRoot, gitPaths.DRSObjectsDir()); err != nil {
 			return err
 		}
-		if alreadyHydratedInGit(ctx, pointers, worktreeRoot) {
+		if len(unverifiedDownloads) == 0 && alreadyHydratedInGit(ctx, pointers, worktreeRoot) {
 			for _, f := range pointers {
 				progress.OnCompleted(toPullFile(f))
 			}
@@ -318,7 +326,7 @@ var Cmd = &cobra.Command{
 		}
 
 		readOnly := drsCtx.IsReadOnly()
-		receipts, err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot)
+		receipts, err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot, unverifiedDownloads)
 		if err != nil {
 			return err
 		}
@@ -687,7 +695,7 @@ func savePlaceholderChecksums(ctx context.Context, drsCtx *remoteruntime.GitCont
 	return nil
 }
 
-func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string) ([]internalfilter.IndexRefreshReceipt, error) {
+func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress *internaltransfer.PullProgressRenderer, readOnly bool, objectsRoot string, unverifiedDownloads map[string]bool) ([]internalfilter.IndexRefreshReceipt, error) {
 	worktreeRoot, err := gitrepo.GitTopLevel()
 	if err != nil {
 		// Unit-level callers may provide an isolated checkout directory without
@@ -707,12 +715,25 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve cached object for %s: %w", f.Oid, err)
 		}
-		state, err := inspectCachedPointer(srcPath, f)
-		if err != nil {
-			return nil, fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
-		}
-		if !state.complete {
-			return nil, fmt.Errorf("refusing to checkout invalid cached object for %s", f.Oid)
+		freshDownload := unverifiedDownloads[f.Oid]
+		var state cachedObjectState
+		if freshDownload {
+			info, err := os.Stat(srcPath)
+			if err != nil {
+				return nil, fmt.Errorf("stat downloaded cache object for %s: %w", f.Oid, err)
+			}
+			if !info.Mode().IsRegular() || info.Size() != f.Size || internaltransfer.IncompleteDownloadCheckpoint(srcPath, f.Size) {
+				return nil, fmt.Errorf("downloaded cache object for %s is incomplete", f.Oid)
+			}
+			state = cachedObjectState{exists: true, info: info}
+		} else {
+			state, err = inspectCachedPointer(srcPath, f)
+			if err != nil {
+				return nil, fmt.Errorf("refusing to checkout invalid cached object for %s: %w", f.Oid, err)
+			}
+			if !state.complete {
+				return nil, fmt.Errorf("refusing to checkout invalid cached object for %s", f.Oid)
+			}
 		}
 		src, err := os.Open(srcPath)
 		if err != nil {
@@ -723,7 +744,7 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 			src.Close()
 			return nil, fmt.Errorf("refusing to checkout %s: %w", f.Name, err)
 		}
-		if expectedPointerSHA256(f) != "" {
+		if !freshDownload && expectedPointerSHA256(f) != "" {
 			if info, statErr := os.Lstat(dstPath); statErr == nil && info.Mode().IsRegular() && info.Size() == f.Size {
 				progress.OnExistingFileVerificationStart(toPullFile(f))
 				before := info
@@ -768,6 +789,11 @@ func checkoutDownloadedFiles(ctx context.Context, files []pointerFile, progress 
 		receipt, hasReceipt, err := replaceCheckoutFile(ctx, dstPath, src, f, mode, func(n int64) { progress.OnCheckoutProgress(f.Name, n) })
 		if err != nil {
 			return nil, fmt.Errorf("failed to checkout %s: %w", f.Name, err)
+		}
+		if freshDownload {
+			state.complete = true
+			rememberVerifiedCache(srcPath, f, state)
+			delete(unverifiedDownloads, f.Oid)
 		}
 		if hasReceipt {
 			receipts = append(receipts, receipt)

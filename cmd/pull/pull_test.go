@@ -351,6 +351,49 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	}
 }
 
+func TestPullDryRunUsesExactPathLoader(t *testing.T) {
+	resetPullFlagsForTest()
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init", "-q")
+	t.Chdir(repo)
+
+	oldInventory := loadWorktreeInventory
+	oldWorktreeFile := loadWorktreeFile
+	t.Cleanup(func() {
+		loadWorktreeInventory = oldInventory
+		loadWorktreeFile = oldWorktreeFile
+		resetPullFlagsForTest()
+		Cmd.SetOut(nil)
+		Cmd.SetErr(nil)
+		Cmd.SetArgs(nil)
+	})
+	loadWorktreeInventory = func(*slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		t.Fatal("full inventory should not be loaded for one exact path")
+		return nil, nil
+	}
+	loadWorktreeFile = func(_ context.Context, root, path string) (lfs.LfsFileInfo, bool, error) {
+		rootInfo, rootErr := os.Stat(root)
+		repoInfo, repoErr := os.Stat(repo)
+		if rootErr != nil || repoErr != nil || !os.SameFile(rootInfo, repoInfo) || path != "data/file.bin" {
+			t.Fatalf("targeted inventory args = (%q, %q)", root, path)
+		}
+		return lfs.LfsFileInfo{Name: path, Oid: "aaaa", Size: 1}, true, nil
+	}
+	includePatterns = []string{"data/file.bin"}
+	dryRun = true
+
+	var out bytes.Buffer
+	Cmd.SetOut(&out)
+	Cmd.SetErr(&out)
+	Cmd.SetArgs([]string{"--dry-run"})
+	if err := Cmd.RunE(Cmd, nil); err != nil {
+		t.Fatalf("RunE returned error: %v", err)
+	}
+	if got := out.String(); got != "data/file.bin\n" {
+		t.Fatalf("unexpected dry-run output: %q", got)
+	}
+}
+
 func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
 	resetPullFlagsForTest()
 	repo := t.TempDir()
@@ -379,11 +422,13 @@ func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
 	oldResolveRemote := resolveRemote
 	oldNewRemoteClient := newRemoteClient
 	oldInventory := loadWorktreeInventory
+	oldWorktreeFile := loadWorktreeFile
 	t.Cleanup(func() {
 		loadCfg = oldLoadCfg
 		resolveRemote = oldResolveRemote
 		newRemoteClient = oldNewRemoteClient
 		loadWorktreeInventory = oldInventory
+		loadWorktreeFile = oldWorktreeFile
 		resetPullFlagsForTest()
 	})
 	loadCfg = func() (*config.Config, error) { return &config.Config{}, nil }
@@ -391,10 +436,8 @@ func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
 	newRemoteClient = func(*config.Config, config.Remote, *slog.Logger) (*remoteruntime.GitContext, error) {
 		return &remoteruntime.GitContext{Client: client, Capabilities: remoteruntime.Capabilities{Resolve: true, Download: true}}, nil
 	}
-	loadWorktreeInventory = func(*slog.Logger) (map[string]lfs.LfsFileInfo, error) {
-		return map[string]lfs.LfsFileInfo{
-			"data.bin": {Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 123},
-		}, nil
+	loadWorktreeFile = func(_ context.Context, _ string, path string) (lfs.LfsFileInfo, bool, error) {
+		return lfs.LfsFileInfo{Name: path, Oid: strings.Repeat("a", 64), Size: 123}, true, nil
 	}
 	includePatterns = []string{"data.bin"}
 

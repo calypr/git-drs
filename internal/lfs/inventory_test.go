@@ -208,6 +208,43 @@ func TestGetTrackedLfsFiles_IncludesHydratedTrackedFileUsingIndexPointer(t *test
 	}
 }
 
+func TestGetTrackedLfsFileAtReadsHydratedLiteralPath(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init", "-q")
+	path := "data/file[1].bin"
+	otherPath := "data/file1.bin"
+	if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.bin filter=drs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantedOID := strings.Repeat("a", 64)
+	otherOID := strings.Repeat("b", 64)
+	writePointerFile(t, filepath.Join(repo, filepath.FromSlash(path)), wantedOID, "321")
+	writePointerFile(t, filepath.Join(repo, filepath.FromSlash(otherPath)), otherOID, "654")
+	runGitCmdTest(t, repo, "add", "--", ".")
+	if err := os.WriteFile(filepath.Join(repo, filepath.FromSlash(path)), []byte("hydrated payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	info, found, err := GetTrackedLfsFileAt(context.Background(), repo, path)
+	if err != nil {
+		t.Fatalf("GetTrackedLfsFileAt: %v", err)
+	}
+	if !found {
+		t.Fatal("expected tracked path to be found")
+	}
+	if info.Name != path || info.Oid != wantedOID || info.Size != 321 || info.IsPointer {
+		t.Fatalf("tracked file = %+v", info)
+	}
+
+	info, found, err = GetTrackedLfsFileAt(context.Background(), repo, "data/missing.bin")
+	if err != nil {
+		t.Fatalf("GetTrackedLfsFileAt missing path: %v", err)
+	}
+	if found {
+		t.Fatalf("missing path unexpectedly returned %+v", info)
+	}
+}
+
 func TestGetTrackedLfsFilesPreservesLeadingSpaceInPath(t *testing.T) {
 	repo := t.TempDir()
 	runGitCmdTest(t, repo, "init")

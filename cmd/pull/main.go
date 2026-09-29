@@ -43,6 +43,7 @@ var (
 		return remoteruntime.New(cfg, remote, logger)
 	}
 	loadWorktreeInventory = lfs.GetTrackedLfsFiles
+	loadWorktreeFile      = lfs.GetTrackedLfsFileAt
 )
 
 var Cmd = &cobra.Command{
@@ -63,9 +64,26 @@ var Cmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
-		inventory, err := loadWorktreeInventory(logg)
-		if err != nil {
-			return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
+		var inventory map[string]lfs.LfsFileInfo
+		if path, ok := exactIncludePath(includePatterns); ok {
+			worktreeRoot, err := gitrepo.GitTopLevel()
+			if err != nil {
+				return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
+			}
+			info, found, err := loadWorktreeFile(ctx, worktreeRoot, path)
+			if err != nil {
+				return fmt.Errorf("failed to discover pointer file %q in worktree: %w", path, err)
+			}
+			inventory = make(map[string]lfs.LfsFileInfo, 1)
+			if found {
+				inventory[info.Name] = info
+			}
+		} else {
+			var err error
+			inventory, err = loadWorktreeInventory(logg)
+			if err != nil {
+				return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
+			}
 		}
 		gitPaths, err := gitrepo.ResolveRepositoryPaths(ctx)
 		if err != nil {
@@ -397,6 +415,21 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: sha256, Placeholder: info.Placeholder})
 	}
 	return files
+}
+
+func exactIncludePath(patterns []string) (string, bool) {
+	if len(patterns) != 1 {
+		return "", false
+	}
+	pattern := strings.TrimSpace(patterns[0])
+	if pattern == "" || strings.ContainsAny(pattern, "*?[") {
+		return "", false
+	}
+	path := filepath.ToSlash(filepath.Clean(pattern))
+	if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
+		return "", false
+	}
+	return path, true
 }
 
 func inspectCachedPointer(path string, file pointerFile) (cachedObjectState, error) {

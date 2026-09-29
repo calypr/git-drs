@@ -34,6 +34,7 @@ import (
 
 var includePatterns []string
 var dryRun bool
+var recursive bool
 var accessMethod string
 
 var (
@@ -64,13 +65,22 @@ var Cmd = &cobra.Command{
 			ctx = context.Background()
 		}
 
+		inventoryRoot, err := gitrepo.GitTopLevel()
+		if err != nil {
+			return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
+		}
+		patterns, directory, err := expandPullIncludes(inventoryRoot, includePatterns, recursive)
+		if err != nil {
+			return err
+		}
 		var inventory map[string]lfs.LfsFileInfo
-		if path, ok := exactIncludePath(includePatterns); ok {
-			worktreeRoot, err := gitrepo.GitTopLevel()
+		if directory != "" {
+			inventory, err = lfs.GetTrackedLfsFilesInDirectory(ctx, inventoryRoot, directory, recursive)
 			if err != nil {
-				return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
+				return fmt.Errorf("failed to discover pointer files in directory %q: %w", directory, err)
 			}
-			info, found, err := loadWorktreeFile(ctx, worktreeRoot, path)
+		} else if path, ok := exactIncludePath(patterns); ok {
+			info, found, err := loadWorktreeFile(ctx, inventoryRoot, path)
 			if err != nil {
 				return fmt.Errorf("failed to discover pointer file %q in worktree: %w", path, err)
 			}
@@ -89,7 +99,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to resolve Git repository paths: %w", err)
 		}
-		pointers := collectPointerFiles(inventory, includePatterns, gitPaths.DRSObjectsDir())
+		pointers := collectPointerFiles(inventory, patterns, gitPaths.DRSObjectsDir())
 		if len(pointers) == 0 {
 			logg.Debug("no matching pointer files to hydrate")
 			return nil
@@ -153,10 +163,7 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to resolve LFS objects root: %w", err)
 		}
-		worktreeRoot, err := gitrepo.GitTopLevel()
-		if err != nil {
-			return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
-		}
+		worktreeRoot := inventoryRoot
 		drsCtx.LFSObjectsRoot = objectsRoot
 		drsCtx.RepositoryRoot = worktreeRoot
 		missingOIDs := make([]string, 0, len(pointers))
@@ -415,6 +422,39 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: sha256, Placeholder: info.Placeholder})
 	}
 	return files
+}
+
+func expandPullIncludes(repoDir string, patterns []string, recursive bool) ([]string, string, error) {
+	expanded := append([]string(nil), patterns...)
+	var directory string
+	for i, pattern := range patterns {
+		if strings.ContainsAny(pattern, "*?[") {
+			continue
+		}
+		path := filepath.ToSlash(filepath.Clean(strings.TrimSpace(pattern)))
+		if strings.TrimSpace(pattern) == "" || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
+			continue
+		}
+		info, err := os.Stat(filepath.Join(repoDir, filepath.FromSlash(path)))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("inspect include path %q: %w", pattern, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+		wildcard := "*"
+		if recursive {
+			wildcard = "**"
+		}
+		expanded[i] = path + "/" + wildcard
+		if len(patterns) == 1 {
+			directory = path
+		}
+	}
+	return expanded, directory, nil
 }
 
 func exactIncludePath(patterns []string) (string, bool) {
@@ -1117,7 +1157,8 @@ func buildPullDownloadDebugContext(ctx context.Context, drsCtx *remoteruntime.Gi
 }
 
 func init() {
-	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include pathspec/glob pattern(s)")
+	Cmd.Flags().StringArrayVarP(&includePatterns, "include", "I", nil, "include file, directory, or glob pattern(s)")
+	Cmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "include subdirectories of selected directories")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "list matching pointer files without downloading them")
 	Cmd.Flags().StringVar(&accessMethod, "access-method", "", "require one access method type (for example: globus or https)")
 }

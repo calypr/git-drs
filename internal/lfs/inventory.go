@@ -137,6 +137,29 @@ func GetTrackedLfsFilesAt(logger *slog.Logger, repoDir string) (map[string]LfsFi
 	if err != nil {
 		return nil, err
 	}
+	return trackedLfsFilesFromPaths(ctx, repoDir, paths)
+}
+
+// GetTrackedLfsFilesInDirectory inventories only tracked files in the selected directory.
+func GetTrackedLfsFilesInDirectory(ctx context.Context, repoDir, directory string, recursive bool) (map[string]LfsFileInfo, error) {
+	args := []string{"ls-files", "-z", "--"}
+	if directory != "." {
+		args = append(args, ":(literal)"+directory+"/")
+	}
+	out, err := runGitCommand(ctx, repoDir, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+	var paths []string
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" && (recursive || filepath.ToSlash(filepath.Dir(path)) == directory) {
+			paths = append(paths, path)
+		}
+	}
+	return trackedLfsFilesFromPaths(ctx, repoDir, paths)
+}
+
+func trackedLfsFilesFromPaths(ctx context.Context, repoDir string, paths []string) (map[string]LfsFileInfo, error) {
 	tracked, err := filterLfsTrackedPaths(ctx, repoDir, paths)
 	if err != nil {
 		return nil, err

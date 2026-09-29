@@ -299,10 +299,16 @@ Hydrate tracked pointer files already present in the current checkout.
 ```bash
 git drs pull
 git drs pull -I "*.bam"
+git drs pull -I data/
+git drs pull -r -I data/
 git drs pull -I "data/**" -I "results/*.txt"
 git drs pull --dry-run -I "results/**"
 git drs pull research --access-method globus
 ```
+
+Directory includes select tracked DRS/Git-LFS files directly inside the directory.
+Use `-r` / `--recursive` to include files in its subdirectories. Files and glob
+patterns retain their existing matching behavior; plain `pull` selects the whole checkout.
 
 Access-method policy:
 

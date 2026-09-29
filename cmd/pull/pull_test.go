@@ -105,6 +105,7 @@ func TestReplaceCheckoutFileReportsCopyAndCleansCanceledStage(t *testing.T) {
 func resetPullFlagsForTest() {
 	includePatterns = nil
 	dryRun = false
+	recursive = false
 }
 
 func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
@@ -391,6 +392,59 @@ func TestPullDryRunUsesExactPathLoader(t *testing.T) {
 	}
 	if got := out.String(); got != "data/file.bin\n" {
 		t.Fatalf("unexpected dry-run output: %q", got)
+	}
+}
+
+func TestPullDirectoryIncludes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"directory", []string{"-I", "data"}, "data/direct.bin\n"},
+		{"trailing slash", []string{"-I", "data/"}, "data/direct.bin\n"},
+		{"recursive short", []string{"-r", "-I", "data"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"recursive long", []string{"--recursive", "-I", "data/"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"multiple directories", []string{"-I", "data", "-I", "misc"}, "data/direct.bin\nmisc/other.bin\n"},
+		{"root directory", []string{"-I", "."}, "root.bin\n"},
+		{"exact file with recursive", []string{"-r", "-I", "data/direct.bin"}, "data/direct.bin\n"},
+		{"glob", []string{"-I", "data/**"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetPullFlagsForTest()
+			repo := t.TempDir()
+			runGitCmdTest(t, repo, "init", "-q")
+			runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+			t.Chdir(repo)
+			if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.bin filter=drs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"data/direct.bin", "data/sub/nested.bin", "database/outside.bin", "misc/other.bin", "root.bin"} {
+				writePointerFile(t, filepath.Join(repo, path), strings.Repeat("a", 64), "7")
+			}
+			runGitCmdTest(t, repo, "add", ".")
+			writePointerFile(t, filepath.Join(repo, "data/untracked.bin"), strings.Repeat("b", 64), "7")
+			if err := os.WriteFile(filepath.Join(repo, "data/direct.bin"), []byte("hydrated content"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			Cmd.SetOut(&out)
+			Cmd.SetErr(&out)
+			t.Cleanup(func() {
+				resetPullFlagsForTest()
+				Cmd.SetOut(nil)
+				Cmd.SetErr(nil)
+			})
+			if err := Cmd.ParseFlags(append([]string{"--dry-run"}, tc.args...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := Cmd.RunE(Cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != tc.want {
+				t.Fatalf("selected files = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

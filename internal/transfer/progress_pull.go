@@ -12,17 +12,18 @@ const pullHeartbeatInterval = 2 * time.Second
 type pullProgressPhase string
 
 const (
-	pullProgressPending     pullProgressPhase = "pending"
-	pullProgressResolving   pullProgressPhase = "resolving"
-	pullProgressConnecting  pullProgressPhase = "connecting"
-	pullProgressWaiting     pullProgressPhase = "waiting"
-	pullProgressExternal    pullProgressPhase = "external"
-	pullProgressDownloading pullProgressPhase = "downloading"
-	pullProgressVerifying   pullProgressPhase = "verifying"
-	pullProgressExisting    pullProgressPhase = "existing"
-	pullProgressCheckingOut pullProgressPhase = "checking_out"
-	pullProgressIndexing    pullProgressPhase = "indexing"
-	pullProgressCompleted   pullProgressPhase = "completed"
+	pullProgressPending             pullProgressPhase = "pending"
+	pullProgressResolving           pullProgressPhase = "resolving"
+	pullProgressConnecting          pullProgressPhase = "connecting"
+	pullProgressWaiting             pullProgressPhase = "waiting"
+	pullProgressExternal            pullProgressPhase = "external"
+	pullProgressDownloading         pullProgressPhase = "downloading"
+	pullProgressVerificationPending pullProgressPhase = "verification_pending"
+	pullProgressVerifying           pullProgressPhase = "verifying"
+	pullProgressExisting            pullProgressPhase = "existing"
+	pullProgressCheckingOut         pullProgressPhase = "checking_out"
+	pullProgressIndexing            pullProgressPhase = "indexing"
+	pullProgressCompleted           pullProgressPhase = "completed"
 )
 
 type pullFileProgress struct {
@@ -225,7 +226,7 @@ func (r *PullProgressRenderer) OnDownloadProgress(id string, bytesSoFar int64, t
 	}
 	item.phase = pullProgressDownloading
 	if item.total > 0 && item.current >= item.total {
-		item.phase = pullProgressVerifying
+		item.phase = pullProgressVerificationPending
 		item.phaseSince = r.now()
 		item.verified = 0
 	}
@@ -399,6 +400,8 @@ func (r *PullProgressRenderer) renderLine(file *pullFileProgress) string {
 		return fmt.Sprintf("%s%s: Connected; waiting for data (%s)", prefix, label, r.elapsed(file.phaseSince))
 	case pullProgressExternal:
 		return fmt.Sprintf("%s%s: Globus transfer running (%s)", prefix, label, r.elapsed(file.phaseSince))
+	case pullProgressVerificationPending:
+		return fmt.Sprintf("%s%s: Downloaded; waiting for verification (%s)", prefix, label, r.elapsed(file.phaseSince))
 	case pullProgressVerifying:
 		return fmt.Sprintf("%s%s %s %s %s verifying download (%s)", prefix, label, RenderProgressBar(file.verified, file.total, 24), RenderPercent(file.verified, file.total), RenderByteProgress(file.verified, file.total, false), r.elapsed(file.phaseSince))
 	case pullProgressExisting:

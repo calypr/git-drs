@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -169,47 +168,59 @@ var Cmd = &cobra.Command{
 
 		prefetched := make(map[string]drsapi.DrsObject, len(missingOIDs))
 		if len(missingOIDs) > 0 {
-			progress.OnStage("Looking up DRS records")
-			checksumOIDs := make([]string, 0, len(missingOIDs))
-			for _, oid := range missingOIDs {
+			prefetchedAccess := make(map[string]internaltransfer.ResolvedAccess, len(prefetched))
+			if len(missingOIDs) == 1 && anvil == nil {
+				oid := missingOIDs[0]
+				progress.OnStage("Resolving DRS record and download access")
+				var access internaltransfer.ResolvedAccess
+				var obj *drsapi.DrsObject
 				if lfs.IsDRSURI(oid) {
-					if anvil == nil {
-						obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
-						if err == nil {
+					access, obj, err = internaltransfer.ResolvedAccessURLForDRSURI(ctx, drsCtx, normalizeDRSPointerOID(oid))
+				} else {
+					access, obj, err = internaltransfer.ResolvedAccessURLForHashScope(ctx, drsCtx, oid)
+				}
+				if err != nil {
+					return fmt.Errorf("resolve DRS record and download access for %s: %w", oid, err)
+				}
+				prefetched[oid] = *obj
+				prefetchedAccess[obj.Id] = access
+			} else {
+				progress.OnStage("Looking up DRS records")
+				checksumOIDs := make([]string, 0, len(missingOIDs))
+				for _, oid := range missingOIDs {
+					if lfs.IsDRSURI(oid) {
+						if anvil == nil {
+							obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
+							if err != nil {
+								return fmt.Errorf("look up DRS record %s: %w", oid, err)
+							}
 							prefetched[oid] = obj
 						}
+						continue
 					}
-					continue
+					checksumOIDs = append(checksumOIDs, oid)
 				}
-				checksumOIDs = append(checksumOIDs, oid)
-			}
-			if recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs); err == nil {
+				recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs)
+				if err != nil {
+					return fmt.Errorf("look up DRS records by checksum: %w", err)
+				}
 				for _, oid := range checksumOIDs {
-					if recs := recsByOID[oid]; len(recs) > 0 {
-						prefetched[oid] = recs[0]
+					recs := recsByOID[oid]
+					if len(recs) == 0 {
+						return fmt.Errorf("no matching DRS record found for oid %s in the configured scope", oid)
 					}
+					prefetched[oid] = recs[0]
 				}
 			}
-			if len(prefetched) > 0 {
-				logg.Debug(fmt.Sprintf("prefetched %d objects for pull", len(prefetched)))
-			} else {
-				logg.Debug("bulk prefetch found no scoped objects; continuing per-object")
-			}
-
-			prefetchedAccess := make(map[string]internaltransfer.ResolvedAccess, len(prefetched))
-			if len(prefetched) > 0 {
+			if len(prefetched) > 0 && len(missingOIDs) > 1 {
 				progress.OnStage("Requesting download access")
 				objects := make([]drsapi.DrsObject, 0, len(prefetched))
 				for _, obj := range prefetched {
 					objects = append(objects, obj)
 				}
-				if resolved, err := internaltransfer.BulkResolvedAccessURLsForObjects(ctx, drsCtx, objects); err == nil {
-					prefetchedAccess = resolved
-					logg.Debug(fmt.Sprintf("bulk access resolved %d URLs for pull", len(prefetchedAccess)))
-				} else if errors.Is(err, internaltransfer.ErrAccessMethodSelection) {
-					return err
-				} else {
-					logg.Debug(fmt.Sprintf("bulk access prefetch failed; continuing per-object: %v", err))
+				prefetchedAccess, err = internaltransfer.BulkResolvedAccessURLsForObjects(ctx, drsCtx, objects)
+				if err != nil {
+					return fmt.Errorf("resolve download access: %w", err)
 				}
 			}
 			var globusDownloads []internaltransfer.GlobusDownload
@@ -262,35 +273,29 @@ var Cmd = &cobra.Command{
 				progress.OnDownloadStart(toPullFile(f))
 				downloadCtx := progressContextForPointer(ctx, progress, f)
 				if obj, ok := prefetched[f.Oid]; ok {
-					if access, ok := prefetchedAccess[obj.Id]; ok {
-						objCopy := obj
-						if err := internaltransfer.DownloadResolvedToCachePathWithAccess(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, access, objectsRoot, worktreeRoot); err != nil {
-							debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
-							return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
-						}
-						if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
-							_ = os.Remove(dstPath)
-							return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
-						}
-						rememberVerifiedPath(dstPath, f)
-						downloadedOIDs[f.Oid] = true
-						continue
+					access, ok := prefetchedAccess[obj.Id]
+					if !ok {
+						return fmt.Errorf("download access was not resolved for DRS record %s", obj.Id)
 					}
-				}
-				if lfs.IsDRSURI(f.Oid) {
-					var downloadErr error
-					if anvil != nil {
-						downloadErr = resolver.DownloadToCache(downloadCtx, anvil, normalizeDRSPointerOID(f.Oid), dstPath)
-					} else {
-						downloadErr = internaltransfer.DownloadDRSURIToCachePath(downloadCtx, drsCtx, f.Oid, dstPath)
-					}
-					if downloadErr != nil {
+					objCopy := obj
+					if err := internaltransfer.DownloadResolvedToCachePathWithAccess(downloadCtx, drsCtx, f.Oid, dstPath, &objCopy, access, objectsRoot, worktreeRoot); err != nil {
 						debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
-						return fmt.Errorf("failed to download DRS URI %s to %s: %w\npull-debug: %s", f.Oid, dstPath, downloadErr, debugCtx)
+						return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 					}
-				} else if err := internaltransfer.DownloadToCachePath(downloadCtx, drsCtx, f.Oid, dstPath); err != nil {
+					if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
+						_ = os.Remove(dstPath)
+						return fmt.Errorf("downloaded invalid cached object for oid %s: %w", f.Oid, err)
+					}
+					rememberVerifiedPath(dstPath, f)
+					downloadedOIDs[f.Oid] = true
+					continue
+				}
+				if anvil == nil || !lfs.IsDRSURI(f.Oid) {
+					return fmt.Errorf("DRS record was not resolved for oid %s", f.Oid)
+				}
+				if err := resolver.DownloadToCache(downloadCtx, anvil, normalizeDRSPointerOID(f.Oid), dstPath); err != nil {
 					debugCtx := buildPullDownloadDebugContext(ctx, drsCtx, f.Oid)
-					return fmt.Errorf("failed to download oid %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
+					return fmt.Errorf("failed to download DRS URI %s to %s: %w\npull-debug: %s", f.Oid, dstPath, err, debugCtx)
 				}
 				if err := verifyPointerAtPathWithProgress(dstPath, f, func(n int64) { progress.OnVerificationProgress(f.Name, n) }); err != nil {
 					_ = os.Remove(dstPath)

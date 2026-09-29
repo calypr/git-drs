@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,7 +27,12 @@ import (
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/drs"
+	syclient "github.com/calypr/syfon/client"
 )
+
+type pullRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f pullRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
 type checkoutFailingReader struct{}
 
@@ -342,6 +348,62 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	}
 	if got := out.String(); got != "data/a.bin\n" {
 		t.Fatalf("unexpected dry-run output: %q", got)
+	}
+}
+
+func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
+	resetPullFlagsForTest()
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGitCmdTest(t, repo, "init")
+
+	requests := 0
+	httpClient := &http.Client{Transport: pullRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		if req.Method != http.MethodPost || req.URL.Path != "/index/bulk/hashes" {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("unavailable")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldLoadCfg := loadCfg
+	oldResolveRemote := resolveRemote
+	oldNewRemoteClient := newRemoteClient
+	oldInventory := loadWorktreeInventory
+	t.Cleanup(func() {
+		loadCfg = oldLoadCfg
+		resolveRemote = oldResolveRemote
+		newRemoteClient = oldNewRemoteClient
+		loadWorktreeInventory = oldInventory
+		resetPullFlagsForTest()
+	})
+	loadCfg = func() (*config.Config, error) { return &config.Config{}, nil }
+	resolveRemote = func(*config.Config, string) (config.Remote, error) { return "origin", nil }
+	newRemoteClient = func(*config.Config, config.Remote, *slog.Logger) (*remoteruntime.GitContext, error) {
+		return &remoteruntime.GitContext{Client: client, Capabilities: remoteruntime.Capabilities{Resolve: true, Download: true}}, nil
+	}
+	loadWorktreeInventory = func(*slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+		return map[string]lfs.LfsFileInfo{
+			"data.bin": {Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 123},
+		}, nil
+	}
+	includePatterns = []string{"data.bin"}
+
+	err = Cmd.RunE(Cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "resolve DRS record and download access") {
+		t.Fatalf("pull error = %v, want checksum lookup failure", err)
+	}
+	if requests != 1 {
+		t.Fatalf("checksum lookup requests = %d, want one", requests)
 	}
 }
 

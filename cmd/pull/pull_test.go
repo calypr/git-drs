@@ -837,6 +837,14 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("expected no staged semantic diff after refresh, got %q", cached)
 	}
+	if !alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("clean hydrated file should need no checkout or index refresh on repeat pull")
+	}
+	runGitCmdTest(t, repo, "update-index", "--skip-worktree", "sample.bin")
+	if alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("skip-worktree index flag must not hide a file from pull")
+	}
+	runGitCmdTest(t, repo, "update-index", "--no-skip-worktree", "sample.bin")
 	unrelatedStatus := runGitOutputTest(t, repo, "status", "--short", "--", "unrelated.bin")
 	if strings.TrimSpace(unrelatedStatus) != "" {
 		t.Fatalf("unrelated indexed pointer became dirty after refresh: %q", unrelatedStatus)
@@ -847,6 +855,9 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "sample.bin"), changed, 0o644); err != nil {
 		t.Fatalf("edit hydrated worktree file: %v", err)
 	}
+	if alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("same-size worktree edit incorrectly skipped checkout")
+	}
 	modified := runGitOutputTest(t, repo, "status", "--short", "--", "sample.bin")
 	if !strings.Contains(modified, "sample.bin") || !strings.Contains(modified, " M") {
 		t.Fatalf("same-size edit was not reported as modified: %q", modified)
@@ -854,6 +865,29 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	cached = runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("same-size worktree edit unexpectedly changed the index: %q", cached)
+	}
+}
+
+func TestAlreadyHydratedInGitRejectsUnhydratedPointerWithMatchingSize(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	t.Chdir(repo)
+	oid := strings.Repeat("a", 64)
+	size := 0
+	var pointer string
+	for {
+		pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize " + strconv.Itoa(size) + "\n"
+		if len(pointer) == size {
+			break
+		}
+		size = len(pointer)
+	}
+	if err := os.WriteFile("pointer.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmdTest(t, repo, "add", "pointer.bin")
+	if alreadyHydratedInGit(context.Background(), []pointerFile{{Name: "pointer.bin", Oid: oid, Size: int64(size)}}, repo) {
+		t.Fatal("indexed pointer text must not be mistaken for hydrated content")
 	}
 }
 

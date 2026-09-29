@@ -305,6 +305,12 @@ var Cmd = &cobra.Command{
 		if err := savePlaceholderChecksums(ctx, drsCtx, pointers, prefetched, objectsRoot, gitPaths.DRSObjectsDir()); err != nil {
 			return err
 		}
+		if alreadyHydratedInGit(ctx, pointers, worktreeRoot) {
+			for _, f := range pointers {
+				progress.OnCompleted(toPullFile(f))
+			}
+			return nil
+		}
 
 		readOnly := drsCtx.IsReadOnly()
 		receipts, err := checkoutDownloadedFiles(ctx, pointers, progress, readOnly, objectsRoot)
@@ -851,6 +857,65 @@ func replaceCheckoutFile(ctx context.Context, dstPath string, src io.ReadCloser,
 	return receipt, true, nil
 }
 
+func alreadyHydratedInGit(ctx context.Context, files []pointerFile, worktreeRoot string) bool {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		path, err := gitrepo.SafeWorktreePath(worktreeRoot, file.Name)
+		if err != nil {
+			return false
+		}
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() != file.Size {
+			return false
+		}
+		if info.Size() <= 2048 {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return false
+			}
+			if _, _, pointer := lfs.ParseLFSPointer(content); pointer {
+				return false
+			}
+		}
+		paths = append(paths, file.Name)
+	}
+	if len(paths) == 0 {
+		return false
+	}
+	flagArgs := append([]string{"ls-files", "-v", "-z", "--"}, paths...)
+	flags, err := exec.CommandContext(ctx, "git", flagArgs...).Output()
+	if err != nil {
+		return false
+	}
+	listed := make(map[string]struct{}, len(paths))
+	for _, entry := range strings.Split(strings.TrimSuffix(string(flags), "\x00"), "\x00") {
+		if len(entry) < 3 || entry[:2] != "H " {
+			return false
+		}
+		listed[entry[2:]] = struct{}{}
+	}
+	if len(listed) != len(paths) {
+		return false
+	}
+	for _, path := range paths {
+		if _, ok := listed[path]; !ok {
+			return false
+		}
+	}
+	manifestPath, err := createIndexRefreshManifest(paths, nil)
+	if err != nil {
+		return false
+	}
+	defer os.Remove(manifestPath)
+	args := append([]string{"diff-files", "--quiet", "--"}, paths...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Env = commandEnvWithOverrides(os.Environ(), map[string]string{
+		internalfilter.IndexRefreshEnv:         "1",
+		internalfilter.IndexRefreshReceiptsEnv: manifestPath,
+	})
+	return cmd.Run() == nil
+}
+
 func refreshGitIndexForHydratedFiles(files []pointerFile, receipts []internalfilter.IndexRefreshReceipt) error {
 	paths := make([]string, 0, len(files))
 	seen := make(map[string]struct{}, len(files))
@@ -885,28 +950,15 @@ func refreshGitIndexForHydratedFiles(files []pointerFile, receipts []internalfil
 			trustedReceipts = append(trustedReceipts, receipt)
 		}
 	}
-	envOverrides := map[string]string{
-		internalfilter.IndexRefreshEnv: "1",
-	}
-	data, err := internalfilter.MarshalIndexRefreshManifest(paths, trustedReceipts)
+	manifestPath, err := createIndexRefreshManifest(paths, trustedReceipts)
 	if err != nil {
-		return fmt.Errorf("encode index refresh manifest: %w", err)
+		return err
 	}
-	manifest, err := os.CreateTemp("", "git-drs-index-refresh-*.json")
-	if err != nil {
-		return fmt.Errorf("create index refresh manifest: %w", err)
-	}
-	manifestPath := manifest.Name()
 	defer os.Remove(manifestPath)
-	if _, err := manifest.Write(data); err != nil {
-		_ = manifest.Close()
-		return fmt.Errorf("write index refresh manifest: %w", err)
-	}
-	if err := manifest.Close(); err != nil {
-		return fmt.Errorf("close index refresh manifest: %w", err)
-	}
-	envOverrides[internalfilter.IndexRefreshReceiptsEnv] = manifestPath
-	cmd.Env = commandEnvWithOverrides(os.Environ(), envOverrides)
+	cmd.Env = commandEnvWithOverrides(os.Environ(), map[string]string{
+		internalfilter.IndexRefreshEnv:         "1",
+		internalfilter.IndexRefreshReceiptsEnv: manifestPath,
+	})
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -916,6 +968,28 @@ func refreshGitIndexForHydratedFiles(files []pointerFile, receipts []internalfil
 		return fmt.Errorf("failed to refresh git index for hydrated files: %w: %s", err, msg)
 	}
 	return nil
+}
+
+func createIndexRefreshManifest(paths []string, receipts []internalfilter.IndexRefreshReceipt) (string, error) {
+	data, err := internalfilter.MarshalIndexRefreshManifest(paths, receipts)
+	if err != nil {
+		return "", fmt.Errorf("encode index refresh manifest: %w", err)
+	}
+	manifest, err := os.CreateTemp("", "git-drs-index-refresh-*.json")
+	if err != nil {
+		return "", fmt.Errorf("create index refresh manifest: %w", err)
+	}
+	path := manifest.Name()
+	if _, err := manifest.Write(data); err != nil {
+		_ = manifest.Close()
+		_ = os.Remove(path)
+		return "", fmt.Errorf("write index refresh manifest: %w", err)
+	}
+	if err := manifest.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", fmt.Errorf("close index refresh manifest: %w", err)
+	}
+	return path, nil
 }
 
 func commandEnvWithOverrides(env []string, overrides map[string]string) []string {

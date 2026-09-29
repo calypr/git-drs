@@ -43,7 +43,7 @@ var (
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
 		return remoteruntime.New(cfg, remote, logger)
 	}
-	loadWorktreeInventory = lfs.GetTrackedLfsFiles
+	loadWorktreeInventory = lfs.GetTrackedLfsFilesAt
 	loadWorktreeFile      = lfs.GetTrackedLfsFileAt
 )
 
@@ -69,13 +69,22 @@ var Cmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to resolve checkout worktree root: %w", err)
 		}
-		patterns, directory, err := expandPullIncludes(inventoryRoot, includePatterns, recursive)
+		includes, currentDirectory, err := currentPullIncludes(ctx, inventoryRoot, includePatterns)
 		if err != nil {
 			return err
 		}
+		patterns, directory, err := expandPullIncludes(inventoryRoot, includes, recursive)
+		if err != nil {
+			return err
+		}
+		selectionRecursive := recursive
+		if len(includePatterns) == 0 {
+			directory = currentDirectory
+			selectionRecursive = true
+		}
 		var inventory map[string]lfs.LfsFileInfo
 		if directory != "" {
-			inventory, err = lfs.GetTrackedLfsFilesInDirectory(ctx, inventoryRoot, directory, recursive)
+			inventory, err = lfs.GetTrackedLfsFilesInDirectory(ctx, inventoryRoot, directory, selectionRecursive)
 			if err != nil {
 				return fmt.Errorf("failed to discover pointer files in directory %q: %w", directory, err)
 			}
@@ -90,7 +99,7 @@ var Cmd = &cobra.Command{
 			}
 		} else {
 			var err error
-			inventory, err = loadWorktreeInventory(logg)
+			inventory, err = loadWorktreeInventory(logg, inventoryRoot)
 			if err != nil {
 				return fmt.Errorf("failed to discover pointer files in worktree: %w", err)
 			}
@@ -249,6 +258,7 @@ var Cmd = &cobra.Command{
 					return fmt.Errorf("resolve download access: %w", err)
 				}
 			}
+			progress.OnStage("Waiting for download")
 			var globusDownloads []internaltransfer.GlobusDownload
 			globusOIDs := make(map[string]bool)
 			for _, f := range pointers {
@@ -422,6 +432,40 @@ func collectPointerFiles(inventory map[string]lfs.LfsFileInfo, patterns []string
 		files = append(files, pointerFile{Name: path, Oid: info.Oid, Size: info.Size, SHA256: sha256, Placeholder: info.Placeholder})
 	}
 	return files
+}
+
+func currentPullIncludes(ctx context.Context, repoDir string, patterns []string) ([]string, string, error) {
+	out, err := exec.CommandContext(ctx, "git", "rev-parse", "--show-prefix").Output()
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve current directory within worktree: %w", err)
+	}
+	directory := filepath.ToSlash(filepath.Clean(strings.TrimSuffix(string(out), "\n")))
+	if len(patterns) == 0 {
+		return nil, directory, nil
+	}
+	includes := make([]string, len(patterns))
+	for i, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		path := filepath.ToSlash(filepath.Join(directory, pattern))
+		rootPath := filepath.ToSlash(filepath.Clean(pattern))
+		if directory != "." && (rootPath == directory || strings.HasPrefix(rootPath, directory+"/")) {
+			path = rootPath
+		} else if !strings.ContainsAny(pattern, "*?[") {
+			if _, localErr := os.Stat(filepath.Join(repoDir, filepath.FromSlash(path))); os.IsNotExist(localErr) {
+				if _, rootErr := os.Stat(filepath.Join(repoDir, filepath.FromSlash(rootPath))); rootErr == nil {
+					path = rootPath
+				}
+			}
+		}
+		if filepath.IsAbs(pattern) || path == ".." || strings.HasPrefix(path, "../") {
+			return nil, "", fmt.Errorf("include path %q is outside the worktree", pattern)
+		}
+		includes[i] = path
+	}
+	return includes, directory, nil
 }
 
 func expandPullIncludes(repoDir string, patterns []string, recursive bool) ([]string, string, error) {

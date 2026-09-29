@@ -323,7 +323,7 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 		t.Fatal("newRemoteClient should not be called during dry-run")
 		return nil, nil
 	}
-	loadWorktreeInventory = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+	loadWorktreeInventory = func(_ *slog.Logger, _ string) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{
 			"data/a.bin": {Name: "data/a.bin", Oid: "aaaa", Size: 1},
 			"misc/b.bin": {Name: "misc/b.bin", Oid: "bbbb", Size: 2},
@@ -368,7 +368,7 @@ func TestPullDryRunUsesExactPathLoader(t *testing.T) {
 		Cmd.SetErr(nil)
 		Cmd.SetArgs(nil)
 	})
-	loadWorktreeInventory = func(*slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+	loadWorktreeInventory = func(*slog.Logger, string) (map[string]lfs.LfsFileInfo, error) {
 		t.Fatal("full inventory should not be loaded for one exact path")
 		return nil, nil
 	}
@@ -427,6 +427,59 @@ func TestPullDirectoryIncludes(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(repo, "data/direct.bin"), []byte("hydrated content"), 0o644); err != nil {
 				t.Fatal(err)
 			}
+			var out bytes.Buffer
+			Cmd.SetOut(&out)
+			Cmd.SetErr(&out)
+			t.Cleanup(func() {
+				resetPullFlagsForTest()
+				Cmd.SetOut(nil)
+				Cmd.SetErr(nil)
+			})
+			if err := Cmd.ParseFlags(append([]string{"--dry-run"}, tc.args...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := Cmd.RunE(Cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != tc.want {
+				t.Fatalf("selected files = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPullFromCurrentDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		cwd  string
+		args []string
+		want string
+	}{
+		{"data", nil, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data/sub", nil, "data/sub/nested.bin\n"},
+		{".", nil, "data/direct.bin\ndata/sub/nested.bin\nsibling/outside.bin\n"},
+		{"data", []string{"-I", "."}, "data/direct.bin\n"},
+		{"data", []string{"-r", "-I", "."}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data", []string{"-I", "sub"}, "data/sub/nested.bin\n"},
+		{"data", []string{"-I", "*.bin"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "direct.bin"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "data"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "data/**"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data", []string{"-I", "sibling"}, "sibling/outside.bin\n"},
+		{"data", []string{"-I", "../sibling"}, "sibling/outside.bin\n"},
+	} {
+		t.Run(tc.cwd+strings.Join(tc.args, " "), func(t *testing.T) {
+			resetPullFlagsForTest()
+			repo := t.TempDir()
+			runGitCmdTest(t, repo, "init", "-q")
+			runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+			if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.bin filter=drs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"data/direct.bin", "data/sub/nested.bin", "sibling/outside.bin"} {
+				writePointerFile(t, filepath.Join(repo, path), strings.Repeat("a", 64), "7")
+			}
+			runGitCmdTest(t, repo, "add", ".")
+			t.Chdir(filepath.Join(repo, tc.cwd))
 			var out bytes.Buffer
 			Cmd.SetOut(&out)
 			Cmd.SetErr(&out)
@@ -541,7 +594,7 @@ func TestPullUsesTrackedInventoryForHydratedFiles(t *testing.T) {
 		_ = os.Chdir(oldWD)
 	})
 
-	files, err := loadWorktreeInventory(drslog.NewNoOpLogger())
+	files, err := loadWorktreeInventory(drslog.NewNoOpLogger(), repo)
 	if err != nil {
 		t.Fatalf("loadWorktreeInventory error: %v", err)
 	}

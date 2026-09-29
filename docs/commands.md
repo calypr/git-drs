@@ -307,8 +307,11 @@ git drs pull research --access-method globus
 ```
 
 Directory includes select tracked DRS/Git-LFS files directly inside the directory.
-Use `-r` / `--recursive` to include files in its subdirectories. Files and glob
-patterns retain their existing matching behavior; plain `pull` selects the whole checkout.
+Use `-r` / `--recursive` to include files in its subdirectories.
+Include paths and glob patterns are relative to the current directory. Existing
+repository-relative paths are also accepted when there is no local match. Plain
+`pull` recursively selects tracked DRS/Git-LFS files beneath the current directory;
+from the repository root it selects the whole checkout.
 
 Access-method policy:
 

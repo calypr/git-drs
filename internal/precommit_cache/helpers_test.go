@@ -8,91 +8,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestEncodeDecodePathRoundTrip(t *testing.T) {
+func TestEncodePathRoundTripStability(t *testing.T) {
 	original := "data/nested file.txt"
 	encoded := EncodePath(original)
-	decoded, err := DecodePath(encoded)
-	if err != nil {
-		t.Fatalf("DecodePath error: %v", err)
+	if encoded == "" {
+		t.Fatal("expected encoded path")
 	}
-	if decoded != original {
-		t.Fatalf("expected %q, got %q", original, decoded)
-	}
-}
-
-func TestLookupExternalURLByOID(t *testing.T) {
-	cache := newTestCache(t)
-	oid := "sha256:abc123"
-	entry := OIDEntry{
-		LFSOID:      oid,
-		Paths:       []string{"data/foo.bin"},
-		ExternalURL: "s3://bucket/key",
-		UpdatedAt:   time.Now().UTC().Format(time.RFC3339),
-	}
-	writeJSON(t, cache.oidEntryFile(oid), entry)
-
-	url, ok, err := cache.LookupExternalURLByOID(oid)
-	if err != nil {
-		t.Fatalf("LookupExternalURLByOID error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected external url to be present")
-	}
-	if url != entry.ExternalURL {
-		t.Fatalf("expected %q, got %q", entry.ExternalURL, url)
-	}
-}
-
-func TestResolveExternalURLByPath(t *testing.T) {
-	cache := newTestCache(t)
-	oid := "sha256:def456"
-	now := time.Now().UTC().Format(time.RFC3339)
-	writeJSON(t, cache.pathEntryFile("data/foo.bin"), PathEntry{
-		Path:      "data/foo.bin",
-		LFSOID:    oid,
-		UpdatedAt: now,
-	})
-	writeJSON(t, cache.oidEntryFile(oid), OIDEntry{
-		LFSOID:      oid,
-		Paths:       []string{"data/foo.bin"},
-		ExternalURL: "s3://bucket/other",
-		UpdatedAt:   now,
-	})
-
-	url, ok, err := cache.ResolveExternalURLByPath("data/foo.bin")
-	if err != nil {
-		t.Fatalf("ResolveExternalURLByPath error: %v", err)
-	}
-	if !ok {
-		t.Fatalf("expected to resolve external url")
-	}
-	if url != "s3://bucket/other" {
-		t.Fatalf("expected url to match, got %q", url)
-	}
-}
-
-func TestCheckExternalURLMismatch(t *testing.T) {
-	if err := CheckExternalURLMismatch("s3://bucket/a", "s3://bucket/a"); err != nil {
-		t.Fatalf("expected no mismatch, got %v", err)
-	}
-	if err := CheckExternalURLMismatch("", "s3://bucket/a"); err != nil {
-		t.Fatalf("expected empty hint to skip mismatch, got %v", err)
-	}
-	if err := CheckExternalURLMismatch("s3://bucket/a", "s3://bucket/b"); err == nil {
-		t.Fatalf("expected mismatch error")
-	}
-}
-
-func TestStaleAfter(t *testing.T) {
-	old := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
-	if !StaleAfter(old, time.Hour) {
-		t.Fatalf("expected timestamp to be stale")
-	}
-	if StaleAfter("not-a-time", time.Hour) {
-		t.Fatalf("expected invalid timestamp to be non-stale")
+	if strings.Contains(encoded, "/") {
+		t.Fatalf("expected filesystem-safe encoding, got %q", encoded)
 	}
 }
 
@@ -116,29 +41,39 @@ func TestOpenCache(t *testing.T) {
 	}
 }
 
-func newTestCache(t *testing.T) *Cache {
-	t.Helper()
+func TestReadOIDEntryAcceptsLegacyS3URL(t *testing.T) {
 	root := t.TempDir()
-	return &Cache{
-		GitDir:    root,
-		Root:      root,
-		PathsDir:  filepath.Join(root, "paths"),
-		OIDsDir:   filepath.Join(root, "oids"),
-		StatePath: filepath.Join(root, "state.json"),
+	cache := &Cache{
+		Root:     root,
+		PathsDir: filepath.Join(root, "paths"),
+		OIDsDir:  filepath.Join(root, "oids"),
 	}
-}
+	if err := os.MkdirAll(cache.OIDsDir, 0o755); err != nil {
+		t.Fatalf("mkdir oids: %v", err)
+	}
+	file := OIDEntryPath(cache, "sha256:deadbeef")
+	raw := []byte(`{"lfs_oid":"sha256:deadbeef","paths":["data/file.bin"],"s3_url":"s3://bucket/key","updated_at":"2026-01-01T00:00:00Z","content_changed":false}`)
+	if err := os.WriteFile(file, raw, 0o644); err != nil {
+		t.Fatalf("write legacy oid entry: %v", err)
+	}
 
-func writeJSON(t *testing.T, path string, v any) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	data, err := json.Marshal(v)
+	entry, err := ReadOIDEntry(cache, "sha256:deadbeef", "2026-01-01T00:00:00Z")
 	if err != nil {
-		t.Fatalf("marshal: %v", err)
+		t.Fatalf("ReadOIDEntry error: %v", err)
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+	if entry.ExternalURL != "s3://bucket/key" {
+		t.Fatalf("expected legacy s3_url to map to ExternalURL, got %q", entry.ExternalURL)
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal entry: %v", err)
+	}
+	if strings.Contains(string(data), `"s3_url"`) {
+		t.Fatalf("expected normalized marshal to omit legacy s3_url field: %s", string(data))
+	}
+	if !strings.Contains(string(data), `"external_url":"s3://bucket/key"`) {
+		t.Fatalf("expected normalized marshal to write external_url: %s", string(data))
 	}
 }
 

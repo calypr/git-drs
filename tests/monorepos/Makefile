@@ -4,7 +4,7 @@ GEN := generate-fixtures
 GF_SRC := ./generate-fixtures.go
 OUTDIR := fixtures
 
-.PHONY: test-monorepos build-generate-fixtures prepare-repo generate-fixtures-run finalize clean
+.PHONY: test-monorepos build-generate-fixtures prepare-repo generate-fixtures-run finalize clean generate-large-fixtures-run
 
 test-monorepos: build-generate-fixtures prepare-repo generate-fixtures-run finalize
 	@echo "test-monorepos complete: $(OUTDIR)"
@@ -24,10 +24,15 @@ prepare-repo:
 #	@echo "  OK"
 
 generate-fixtures-run:
-	@echo "Generating fixtures into $(OUTDIR)"
+	@echo "Generating small set of fixtures into $(OUTDIR)"
 	# Provide TCGA list; change or pipe your own list to the binary as needed.
-	# @cd $(OUTDIR);  printf "TARGET-ALL-P2\nTCGA-GBM\nTCGA-HNSC\nTCGA-KICH\nTCGA-KIRC\nTCGA-KIRP\nTCGA-LAML\nTCGA-LGG\nTCGA-LIHC\nTCGA-LUAD\nTCGA-LUSC\nTCGA-MESO\nTCGA-OV\nTCGA-PAAD\nTCGA-PCPG\nTCGA-PRAD\nTCGA-READ\nTCGA-SARC\nTCGA-SKCM\nTCGA-STAD\nTCGA-TGCT\nTCGA-THCA\nTCGA-THYM\nTCGA-UVM\nWCDT-MCRPC\n" | ../$(GEN) --number-of-subdirectories=3 --number-of-files=100 -- > /dev/null
 	@cd $(OUTDIR);  printf "TARGET-ALL-P2\n" | ../$(GEN) --number-of-subdirectories=1 --number-of-files=2 -- > /dev/null
+	@echo "  OK"
+
+generate-large-fixtures-run:
+	@echo "Generating large set of fixtures into $(OUTDIR)"
+	# Provide TCGA list; change or pipe your own list to the binary as needed.
+	@cd $(OUTDIR);  printf "TARGET-ALL-P2\nTCGA-GBM\nTCGA-HNSC\nTCGA-KICH\nTCGA-KIRC\nTCGA-KIRP\nTCGA-LAML\nTCGA-LGG\nTCGA-LIHC\nTCGA-LUAD\nTCGA-LUSC\nTCGA-MESO\nTCGA-OV\nTCGA-PAAD\nTCGA-PCPG\nTCGA-PRAD\nTCGA-READ\nTCGA-SARC\nTCGA-SKCM\nTCGA-STAD\nTCGA-TGCT\nTCGA-THCA\nTCGA-THYM\nTCGA-UVM\nWCDT-MCRPC\n" | ../$(GEN) --number-of-subdirectories=3 --number-of-files=100 -- > /dev/null
 	@echo "  OK"
 
 finalize:

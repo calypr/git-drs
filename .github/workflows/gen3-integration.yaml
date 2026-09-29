@@ -1,0 +1,75 @@
+name: Gen3 Integration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  calypr:
+    name: Calypr git-drs integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out git-drs
+        uses: actions/checkout@v4
+        with:
+          path: git-drs
+
+      - name: Read pinned Syfon ref
+        id: syfon-ref
+        working-directory: git-drs
+        shell: bash
+        run: |
+          ref="$(tr -d '[:space:]' < tests/integration/docker_syfon/syfon.ref)"
+          if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "error: tests/integration/docker_syfon/syfon.ref must contain one lowercase 40-hex commit" >&2
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out Syfon
+        uses: actions/checkout@v4
+        with:
+          repository: calypr/syfon
+          path: syfon
+          ref: ${{ steps.syfon-ref.outputs.ref }}
+
+      - name: Install kind
+        uses: helm/kind-action@v1.15.0
+        with:
+          install_only: true
+          version: v0.25.0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5.0.1
+        with:
+          version: v3.16.3
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v5.1.0
+        with:
+          version: v1.31.2
+
+      - name: Run Gen3 scenarios
+        working-directory: git-drs
+        env:
+          TEST_SYFON_ROOT: ${{ github.workspace }}/syfon
+          CALYPR_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          CALYPR_STATE_DIR: ${{ runner.temp }}/git-drs-calypr-${{ github.run_id }}-${{ github.run_attempt }}
+        run: tests/calypr/run.sh all
+
+      - name: Upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gen3-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/git-drs-calypr-${{ github.run_id }}-${{ github.run_attempt }}/artifacts
+          if-no-files-found: warn
+          retention-days: 7

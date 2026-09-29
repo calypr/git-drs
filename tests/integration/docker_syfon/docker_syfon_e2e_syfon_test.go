@@ -175,9 +175,7 @@ s3_credentials:
     access_key: %q
     secret_key: %q
     endpoint: %q
-    billing_log_bucket: %q
-    billing_log_prefix: %q
-`, port, dockerE2ELocalUser, dockerE2ELocalPassword, dbPath, minioEnv.bucket, minioEnv.region, minioEnv.accessKey, minioEnv.secretKey, minioEnv.endpoint, minioEnv.bucket, dockerE2EProviderLogPrefix)
+`, port, dockerE2ELocalUser, dockerE2ELocalPassword, dbPath, minioEnv.bucket, minioEnv.region, minioEnv.accessKey, minioEnv.secretKey, minioEnv.endpoint)
 
 	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -188,14 +186,11 @@ s3_credentials:
 func buildSyfonBinary(t *testing.T, rootDir string) string {
 	t.Helper()
 
-	binaryPath := filepath.Join(t.TempDir(), "syfon-docker-e2e")
-	t.Logf("building syfon binary from %s into %s", rootDir, binaryPath)
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
-	cmd.Dir = rootDir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build syfon binary: %v\n%s", err, string(out))
+	if strings.TrimSpace(syfonBinPath) == "" {
+		t.Fatalf("shared syfon binary path is not initialized")
 	}
-	return binaryPath
+	t.Logf("using prebuilt syfon binary %s from %s", syfonBinPath, rootDir)
+	return syfonBinPath
 }
 
 func reserveTCPPort(t *testing.T) int {
@@ -212,26 +207,11 @@ func reserveTCPPort(t *testing.T) int {
 func findSyfonRoot(t *testing.T) string {
 	t.Helper()
 
-	if root := strings.TrimSpace(os.Getenv("TEST_SYFON_ROOT")); root != "" {
-		return root
-	}
-
-	dir, err := os.Getwd()
+	root, err := resolveSyfonRoot()
 	if err != nil {
-		t.Fatalf("get working directory: %v", err)
+		t.Fatalf("resolve syfon root: %v", err)
 	}
-
-	for {
-		candidate := filepath.Join(dir, "..", "syfon")
-		if info, statErr := os.Stat(candidate); statErr == nil && info.IsDir() {
-			return candidate
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("could not find syfon checkout from %s", dir)
-		}
-		dir = parent
-	}
+	return root
 }
 
 func logServerProcessOutput(t *testing.T, serverURL string, stdoutBuf, stderrBuf *bytes.Buffer) {

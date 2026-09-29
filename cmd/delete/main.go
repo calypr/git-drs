@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/cmd/internal/confirm"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	"github.com/calypr/git-drs/internal/lookup"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	"github.com/calypr/syfon/client/apierror"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +21,8 @@ var (
 	confirmFlag bool
 )
 
-// Cmd line declaration
+const confirmYes = "yes"
+
 // Cmd line declaration
 var Cmd = &cobra.Command{
 	Use:    "delete <hash-type> <oid>",
@@ -46,14 +50,14 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
+		drsClient, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
 		}
 
 		// Get record details before deletion for confirmation
-		records, err := drsremote.ObjectsByHashForScope(context.Background(), drsClient, oid)
+		records, err := lookup.ObjectsByHashForScope(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error getting records for OID %s: %v", oid, err)
 		}
@@ -64,30 +68,48 @@ var Cmd = &cobra.Command{
 		// Show details and get confirmation unless --confirm flag is set
 		if !confirmFlag {
 			projectId := drsClient.ProjectId
-			common.DisplayWarningHeader(os.Stderr, "DELETE a DRS record")
-			common.DisplayField(os.Stderr, "Remote", string(remoteName))
-			common.DisplayField(os.Stderr, "Project", projectId)
-			common.DisplayField(os.Stderr, "OID", oid)
-			common.DisplayField(os.Stderr, "Hash Type", hashType)
-			common.DisplayField(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records)))
-			if len(records) > 0 {
-				common.DisplayField(os.Stderr, "Example DID", records[0].Id)
+			if err := confirm.WarningHeader(os.Stderr, "DELETE a DRS record"); err != nil {
+				return err
 			}
-			common.DisplayField(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend")
-			common.DisplayFooter(os.Stderr)
+			if err := confirm.Field(os.Stderr, "Remote", string(remoteName)); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "Project", projectId); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "OID", oid); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "Hash Type", hashType); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "Matched DIDs", fmt.Sprintf("%d", len(records))); err != nil {
+				return err
+			}
+			if len(records) > 0 {
+				if err := confirm.Field(os.Stderr, "Example DID", records[0].Id); err != nil {
+					return err
+				}
+			}
+			if err := confirm.Field(os.Stderr, "Warning", "This deletes all DIDs (pointers) resolved by this SHA256 in this backend"); err != nil {
+				return err
+			}
+			if err := confirm.Footer(os.Stderr); err != nil {
+				return err
+			}
 
-			if err := common.PromptForConfirmation(
+			if err := confirm.Prompt(
 				os.Stderr,
+				os.Stdin,
 				"Type 'yes' to confirm deletion",
-				common.ConfirmationYes,
+				confirmYes,
 				false,
 			); err != nil {
 				return err
 			}
 		}
 
-		// Delete the matching record
-		err = drsClient.Client.DRS().DeleteRecordsByHash(context.Background(), oid)
+		err = deleteByHash(context.Background(), drsClient, oid)
 		if err != nil {
 			return fmt.Errorf("error deleting file for OID %s: %v", oid, err)
 		}
@@ -95,6 +117,25 @@ var Cmd = &cobra.Command{
 		logger.Debug(fmt.Sprintf("Successfully deleted record for OID %s", oid))
 		return nil
 	},
+}
+
+func deleteByHash(ctx context.Context, drsClient *remoteruntime.GitContext, oid string) error {
+	if drsClient == nil || drsClient.Client == nil {
+		return fmt.Errorf("DRS client unavailable")
+	}
+	response, err := drsClient.Client.InternalAPI().InternalBulkDeleteHashesWithResponse(ctx, internalapi.BulkHashesRequest{
+		Hashes: []string{oid},
+	})
+	if err != nil {
+		return err
+	}
+	if response == nil {
+		return fmt.Errorf("bulk hash delete returned no response")
+	}
+	if response.JSON200 == nil {
+		return apierror.FromResponse(response.HTTPResponse, response.Body)
+	}
+	return nil
 }
 
 func init() {

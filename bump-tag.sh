@@ -142,11 +142,14 @@ fi
 
 # Commit, tag and push
 NEW_TAG="v${NEW_TAG}"
-git commit -m "chore(release): bump to ${NEW_TAG}" || echo "No changes to commit"
+if git diff --cached --quiet; then
+  echo "No version changes to commit; refusing to tag the old commit." >&2
+  exit 1
+fi
+git commit -m "chore(release): bump to ${NEW_TAG}"
 git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG}"
 
 echo "Created tag. Please push tag ${NEW_TAG} on branch ${BRANCH}."
 echo "To push, run:"
 echo git push origin "${BRANCH}"
 echo git push origin "${NEW_TAG}"
-

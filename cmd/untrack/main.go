@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/calypr/git-drs/internal/drstrack"
+	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/spf13/cobra"
 )
 
-var gitLFSUntrackPatterns = drstrack.UntrackPatterns
+var gitLFSUntrackPatterns = gitrepo.UntrackPatterns
 
 var Cmd = NewCommand()
 
@@ -48,7 +48,9 @@ func runUntrack(cmd *cobra.Command, args []string) error {
 	}
 
 	if out != "" {
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), out); err != nil {
+			return fmt.Errorf("write untrack output: %w", err)
+		}
 	}
 	return nil
 }

@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/cmd/internal/confirm"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
+	"github.com/calypr/git-drs/internal/remoteruntime"
 	syservices "github.com/calypr/syfon/client/services"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +28,9 @@ var Cmd = &cobra.Command{
 	Args:   cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectId := args[0]
+		if strings.TrimSpace(projectId) == "" {
+			return fmt.Errorf("project ID must not be empty")
+		}
 		logger := drslog.GetLogger()
 
 		cfg, err := config.LoadConfig()
@@ -38,7 +43,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error getting default remote: %v", err)
 		}
 
-		drsClient, err := cfg.GetRemoteClient(remoteName, logger)
+		drsClient, err := remoteruntime.New(cfg, remoteName, logger)
 		if err != nil {
 			logger.Error(fmt.Sprintf("error creating DRS client: %s", err))
 			return err
@@ -66,28 +71,42 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("error: --confirm value '%s' does not match project ID '%s'", confirmFlag, projectId)
 		}
 		if confirmFlag != projectId {
-			common.DisplayWarningHeader(os.Stderr, "DELETE ALL RECORDS for a project")
-			common.DisplayField(os.Stderr, "Remote", string(remoteName))
-			common.DisplayField(os.Stderr, "Project ID", projectId)
+			if err := confirm.WarningHeader(os.Stderr, "DELETE ALL RECORDS for a project"); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "Remote", string(remoteName)); err != nil {
+				return err
+			}
+			if err := confirm.Field(os.Stderr, "Project ID", projectId); err != nil {
+				return err
+			}
 
 			if listResp.Records != nil && len(*listResp.Records) > 0 {
 				sample := (*listResp.Records)[0]
 				fmt.Fprintf(os.Stderr, "\nSample record from this project:\n")
-				common.DisplayField(os.Stderr, "  DID", sample.Did)
-				if sample.FileName != nil && *sample.FileName != "" {
-					common.DisplayField(os.Stderr, "  Filename", *sample.FileName)
+				if err := confirm.Field(os.Stderr, "  DID", sample.Did); err != nil {
+					return err
+				}
+				if sample.Name != nil && *sample.Name != "" {
+					if err := confirm.Field(os.Stderr, "  Name", *sample.Name); err != nil {
+						return err
+					}
 				}
 				if sample.Size != nil {
-					common.DisplayField(os.Stderr, "  Size", fmt.Sprintf("%d bytes", *sample.Size))
+					if err := confirm.Field(os.Stderr, "  Size", fmt.Sprintf("%d bytes", *sample.Size)); err != nil {
+						return err
+					}
 				}
 			} else {
 				fmt.Fprintf(os.Stderr, "\nNo records found for this project.\n")
 			}
 
 			fmt.Fprintf(os.Stderr, "\nThis will DELETE ALL records in project '%s'.\n", projectId)
-			common.DisplayFooter(os.Stderr)
+			if err := confirm.Footer(os.Stderr); err != nil {
+				return err
+			}
 
-			if err := common.PromptForConfirmation(os.Stderr, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
+			if err := confirm.Prompt(os.Stderr, os.Stdin, fmt.Sprintf("Type the project ID '%s' to confirm deletion", projectId), projectId, true); err != nil {
 				return err
 			}
 		}

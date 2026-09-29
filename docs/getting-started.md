@@ -154,7 +154,7 @@ Always review and stage `.gitattributes` after changing tracking rules.
 
 ```bash
 git drs ls-files
-git drs ls-files -l
+git drs ls-files --all
 git drs ls-files --drs
 ```
 

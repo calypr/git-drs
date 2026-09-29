@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	internalapi "github.com/calypr/syfon/apigen/internalapi"
 	syclient "github.com/calypr/syfon/client"
+	sycommon "github.com/calypr/syfon/client/common"
 	sytransfer "github.com/calypr/syfon/client/transfer"
 	sydownload "github.com/calypr/syfon/client/transfer/download"
 )
@@ -31,6 +33,150 @@ func (f downloadRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error
 type immediateDownloadRetry struct{}
 
 func (immediateDownloadRetry) WaitTime(int) time.Duration { return 0 }
+
+type interruptedDownloadReader struct{}
+
+func (interruptedDownloadReader) Read([]byte) (int, error) { return 0, context.Canceled }
+
+func TestResumableDownloadPreservesPartialAndUsesRangeOnRetry(t *testing.T) {
+	payload := strings.Repeat("a", 2<<20)
+	digest := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(digest[:])
+	var fullRequests, rangeRequests int
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body io.ReadCloser
+		status := http.StatusOK
+		switch r.Header.Get("Range") {
+		case "":
+			fullRequests++
+			body = io.NopCloser(io.MultiReader(strings.NewReader(payload[:4]), interruptedDownloadReader{}))
+		case fmt.Sprintf("bytes=4-%d", len(payload)-1):
+			rangeRequests++
+			status = http.StatusPartialContent
+			body = io.NopCloser(strings.NewReader(payload[4:]))
+		default:
+			return nil, fmt.Errorf("unexpected range %q", r.Header.Get("Range"))
+		}
+		return &http.Response{StatusCode: status, Body: body, Header: make(http.Header), Request: r}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "object")
+	object := &drsapi.DrsObject{Id: "object", Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}}}
+	access := ResolvedAccess{AccessURL: drsapi.AccessURL{Url: "https://signed.example/object"}}
+	opts := sydownload.DownloadOptions{MultipartThreshold: 1, Concurrency: 2, RetryStrategy: immediateDownloadRetry{}}
+	ctx := WithResumableDownload(context.Background())
+	err = DownloadResolvedToPathWithAccess(ctx, &remoteruntime.GitContext{Client: client}, oid, path, object, access, opts)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted download error = %v, want context.Canceled", err)
+	}
+	partial, err := os.ReadFile(path)
+	if err != nil || string(partial) != payload[:4] || !IncompleteDownloadCheckpoint(path, int64(len(payload))) {
+		t.Fatalf("partial download was not preserved: data=%q, err=%v", partial, err)
+	}
+	var progress []int64
+	ctx = sycommon.WithProgress(ctx, func(event sycommon.ProgressEvent) error {
+		if event.Event == "progress" {
+			progress = append(progress, event.BytesSoFar)
+		}
+		return nil
+	})
+	if err := DownloadResolvedToPathWithAccess(ctx, &remoteruntime.GitContext{Client: client}, oid, path, object, access, opts); err != nil {
+		t.Fatalf("resumed download: %v", err)
+	}
+	checkpointData, err := os.ReadFile(path + ".syfon-download.json")
+	if err != nil || !strings.Contains(string(checkpointData), `"identity":"git-drs:sha256:`+oid+`"`) {
+		t.Fatalf("pull checkpoint was not migrated to progress-aware verification: %s, %v", checkpointData, err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != payload || fullRequests != 1 || rangeRequests != 1 {
+		t.Fatalf("resume result: bytes=%d full=%d range=%d err=%v", len(got), fullRequests, rangeRequests, err)
+	}
+	if len(progress) == 0 || progress[0] != 4 || progress[len(progress)-1] != int64(len(payload)) {
+		t.Fatalf("resume progress = %v, want initial 4 and final %d", progress, len(payload))
+	}
+}
+
+func TestResumableDownloadRestartsPreallocatedIncompleteFile(t *testing.T) {
+	const payload = "abcdefghij"
+	digest := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(digest[:])
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, make([]byte, len(payload)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := fmt.Sprintf(`{"identity":"sha256:%s","size":%d,"complete":false}`, oid, len(payload))
+	if err := os.WriteFile(path+".syfon-download.json", []byte(checkpoint), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var requestRange string
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requestRange = r.Header.Get("Range")
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(payload)), Header: make(http.Header), Request: r}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	object := &drsapi.DrsObject{Id: "object", Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}}}
+	access := ResolvedAccess{AccessURL: drsapi.AccessURL{Url: "https://signed.example/object"}}
+	ctx := WithResumableDownload(context.Background())
+	if err := DownloadResolvedToPathWithAccess(ctx, &remoteruntime.GitContext{Client: client}, oid, path, object, access, sydownload.DownloadOptions{MultipartThreshold: 1}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != payload || requestRange != "" {
+		t.Fatalf("old preallocated file was not safely restarted: data=%q range=%q err=%v", got, requestRange, err)
+	}
+}
+
+func TestResumableDownloadResetsProgressWhenServerIgnoresRange(t *testing.T) {
+	const payload = "abcdefghij"
+	digest := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(digest[:])
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte(payload[:4]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := fmt.Sprintf(`{"identity":"sha256:%s","size":%d,"complete":false}`, oid, len(payload))
+	if err := os.WriteFile(path+".syfon-download.json", []byte(checkpoint), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var requestedRanges []string
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requestedRanges = append(requestedRanges, r.Header.Get("Range"))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(payload)), Header: make(http.Header), Request: r}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var events []sycommon.ProgressEvent
+	ctx := sycommon.WithProgress(WithResumableDownload(context.Background()), func(event sycommon.ProgressEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	object := &drsapi.DrsObject{Id: "object", Size: int64(len(payload)), Checksums: []drsapi.Checksum{{Type: "sha256", Checksum: oid}}}
+	access := ResolvedAccess{AccessURL: drsapi.AccessURL{Url: "https://signed.example/object"}}
+	if err := DownloadResolvedToPathWithAccess(ctx, &remoteruntime.GitContext{Client: client}, oid, path, object, access, sydownload.DownloadOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != payload || len(requestedRanges) != 2 || requestedRanges[0] != "bytes=4-9" || requestedRanges[1] != "" {
+		t.Fatalf("range fallback: data=%q ranges=%v err=%v", got, requestedRanges, err)
+	}
+	var restarted bool
+	for _, event := range events {
+		if event.Event == "transfer-restart" {
+			restarted = true
+		}
+	}
+	if !restarted {
+		t.Fatalf("range fallback did not report progress reset: %+v", events)
+	}
+}
 
 func TestDownloadToCachePathDispatchesDRSOIDToURIResolver(t *testing.T) {
 	t.Parallel()

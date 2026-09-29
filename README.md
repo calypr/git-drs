@@ -50,7 +50,7 @@ git add .gitattributes
 git add sample.bam
 git commit -m "Add sample"
 git drs push
-git drs ls-files
+git drs ls-files --all
 git drs pull -I "*.bam"
 ```
 
@@ -64,7 +64,8 @@ The cleaned CLI intentionally removed legacy commands:
   - `git drs upload`
   - `git drs download`
 - `git drs pull` is hydration-only
-- `git drs ls-files` is the local file inventory command
+- `git drs ls-files` lists visible files and directories; use `--all` for
+  the tracked DRS/LFS pointer inventory
 - the unified `git drs remote add` takes scope through
   `--scope <organization/project>`
 
@@ -80,7 +81,8 @@ Current command split:
 - `git drs push` is the managed data push path
 - plain `git push` is plain Git only
 - `git drs pull` hydrates tracked pointer files already present in the checkout
-- `git drs ls-files` is the local tracked-file inventory command
+- `git drs ls-files` lists visible files and directories; use `--all` for
+  the tracked DRS/LFS pointer inventory
 - `git drs add-url` prepares pointer plus local metadata for existing provider objects
 
 ## Bucket Mapping Model
@@ -103,7 +105,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | `git drs track <pattern>` | Track files or globs |
 | `git drs untrack <pattern>` | Stop tracking files or globs |
 | `git drs rm <path>...` | Remove tracked DRS/LFS files from Git |
-| `git drs ls-files` | List tracked files and localization state |
+| `git drs ls-files` | List visible files and directories |
 | `git drs pull` | Hydrate pointer files in the current checkout |
 | `git drs push` | Register/upload objects and push refs |
 | `git drs add-url` | Add an existing provider object by URL or scoped key |

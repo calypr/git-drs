@@ -85,8 +85,10 @@ catalog version are saved, so a later release cannot silently redirect an
 existing remote. Only HTTPS endpoints without embedded credentials are
 accepted.
 
-The older `gen3`, `local`, and `terra` command shapes are deprecated, hidden
-compatibility forms. New scripts should use the unified command.
+`git drs remote add gen3 [remote-name] <organization/project>` remains a
+supported Gen3 setup command. It accepts `--cred <credentials.json>` or
+`--token <access-token>` and creates the local Gen3 profile. The `local` and
+`terra` command shapes are deprecated, hidden compatibility forms.
 
 ### `git drs preset list` / `git drs preset show <alias>`
 
@@ -102,9 +104,9 @@ contain no credential or secret values.
 | `synapse` | Synapse | bearer token |
 | `cgc` | Cancer Genomics Cloud | bearer token |
 
-The legacy provider-specific `remote add gen3`, `remote add local`, and
-`remote add terra` forms remain only as hidden, deprecated compatibility
-commands. Do not use them in new instructions or scripts.
+The provider-specific `remote add gen3` form remains available for Gen3
+workflows. The `remote add local` and `remote add terra` forms remain only as
+hidden, deprecated compatibility commands.
 
 ### `git drs remote list`
 
@@ -243,12 +245,18 @@ Stop tracking a pattern.
 git drs untrack "*.bam"
 ```
 
-### `git drs ls-files [pathspec...]`
+### `git drs ls-files [path...]`
 
-List tracked files in the current checkout.
+List visible entries from the current directory or from the requested paths.
+Directory paths list their immediate contents. File paths list the file itself.
+The default listing includes untracked files and directories and omits hidden
+entries.
 
 ```bash
 git drs ls-files
+git drs ls-files results/
+git drs ls-files --all
+git drs ls-files --all UMB/
 git drs ls-files -l
 git drs ls-files --drs
 git drs ls-files -I "*.bam"
@@ -257,18 +265,30 @@ git drs ls-files -n results/**
 
 Important behavior:
 
-- default mode is local-first and cheap
+- default mode lists the current directory and does not query Git or DRS
+- path operands can name files or directories
+- hidden entries are omitted from directory listings
+- `-a, --all` lists every tracked DRS/Git-LFS pointer in the project using the
+  original object ID, localization status, and path format
+- `--pointers` remains an alias for the pointer inventory
+- a directory operand in pointer mode includes tracked pointers beneath it
 - `*` means localized/hydrated in the worktree
 - `-` means the worktree still contains a pointer
-- `--drs` adds DRS registration checks
+- `--drs` selects pointer inventory and adds DRS registration checks
+- pointer inventory flags such as `--long`, `--json`, `-I`, `-n`, and remote
+  options also select pointer mode
 
 Common flags:
 
 - `-I, --include <pattern>`: include filter; may be repeated
-- `-l, --long`: long output
+- `-a, --all`: list every tracked DRS/Git-LFS pointer
+- `-l, --long`: show full object IDs in pointer mode
 - `-n, --name-only`: path-only output
 - `--json`: structured output
 - `--drs`: include DRS lookup details
+- `-r, --git-remote`: select the Git remote for pointer inventory
+- `-d, --drs-remote`: select the DRS remote for lookup
+- `-h, --help`: show command help
 
 ## Hydration and Push
 
@@ -279,10 +299,19 @@ Hydrate tracked pointer files already present in the current checkout.
 ```bash
 git drs pull
 git drs pull -I "*.bam"
+git drs pull -I data/
+git drs pull -r -I data/
 git drs pull -I "data/**" -I "results/*.txt"
 git drs pull --dry-run -I "results/**"
 git drs pull research --access-method globus
 ```
+
+Directory includes select tracked DRS/Git-LFS files directly inside the directory.
+Use `-r` / `--recursive` to include files in its subdirectories.
+Include paths and glob patterns are relative to the current directory. Existing
+repository-relative paths are also accepted when there is no local match. Plain
+`pull` recursively selects tracked DRS/Git-LFS files beneath the current directory;
+from the repository root it selects the whole checkout.
 
 Access-method policy:
 

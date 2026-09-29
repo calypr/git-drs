@@ -137,6 +137,29 @@ func GetTrackedLfsFilesAt(logger *slog.Logger, repoDir string) (map[string]LfsFi
 	if err != nil {
 		return nil, err
 	}
+	return trackedLfsFilesFromPaths(ctx, repoDir, paths)
+}
+
+// GetTrackedLfsFilesInDirectory inventories only tracked files in the selected directory.
+func GetTrackedLfsFilesInDirectory(ctx context.Context, repoDir, directory string, recursive bool) (map[string]LfsFileInfo, error) {
+	args := []string{"ls-files", "-z", "--"}
+	if directory != "." {
+		args = append(args, ":(literal)"+directory+"/")
+	}
+	out, err := runGitCommand(ctx, repoDir, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git ls-files failed: %w", err)
+	}
+	var paths []string
+	for _, path := range strings.Split(out, "\x00") {
+		if path != "" && (recursive || filepath.ToSlash(filepath.Dir(path)) == directory) {
+			paths = append(paths, path)
+		}
+	}
+	return trackedLfsFilesFromPaths(ctx, repoDir, paths)
+}
+
+func trackedLfsFilesFromPaths(ctx context.Context, repoDir string, paths []string) (map[string]LfsFileInfo, error) {
 	tracked, err := filterLfsTrackedPaths(ctx, repoDir, paths)
 	if err != nil {
 		return nil, err
@@ -152,6 +175,79 @@ func GetTrackedLfsFilesAt(logger *slog.Logger, repoDir string) (map[string]LfsFi
 		}
 	}
 	return files, nil
+}
+
+// GetTrackedLfsFileAt reads one exact repository-relative path from the
+// current worktree. It checks the path's Git attributes and index entry
+// directly, so callers that select one path do not need a full inventory.
+func GetTrackedLfsFileAt(ctx context.Context, repoDir, path string) (LfsFileInfo, bool, error) {
+	if repoDir == "" {
+		return LfsFileInfo{}, false, fmt.Errorf("repository root is required")
+	}
+	if path == "" {
+		return LfsFileInfo{}, false, fmt.Errorf("path is empty")
+	}
+
+	path = filepath.ToSlash(path)
+	if path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") {
+		return LfsFileInfo{}, false, nil
+	}
+	pathspec := ":(literal)" + path
+	index, err := runGitCommand(ctx, repoDir, "ls-files", "--stage", "-z", "--", pathspec)
+	if err != nil {
+		return LfsFileInfo{}, false, fmt.Errorf("git ls-files failed for %q: %w", path, err)
+	}
+
+	var indexed bool
+	var stageZeroOID string
+	for _, entry := range strings.Split(index, "\x00") {
+		metadata, indexedPath, ok := strings.Cut(entry, "\t")
+		if !ok || indexedPath != path {
+			continue
+		}
+		indexed = true
+		fields := strings.Fields(metadata)
+		if len(fields) == 3 && fields[2] == "0" && (fields[0] == "100644" || fields[0] == "100755") {
+			stageZeroOID = fields[1]
+		}
+	}
+	if !indexed {
+		return LfsFileInfo{}, false, nil
+	}
+
+	attributes, err := runGitCommand(ctx, repoDir, "check-attr", "-z", "filter", "--", path)
+	if err != nil {
+		return LfsFileInfo{}, false, fmt.Errorf("git check-attr failed for %q: %w", path, err)
+	}
+	fields := strings.Split(attributes, "\x00")
+	if len(fields) < 3 || fields[0] != path || fields[1] != "filter" || !isTrackedFilter(fields[2]) {
+		return LfsFileInfo{}, false, nil
+	}
+
+	if info, ok := readWorktreePointerInfo(repoDir, path); ok {
+		return info, true, nil
+	}
+	if stageZeroOID == "" {
+		return LfsFileInfo{}, false, nil
+	}
+	blob, err := runGitCommand(ctx, repoDir, "cat-file", "blob", stageZeroOID)
+	if err != nil {
+		return LfsFileInfo{}, false, nil
+	}
+	pointer, ok := parseLFSPointer(blob)
+	if !ok {
+		return LfsFileInfo{}, false, nil
+	}
+	return LfsFileInfo{
+		Name:        path,
+		Size:        pointer.Size,
+		IsPointer:   false,
+		OidType:     pointer.OidType,
+		Oid:         pointer.Oid,
+		Version:     pointer.Version,
+		SHA256:      pointer.SHA256,
+		Placeholder: pointer.Placeholder,
+	}, true, nil
 }
 
 func addFilesFromRef(ctx context.Context, repoDir, ref string, lfsFileMap map[string]LfsFileInfo) error {

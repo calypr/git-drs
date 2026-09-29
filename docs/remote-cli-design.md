@@ -371,8 +371,8 @@ Introduce the unified form without immediately removing scripts:
 1. Add `remote add <endpoint-or-alias>` with a derived local name, support
    explicit `registry:<service-id>` lookup, retain the explicit-name form for
    overrides, and store the resolved compositional remote configuration.
-2. Keep `remote add gen3`, `local`, and `terra` as hidden or deprecated
-   compatibility shims that translate their arguments to the new model.
+2. Keep `remote add gen3` as a supported Gen3 setup command. Keep `local`
+   and `terra` as hidden or deprecated compatibility forms.
 3. Add `git drs remote migrate` and make `remote list --verbose` display the
    translated endpoint, provider, auth source (never its value), and
    capabilities.

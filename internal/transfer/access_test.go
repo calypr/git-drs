@@ -1,6 +1,7 @@
 package transfer
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -172,6 +173,50 @@ func TestBulkResolvedAccessSelectsPolicyOrderNotResponseOrder(t *testing.T) {
 	}
 	if !strings.Contains(string(bulkBody), `"https-id"`) || !strings.Contains(string(bulkBody), `"globus-id"`) {
 		t.Fatalf("bulk request omitted an ordered access ID: %s", bulkBody)
+	}
+}
+
+func TestBulkResolvedAccessSignsGroupInOneRequest(t *testing.T) {
+	objects := make([]drsapi.DrsObject, 3)
+	for i := range objects {
+		id := fmt.Sprintf("object-%d", i)
+		accessID := "s3-" + id
+		methods := []drsapi.AccessMethod{{Type: drsapi.AccessMethodTypeS3, AccessId: &accessID, AccessUrl: &drsapi.AccessURL{Url: "s3://bucket/" + id}}}
+		objects[i] = drsapi.DrsObject{Id: id, AccessMethods: &methods}
+	}
+	requests := 0
+	httpClient := &http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		if r.URL.Path != "/ga4gh/drs/v1/objects/access" {
+			return nil, fmt.Errorf("unexpected individual signing request: %s", r.URL.Path)
+		}
+		var request drsapi.BulkObjectAccessId
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			return nil, err
+		}
+		if request.BulkObjectAccessIds == nil || len(*request.BulkObjectAccessIds) != len(objects) {
+			return nil, fmt.Errorf("bulk request omitted group members: %+v", request)
+		}
+		var results []string
+		for _, item := range *request.BulkObjectAccessIds {
+			if item.BulkObjectId == nil || item.BulkAccessIds == nil || len(*item.BulkAccessIds) != 1 {
+				return nil, fmt.Errorf("missing object or access ID: %+v", item)
+			}
+			results = append(results, fmt.Sprintf(`{"drs_object_id":%q,"drs_access_id":%q,"url":%q}`, *item.BulkObjectId, (*item.BulkAccessIds)[0], "https://signed.example/"+*item.BulkObjectId))
+		}
+		body := `{"resolved_drs_object_access_urls":[` + strings.Join(results, ",") + `]}`
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{"Content-Type": []string{"application/json"}}, Request: r}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, err := BulkResolvedAccessURLsForObjects(t.Context(), &remoteruntime.GitContext{Client: client}, objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || len(access) != len(objects) {
+		t.Fatalf("signing used %d requests and resolved %d/%d objects", requests, len(access), len(objects))
 	}
 }
 

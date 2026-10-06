@@ -66,6 +66,29 @@ func TestPingCmdArgs(t *testing.T) {
 	}
 }
 
+func TestPingHealthGen3UsesDRSServiceInfo(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ga4gh/drs/v1/service-info" {
+			t.Errorf("unexpected health path: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"gen3-drs"}`))
+	}))
+	t.Cleanup(server.Close)
+	gc := &remoteruntime.GitContext{RemoteType: config.Gen3ServerType, Endpoint: server.URL}
+	got, err := pingHealth(t.Context(), gc)
+	if err != nil {
+		t.Fatalf("Gen3 DRS service-info ping failed: %v", err)
+	}
+	if requests != 1 || got.ServiceInfo != `{"id":"gen3-drs"}` {
+		t.Fatalf("unexpected Gen3 ping result: requests=%d info=%q", requests, got.ServiceInfo)
+	}
+}
+
 func TestAcceptancePingTerraDRSServer(t *testing.T) {
 	var serviceInfoRequests int
 	terraDRS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +139,7 @@ func TestAcceptancePingTerraDRSServer(t *testing.T) {
 		"type: terra",
 		"endpoint: " + terraDRS.URL,
 		"health: ok",
-		`service-info: {"id":"terra-drs","name":"Terra DRS","type":{"group":"org.ga4gh","artifact":"drs","version":"1.0.0"}}`,
+		"service-info:\n  {\n    \"id\": \"terra-drs\"",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, got)
@@ -291,7 +314,7 @@ func TestPingRunEPrintsServiceInfo(t *testing.T) {
 	if _, err := io.Copy(&buf, r); err != nil {
 		t.Fatalf("read stdout: %v", err)
 	}
-	if got, want := buf.String(), `service-info: {"id":"terra-drs","name":"Terra DRS"}`; !strings.Contains(got, want) {
+	if got, want := buf.String(), "service-info:\n  {\n    \"id\": \"terra-drs\",\n    \"name\": \"Terra DRS\"\n  }"; !strings.Contains(got, want) {
 		t.Fatalf("expected output to contain %q, got %q", want, got)
 	}
 }

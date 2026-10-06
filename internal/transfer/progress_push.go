@@ -22,14 +22,15 @@ type metadataProgress struct {
 }
 
 type UploadProgressRenderer struct {
-	mu        sync.Mutex
-	base      *Renderer
-	err       error
-	planned   bool
-	plan      UploadPlanSummary
-	metadata  metadataProgress
-	files     map[string]*uploadFileProgress
-	fileOrder []string
+	mu         sync.Mutex
+	base       *Renderer
+	err        error
+	planned    bool
+	hadUploads bool
+	plan       UploadPlanSummary
+	metadata   metadataProgress
+	files      map[string]*uploadFileProgress
+	fileOrder  []string
 }
 
 func NewUploadProgressRenderer(out io.Writer) *UploadProgressRenderer {
@@ -102,6 +103,7 @@ func (r *UploadProgressRenderer) OnUploadPlan(plan UploadPlanSummary) {
 
 	r.plan = plan
 	r.planned = plan.TotalFiles > 0
+	r.hadUploads = r.hadUploads || r.planned
 	r.files = make(map[string]*uploadFileProgress, len(plan.Files))
 	r.fileOrder = r.fileOrder[:0]
 	for _, file := range plan.Files {
@@ -178,7 +180,7 @@ func (r *UploadProgressRenderer) Finish() error {
 func (r *UploadProgressRenderer) HadUploads() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r != nil && r.planned
+	return r != nil && r.hadUploads
 }
 
 func (r *UploadProgressRenderer) Err() error {

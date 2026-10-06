@@ -129,7 +129,7 @@ What it checks:
 
 - prints the selected remote, remote type, endpoint, scope, bucket, storage prefix, and auth mode
 - runs a health check against the selected remote
-- for Terra DRS remotes, pings the GA4GH DRS service-info endpoint at `<endpoint>/ga4gh/drs/v1/service-info`
+- for Gen3 and Terra DRS remotes, pings the GA4GH DRS service-info endpoint at `<endpoint>/ga4gh/drs/v1/service-info`
 - for Terra/AnVIL TDR-hosted data in production, use `https://data.terra.bio` as the endpoint; Terra also uses DRSHub for DRS URI resolution, but DRSHub is a resolver service rather than the GA4GH DRS service-info host
 - for scoped Syfon-style remotes, verifies that the configured organization/project and bucket are visible and readable
 

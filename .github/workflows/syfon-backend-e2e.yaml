@@ -62,12 +62,9 @@ jobs:
           git checkout --detach "${{ steps.syfon-ref.outputs.ref }}"
           git rev-parse --verify HEAD
 
-      - name: Install test prerequisites
+      - name: Initialize Git LFS
         working-directory: git-drs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git-lfs
-          git lfs install --local
+        run: git lfs install --local
 
       - name: Run Docker-backed git-drs integration tests
         working-directory: git-drs

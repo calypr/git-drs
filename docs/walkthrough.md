@@ -1,8 +1,7 @@
 # Git DRS walkthrough
 
 A presentation of use cases, architecture, implementation, and a hands-on tutorial.
-Written for researchers, data stewards, and developers using this checkout.
-Sections separated by horizontal rules can be presented as individual slides.
+Written for researchers, data stewards, and developers.
 
 ## 1. What Git DRS does
 

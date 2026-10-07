@@ -3,12 +3,15 @@ package resolver
 
 import (
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"net/url"
@@ -93,9 +96,12 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 			return err
 		}
 	}
-	hasher := sha256.New()
+	shaHasher := sha256.New()
+	md5Hasher := md5.New()
+	crcHasher := crc32.New(crc32.MakeTable(crc32.Castagnoli))
+	hashers := io.MultiWriter(shaHasher, md5Hasher, crcHasher)
 	if offset > 0 {
-		if _, err := io.Copy(hasher, io.NewSectionReader(tmp, 0, offset)); err != nil {
+		if _, err := io.Copy(hashers, io.NewSectionReader(tmp, 0, offset)); err != nil {
 			return err
 		}
 	}
@@ -129,7 +135,9 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		hasher.Reset()
+		shaHasher.Reset()
+		md5Hasher.Reset()
+		crcHasher.Reset()
 		offset = 0
 	}
 	if offset > 0 && resp.StatusCode == http.StatusPartialContent {
@@ -144,7 +152,7 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	if offset == 0 && resp.StatusCode == http.StatusPartialContent {
 		return fmt.Errorf("AnVIL data download returned a partial response without a range request")
 	}
-	_, copyErr := io.Copy(io.MultiWriter(tmp, hasher), resp.Body)
+	_, copyErr := io.Copy(io.MultiWriter(tmp, hashers), resp.Body)
 	if copyErr != nil {
 		return fmt.Errorf("AnVIL data download interrupted: %w", copyErr)
 	}
@@ -162,16 +170,27 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	}
 	for _, checksum := range obj.Checksums {
 		checksumType := strings.ToLower(strings.TrimSpace(checksum.Type))
-		if checksumType != "sha256" && checksumType != "sha-256" {
+		var hasher hash.Hash
+		switch checksumType {
+		case "sha256", "sha-256":
+			hasher = shaHasher
+		case "md5":
+			hasher = md5Hasher
+		case "crc32c":
+			hasher = crcHasher
+		default:
 			continue
 		}
 		expected := strings.TrimSpace(checksum.Checksum)
-		if prefix, value, ok := strings.Cut(expected, ":"); ok &&
-			(strings.EqualFold(strings.TrimSpace(prefix), "sha256") || strings.EqualFold(strings.TrimSpace(prefix), "sha-256")) {
-			expected = strings.TrimSpace(value)
+		if prefix, value, ok := strings.Cut(expected, ":"); ok {
+			prefix = strings.ToLower(strings.TrimSpace(prefix))
+			if prefix == checksumType ||
+				((checksumType == "sha256" || checksumType == "sha-256") && (prefix == "sha256" || prefix == "sha-256")) {
+				expected = strings.TrimSpace(value)
+			}
 		}
 		expectedBytes, decodeErr := hex.DecodeString(expected)
-		if decodeErr != nil || len(expectedBytes) != sha256.Size {
+		if decodeErr != nil || len(expectedBytes) != hasher.Size() {
 			return fmt.Errorf("AnVIL DRS object has an invalid %s checksum", checksumType)
 		}
 		actual := hasher.Sum(nil)

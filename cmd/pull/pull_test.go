@@ -3,6 +3,7 @@ package pull
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -13,6 +14,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"log/slog"
 	"net/http"
@@ -585,6 +587,7 @@ type terraPullFixture struct {
 type terraPullFixtureOptions struct {
 	resolverStatus int
 	useADC         bool
+	crcChecksum    string
 }
 
 func newTerraPullFixture(t *testing.T, checksum string, dataHandler http.HandlerFunc, options ...terraPullFixtureOptions) *terraPullFixture {
@@ -601,9 +604,13 @@ func newTerraPullFixture(t *testing.T, checksum string, dataHandler http.Handler
 		objectID: "v2_4f770147-e372-339b-b9fa-0a7a83cf30cf",
 		payload:  []byte("AnVIL object content"),
 	}
-	actual := sha256.Sum256(f.payload)
+	actual := md5.Sum(f.payload)
 	if checksum == "" {
 		checksum = hex.EncodeToString(actual[:])
+	}
+	crcChecksum := fmt.Sprintf("%08x", crc32.Checksum(f.payload, crc32.MakeTable(crc32.Castagnoli)))
+	if opts.crcChecksum != "" {
+		crcChecksum = opts.crcChecksum
 	}
 	if dataHandler == nil {
 		dataHandler = func(w http.ResponseWriter, r *http.Request) {
@@ -647,7 +654,7 @@ func newTerraPullFixture(t *testing.T, checksum string, dataHandler http.Handler
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/ga4gh/drs/v1/objects/" + f.objectID:
-			_, _ = fmt.Fprintf(w, `{"id":%q,"size":%d,"checksums":[{"type":"sha256","checksum":%q}],"access_methods":[{"type":"https","access_id":"access-1"}]}`, f.objectID, len(f.payload), checksum)
+			_, _ = fmt.Fprintf(w, `{"id":%q,"size":%d,"checksums":[{"type":"crc32c","checksum":%q},{"type":"md5","checksum":%q}],"access_methods":[{"type":"https","access_id":"access-1"}]}`, f.objectID, len(f.payload), crcChecksum, checksum)
 		case "/ga4gh/drs/v1/objects/" + f.objectID + "/access/access-1":
 			_, _ = fmt.Fprintf(w, `{"url":%q,"headers":["X-Access-Key: test-data-key"]}`, f.data.URL)
 		default:
@@ -841,10 +848,19 @@ func TestPullTerraDRSURIUsesADCServiceAccountAgainstLocalTokenEndpoint(t *testin
 }
 
 func TestPullTerraDRSURIRejectsChecksumMismatch(t *testing.T) {
-	f := newTerraPullFixture(t, strings.Repeat("0", sha256.Size*2), nil)
+	f := newTerraPullFixture(t, strings.Repeat("0", md5.Size*2), nil)
 	err := f.run(t)
 	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Fatalf("Terra pull error = %v, want checksum mismatch", err)
+	}
+	f.assertStillPointer(t)
+}
+
+func TestPullTerraDRSURIRejectsCRC32CMismatch(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil, terraPullFixtureOptions{crcChecksum: "00000000"})
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "crc32c") || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("Terra pull error = %v, want CRC32C checksum mismatch", err)
 	}
 	f.assertStillPointer(t)
 }

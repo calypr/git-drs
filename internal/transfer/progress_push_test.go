@@ -27,6 +27,9 @@ func TestUploadProgressRendererTTY(t *testing.T) {
 	r.OnUploadProgress(UploadProgressEvent{OID: "oid-2", Path: "b.bin", BytesSoFar: 0, TotalBytes: 100, Phase: UploadProgressUploading})
 	r.OnUploadProgress(UploadProgressEvent{OID: "oid-2", Path: "b.bin", BytesSoFar: 100, TotalBytes: 100, Phase: UploadProgressCompleted})
 	r.Finish()
+	if !r.HadUploads() {
+		t.Fatal("completed upload plan must remain visible after Finish")
+	}
 
 	got := out.String()
 	if !strings.Contains(got, "a.bin [============            ]  50.0% 50 B/100 B") {
@@ -79,6 +82,9 @@ func TestUploadProgressRendererMetadataOnly(t *testing.T) {
 	r.OnMetadataProgress(MetadataProgressEvent{Completed: 0, Total: 3, Phase: MetadataProgressRegistering})
 	r.OnMetadataProgress(MetadataProgressEvent{Completed: 3, Total: 3, Phase: MetadataProgressCompleted})
 	r.Finish()
+	if r.HadUploads() {
+		t.Fatal("metadata-only plan reported a payload upload")
+	}
 
 	got := out.String()
 	if !strings.Contains(got, "registering metadata") {

@@ -1,7 +1,9 @@
 package ping
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,8 +37,8 @@ type healthInfo struct {
 }
 
 var pingHealth = func(ctx context.Context, gc *remoteruntime.GitContext) (healthInfo, error) {
-	if gc != nil && gc.IsReadOnly() {
-		serviceInfo, err := pingTerraServiceInfo(ctx, gc.Endpoint)
+	if gc != nil && (gc.IsReadOnly() || gc.RemoteType == config.Gen3ServerType) {
+		serviceInfo, err := pingDRSServiceInfo(ctx, gc.Endpoint)
 		return healthInfo{ServiceInfo: serviceInfo}, err
 	}
 	return healthInfo{}, gc.Client.Health().Ping(ctx)
@@ -76,7 +78,7 @@ var Cmd = &cobra.Command{
 		}
 		fmt.Println("health: ok")
 		if strings.TrimSpace(health.ServiceInfo) != "" {
-			fmt.Printf("service-info: %s\n", health.ServiceInfo)
+			printServiceInfo(health.ServiceInfo)
 		}
 
 		scopeInfo, err := pingScopeAccess(cmd.Context(), gc)
@@ -100,6 +102,15 @@ var Cmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func printServiceInfo(raw string) {
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, []byte(raw), "  ", "  "); err != nil {
+		fmt.Printf("service-info: %s\n", raw)
+		return
+	}
+	fmt.Printf("service-info:\n  %s\n", formatted.String())
 }
 
 func resolveStatus(args []string, logger *slog.Logger) (statusInfo, *remoteruntime.GitContext, error) {
@@ -230,11 +241,11 @@ func checkScopeAccess(ctx context.Context, gc *remoteruntime.GitContext) (scopeA
 	return info, nil
 }
 
-func pingTerraServiceInfo(ctx context.Context, endpoint string) (string, error) {
+func pingDRSServiceInfo(ctx context.Context, endpoint string) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	serviceInfoURL, err := terraServiceInfoURL(endpoint)
+	serviceInfoURL, err := drsServiceInfoURL(endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -249,7 +260,7 @@ func pingTerraServiceInfo(ctx context.Context, endpoint string) (string, error) 
 	defer resp.Body.Close()
 	serviceInfo, readErr := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("terra DRS service-info returned %s", resp.Status)
+		return "", fmt.Errorf("DRS service-info returned %s", resp.Status)
 	}
 	if readErr != nil {
 		return "", readErr
@@ -257,17 +268,17 @@ func pingTerraServiceInfo(ctx context.Context, endpoint string) (string, error) 
 	return strings.TrimSpace(string(serviceInfo)), nil
 }
 
-func terraServiceInfoURL(endpoint string) (string, error) {
+func drsServiceInfoURL(endpoint string) (string, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
-		return "", fmt.Errorf("terra endpoint is empty")
+		return "", fmt.Errorf("DRS endpoint is empty")
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		return "", err
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("terra endpoint must be an absolute URL: %q", endpoint)
+		return "", fmt.Errorf("DRS endpoint must be an absolute URL: %q", endpoint)
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/ga4gh/drs/v1/service-info"
 	parsed.RawQuery = ""

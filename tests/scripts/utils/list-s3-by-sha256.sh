@@ -66,7 +66,7 @@ fi
 
 
 # Read 4 fields per line: separated by space or tab
-while IFS=$' \t' read -r did hash file_name resource; do
+while IFS=$' \t' read -r did hash name resource; do
     # skip empty lines
     if [[ -z "${did:-}" ]]; then
         echo "No DID found, skipping..."
@@ -80,16 +80,16 @@ while IFS=$' \t' read -r did hash file_name resource; do
     object_key="${PREFIX}${did}/${hash}"
     s3_url="s3://${BUCKET}/${object_key}"
 
-  # capture mc ls output, append file_name on success; on failure print error plus file_name
+  # capture mc ls output, append name on success; on failure print error plus name
   if output=$(mc ls "${MC_ALIAS}/${BUCKET}/${object_key}" 2>/dev/null); then
       if [[ -z "$output" ]]; then
-          printf 'ERROR: alias: %s object: %s not found or unreachable file_name:%s\n' "$MC_ALIAS" "$object_key" "$file_name"
+          printf 'ERROR: alias: %s object: %s not found or unreachable name:%s\n' "$MC_ALIAS" "$object_key" "$name"
           exit 1
       else
-        printf '%s %s %s %s\n' "$output" "$file_name" "$resource" "$object_key"
+        printf '%s %s %s %s\n' "$output" "$name" "$resource" "$object_key"
       fi
 
   else
-      printf 'ERROR: alias %s object %s not found or unreachable %s\n' "$MC_ALIAS" "$object_key" "$file_name"
+      printf 'ERROR: alias %s object %s not found or unreachable %s\n' "$MC_ALIAS" "$object_key" "$name"
   fi
 done

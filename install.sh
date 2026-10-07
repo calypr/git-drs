@@ -120,7 +120,18 @@ fi
 
 if [ "$DOWNLOADED_CHK" = true ]; then
     echo "Verifying checksum"
-    CHECKSUM_EXPECTED=$(grep "$TAR_NAME" "$CHECKSUM_FILE" | awk '{print $1}' || true)
+    if ! CHECKSUM_EXPECTED=$(awk -v name="$TAR_NAME" '
+        $2 == name { count++; checksum = $1 }
+        END {
+            if (count == 1 && length(checksum) == 64 && checksum !~ /[^0-9a-fA-F]/)
+                print checksum
+            else
+                exit 1
+        }
+    ' "$CHECKSUM_FILE"); then
+        echo "Error: Missing, duplicate, or invalid checksum for $TAR_NAME." >&2
+        exit 1
+    fi
     
     # Checksum utility
     if command -v sha256sum >/dev/null 2>&1; then  
@@ -128,16 +139,17 @@ if [ "$DOWNLOADED_CHK" = true ]; then
     elif command -v shasum >/dev/null 2>&1; then  
         CHECKSUM_ACTUAL=$(shasum -a 256 "$TAR_NAME" | awk '{print $1}')  
     else
-        echo "Warning: No SHA256 checksum utility found (sha256sum or shasum). Skipping verification."
-        CHECKSUM_ACTUAL="$CHECKSUM_EXPECTED"
+        echo "Error: A SHA256 checksum utility (sha256sum or shasum) is required." >&2
+        exit 1
     fi
 
-    if [ -n "$CHECKSUM_EXPECTED" ] && [ "$CHECKSUM_EXPECTED" != "$CHECKSUM_ACTUAL" ]; then
+    if [ "$CHECKSUM_EXPECTED" != "$CHECKSUM_ACTUAL" ]; then
         echo "Error: Checksum verification failed for $TAR_NAME."
         exit 1
     fi
 else
-    echo "Warning: Checksum file not found. Skipping verification."
+    echo "Error: Checksum file not found." >&2
+    exit 1
 fi
 
 # Extract + Install

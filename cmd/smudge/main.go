@@ -7,9 +7,13 @@ import (
 	"os"
 
 	"github.com/calypr/git-drs/internal/config"
-	"github.com/calypr/git-drs/internal/drsfilter"
 	"github.com/calypr/git-drs/internal/drslog"
-	"github.com/calypr/git-drs/internal/drsremote"
+	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/lfs"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
+	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	"github.com/spf13/cobra"
 )
 
@@ -41,6 +45,10 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	pathname := args[0]
 	logger := drslog.GetLogger()
 	logger.Debug("smudge: starting", "pathname", pathname)
+	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	if err != nil {
+		return fmt.Errorf("smudge: resolve LFS objects root: %w", err)
+	}
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -51,19 +59,41 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, config.ErrNoDefaultRemote) {
 			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
-			return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+			return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, pathname, os.Stdin, os.Stdout, logger, nil)
 		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
 
-	drsCtx, err := cfg.GetRemoteClient(remote, logger)
+	drsCtx, err := remoteruntime.New(cfg, remote, logger)
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
+	worktreeRoot, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("smudge: resolve worktree root: %w", err)
+	}
+	drsCtx.LFSObjectsRoot = objectsRoot
+	drsCtx.RepositoryRoot = worktreeRoot
 
-	return drsfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, func(callCtx context.Context, oid, cachePath string) error {
-		return drsremote.DownloadToCachePath(callCtx, drsCtx, logger, oid, cachePath)
-	})
+	var downloadFn internalfilter.SmudgeDownloadFunc
+	if !internalfilter.ShouldSkipSmudge() {
+		var terraResolver resolver.Resolver
+		if drsCtx.RemoteType == config.TerraServerType {
+			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if err != nil {
+				return fmt.Errorf("smudge: create Terra resolver: %w", err)
+			}
+		}
+		downloadFn = func(callCtx context.Context, oid, cachePath string) error {
+			if terraResolver != nil {
+				if len(oid) >= 2 && oid[:2] == "//" {
+					oid = "drs:" + oid
+				}
+				return resolver.DownloadToCache(callCtx, terraResolver, oid, cachePath)
+			}
+			return internaltransfer.DownloadToCachePath(callCtx, drsCtx, oid, cachePath)
+		}
+	}
+
+	return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, pathname, os.Stdin, os.Stdout, logger, downloadFn)
 }
-
-func init() {}

@@ -1,0 +1,360 @@
+package filter
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/calypr/git-drs/internal/drsobject"
+	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/lfs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+)
+
+func TestCleanContentPassesThroughExistingPointer(t *testing.T) {
+	repo := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(orig)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	lfsRoot := filepath.Join(repo, ".git", "lfs")
+	oid := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	pointer := "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize 21\n"
+	explicitURL := "s3://bucket/path/to/file.bin"
+	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{
+		Size: 21,
+		AccessMethods: &[]drsapi.AccessMethod{{
+			Type:      drsapi.AccessMethodTypeS3,
+			AccessUrl: &drsapi.AccessURL{Url: explicitURL},
+		}},
+	}, oid); err != nil {
+		t.Fatalf("seed DRS object: %v", err)
+	}
+
+	var out bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := CleanContentWithRoots(context.Background(), lfsRoot, gitrepo.DRSObjectsPath, "data/from-bucket.bin", bytes.NewBufferString(pointer), &out, logger); err != nil {
+		t.Fatalf("CleanContent returned error: %v", err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("expected pointer passthrough, got %q", out.String())
+	}
+
+	gotObj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("read DRS map entry: %v", err)
+	}
+	if gotObj.AccessMethods == nil || len(*gotObj.AccessMethods) != 1 || (*gotObj.AccessMethods)[0].AccessUrl.Url != explicitURL {
+		t.Fatalf("expected explicit access URL to survive clean, got %+v", gotObj.AccessMethods)
+	}
+
+	sum := sha256.Sum256([]byte(pointer))
+	contentOID := hex.EncodeToString(sum[:])
+	if cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, contentOID); err == nil {
+		if _, statErr := os.Stat(cachePath); !os.IsNotExist(statErr) {
+			t.Fatalf("did not expect pointer text to be cached as payload at %s", cachePath)
+		}
+	}
+}
+
+func TestCleanContentUsesConfiguredLFSRoot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	customRoot := filepath.Join(t.TempDir(), "custom-lfs")
+	const payload = "configured storage payload"
+	var out bytes.Buffer
+	if err := CleanContentWithRoots(t.Context(), customRoot, gitrepo.DRSObjectsPath, "data.bin", strings.NewReader(payload), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	oid := hex.EncodeToString(sum[:])
+	customPath, err := lfs.ObjectPath(filepath.Join(customRoot, "objects"), oid)
+	if err != nil {
+		t.Fatalf("custom ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("configured LFS object missing at %s: %v", customPath, err)
+	}
+	defaultPath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	if err != nil {
+		t.Fatalf("default ObjectPath: %v", err)
+	}
+	if _, err := os.Stat(defaultPath); !os.IsNotExist(err) {
+		t.Fatalf("default LFS object was written at %s: err=%v", defaultPath, err)
+	}
+}
+
+func TestIndexRefreshCleanPreservesPointerWithoutCacheCopy(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	cmd := exec.Command("git", "init")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	payload := []byte("hydrated content")
+	sum := sha256.Sum256(payload)
+	pointer := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%x\nsize %d\n", sum, len(payload))
+	if err := os.WriteFile("data.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd = exec.Command("git", "add", "--", "data.bin")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add pointer: %v: %s", err, out)
+	}
+	t.Setenv(IndexRefreshEnv, "1")
+	manifest := writeIndexRefreshManifestTest(t, []string{"data.bin"}, nil)
+	t.Setenv(IndexRefreshReceiptsEnv, manifest)
+	lfsRoot := filepath.Join(repo, ".git", "lfs")
+	var out bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := CleanContentWithRoots(t.Context(), lfsRoot, gitrepo.DRSObjectsPath, "data.bin", bytes.NewReader(payload), &out, logger); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("indexed pointer changed: %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(lfsRoot, "objects")); !os.IsNotExist(err) {
+		t.Fatalf("index refresh created a cache copy: %v", err)
+	}
+	out.Reset()
+	if err := CleanContentWithRoots(t.Context(), lfsRoot, gitrepo.DRSObjectsPath, "data.bin", strings.NewReader("changed content!"), &out, logger); err == nil || out.Len() != 0 {
+		t.Fatalf("changed content was accepted: output=%q err=%v", out.String(), err)
+	}
+}
+
+func TestIndexRefreshReceiptSkipsHashAndFallsBackAfterSameSizeEdit(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	runGit("init")
+	payload := []byte("hydrated content")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	pointer := fmt.Sprintf("version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %d\n", oid, len(payload))
+	if err := os.WriteFile("data.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit("add", "--", "data.bin")
+	if err := os.WriteFile("data.bin", payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat("data.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, ok := NewIndexRefreshReceipt("data.bin", oid, oid, int64(len(payload)), info)
+	if !ok {
+		t.Skip("filesystem does not provide ctime/dev/inode identity")
+	}
+	manifest, err := os.CreateTemp(t.TempDir(), "receipts-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := MarshalIndexRefreshManifest([]string{"data.bin"}, []IndexRefreshReceipt{receipt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manifest.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(IndexRefreshEnv, "1")
+	t.Setenv(IndexRefreshReceiptsEnv, manifest.Name())
+	_, receipts, err := readIndexRefreshManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	hashCalls := 0
+	noHash := func(io.Reader) (int64, string, error) {
+		hashCalls++
+		return 0, "", fmt.Errorf("unexpected content hash")
+	}
+	if err := cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(payload), &out, receipts, noHash); err != nil {
+		t.Fatalf("clean with valid receipt: %v", err)
+	}
+	if got := out.String(); got != pointer {
+		t.Fatalf("clean output = %q, want indexed pointer %q", got, pointer)
+	}
+	if hashCalls != 0 {
+		t.Fatalf("content hasher called %d times with a valid receipt", hashCalls)
+	}
+
+	changed := []byte("changed content!")
+	if len(changed) != len(payload) {
+		t.Fatalf("test edit size = %d, want %d", len(changed), len(payload))
+	}
+	if err := os.WriteFile("data.bin", changed, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	err = cleanIndexedPointerForRefreshWithHasher(t.Context(), filepath.Join(repo, ".git", "lfs"), "data.bin", bytes.NewReader(changed), &out, receipts, hashIndexedRefreshContent)
+	if err == nil || out.Len() != 0 {
+		t.Fatalf("same-size edit accepted: output=%q err=%v", out.String(), err)
+	}
+}
+
+func TestIndexRefreshFailsClosedWithoutScopedManifest(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	t.Setenv(IndexRefreshEnv, "1")
+
+	for _, test := range []struct {
+		name string
+		data string
+	}{
+		{name: "missing"},
+		{name: "corrupt", data: "{"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			manifestPath := ""
+			if test.data != "" {
+				manifestPath = filepath.Join(t.TempDir(), "manifest.json")
+				if err := os.WriteFile(manifestPath, []byte(test.data), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv(IndexRefreshReceiptsEnv, manifestPath)
+			var out bytes.Buffer
+			err := CleanContentWithRoots(t.Context(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "data.bin", strings.NewReader("payload"), &out, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if err == nil || out.Len() != 0 {
+				t.Fatalf("clean without valid scoped manifest: output=%q err=%v", out.String(), err)
+			}
+		})
+	}
+}
+
+func writeIndexRefreshManifestTest(t *testing.T, paths []string, receipts []IndexRefreshReceipt) string {
+	t.Helper()
+	data, err := MarshalIndexRefreshManifest(paths, receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestCleanContentDoesNotPromotePlaceholderToChecksum(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	oid := strings.Repeat("a", 64)
+	pointer := "version https://git-lfs.github.com/spec/v1\next-0-gitdrsplaceholder sha256:" + oid + "\noid sha256:" + oid + "\nsize 7\n"
+	if err := drsobject.WriteObject(gitrepo.DRSObjectsPath, &drsapi.DrsObject{Size: 7}, oid); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := CleanContentWithRoots(t.Context(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "data.bin", strings.NewReader(pointer), &out, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatal(err)
+	}
+	obj, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid)
+	if err != nil || len(obj.Checksums) != 0 {
+		t.Fatalf("object = %+v, err = %v", obj, err)
+	}
+}
+
+func TestCleanContentPreservesIndexedDRSPointerForHydratedPayload(t *testing.T) {
+	repo := t.TempDir()
+	payload := []byte("hydrated population data\n")
+	pointer := "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://drs.anv0:v2_example\n" +
+		"size " + fmt.Sprint(len(payload)) + "\n"
+	path := filepath.Join(repo, "population_descriptor.tsv")
+	if err := os.WriteFile(path, []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write pointer: %v", err)
+	}
+	for _, args := range [][]string{{"init"}, {"add", "population_descriptor.tsv"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(orig)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, "drs://drs.anv0:v2_example")
+	if err != nil {
+		t.Fatalf("ObjectPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatalf("write cache: %v", err)
+	}
+	var out bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewReader(payload), &out, logger); err != nil {
+		t.Fatalf("CleanContent: %v", err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("expected indexed DRS pointer, got %q", out.String())
+	}
+
+	changed := bytes.Repeat([]byte("x"), len(payload))
+	out.Reset()
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewReader(changed), &out, logger); err != nil {
+		t.Fatalf("CleanContent changed payload: %v", err)
+	}
+	if out.String() == pointer {
+		t.Fatal("same-sized changed payload must not be hidden by the indexed DRS pointer")
+	}
+}
+
+func TestCleanContentPassesThroughDRSURIWithoutSHA256MapWarning(t *testing.T) {
+	repo := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer os.Chdir(orig)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	const pointer = "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa\n" +
+		"size 200184\n"
+	var out bytes.Buffer
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	if err := CleanContentWithRoots(context.Background(), filepath.Join(repo, ".git", "lfs"), gitrepo.DRSObjectsPath, "population_descriptor.tsv", bytes.NewBufferString(pointer), &out, logger); err != nil {
+		t.Fatalf("CleanContent returned error: %v", err)
+	}
+	if out.String() != pointer {
+		t.Fatalf("expected DRS pointer passthrough, got %q", out.String())
+	}
+	if strings.Contains(logs.String(), "failed to write DRS map entry") {
+		t.Fatalf("DRS URI pointer must not be written to the SHA256 map: %s", logs.String())
+	}
+}

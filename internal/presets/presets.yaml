@@ -1,0 +1,20 @@
+version: 1
+presets:
+  - alias: calypr
+    endpoint: https://calypr.org
+    provider: gen3
+    auth: provider-helper:gen3-profile
+  - alias: terra
+    endpoint: https://data.terra.bio
+    provider: terra
+    auth: google-adc
+  - alias: synapse
+    endpoint: https://repo-prod.prod.sagebase.org/ga4gh/drs/v1
+    provider: synapse
+    auth: bearer
+    registry_service_id: org.sagebase.prod.repo-prod
+  - alias: cgc
+    endpoint: https://cgc-ga4gh-api.sbgenomics.com/ga4gh/drs/v1
+    provider: cgc
+    auth: bearer
+    registry_service_id: com.sb.cgc.drs

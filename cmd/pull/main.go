@@ -43,6 +43,9 @@ var (
 	newRemoteClient = func(cfg *config.Config, remote config.Remote, logger *slog.Logger) (*remoteruntime.GitContext, error) {
 		return remoteruntime.New(cfg, remote, logger)
 	}
+	newAnVILResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
+		return resolver.NewAnVIL(ctx, endpoint)
+	}
 	loadWorktreeInventory = lfs.GetTrackedLfsFilesAt
 	loadWorktreeFile      = lfs.GetTrackedLfsFileAt
 )
@@ -150,7 +153,7 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
 		}
 		if drsCtx.IsReadOnly() {
-			anvil, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			anvil, err = newAnVILResolver(ctx, drsCtx.Endpoint)
 			if err != nil {
 				return err
 			}
@@ -220,7 +223,6 @@ var Cmd = &cobra.Command{
 				prefetched[oid] = *obj
 				prefetchedAccess[obj.Id] = access
 			} else {
-				progress.OnStage("Looking up DRS records")
 				checksumOIDs := make([]string, 0, len(missingOIDs))
 				for _, oid := range missingOIDs {
 					if lfs.IsDRSURI(oid) {
@@ -235,16 +237,22 @@ var Cmd = &cobra.Command{
 					}
 					checksumOIDs = append(checksumOIDs, oid)
 				}
-				recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs)
-				if err != nil {
-					return fmt.Errorf("look up DRS records by checksum: %w", err)
-				}
-				for _, oid := range checksumOIDs {
-					recs := recsByOID[oid]
-					if len(recs) == 0 {
-						return fmt.Errorf("no matching DRS record found for oid %s in the configured scope", oid)
+				if len(checksumOIDs) > 0 {
+					if anvil != nil {
+						return fmt.Errorf("remote %q can only hydrate DRS URI pointers; selected file has a SHA-256 pointer", remote)
 					}
-					prefetched[oid] = recs[0]
+					progress.OnStage("Looking up DRS records")
+					recsByOID, err := lookup.ObjectsByHashesForScope(ctx, drsCtx, checksumOIDs)
+					if err != nil {
+						return fmt.Errorf("look up DRS records by checksum: %w", err)
+					}
+					for _, oid := range checksumOIDs {
+						recs := recsByOID[oid]
+						if len(recs) == 0 {
+							return fmt.Errorf("no matching DRS record found for oid %s in the configured scope", oid)
+						}
+						prefetched[oid] = recs[0]
+					}
 				}
 			}
 			if len(prefetched) > 0 && len(missingOIDs) > 1 {

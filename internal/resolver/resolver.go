@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"golang.org/x/oauth2"
@@ -73,47 +74,85 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(destination), ".git-drs-download-*")
+	partialPath := destination + ".git-drs-partial"
+	tmp, err := os.OpenFile(partialPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer tmp.Close()
+	info, err := tmp.Stat()
+	if err != nil {
+		return err
+	}
+	offset := info.Size()
+	if offset >= obj.Size {
+		offset = 0
+	}
+	if offset == 0 {
+		if err := tmp.Truncate(0); err != nil {
+			return err
+		}
+	}
+	hasher := sha256.New()
+	if offset > 0 {
+		if _, err := io.Copy(hasher, io.NewSectionReader(tmp, 0, offset)); err != nil {
+			return err
+		}
+	}
+	if _, err := tmp.Seek(offset, io.SeekStart); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, access.URL, nil)
 	if err != nil {
-		tmp.Close()
 		return err
+	}
+	if offset > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
 	for _, header := range access.Headers {
 		key, value, ok := strings.Cut(header, ":")
 		key = strings.TrimSpace(key)
 		if !ok || key == "" {
-			tmp.Close()
 			return fmt.Errorf("AnVIL resolver returned an invalid access header")
 		}
 		req.Header.Add(key, strings.TrimSpace(value))
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		tmp.Close()
 		return fmt.Errorf("AnVIL data download failed")
 	}
 	defer resp.Body.Close()
+	if offset > 0 && resp.StatusCode == http.StatusOK {
+		if err := tmp.Truncate(0); err != nil {
+			return err
+		}
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		hasher.Reset()
+		offset = 0
+	}
+	if offset > 0 && resp.StatusCode == http.StatusPartialContent {
+		prefix := "bytes " + strconv.FormatInt(offset, 10) + "-"
+		if !strings.HasPrefix(resp.Header.Get("Content-Range"), prefix) {
+			return fmt.Errorf("AnVIL data download returned an unexpected content range")
+		}
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		tmp.Close()
 		return fmt.Errorf("AnVIL data download returned HTTP %d", resp.StatusCode)
 	}
-	hasher := sha256.New()
+	if offset == 0 && resp.StatusCode == http.StatusPartialContent {
+		return fmt.Errorf("AnVIL data download returned a partial response without a range request")
+	}
 	_, copyErr := io.Copy(io.MultiWriter(tmp, hasher), resp.Body)
-	closeErr := tmp.Close()
 	if copyErr != nil {
 		return fmt.Errorf("AnVIL data download interrupted: %w", copyErr)
 	}
-	if closeErr != nil {
-		return closeErr
+	if err := tmp.Sync(); err != nil {
+		return err
 	}
 	if obj.Size >= 0 {
-		info, statErr := os.Stat(tmpName)
+		info, statErr := tmp.Stat()
 		if statErr != nil {
 			return statErr
 		}
@@ -137,10 +176,14 @@ func DownloadToCache(ctx context.Context, r Resolver, drsURI, destination string
 		}
 		actual := hasher.Sum(nil)
 		if subtle.ConstantTimeCompare(actual, expectedBytes) != 1 {
+			_ = os.Remove(partialPath)
 			return fmt.Errorf("AnVIL data checksum mismatch for %s", checksumType)
 		}
 	}
-	return os.Rename(tmpName, destination)
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(partialPath, destination)
 }
 
 func isHTTPAccessURL(raw string) bool {
@@ -182,15 +225,27 @@ type AnVILResolver struct {
 }
 
 func NewAnVIL(ctx context.Context, endpoint string) (*AnVILResolver, error) {
-	u, err := trustedEndpoint(endpoint)
-	if err != nil {
+	if _, err := trustedEndpoint(endpoint); err != nil {
 		return nil, err
 	}
 	creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return nil, fmt.Errorf("%w: run `gcloud auth application-default login`: %v", ErrCredentials, err)
 	}
-	return &AnVILResolver{endpoint: u, client: &http.Client{Transport: &oauth2.Transport{Base: http.DefaultTransport, Source: creds.TokenSource}}}, nil
+	return NewAnVILWithClient(endpoint, &http.Client{Transport: &oauth2.Transport{Base: http.DefaultTransport, Source: creds.TokenSource}})
+}
+
+// NewAnVILWithClient uses a caller-supplied HTTP client for a trusted HTTPS
+// resolver endpoint. The caller is responsible for attaching authentication.
+func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, error) {
+	u, err := trustedEndpoint(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("AnVIL resolver HTTP client is required")
+	}
+	return &AnVILResolver{endpoint: u, client: client}, nil
 }
 
 func trustedEndpoint(endpoint string) (*url.URL, error) {

@@ -3,10 +3,13 @@ package globusauth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +19,55 @@ import (
 	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/services/transfer"
 	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/tokenstorage"
 )
+
+type globusRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f globusRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestCheckReportsFailedRefreshedTokenSave(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires POSIX directory permissions as a non-root user")
+	}
+	dir := t.TempDir()
+	name := filepath.Join(dir, "tokens.json")
+	stored := `{"version":"2.0","by_rs":{"git-drs":{"transfer.api.globus.org":{"resource_server":"transfer.api.globus.org","access_token":"old-access","refresh_token":"old-refresh","expires_at":"2020-01-01T00:00:00Z"}}}}`
+	if err := os.WriteFile(name, []byte(stored), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(TokenFileEnv, name)
+	t.Setenv(ClientIDEnv, "client-id")
+	t.Setenv(TransferTokenEnv, "")
+	oldTransport := http.DefaultTransport
+	refreshes := 0
+	http.DefaultTransport = globusRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if !strings.HasSuffix(r.URL.Path, "/v2/oauth2/token") {
+			return nil, fmt.Errorf("unexpected request %s", r.URL)
+		}
+		refreshes++
+		body := `{"access_token":"new-access","refresh_token":"new-refresh","expires_in":3600}`
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
+
+	client, err := NewClient(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	err = Check(context.Background(), client)
+	if err == nil || !strings.Contains(err.Error(), "save refreshed Globus token") {
+		t.Fatalf("Check error = %v, want token storage failure", err)
+	}
+	if refreshes != 1 {
+		t.Fatalf("refresh requests = %d, want 1", refreshes)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func sdkClient(t *testing.T, handler http.Handler) (*Client, *httptest.Server) {
 	t.Helper()

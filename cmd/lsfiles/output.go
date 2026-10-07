@@ -43,3 +43,36 @@ func printRows(cmd *cobra.Command, rows []fileRow) error {
 	}
 	return nil
 }
+
+func printBrowseListings(cmd *cobra.Command, listings []browseListing) error {
+	showHeaders := false
+	if len(listings) > 1 {
+		for _, listing := range listings {
+			if listing.directory {
+				showHeaders = true
+				break
+			}
+		}
+	}
+	wroteEntries := false
+	for _, listing := range listings {
+		if showHeaders && listing.directory {
+			if wroteEntries {
+				if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s:\n", listing.operand); err != nil {
+				return err
+			}
+			wroteEntries = true
+		}
+		for _, entry := range listing.entries {
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), entry); err != nil {
+				return err
+			}
+			wroteEntries = true
+		}
+	}
+	return nil
+}

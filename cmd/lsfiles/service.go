@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -15,8 +14,9 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
+	"github.com/calypr/git-drs/internal/pathspec"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 type fileRow struct {
@@ -181,7 +181,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		oids := make([]string, 0, len(keys))
 		seenOIDs := make(map[string]struct{}, len(keys))
 		for _, path := range keys {
-			if !matchesAnyPattern(path, patterns) {
+			if !matchesPointerPath(path, patterns) {
 				continue
 			}
 			oid := lfsFiles[path].Oid
@@ -197,7 +197,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 		drsResults, drsLookupErr = lookupScopedObjectsBatch(ctx, client, oids)
 	}
 	for _, path := range keys {
-		if !matchesAnyPattern(path, patterns) {
+		if !matchesPointerPath(path, patterns) {
 			continue
 		}
 		info := lfsFiles[path]
@@ -205,7 +205,7 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 			OID:       info.Oid,
 			ShortOID:  shortOID(info.Oid),
 			Path:      path,
-			Localized: isLocalized(path),
+			Localized: isLocalized(path, info),
 		}
 		row.Status = "-"
 		if row.Localized {
@@ -235,6 +235,29 @@ func collectRows(ctx context.Context, gitRemoteName, drsRemoteName string, patte
 	}
 
 	return rows, nil
+}
+
+func matchesPointerPath(path string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if pathspec.MatchesPattern(path, pattern) {
+			return true
+		}
+		if strings.ContainsAny(pattern, "*?[") {
+			continue
+		}
+		directory := filepath.ToSlash(filepath.Clean(pattern))
+		if directory == "." || strings.HasPrefix(path, directory+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func shortOID(oid string) string {
@@ -269,66 +292,15 @@ func shortDRSOID(id string) string {
 	return id
 }
 
-func matchesAnyPattern(path string, patterns []string) bool {
-	if len(patterns) == 0 {
-		return true
+func isLocalized(path string, info lfs.LfsFileInfo) bool {
+	if info.IsPointer {
+		return false
 	}
-	normalized := filepath.ToSlash(filepath.Clean(path))
-	for _, pattern := range patterns {
-		pattern = strings.TrimSpace(pattern)
-		if pattern == "" {
-			continue
-		}
-		if matchesPattern(normalized, pattern) {
-			return true
-		}
-	}
-	return false
-}
-
-func matchesPattern(path, pattern string) bool {
-	pattern = filepath.ToSlash(filepath.Clean(pattern))
-	if !strings.ContainsAny(pattern, "*?[") {
-		return path == pattern
-	}
-	re, err := regexp.Compile(globToRegexp(pattern))
+	file, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	return re.MatchString(path)
-}
-
-func globToRegexp(pattern string) string {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		ch := pattern[i]
-		switch ch {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				b.WriteString(".*")
-				i++
-				continue
-			}
-			b.WriteString(`[^/]*`)
-		case '?':
-			b.WriteString(`[^/]`)
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
-		default:
-			b.WriteByte(ch)
-		}
-	}
-	b.WriteString("$")
-	return b.String()
-}
-
-func isLocalized(path string) bool {
-	payload, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	_, _, ok := lfs.ParseLFSPointer(payload)
-	return !ok
+	defer file.Close()
+	stat, err := file.Stat()
+	return err == nil && stat.Mode().IsRegular()
 }

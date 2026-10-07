@@ -2,12 +2,13 @@ package copyrecords
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syservices "github.com/calypr/syfon/client/services"
 )
 
@@ -31,7 +32,10 @@ func (localIndexAPI) BulkHashes(ctx context.Context, hashes []string) (copyBulkH
 		}
 		obj, err := readLocalDRSObject(oid)
 		if err != nil {
-			continue
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return copyBulkHashesResponse{}, fmt.Errorf("read local DRS object for oid %s: %w", oid, err)
 		}
 		results[query] = []copyRecord{copyRecordFromLocalObject(obj)}
 	}
@@ -57,6 +61,18 @@ func (localIndexAPI) CreateBulk(ctx context.Context, req copyBulkCreateRequest) 
 		fmt.Fprintf(os.Stderr, "copy-records: skipped %d source records that cannot be written locally because they have no valid sha256 hash\n", skippedMissingHash)
 	}
 	return copyListRecordsResponse{Records: &written}, nil
+}
+
+func (l localIndexAPI) OverwriteBulk(ctx context.Context, req copyBulkOverwriteRequest) (copyBulkOverwriteResponse, error) {
+	resp, err := l.CreateBulk(ctx, copyBulkCreateRequest{Records: req.Records})
+	if err != nil {
+		return copyBulkOverwriteResponse{}, err
+	}
+	written := len(req.Records)
+	if resp.Records != nil {
+		written = len(*resp.Records)
+	}
+	return copyBulkOverwriteResponse{Processed: len(req.Records), Created: written}, nil
 }
 
 func localObjectKeyForCopyRecord(rec copyRecord) string {

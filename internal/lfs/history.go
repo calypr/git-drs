@@ -20,7 +20,7 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 		return map[string]LfsFileInfo{}, nil
 	}
 
-	args := []string{"rev-list", "--objects"}
+	args := []string{"rev-list", "--objects", "--no-object-names"}
 	args = append(args, targets...)
 	if len(exclusions) > 0 {
 		args = append(args, "--not")
@@ -31,28 +31,18 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 		return nil, fmt.Errorf("git rev-list for LFS history: %w", err)
 	}
 
-	pathsByOID := make(map[string]string)
 	var objectIDs []string
 	seen := make(map[string]struct{})
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+	for _, record := range bytes.Split(out, []byte{'\n'}) {
+		if len(record) == 0 {
 			continue
 		}
-		oid := strings.TrimSpace(parts[0])
+		oid := string(record)
 		if _, ok := seen[oid]; ok {
 			continue
 		}
 		seen[oid] = struct{}{}
 		objectIDs = append(objectIDs, oid)
-		if len(parts) == 2 {
-			pathsByOID[oid] = strings.TrimSpace(parts[1])
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 	if len(objectIDs) == 0 {
 		return map[string]LfsFileInfo{}, nil
@@ -63,6 +53,10 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 		return nil, err
 	}
 	pointers, err := batchReadPointers(ctx, candidates)
+	if err != nil {
+		return nil, err
+	}
+	pathsByOID, err := pathsForHistoricalPointers(ctx, targets, exclusions, pointers)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +79,45 @@ func PointerInventoryForObjects(ctx context.Context, targets, exclusions []strin
 		}
 	}
 	return files, nil
+}
+
+func pathsForHistoricalPointers(ctx context.Context, targets, exclusions []string, pointers []pointerBlob) (map[string]string, error) {
+	paths := make(map[string]string, len(pointers))
+	if len(pointers) == 0 {
+		return paths, nil
+	}
+	wanted := make(map[string]struct{}, len(pointers))
+	for _, pointer := range pointers {
+		wanted[pointer.blobOID] = struct{}{}
+	}
+	args := []string{"log", "--raw", "-z", "--no-abbrev", "--root", "--no-renames", "-m", "--format="}
+	args = append(args, targets...)
+	if len(exclusions) > 0 {
+		args = append(args, "--not")
+		args = append(args, exclusions...)
+	}
+	out, err := runHistoryGit(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git log for LFS paths: %w", err)
+	}
+	records := bytes.Split(out, []byte{0})
+	for i := 0; i+1 < len(records); i += 2 {
+		metadata := strings.TrimSpace(string(records[i]))
+		if !strings.HasPrefix(metadata, ":") {
+			continue
+		}
+		fields := strings.Fields(metadata[1:])
+		if len(fields) < 5 {
+			continue
+		}
+		path := string(records[i+1])
+		for _, oid := range []string{fields[2], fields[3]} {
+			if _, ok := wanted[oid]; ok && paths[oid] == "" {
+				paths[oid] = path
+			}
+		}
+	}
+	return paths, nil
 }
 
 type pointerBlobCandidate struct {

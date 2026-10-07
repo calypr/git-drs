@@ -2,20 +2,20 @@
 
 ## Status
 
-Proposed implementation plan for replacing the current full-tip scan and unconditional metadata upsert behavior in `git drs push`.
+Historical implementation plan. The current `git drs push` follows the synchronization and non-destructive retention contract described here. Some later phases remain design notes rather than an active backlog.
 
-This plan defines the production contract before implementation. It deliberately separates Git history discovery, remote synchronization state, DRS transfer negotiation, payload transfer, Git ref updates, and garbage collection.
+This plan separates Git history discovery, remote synchronization state, DRS transfer negotiation, payload transfer, Git ref updates, and garbage collection.
 
 ## Problem statement
 
-The current push path:
+The legacy push path:
 
 1. Assumes one local `HEAD` update.
 2. Scans every pointer in the pushed tip tree.
 3. Looks up every discovered OID in Syfon.
 4. Builds a metadata record for every discovered OID, including records that already match the project scope.
 5. Sends all metadata records in one bulk request.
-6. Deletes scoped metadata when a pointer disappears from the tip tree.
+6. Deleted scoped metadata when a pointer disappeared from the tip tree.
 7. Prints unconditional `DEBUG:` messages to stderr.
 
 This behavior is not proportional to the work being pushed. It also does not model all LFS-style objects in Git history: it models only the final tree, while deleting metadata for objects that can remain reachable from earlier commits.

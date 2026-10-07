@@ -32,24 +32,18 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	type removal struct {
-		path string
-		oid  string
-	}
-	planned := make([]removal, 0, len(args))
+	planned := make([]string, 0, len(args))
 	for _, raw := range args {
 		path := filepath.ToSlash(filepath.Clean(raw))
 		info, ok := tracked[path]
 		if !ok || strings.TrimSpace(info.Oid) == "" {
 			return fmt.Errorf("%s is not a tracked git-drs/LFS file", raw)
 		}
-		planned = append(planned, removal{path: path, oid: "sha256:" + strings.TrimPrefix(strings.TrimSpace(info.Oid), "sha256:")})
+		planned = append(planned, path)
 	}
 
 	gitArgs := []string{"rm", "--"}
-	for _, item := range planned {
-		gitArgs = append(gitArgs, item.path)
-	}
+	gitArgs = append(gitArgs, planned...)
 	if err := runCommand("git", gitArgs...); err != nil {
 		return err
 	}

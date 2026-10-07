@@ -35,8 +35,6 @@ func init() {
 	Gen3Cmd.Flags().BoolVar(&noSkipSmudge, "no-skip-smudge", false, "Disable skipping smudge filter (force downloading file contents during checkout)")
 
 	Cmd.AddCommand(Gen3Cmd)
-	Gen3Cmd.Deprecated = "use 'git drs remote add <endpoint> --provider gen3 --scope <organization/project> --credential <source>'"
-	Gen3Cmd.Hidden = true
 	LocalCmd.Flags().StringVar(&selectedBucket, "bucket", "", "Select a specific visible bucket when multiple buckets match the scope")
 	LocalCmd.Flags().StringVar(&localUsername, "username", "", "Username for local DRS HTTP basic auth")
 	LocalCmd.Flags().StringVar(&localPassword, "password", "", "Password for local DRS HTTP basic auth")

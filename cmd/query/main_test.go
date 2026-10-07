@@ -3,7 +3,7 @@ package query
 import (
 	"testing"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
 func TestChecksumTypeForString(t *testing.T) {

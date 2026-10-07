@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
@@ -23,12 +26,86 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	syclient "github.com/calypr/syfon/client"
 )
+
+type pullRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f pullRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+type checkoutFailingReader struct{}
+
+func (checkoutFailingReader) Read([]byte) (int, error) {
+	return 0, errors.New("injected copy failure")
+}
+
+func TestReplaceCheckoutFilePreservesPreviousFileOnCopyFailure(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "data.bin")
+	oldContent := []byte("original pointer")
+	if err := os.WriteFile(dst, oldContent, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	src := io.NopCloser(io.MultiReader(bytes.NewReader([]byte("partial new payload")), checkoutFailingReader{}))
+	_, _, err := replaceCheckoutFile(context.Background(), dst, src, pointerFile{Name: "data.bin", Oid: strings.Repeat("a", 64), Size: 50}, 0o444, nil)
+	if err == nil || !strings.Contains(err.Error(), "injected copy failure") {
+		t.Fatalf("replaceCheckoutFile error = %v, want copy failure", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, oldContent) {
+		t.Fatalf("destination after failed copy = %q, want %q", got, oldContent)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o444 {
+		t.Fatalf("destination mode after failed copy = %o, want 444", info.Mode().Perm())
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("temporary checkout file remains: %+v", entries)
+	}
+}
+
+func TestReplaceCheckoutFileReportsCopyAndCleansCanceledStage(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "data.bin")
+	if err := os.WriteFile(dst, []byte("pointer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("downloaded content")
+	sum := sha256.Sum256(payload)
+	pointer := pointerFile{Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+	var progress []int64
+	if _, _, err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, func(n int64) { progress = append(progress, n) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) == 0 || progress[len(progress)-1] != int64(len(payload)) {
+		t.Fatalf("copy progress = %v, want %d bytes", progress, len(payload))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := replaceCheckoutFile(ctx, dst, io.NopCloser(bytes.NewReader(payload)), pointer, 0o644, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled checkout = %v, want context.Canceled", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("canceled checkout left a temporary file: %v, %v", entries, err)
+	}
+}
 
 func resetPullFlagsForTest() {
 	includePatterns = nil
 	dryRun = false
+	recursive = false
 }
 
 func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
@@ -40,7 +117,7 @@ func TestCollectPointerFilesFiltersAndSorts(t *testing.T) {
 		"misc/c.bin": {Name: "misc/c.bin", Oid: "cccc", Size: 3},
 	}
 
-	files := collectPointerFiles(inventory, []string{"data/**"})
+	files := collectPointerFiles(inventory, []string{"data/**"}, gitrepo.DRSObjectsPath)
 	if len(files) != 2 {
 		t.Fatalf("expected 2 files, got %d", len(files))
 	}
@@ -64,6 +141,124 @@ func TestPlaceholderPointerValidationUsesSize(t *testing.T) {
 	}
 }
 
+func TestVerifyPointerReportsHashedBytes(t *testing.T) {
+	content := []byte("downloaded payload")
+	sum := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(sum[:]), SHA256: hex.EncodeToString(sum[:]), Size: int64(len(content))}
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var progress []int64
+	if err := verifyPointerAtPathWithProgress(path, file, func(n int64) { progress = append(progress, n) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) < 2 || progress[0] != 0 || progress[len(progress)-1] != int64(len(content)) {
+		t.Fatalf("hash progress = %v, want start at zero and finish at %d", progress, len(content))
+	}
+	file.SHA256 = strings.Repeat("0", 64)
+	if err := verifyPointerAtPathWithProgress(path, file, nil); err == nil {
+		t.Fatal("distinct pointer checksum was not checked")
+	}
+}
+
+func TestCachedObjectChangedDetectsReplacement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedObject(path, "", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := cachedObjectChanged(path, state)
+	if err != nil || changed {
+		t.Fatalf("unchanged cache reported changed=%t, err=%v", changed, err)
+	}
+	replacement := filepath.Join(filepath.Dir(path), "replacement")
+	if err := os.WriteFile(replacement, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(replacement, path); err != nil {
+		t.Fatal(err)
+	}
+	changed, err = cachedObjectChanged(path, state)
+	if err != nil || !changed {
+		t.Fatalf("replaced cache reported changed=%t, err=%v", changed, err)
+	}
+}
+
+func TestCachedVerificationSkipsUnchangedFileAndRejectsModification(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	content := []byte("verified content")
+	digest := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(digest[:]), Size: int64(len(content))}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.complete {
+		t.Fatalf("first verification = %+v, %v", state, err)
+	}
+	if _, ok := verifiedCacheInfo(path, file); !ok {
+		t.Fatal("verified cache marker was not recorded")
+	}
+	if err := os.WriteFile(path, []byte("corrupt content!"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	modified := state.info.ModTime().Add(2 * time.Second)
+	if err := os.Chtimes(path, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := verifiedCacheInfo(path, file); ok {
+		t.Fatal("modified cache retained its verification")
+	}
+	state, err = inspectCachedPointer(path, file)
+	if err != nil || state.complete {
+		t.Fatalf("modified cache accepted: state=%+v err=%v", state, err)
+	}
+}
+
+func TestIncompletePreallocatedDownloadIsNotVerifiedAsCache(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "object")
+	content := []byte("verified content")
+	digest := sha256.Sum256(content)
+	file := pointerFile{Oid: hex.EncodeToString(digest[:]), Size: int64(len(content))}
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := inspectCachedPointer(path, file); err != nil || !state.complete {
+		t.Fatalf("initial cache verification = %+v, %v", state, err)
+	}
+	checkpoint := `{"identity":"sha256:` + file.Oid + `","size":` + strconv.FormatInt(file.Size, 10) + `,"complete":false}`
+	if err := os.WriteFile(path+".syfon-download.json", []byte(checkpoint), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := inspectCachedPointer(path, file)
+	if err != nil || !state.exists || state.complete {
+		t.Fatalf("incomplete transfer was accepted as cached: %+v, %v", state, err)
+	}
+}
+
+func TestReplaceCheckoutFileRejectsWrongHashBeforePromotion(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(dst, []byte("previous"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := sha256.Sum256([]byte("expected"))
+	pointer := pointerFile{Oid: hex.EncodeToString(want[:]), Size: int64(len("bad data"))}
+	if _, _, err := replaceCheckoutFile(context.Background(), dst, io.NopCloser(strings.NewReader("bad data")), pointer, 0o644, nil); err == nil {
+		t.Fatal("incorrect checkout content was accepted")
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || string(got) != "previous" {
+		t.Fatalf("destination changed after checksum failure: %q, %v", got, err)
+	}
+}
+
 func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 	t.Chdir(t.TempDir())
 	payload := []byte("downloaded without a published checksum")
@@ -84,7 +279,7 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := []pointerFile{{Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true}}
-	if err := savePlaceholderChecksums(t.Context(), nil, files, nil); err != nil {
+	if err := savePlaceholderChecksums(t.Context(), nil, files, nil, gitrepo.LFSObjectsPath, gitrepo.DRSObjectsPath); err != nil {
 		t.Fatal(err)
 	}
 	obj, err := localdrsobject.ReadObject(gitrepo.DRSObjectsPath, temporaryOID)
@@ -93,7 +288,7 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 	}
 	learned := collectPointerFiles(map[string]lfs.LfsFileInfo{
 		"data/file.bin": {Oid: temporaryOID, Size: int64(len(payload)), Placeholder: true},
-	}, nil)
+	}, nil, gitrepo.DRSObjectsPath)
 	corrupt := append([]byte(nil), payload...)
 	corrupt[0]++
 	if err := os.WriteFile(cachePath, corrupt, 0o644); err != nil {
@@ -107,6 +302,9 @@ func TestSavePlaceholderChecksumsPersistsLocally(t *testing.T) {
 
 func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	resetPullFlagsForTest()
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGitCmdTest(t, repo, "init")
 
 	oldLoadCfg := loadCfg
 	oldResolveRemote := resolveRemote
@@ -125,7 +323,7 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 		t.Fatal("newRemoteClient should not be called during dry-run")
 		return nil, nil
 	}
-	loadWorktreeInventory = func(_ *slog.Logger) (map[string]lfs.LfsFileInfo, error) {
+	loadWorktreeInventory = func(_ *slog.Logger, _ string) (map[string]lfs.LfsFileInfo, error) {
 		return map[string]lfs.LfsFileInfo{
 			"data/a.bin": {Name: "data/a.bin", Oid: "aaaa", Size: 1},
 			"misc/b.bin": {Name: "misc/b.bin", Oid: "bbbb", Size: 2},
@@ -151,6 +349,211 @@ func TestPullDryRunListsMatchingPaths(t *testing.T) {
 	}
 	if got := out.String(); got != "data/a.bin\n" {
 		t.Fatalf("unexpected dry-run output: %q", got)
+	}
+}
+
+func TestPullDryRunUsesExactPathLoader(t *testing.T) {
+	resetPullFlagsForTest()
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init", "-q")
+	t.Chdir(repo)
+
+	oldInventory := loadWorktreeInventory
+	oldWorktreeFile := loadWorktreeFile
+	t.Cleanup(func() {
+		loadWorktreeInventory = oldInventory
+		loadWorktreeFile = oldWorktreeFile
+		resetPullFlagsForTest()
+		Cmd.SetOut(nil)
+		Cmd.SetErr(nil)
+		Cmd.SetArgs(nil)
+	})
+	loadWorktreeInventory = func(*slog.Logger, string) (map[string]lfs.LfsFileInfo, error) {
+		t.Fatal("full inventory should not be loaded for one exact path")
+		return nil, nil
+	}
+	loadWorktreeFile = func(_ context.Context, root, path string) (lfs.LfsFileInfo, bool, error) {
+		rootInfo, rootErr := os.Stat(root)
+		repoInfo, repoErr := os.Stat(repo)
+		if rootErr != nil || repoErr != nil || !os.SameFile(rootInfo, repoInfo) || path != "data/file.bin" {
+			t.Fatalf("targeted inventory args = (%q, %q)", root, path)
+		}
+		return lfs.LfsFileInfo{Name: path, Oid: "aaaa", Size: 1}, true, nil
+	}
+	includePatterns = []string{"data/file.bin"}
+	dryRun = true
+
+	var out bytes.Buffer
+	Cmd.SetOut(&out)
+	Cmd.SetErr(&out)
+	Cmd.SetArgs([]string{"--dry-run"})
+	if err := Cmd.RunE(Cmd, nil); err != nil {
+		t.Fatalf("RunE returned error: %v", err)
+	}
+	if got := out.String(); got != "data/file.bin\n" {
+		t.Fatalf("unexpected dry-run output: %q", got)
+	}
+}
+
+func TestPullDirectoryIncludes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"directory", []string{"-I", "data"}, "data/direct.bin\n"},
+		{"trailing slash", []string{"-I", "data/"}, "data/direct.bin\n"},
+		{"recursive short", []string{"-r", "-I", "data"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"recursive long", []string{"--recursive", "-I", "data/"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"multiple directories", []string{"-I", "data", "-I", "misc"}, "data/direct.bin\nmisc/other.bin\n"},
+		{"root directory", []string{"-I", "."}, "root.bin\n"},
+		{"exact file with recursive", []string{"-r", "-I", "data/direct.bin"}, "data/direct.bin\n"},
+		{"glob", []string{"-I", "data/**"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetPullFlagsForTest()
+			repo := t.TempDir()
+			runGitCmdTest(t, repo, "init", "-q")
+			runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+			t.Chdir(repo)
+			if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.bin filter=drs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"data/direct.bin", "data/sub/nested.bin", "database/outside.bin", "misc/other.bin", "root.bin"} {
+				writePointerFile(t, filepath.Join(repo, path), strings.Repeat("a", 64), "7")
+			}
+			runGitCmdTest(t, repo, "add", ".")
+			writePointerFile(t, filepath.Join(repo, "data/untracked.bin"), strings.Repeat("b", 64), "7")
+			if err := os.WriteFile(filepath.Join(repo, "data/direct.bin"), []byte("hydrated content"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			Cmd.SetOut(&out)
+			Cmd.SetErr(&out)
+			t.Cleanup(func() {
+				resetPullFlagsForTest()
+				Cmd.SetOut(nil)
+				Cmd.SetErr(nil)
+			})
+			if err := Cmd.ParseFlags(append([]string{"--dry-run"}, tc.args...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := Cmd.RunE(Cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != tc.want {
+				t.Fatalf("selected files = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPullFromCurrentDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		cwd  string
+		args []string
+		want string
+	}{
+		{"data", nil, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data/sub", nil, "data/sub/nested.bin\n"},
+		{".", nil, "data/direct.bin\ndata/sub/nested.bin\nsibling/outside.bin\n"},
+		{"data", []string{"-I", "."}, "data/direct.bin\n"},
+		{"data", []string{"-r", "-I", "."}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data", []string{"-I", "sub"}, "data/sub/nested.bin\n"},
+		{"data", []string{"-I", "*.bin"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "direct.bin"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "data"}, "data/direct.bin\n"},
+		{"data", []string{"-I", "data/**"}, "data/direct.bin\ndata/sub/nested.bin\n"},
+		{"data", []string{"-I", "sibling"}, "sibling/outside.bin\n"},
+		{"data", []string{"-I", "../sibling"}, "sibling/outside.bin\n"},
+	} {
+		t.Run(tc.cwd+strings.Join(tc.args, " "), func(t *testing.T) {
+			resetPullFlagsForTest()
+			repo := t.TempDir()
+			runGitCmdTest(t, repo, "init", "-q")
+			runGitCmdTest(t, repo, "config", "filter.drs.clean", "cat")
+			if err := os.WriteFile(filepath.Join(repo, ".gitattributes"), []byte("*.bin filter=drs\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"data/direct.bin", "data/sub/nested.bin", "sibling/outside.bin"} {
+				writePointerFile(t, filepath.Join(repo, path), strings.Repeat("a", 64), "7")
+			}
+			runGitCmdTest(t, repo, "add", ".")
+			t.Chdir(filepath.Join(repo, tc.cwd))
+			var out bytes.Buffer
+			Cmd.SetOut(&out)
+			Cmd.SetErr(&out)
+			t.Cleanup(func() {
+				resetPullFlagsForTest()
+				Cmd.SetOut(nil)
+				Cmd.SetErr(nil)
+			})
+			if err := Cmd.ParseFlags(append([]string{"--dry-run"}, tc.args...)); err != nil {
+				t.Fatal(err)
+			}
+			if err := Cmd.RunE(Cmd, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := out.String(); got != tc.want {
+				t.Fatalf("selected files = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
+	resetPullFlagsForTest()
+	repo := t.TempDir()
+	t.Chdir(repo)
+	runGitCmdTest(t, repo, "init")
+
+	requests := 0
+	httpClient := &http.Client{Transport: pullRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requests++
+		if req.Method != http.MethodPost || req.URL.Path != "/index/bulk/hashes" {
+			t.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("unavailable")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldLoadCfg := loadCfg
+	oldResolveRemote := resolveRemote
+	oldNewRemoteClient := newRemoteClient
+	oldInventory := loadWorktreeInventory
+	oldWorktreeFile := loadWorktreeFile
+	t.Cleanup(func() {
+		loadCfg = oldLoadCfg
+		resolveRemote = oldResolveRemote
+		newRemoteClient = oldNewRemoteClient
+		loadWorktreeInventory = oldInventory
+		loadWorktreeFile = oldWorktreeFile
+		resetPullFlagsForTest()
+	})
+	loadCfg = func() (*config.Config, error) { return &config.Config{}, nil }
+	resolveRemote = func(*config.Config, string) (config.Remote, error) { return "origin", nil }
+	newRemoteClient = func(*config.Config, config.Remote, *slog.Logger) (*remoteruntime.GitContext, error) {
+		return &remoteruntime.GitContext{Client: client, Capabilities: remoteruntime.Capabilities{Resolve: true, Download: true}}, nil
+	}
+	loadWorktreeFile = func(_ context.Context, _ string, path string) (lfs.LfsFileInfo, bool, error) {
+		return lfs.LfsFileInfo{Name: path, Oid: strings.Repeat("a", 64), Size: 123}, true, nil
+	}
+	includePatterns = []string{"data.bin"}
+
+	err = Cmd.RunE(Cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "resolve DRS record and download access") {
+		t.Fatalf("pull error = %v, want checksum lookup failure", err)
+	}
+	if requests != 1 {
+		t.Fatalf("checksum lookup requests = %d, want one", requests)
 	}
 }
 
@@ -191,7 +594,7 @@ func TestPullUsesTrackedInventoryForHydratedFiles(t *testing.T) {
 		_ = os.Chdir(oldWD)
 	})
 
-	files, err := loadWorktreeInventory(drslog.NewNoOpLogger())
+	files, err := loadWorktreeInventory(drslog.NewNoOpLogger(), repo)
 	if err != nil {
 		t.Fatalf("loadWorktreeInventory error: %v", err)
 	}
@@ -340,7 +743,7 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: 100}}
 	progress.OnPlan(toPullFiles(files))
 
-	err = checkoutDownloadedFiles(files, progress, false)
+	_, err = checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath, nil)
 	if err == nil {
 		t.Fatal("expected checkoutDownloadedFiles to reject invalid cached object")
 	}
@@ -349,8 +752,154 @@ func TestCheckoutDownloadedFilesRejectsInvalidCachedObject(t *testing.T) {
 	}
 }
 
+func TestCheckoutDownloadedFilesReusesVerifiedWorktreeFile(t *testing.T) {
+	repo := t.TempDir()
+	t.Chdir(repo)
+	payload := []byte("already hydrated data")
+	sum := sha256.Sum256(payload)
+	file := pointerFile{Name: "data/file.bin", Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+	cacheRoot := gitrepo.LFSObjectsPath
+	cachePath, err := lfs.ObjectPath(cacheRoot, file.Oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(repo, file.Name)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles([]pointerFile{file}))
+	if _, err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot, nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(dst)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("verified worktree file was replaced: before=%v after=%v err=%v", before, after, err)
+	}
+	if err := os.WriteFile(dst, bytes.Repeat([]byte("x"), len(payload)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := checkoutDownloadedFiles(context.Background(), []pointerFile{file}, progress, false, cacheRoot, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil || !bytes.Equal(got, payload) {
+		t.Fatalf("changed worktree file was not restored: %q, %v", got, err)
+	}
+}
+
+func TestFreshDownloadIsVerifiedDuringAtomicCheckout(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content []byte
+		valid   bool
+	}{
+		{name: "valid", content: []byte("downloaded payload"), valid: true},
+		{name: "corrupt", content: []byte("corrupted  payload"), valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := t.TempDir()
+			t.Chdir(repo)
+			payload := []byte("downloaded payload")
+			sum := sha256.Sum256(payload)
+			file := pointerFile{Name: "data.bin", Oid: hex.EncodeToString(sum[:]), Size: int64(len(payload))}
+			cacheRoot := filepath.Join(repo, ".git", "lfs", "objects")
+			cachePath, err := lfs.ObjectPath(cacheRoot, file.Oid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(cachePath, tc.content, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			pointer := []byte("pointer remains until verified")
+			if err := os.WriteFile(file.Name, pointer, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+			progress.OnPlan(toPullFiles([]pointerFile{file}))
+			unverified := map[string]bool{file.Oid: true}
+			_, err = checkoutDownloadedFiles(t.Context(), []pointerFile{file}, progress, false, cacheRoot, unverified)
+			got, readErr := os.ReadFile(file.Name)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			_, markerErr := os.Stat(cacheVerificationPath(cachePath))
+			if tc.valid {
+				if err != nil || !bytes.Equal(got, payload) || unverified[file.Oid] || markerErr != nil {
+					t.Fatalf("valid checkout: err=%v content=%q pending=%v marker=%v", err, got, unverified[file.Oid], markerErr)
+				}
+			} else if err == nil || !bytes.Equal(got, pointer) || !unverified[file.Oid] || !os.IsNotExist(markerErr) {
+				t.Fatalf("corrupt checkout: err=%v content=%q pending=%v marker=%v", err, got, unverified[file.Oid], markerErr)
+			}
+		})
+	}
+}
+
+func TestCheckoutDownloadedFilesRejectsEscapingAndSymlinkPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink test skipped on Windows")
+	}
+	repo := t.TempDir()
+	t.Chdir(repo)
+	cacheRoot := gitrepo.LFSObjectsPath
+	payload := []byte("safe payload")
+	sum := sha256.Sum256(payload)
+	oid := hex.EncodeToString(sum[:])
+	cachePath, err := lfs.ObjectPath(cacheRoot, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sentinel"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	for _, name := range []string{"../outside.txt", "link/outside.txt"} {
+		if name == "link/outside.txt" {
+			if err := os.Symlink(filepath.Dir(outside), filepath.Join(repo, "link")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		files := []pointerFile{{Name: name, Oid: oid, Size: int64(len(payload))}}
+		progress.OnPlan(toPullFiles(files))
+		if _, err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath, nil); err == nil {
+			t.Fatalf("checkoutDownloadedFiles accepted unsafe path %q", name)
+		}
+	}
+	got, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "sentinel" {
+		t.Fatalf("outside sentinel was changed to %q", got)
+	}
+}
+
 func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
 	oldWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -383,7 +932,7 @@ func TestCheckedOutContentCleansBackToPointer(t *testing.T) {
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, false); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), files, progress, false, gitrepo.LFSObjectsPath, nil); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -438,7 +987,7 @@ func TestCheckoutDownloadedFilesFromReadOnlyRemoteSetsReadOnlyPermission(t *test
 	files := []pointerFile{{Name: "data/file.bin", Oid: oid, Size: int64(len(payload))}}
 	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
 	progress.OnPlan(toPullFiles(files))
-	if err := checkoutDownloadedFiles(files, progress, true); err != nil {
+	if _, err := checkoutDownloadedFiles(context.Background(), files, progress, true, gitrepo.LFSObjectsPath, nil); err != nil {
 		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
 
@@ -469,6 +1018,7 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	}
 
 	worktreePath := filepath.Join(repo, "sample.bin")
+	unrelatedPath := filepath.Join(repo, "unrelated.bin")
 	payload := []byte("hello world payload")
 	oid := "drs://drs.anv0:v2_example-without-sha256"
 	pointer := "version https://calypr.github.io/spec/v1\n" +
@@ -477,8 +1027,9 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	if err := os.WriteFile(worktreePath, []byte(pointer), 0o644); err != nil {
 		t.Fatalf("write DRS pointer: %v", err)
 	}
+	writePointerFile(t, unrelatedPath, strings.Repeat("a", 64), "37")
 
-	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin")
+	runGitCmdTest(t, repo, "add", ".gitattributes", "sample.bin", "unrelated.bin")
 	runGitCmdTest(t, repo, "commit", "-m", "commit pointer")
 
 	repoLFSRoot := filepath.Join(repo, ".git", "lfs", "objects")
@@ -507,25 +1058,37 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 		_ = os.Chdir(oldWD)
 	})
 
-	src, err := os.Open(cachePath)
+	files := []pointerFile{{Name: "sample.bin", Oid: oid, Size: int64(len(payload))}}
+	progress := internaltransfer.NewPullProgressRenderer(io.Discard)
+	progress.OnPlan(toPullFiles(files))
+	receipts, err := checkoutDownloadedFiles(context.Background(), files, progress, false, repoLFSRoot, nil)
 	if err != nil {
-		t.Fatalf("open cache payload: %v", err)
+		t.Fatalf("checkoutDownloadedFiles: %v", err)
 	}
-	defer src.Close()
-	dst, err := os.OpenFile(filepath.Join(repo, "sample.bin"), os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		t.Fatalf("open worktree file: %v", err)
+	if len(receipts) != len(files) {
+		t.Fatalf("checkout receipts = %d, want %d", len(receipts), len(files))
 	}
-	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
-		t.Fatalf("copy cache to worktree: %v", err)
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+	// A selected-path git add can run clean filters for other tracked files
+	// whose stat data changed. Keep this unrelated indexed pointer as raw
+	// pointer text to verify it follows ordinary clean behavior.
+	if err := os.Chtimes(unrelatedPath, time.Now().Add(2*time.Second), time.Now().Add(2*time.Second)); err != nil {
+		t.Fatalf("touch unrelated pointer: %v", err)
 	}
-	if err := dst.Close(); err != nil {
-		t.Fatalf("close worktree file: %v", err)
-	}
-
-	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: "sample.bin", Oid: oid, Size: int64(len(payload))}}); err != nil {
+	t.Setenv(internalfilter.IndexRefreshEnv, "stale")
+	t.Setenv(internalfilter.IndexRefreshReceiptsEnv, filepath.Join(t.TempDir(), "stale-manifest.json"))
+	if err := refreshGitIndexForHydratedFiles(files, receipts); err != nil {
 		t.Fatalf("refreshGitIndexForHydratedFiles: %v", err)
+	}
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatalf("read temporary receipt directory: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "git-drs-index-refresh-") {
+			t.Fatalf("receipt manifest remained after git add: %s", entry.Name())
+		}
 	}
 
 	after := runGitOutputTest(t, repo, "status", "--short", "--", "sample.bin")
@@ -535,6 +1098,82 @@ func TestRefreshGitIndexForHydratedFilesClearsDirtyStatus(t *testing.T) {
 	cached := runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
 	if strings.TrimSpace(cached) != "" {
 		t.Fatalf("expected no staged semantic diff after refresh, got %q", cached)
+	}
+	if !alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("clean hydrated file should need no checkout or index refresh on repeat pull")
+	}
+	runGitCmdTest(t, repo, "update-index", "--skip-worktree", "sample.bin")
+	if alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("skip-worktree index flag must not hide a file from pull")
+	}
+	runGitCmdTest(t, repo, "update-index", "--no-skip-worktree", "sample.bin")
+	unrelatedStatus := runGitOutputTest(t, repo, "status", "--short", "--", "unrelated.bin")
+	if strings.TrimSpace(unrelatedStatus) != "" {
+		t.Fatalf("unrelated indexed pointer became dirty after refresh: %q", unrelatedStatus)
+	}
+
+	changed := append([]byte(nil), payload...)
+	changed[0] ^= 1
+	if err := os.WriteFile(filepath.Join(repo, "sample.bin"), changed, 0o644); err != nil {
+		t.Fatalf("edit hydrated worktree file: %v", err)
+	}
+	if alreadyHydratedInGit(context.Background(), files, repo) {
+		t.Fatal("same-size worktree edit incorrectly skipped checkout")
+	}
+	modified := runGitOutputTest(t, repo, "status", "--short", "--", "sample.bin")
+	if !strings.Contains(modified, "sample.bin") || !strings.Contains(modified, " M") {
+		t.Fatalf("same-size edit was not reported as modified: %q", modified)
+	}
+	cached = runGitOutputTest(t, repo, "diff", "--cached", "--", "sample.bin")
+	if strings.TrimSpace(cached) != "" {
+		t.Fatalf("same-size worktree edit unexpectedly changed the index: %q", cached)
+	}
+}
+
+func TestAlreadyHydratedInGitRejectsUnhydratedPointerWithMatchingSize(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	t.Chdir(repo)
+	oid := strings.Repeat("a", 64)
+	size := 0
+	var pointer string
+	for {
+		pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + oid + "\nsize " + strconv.Itoa(size) + "\n"
+		if len(pointer) == size {
+			break
+		}
+		size = len(pointer)
+	}
+	if err := os.WriteFile("pointer.bin", []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmdTest(t, repo, "add", "pointer.bin")
+	if alreadyHydratedInGit(context.Background(), []pointerFile{{Name: "pointer.bin", Oid: oid, Size: int64(size)}}, repo) {
+		t.Fatal("indexed pointer text must not be mistaken for hydrated content")
+	}
+}
+
+func TestRefreshGitIndexPreservesLeadingSpacePath(t *testing.T) {
+	repo := t.TempDir()
+	runGitCmdTest(t, repo, "init")
+	const path = " lead.bin"
+	if err := os.WriteFile(filepath.Join(repo, path), []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWD) })
+	if err := refreshGitIndexForHydratedFiles([]pointerFile{{Name: path}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	staged := runGitOutputTest(t, repo, "diff", "--cached", "--name-only", "-z")
+	if staged != path+"\x00" {
+		t.Fatalf("staged path = %q, want exact leading-space path", staged)
 	}
 }
 

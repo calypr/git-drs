@@ -310,15 +310,15 @@ git add .gitattributes data/results.tsv
 git commit -m 'Add walkthrough results'
 git show HEAD:data/results.tsv
 cat data/results.tsv
-git drs ls-files
+git drs ls-files --all
 ```
 
 Expected observations:
 
 - `git show` displays a small LFS-compatible pointer with SHA-256 and size.
 - `cat` displays the original two-line TSV in the worktree.
-- `ls-files` lists the tracked file; `*` indicates hydrated content and `-`
-  indicates pointer-only worktree state.
+- `ls-files --all` lists the tracked file. `*` indicates hydrated content,
+  and `-` indicates pointer-only worktree state.
 
 This is the core demonstration: Git history contains the reference while the
 working file remains usable by ordinary analysis tools.
@@ -350,7 +350,7 @@ git drs remote add origin 'https://<gen3-host>' \
   --auth provider-helper:gen3-profile \
   --credential 'file:/absolute/path/to/consumer-credentials.json' \
   --checkout pointers
-git drs ls-files
+git drs ls-files --all
 git drs pull --dry-run -I 'data/*.tsv'
 git drs pull -I 'data/*.tsv'
 cat data/results.tsv

@@ -20,7 +20,7 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
@@ -44,6 +44,10 @@ var Cmd = &cobra.Command{
 		return cobra.ExactArgs(2)(cmd, args)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
 		if manifestPath != "" {
 			return runManifest(cmd, manifestPath)
 		}
@@ -99,13 +103,17 @@ var Cmd = &cobra.Command{
 			os.MkdirAll(dirPath, os.ModePerm)
 		}
 
-		if err := createAddRefPointer(&obj, dstPath, drsUri); err != nil {
+		if err := lfs.CreateDRSPointer(&obj, dstPath, drsUri); err != nil {
 			return err
 		}
-		if _, err := gitrepo.TrackReadOnly(cmd.Context(), args[1]); err != nil {
+		if _, err := gitrepo.TrackReadOnly(ctx, args[1]); err != nil {
 			return fmt.Errorf("track add-ref destination %s: %w", args[1], err)
 		}
-		if err := persistAddRefObject(&obj, drsUri, remoteName); err != nil {
+		paths, err := gitrepo.ResolveRepositoryPaths(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve local DRS objects: %w", err)
+		}
+		if err := persistAddRefObject(paths.DRSObjectsDir(), &obj, drsUri, remoteName); err != nil {
 			return fmt.Errorf("write source DRS metadata: %w", err)
 		}
 		return nil
@@ -166,6 +174,10 @@ type manifestEntry struct {
 }
 
 func runManifest(cmd *cobra.Command, filename string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	f, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("open manifest: %w", err)
@@ -245,7 +257,7 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		return err
 	}
 	for i := range entries {
-		obj, resolveErr := resolveAddRefObject(cmd.Context(), cfg, remoteName, runtime, entries[i].uri)
+		obj, resolveErr := resolveAddRefObject(ctx, cfg, remoteName, runtime, entries[i].uri)
 		if resolveErr != nil {
 			problems = append(problems, fmt.Sprintf("row %d: %v", i+2, resolveErr))
 			continue
@@ -254,7 +266,7 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if entries[i].size != nil && *entries[i].size != obj.Size {
 			problems = append(problems, fmt.Sprintf("row %d: asserted size %d does not match authoritative size %d", i+2, *entries[i].size, obj.Size))
 		}
-		authSHA := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
+		authSHA := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256)
 		if entries[i].sha256 != "" && !strings.EqualFold(entries[i].sha256, authSHA) {
 			problems = append(problems, fmt.Sprintf("row %d: asserted sha256 does not match authoritative checksum", i+2))
 		}
@@ -263,6 +275,14 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		return fmt.Errorf("manifest validation failed:\n- %s", strings.Join(problems, "\n- "))
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
+	objectsRoot := ""
+	if !dryRun {
+		paths, err := gitrepo.ResolveRepositoryPaths(ctx)
+		if err != nil {
+			return fmt.Errorf("resolve local DRS objects: %w", err)
+		}
+		objectsRoot = paths.DRSObjectsDir()
+	}
 	for _, e := range entries {
 		if dryRun {
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d\n", e.uri, e.path, e.object.Size)
@@ -271,14 +291,14 @@ func runManifest(cmd *cobra.Command, filename string) error {
 		if err := os.MkdirAll(filepath.Dir(e.destination), 0o755); err != nil {
 			return err
 		}
-		err = createAddRefPointer(&e.object, e.destination, e.uri)
+		err = lfs.CreateDRSPointer(&e.object, e.destination, e.uri)
 		if err != nil {
 			return err
 		}
-		if _, err := gitrepo.TrackReadOnly(cmd.Context(), e.path); err != nil {
+		if _, err := gitrepo.TrackReadOnly(ctx, e.path); err != nil {
 			return fmt.Errorf("track add-ref destination %s: %w", e.path, err)
 		}
-		if err := persistAddRefObject(&e.object, e.uri, remoteName); err != nil {
+		if err := persistAddRefObject(objectsRoot, &e.object, e.uri, remoteName); err != nil {
 			return fmt.Errorf("write source DRS metadata for %s: %w", e.path, err)
 		}
 	}
@@ -286,24 +306,16 @@ func runManifest(cmd *cobra.Command, filename string) error {
 	return nil
 }
 
-func persistAddRefObject(obj *drsapi.DrsObject, sourceURI string, remoteName config.Remote) error {
+func persistAddRefObject(objectsRoot string, obj *drsapi.DrsObject, sourceURI string, remoteName config.Remote) error {
 	if obj.SelfUri == "" {
 		obj.SelfUri = sourceURI
 	}
-	return drsobject.WriteObject(gitrepo.DRSObjectsPath, obj, addRefLocalOID(sourceURI, remoteName, obj))
-}
-
-// createAddRefPointer keeps the source authority in Git. The metadata written
-// under .git/drs is only a local cache, so a checksum-only pointer would leave
-// another clone unable to route hydration back to the authority that resolved
-// the reference.
-func createAddRefPointer(obj *drsapi.DrsObject, dst, sourceURI string) error {
-	return lfs.CreateDRSPointer(obj, dst, sourceURI)
+	return drsobject.WriteObject(objectsRoot, obj, addRefLocalOID(sourceURI, remoteName, obj))
 }
 
 func addRefLocalOID(sourceURI string, remoteName config.Remote, obj *drsapi.DrsObject) string {
 	if obj != nil {
-		if sha := drsobject.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
+		if sha := hash.NormalizeChecksum(hash.ConvertDrsChecksumsToHashInfo(obj.Checksums).SHA256); sha != "" {
 			return sha
 		}
 	}
@@ -404,9 +416,5 @@ func newAnonymousSourceDRSGetter(endpoint string) (drsObjectGetter, error) {
 	if err != nil {
 		return nil, err
 	}
-	client, ok := raw.(*syclient.Client)
-	if !ok {
-		return nil, fmt.Errorf("unexpected syfon client type %T", raw)
-	}
-	return client.DRS(), nil
+	return raw.DRS(), nil
 }

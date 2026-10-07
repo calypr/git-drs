@@ -3,20 +3,19 @@ package remote
 import (
 	"fmt"
 
-	calyprconf "github.com/calypr/calypr-cli/conf"
-	"github.com/calypr/calypr-cli/credentials"
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
 var (
 	loadConfig            = config.LoadConfig
-	loadProfileCredential = func(profile string) (*calyprconf.Credential, error) {
-		return calyprconf.NewConfigure(drslog.GetLogger()).Load(profile)
+	loadProfileCredential = func(profile string) (*syconf.Credential, error) {
+		return syconf.NewConfigure(drslog.GetLogger()).Load(profile)
 	}
-	ensureValidCredential = credentials.EnsureValidCredential
+	ensureValidCredential = remoteruntime.EnsureValidCredential
 )
 
 var ListCmd = &cobra.Command{

@@ -1,14 +1,22 @@
 package add
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	bucketapi "github.com/calypr/syfon/apigen/client/bucketapi"
+	"github.com/calypr/git-drs/internal/testutils"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syconf "github.com/calypr/syfon/client/config"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,6 +27,62 @@ func TestAddCmd(t *testing.T) {
 
 func TestGen3Cmd(t *testing.T) {
 	assert.Equal(t, "gen3 [remote-name] <organization/project>", Gen3Cmd.Use)
+	assert.Empty(t, Gen3Cmd.Deprecated)
+	assert.False(t, Gen3Cmd.Hidden)
+}
+
+func TestGen3InitRefreshesWithoutExistingProfileStore(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/credentials/api/access_token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"refreshed-token"}`))
+		case "/data/buckets":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/HTAN_INT/project/BForePC"]}}}`))
+		default:
+			t.Errorf("unexpected request path: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	apiKey, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"iss": server.URL,
+		"iat": time.Now().Add(-time.Hour).Unix(),
+		"exp": time.Now().Add(24 * time.Hour).Unix(),
+	}).SignedString([]byte("test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialFile := filepath.Join(home, "credentials.json")
+	credentialJSON, err := json.Marshal(map[string]string{"api_key": apiKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(credentialFile, credentialJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	if err := gen3Init("research", credentialFile, "", "", "HTAN_INT/BForePC", logger); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs.String(), "failed to save refreshed token") || strings.Contains(logs.String(), "error occurred when loading config file") {
+		t.Fatalf("unexpected credential save warning: %s", logs.String())
+	}
+	profile, err := syconf.NewConfigure(nil).Load("research")
+	if err != nil {
+		t.Fatalf("load saved Gen3 profile: %v", err)
+	}
+	if profile.AccessToken != "refreshed-token" {
+		t.Fatalf("saved access token = %q, want refreshed token", profile.AccessToken)
+	}
 }
 
 func TestParseScopeArg(t *testing.T) {
@@ -50,6 +114,22 @@ func TestParseScopeArg(t *testing.T) {
 }
 
 func TestResolveBucketScopeFromServer(t *testing.T) {
+	t.Run("rejects missing endpoint or token", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, endpoint, token, want string
+		}{
+			{name: "endpoint", endpoint: "", token: "test-token", want: "missing API endpoint"},
+			{name: "token", endpoint: "http://example.test", token: "", want: "missing access token"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := resolveBucketScopeFromServer(context.Background(), tc.endpoint, tc.token, "org", "project", "")
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("error = %v, want substring %q", err, tc.want)
+				}
+			})
+		}
+	})
+
 	t.Run("matches project resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/data/buckets" {
@@ -58,6 +138,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 				t.Fatalf("unexpected auth header: %q", got)
 			}
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/HTAN_INT/project/BForePC"]}}}`))
 		}))
 		defer srv.Close()
@@ -73,6 +154,7 @@ func TestResolveBucketScopeFromServer(t *testing.T) {
 
 	t.Run("falls back to org resource", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"S3_BUCKETS":{"cbds":{"programs":["/organization/HTAN_INT"]}}}`))
 		}))
 		defer srv.Close()

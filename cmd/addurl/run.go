@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/calypr/git-drs/internal/config"
@@ -11,7 +12,6 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	sycloud "github.com/calypr/syfon/client/cloud"
 	"github.com/spf13/cobra"
 )
 
@@ -127,12 +127,31 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	oid, err := s.ensureLFSObject(ctx, objectInfo, input, lfsRoot)
-	if err != nil {
-		return err
+	oid := input.sha256
+	if oid == "" {
+		oid, err = placeholderOIDForUnknownSHA(objectInfo.ETag, input.objectURL)
+		if err != nil {
+			return err
+		}
 	}
 
-	if err := writePointerFile(input.path, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
+	worktreeRoot, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("resolve worktree root: %w", err)
+	}
+	absolutePath, err := filepath.Abs(input.path)
+	if err != nil {
+		return fmt.Errorf("resolve destination path: %w", err)
+	}
+	relativePath, err := filepath.Rel(worktreeRoot, absolutePath)
+	if err != nil {
+		return fmt.Errorf("resolve repository destination: %w", err)
+	}
+	safePath, err := gitrepo.SafeWorktreePath(worktreeRoot, relativePath)
+	if err != nil {
+		return fmt.Errorf("invalid add-url destination: %w", err)
+	}
+	if err := writePointerFile(safePath, oid, objectInfo.SizeBytes, input.sha256 == ""); err != nil {
 		return err
 	}
 
@@ -151,17 +170,10 @@ func (s *AddURLService) Run(cmd *cobra.Command, args []string) error {
 		Oid:           oid,
 		ContentSHA256: input.sha256,
 	}
-	if _, err := writeAddURLDrsObject(builder, file, input.objectURL); err != nil {
+	objectsRoot := filepath.Join(gitCommonDir, "drs", "lfs", "objects")
+	if _, err := writeAddURLDrsObject(objectsRoot, builder, file, input.objectURL); err != nil {
 		return fmt.Errorf("write local DRS object: %w", err)
 	}
 
 	return nil
-}
-
-func (s *AddURLService) ensureLFSObject(_ context.Context, objectInfo *sycloud.ObjectInfo, input addURLInput, _ string) (string, error) {
-	if input.sha256 != "" {
-		return input.sha256, nil
-	}
-
-	return placeholderOIDForUnknownSHA(objectInfo.ETag, input.objectURL)
 }

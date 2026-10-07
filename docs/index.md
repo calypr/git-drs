@@ -28,7 +28,7 @@ resolve common problems.
   choose automatic, preferred, or required transfer methods and understand
   fallback and readiness diagnostics.
 - [Remove Files](remove-files.md) — remove tracked files and understand remote
-  reconciliation behavior.
+  record and payload retention.
 - [Troubleshooting](troubleshooting.md) — diagnose setup, authentication,
   tracking, push, and hydration problems.
 

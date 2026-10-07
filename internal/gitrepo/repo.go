@@ -1,9 +1,11 @@
 package gitrepo
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -35,21 +37,18 @@ func GitTopLevel() (string, error) {
 // GetGitConfigString reads a string value from git config using the git command
 // to ensure we pick up values from all scopes (system, global, local).
 func GetGitConfigString(key string) (string, error) {
-	cmd := exec.Command("git", "config", "--get", key)
-	out, err := cmd.Output()
+	out, err := gitConfigOutput("--get", key)
 	if err != nil {
-		// git config returns exit code 1 if the key is not found
-		return "", nil
+		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
 }
 
 // GetGitConfigStrings reads every value from all Git configuration scopes.
 func GetGitConfigStrings(key string) ([]string, error) {
-	cmd := exec.Command("git", "config", "--get-all", key)
-	out, err := cmd.Output()
+	out, err := gitConfigOutput("--get-all", key)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	var values []string
 	for _, value := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -58,6 +57,25 @@ func GetGitConfigStrings(key string) ([]string, error) {
 		}
 	}
 	return values, nil
+}
+
+func gitConfigOutput(args ...string) ([]byte, error) {
+	cmdArgs := append([]string{"config"}, args...)
+	cmd := exec.Command("git", cmdArgs...)
+	out, err := cmd.Output()
+	if err == nil {
+		return out, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(string(exitErr.Stderr)) == "" {
+		// git config uses status 1 when no matching key exists.
+		return nil, nil
+	}
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) != 0 {
+		return nil, fmt.Errorf("git config %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(exitErr.Stderr)))
+	}
+	return nil, fmt.Errorf("git config %s: %w", strings.Join(args, " "), err)
 }
 
 // GetGitConfigInt reads an integer value from git config
@@ -125,17 +143,11 @@ func UnsetGitConfigOptions(keys []string) error {
 	return nil
 }
 
-// GetGitHooksDir returns the absolute path to the .git/hooks directory
+// GetGitHooksDir returns the absolute path Git uses for hooks.
 func GetGitHooksDir() (string, error) {
-	repo, err := GetRepo()
+	paths, err := ResolveRepositoryPaths(context.Background())
 	if err != nil {
 		return "", err
 	}
-	wt, err := repo.Worktree()
-	if err != nil {
-		return "", err
-	}
-	// This is a simplification; for complex setups (submodules, worktrees),
-	// we might need more robust logic, but this matches previous behavior.
-	return filepath.Join(wt.Filesystem.Root(), ".git", "hooks"), nil
+	return paths.HooksDir, nil
 }

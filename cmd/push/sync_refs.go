@@ -12,7 +12,6 @@ type syncRefState struct {
 	TargetOID string
 	AckRef    string
 	AckOID    string
-	RemoteOID string
 }
 
 func resolveSyncRefState(ctx context.Context, remote string) (syncRefState, error) {
@@ -36,7 +35,7 @@ func resolveSyncRefState(ctx context.Context, remote string) (syncRefState, erro
 	remoteRef = "refs/heads/" + strings.TrimPrefix(remoteRef, "refs/heads/")
 	ackRef := "refs/git-drs/synced/" + strings.TrimPrefix(remoteRef, "refs/")
 
-	remoteOID, ackOID, err := readRemoteSyncRefs(ctx, remote, remoteRef, ackRef)
+	_, ackOID, err := readRemoteSyncRefs(ctx, remote, remoteRef, ackRef)
 	if err != nil {
 		return syncRefState{}, err
 	}
@@ -53,7 +52,6 @@ func resolveSyncRefState(ctx context.Context, remote string) (syncRefState, erro
 		TargetOID: targetOID,
 		AckRef:    ackRef,
 		AckOID:    ackOID,
-		RemoteOID: remoteOID,
 	}, nil
 }
 

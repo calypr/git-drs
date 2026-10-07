@@ -37,7 +37,7 @@ func collectOversizedPlainGitStagedFiles(ctx context.Context, changes []Change, 
 
 		_, isLFS, err := stagedLFSOID(ctx, path)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("inspect staged file %q: %w", path, err)
 		}
 		if isLFS {
 			continue

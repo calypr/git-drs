@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/calypr/git-drs/internal/gitrepo"
-	"github.com/go-git/go-git/v5"
 	"gopkg.in/yaml.v3"
 )
 
@@ -209,11 +208,6 @@ func (c Config) listRemoteNames() []string {
 	return names
 }
 
-// getRepo opens the current git repository
-func getRepo() (*git.Repository, error) {
-	return gitrepo.GetRepo()
-}
-
 // updates and git adds a Git DRS config file
 // this should handle three cases:
 // 1. create a new config file if it does not exist / is empty
@@ -221,7 +215,7 @@ func getRepo() (*git.Repository, error) {
 // 3. update the existing config file, making sure to combine the new serversMap with the existing one
 // UpdateRemote updates and saves configuration using go-git
 func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +250,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 			remoteSubsection.SetOption("organization", remote.Gen3.Organization)
 		}
 		if remote.Gen3.StoragePrefix != "" {
-			remoteSubsection.SetOption("storage_prefix", remote.Gen3.StoragePrefix)
+			remoteSubsection.SetOption("storage-prefix", remote.Gen3.StoragePrefix)
 		}
 	} else if remote.Terra != nil {
 		remoteSubsection.SetOption("type", "terra")
@@ -280,7 +274,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 			remoteSubsection.SetOption("organization", remote.Local.Organization)
 		}
 		if remote.Local.StoragePrefix != "" {
-			remoteSubsection.SetOption("storage_prefix", remote.Local.StoragePrefix)
+			remoteSubsection.SetOption("storage-prefix", remote.Local.StoragePrefix)
 		}
 	} else if remote.Generic != nil {
 		r := remote.Generic
@@ -479,7 +473,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 				scalars["project"],
 				scalars["bucket"],
 				scalars["organization"],
-				scalars["storage_prefix"],
+				scalars["storage-prefix"],
 				scalars["auth"],
 				scalars["mode"],
 			)
@@ -506,7 +500,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 
 // LoadConfig loads configuration using go-git
 func LoadConfig() (*Config, error) {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +552,7 @@ func LoadConfig() (*Config, error) {
 					subsection.Option("project"),
 					subsection.Option("bucket"),
 					subsection.Option("organization"),
-					subsection.Option("storage_prefix"),
+					subsection.Option("storage-prefix"),
 					subsection.Option("auth"),
 					subsection.Option("mode"),
 				)
@@ -593,13 +587,13 @@ func CreateEmptyConfig() error {
 	// With go-git, we just verify we are in a repo?
 	// Existing behavior was ensuring file existence.
 	// We can check if we can open the repo.
-	_, err := getRepo()
+	_, err := gitrepo.GetRepo()
 	return err
 }
 
 // SaveConfig writes the configuration using go-git
 func SaveConfig(cfg *Config) error {
-	repo, err := getRepo()
+	repo, err := gitrepo.GetRepo()
 	if err != nil {
 		return err
 	}
@@ -634,7 +628,7 @@ func RemoveRemote(name Remote) (*Config, error) {
 		fmt.Sprintf("drs.remote.%s.project", name),
 		fmt.Sprintf("drs.remote.%s.bucket", name),
 		fmt.Sprintf("drs.remote.%s.organization", name),
-		fmt.Sprintf("drs.remote.%s.storage_prefix", name),
+		fmt.Sprintf("drs.remote.%s.storage-prefix", name),
 		fmt.Sprintf("drs.remote.%s.auth", name),
 		fmt.Sprintf("drs.remote.%s.mode", name),
 		fmt.Sprintf("drs.remote.%s.provider", name),

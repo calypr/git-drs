@@ -16,10 +16,12 @@ import (
 	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 )
 
-func writeDrsMap(pathname string, oid string, size int64) error {
+const IndexRefreshEnv = "GIT_DRS_INDEX_REFRESH"
+
+func writeDrsMap(objectsRoot, pathname string, oid string, size int64) error {
 	name := filepath.Base(pathname)
 	drsObj := &drsapi.DrsObject{
 		Name: &name,
@@ -28,7 +30,7 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		},
 	}
-	if existing, err := drsobject.ReadObject(gitrepo.DRSObjectsPath, oid); err == nil && existing != nil {
+	if existing, err := drsobject.ReadObject(objectsRoot, oid); err == nil && existing != nil {
 		drsObj = existing
 		drsObj.Name = &name
 		drsObj.Size = size
@@ -36,10 +38,31 @@ func writeDrsMap(pathname string, oid string, size int64) error {
 			{Type: "sha256", Checksum: oid},
 		}
 	}
-	return drsobject.WriteObject(gitrepo.DRSObjectsPath, drsObj, oid)
+	return drsobject.WriteObject(objectsRoot, drsObj, oid)
 }
 
-func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+func CleanContent(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+	objectsRoot, err := gitrepo.ResolveDRSObjectsDir(ctx)
+	if err != nil {
+		return fmt.Errorf("clean: resolve DRS object store: %w", err)
+	}
+	return CleanContentWithRoots(ctx, lfsRoot, objectsRoot, pathname, content, dst, logger)
+}
+
+func CleanContentWithRoots(ctx context.Context, lfsRoot, drsObjectsRoot, pathname string, content io.Reader, dst io.Writer, logger *slog.Logger) (retErr error) {
+	if os.Getenv(IndexRefreshEnv) == "1" {
+		paths, receipts, err := readIndexRefreshManifest()
+		if err != nil {
+			return fmt.Errorf("clean: load index refresh manifest: %w", err)
+		}
+		refreshPath, err := normalizeIndexRefreshPath(pathname)
+		if err != nil {
+			return fmt.Errorf("clean: %w", err)
+		}
+		if _, selected := paths[refreshPath]; selected {
+			return cleanIndexedPointerForRefresh(ctx, lfsRoot, pathname, content, dst, receipts)
+		}
+	}
 	objDir := filepath.Join(lfsRoot, "objects")
 	if err := os.MkdirAll(objDir, 0o755); err != nil {
 		return fmt.Errorf("clean: mkdir LFS objects: %w", err)
@@ -75,7 +98,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 	// file, preserve that indexed pointer if its recorded checksum proves the
 	// worktree payload is unchanged. Otherwise hydration would turn the URI
 	// pointer into a SHA256 LFS pointer and appear as a staged modification.
-	if pointer, ok := matchingIndexedDRSPointer(pathname, oid, size); ok {
+	if pointer, ok := matchingIndexedDRSPointer(pathname, oid, size, lfsRoot); ok {
 		if _, err := dst.Write(pointer); err != nil {
 			return fmt.Errorf("clean: write indexed DRS pointer: %w", err)
 		}
@@ -92,7 +115,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 				// DRS URI pointers already carry their durable lookup identity. The
 				// SHA256-keyed sidecar map is only applicable to SHA256 pointers.
 				if !lfs.IsDRSURI(pointerOID) && !lfs.IsPlaceholderPointer(data) {
-					if mapErr := writeDrsMap(pathname, pointerOID, pointerSize); mapErr != nil {
+					if mapErr := writeDrsMap(drsObjectsRoot, pathname, pointerOID, pointerSize); mapErr != nil {
 						logger.Warn("clean: failed to write DRS map entry for existing pointer", "pathname", pathname, "error", mapErr)
 					}
 				}
@@ -102,7 +125,7 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 		}
 	}
 
-	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, oid)
+	cachePath, err := lfs.ObjectPath(objDir, oid)
 	if err != nil {
 		return fmt.Errorf("clean: resolve cache path: %w", err)
 	}
@@ -123,14 +146,102 @@ func CleanContent(_ context.Context, lfsRoot, pathname string, content io.Reader
 		return fmt.Errorf("clean: write pointer: %w", err)
 	}
 
-	if mapErr := writeDrsMap(pathname, oid, size); mapErr != nil {
+	if mapErr := writeDrsMap(drsObjectsRoot, pathname, oid, size); mapErr != nil {
 		logger.Warn("clean: failed to write DRS map entry", "pathname", pathname, "error", mapErr)
 	}
 
 	return nil
 }
 
-func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte, bool) {
+func cleanIndexedPointerForRefresh(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, receipts map[string]IndexRefreshReceipt) error {
+	return cleanIndexedPointerForRefreshWithHasher(ctx, lfsRoot, pathname, content, dst, receipts, hashIndexedRefreshContent)
+}
+
+func cleanIndexedPointerForRefreshWithHasher(ctx context.Context, lfsRoot, pathname string, content io.Reader, dst io.Writer, receipts map[string]IndexRefreshReceipt, hashContent func(io.Reader) (int64, string, error)) error {
+	pathname = filepath.ToSlash(filepath.Clean(pathname))
+	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
+		return fmt.Errorf("refresh index: invalid path %q", pathname)
+	}
+	pointer, err := exec.CommandContext(ctx, "git", "show", ":"+pathname).Output()
+	if err != nil {
+		return fmt.Errorf("refresh index: read indexed pointer for %s: %w", pathname, err)
+	}
+	pointerOID, pointerSize, ok := lfs.ParseLFSPointer(pointer)
+	if !ok {
+		return fmt.Errorf("refresh index: %s is not an indexed DRS pointer", pathname)
+	}
+	if receipt, ok := matchingIndexRefreshReceipt(receipts, pathname, pointerOID, pointerSize, pointer); ok {
+		before, err := os.Lstat(pathname)
+		if err == nil && receipt.Matches(pathname, before) {
+			size, copyErr := io.Copy(io.Discard, content)
+			if copyErr != nil {
+				return fmt.Errorf("refresh index: read %s: %w", pathname, copyErr)
+			}
+			after, statErr := os.Lstat(pathname)
+			if statErr != nil || !receipt.Matches(pathname, after) || size != receipt.Size {
+				return fmt.Errorf("refresh index: %s changed during checkout index refresh", pathname)
+			}
+			if _, err := dst.Write(pointer); err != nil {
+				return fmt.Errorf("refresh index: write pointer for %s: %w", pathname, err)
+			}
+			return nil
+		}
+	}
+	size, actual, err := hashContent(content)
+	if err != nil {
+		return fmt.Errorf("refresh index: read %s: %w", pathname, err)
+	}
+	if size != pointerSize {
+		return fmt.Errorf("refresh index: %s changed size during checkout", pathname)
+	}
+	if lfs.IsDRSURI(pointerOID) || lfs.IsPlaceholderPointer(pointer) {
+		cachedOID, ok := cachedObjectOID(pointerOID, size, lfsRoot)
+		if !ok || cachedOID != actual {
+			return fmt.Errorf("refresh index: %s changed after checkout", pathname)
+		}
+	} else if !strings.EqualFold(pointerOID, actual) {
+		return fmt.Errorf("refresh index: %s changed after checkout", pathname)
+	}
+	if _, err := dst.Write(pointer); err != nil {
+		return fmt.Errorf("refresh index: write pointer for %s: %w", pathname, err)
+	}
+	return nil
+}
+
+func hashIndexedRefreshContent(content io.Reader) (int64, string, error) {
+	h := sha256.New()
+	size, err := io.Copy(h, content)
+	if err != nil {
+		return 0, "", err
+	}
+	return size, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func matchingIndexRefreshReceipt(receipts map[string]IndexRefreshReceipt, pathname, pointerOID string, pointerSize int64, pointer []byte) (IndexRefreshReceipt, bool) {
+	receipt, ok := receipts[pathname]
+	if !ok || receipt.OID != pointerOID || receipt.Size != pointerSize {
+		return IndexRefreshReceipt{}, false
+	}
+	if pointerSHA256 := indexedPointerSHA256(pointer); pointerSHA256 != "" && !strings.EqualFold(pointerSHA256, receipt.SHA256) {
+		return IndexRefreshReceipt{}, false
+	}
+	if !lfs.IsDRSURI(pointerOID) && !lfs.IsPlaceholderPointer(pointer) && !strings.EqualFold(pointerOID, receipt.SHA256) {
+		return IndexRefreshReceipt{}, false
+	}
+	return receipt, true
+}
+
+func indexedPointerSHA256(pointer []byte) string {
+	for _, line := range strings.Split(string(pointer), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && strings.EqualFold(fields[0], "sha256") {
+			return strings.TrimPrefix(strings.ToLower(fields[1]), "sha256:")
+		}
+	}
+	return ""
+}
+
+func matchingIndexedDRSPointer(pathname, contentOID string, size int64, lfsRoot string) ([]byte, bool) {
 	pathname = filepath.ToSlash(filepath.Clean(pathname))
 	if pathname == "." || pathname == ".." || strings.HasPrefix(pathname, "../") {
 		return nil, false
@@ -148,7 +259,7 @@ func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte,
 	// Some DRS services do not publish a SHA256 checksum. In that case compare
 	// the worktree payload with the validated object cached by pull. This keeps
 	// status clean without hiding a same-sized edit made after hydration.
-	if cachedOID, ok := cachedObjectOID(pointerOID, size); ok && cachedOID == contentOID {
+	if cachedOID, ok := cachedObjectOID(pointerOID, size, lfsRoot); ok && cachedOID == contentOID {
 		return pointer, true
 	}
 	for _, line := range strings.Split(string(pointer), "\n") {
@@ -170,8 +281,8 @@ func matchingIndexedDRSPointer(pathname, contentOID string, size int64) ([]byte,
 	return nil, false
 }
 
-func cachedObjectOID(pointerOID string, size int64) (string, bool) {
-	cachePath, err := lfs.ObjectPath(gitrepo.LFSObjectsPath, pointerOID)
+func cachedObjectOID(pointerOID string, size int64, lfsRoot string) (string, bool) {
+	cachePath, err := lfs.ObjectPath(filepath.Join(lfsRoot, "objects"), pointerOID)
 	if err != nil {
 		return "", false
 	}

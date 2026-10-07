@@ -1,10 +1,10 @@
 package initialize
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -49,8 +49,7 @@ var Cmd = &cobra.Command{
 // InitializeRepo applies git-drs repository-local setup to the current git repository.
 // It is safe to call repeatedly.
 func InitializeRepo(logg *slog.Logger) error {
-	// check if .git dir exists to ensure you're in a git repository
-	_, err := gitrepo.GitTopLevel()
+	paths, err := gitrepo.ResolveRepositoryPaths(context.Background())
 	if err != nil {
 		return fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 	}
@@ -69,8 +68,8 @@ func InitializeRepo(logg *slog.Logger) error {
 	}
 
 	// create drs directories
-	drsDir := gitrepo.DRSDir
-	drsLfsObjsDir := gitrepo.DRSObjectsPath
+	drsDir := paths.DRSDir()
+	drsLfsObjsDir := paths.DRSObjectsDir()
 	if err := os.MkdirAll(drsDir, 0755); err != nil {
 		return fmt.Errorf("error: unable to create drs directory: %v", err)
 	}
@@ -110,11 +109,12 @@ func EnsureInitialized(logg *slog.Logger) error {
 }
 
 func isInitialized() (bool, error) {
-	if _, err := gitrepo.GitTopLevel(); err != nil {
+	paths, err := gitrepo.ResolveRepositoryPaths(context.Background())
+	if err != nil {
 		return false, fmt.Errorf("error: not in a git repository. Please run this command in the root of your git repository")
 	}
 
-	if _, err := os.Stat(gitrepo.DRSDir); err != nil {
+	if _, err := os.Stat(paths.DRSDir()); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
@@ -199,13 +199,10 @@ func init() {
 }
 
 func installPreCommitHook(logger *slog.Logger) error {
-	cmd := exec.Command("git", "rev-parse", "--git-dir")
-	cmdOut, err := cmd.Output()
+	hooksDir, err := gitrepo.GetGitHooksDir()
 	if err != nil {
-		return fmt.Errorf("unable to locate git directory: %w", err)
+		return fmt.Errorf("unable to locate hooks directory: %w", err)
 	}
-	gitDir := strings.TrimSpace(string(cmdOut))
-	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("unable to create hooks directory: %w", err)
 	}

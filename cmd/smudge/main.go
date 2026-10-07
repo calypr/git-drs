@@ -9,6 +9,8 @@ import (
 	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	internalfilter "github.com/calypr/git-drs/internal/filter"
+	"github.com/calypr/git-drs/internal/gitrepo"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
@@ -43,6 +45,10 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	pathname := args[0]
 	logger := drslog.GetLogger()
 	logger.Debug("smudge: starting", "pathname", pathname)
+	objectsRoot, err := lfs.ResolveObjectsRoot(ctx)
+	if err != nil {
+		return fmt.Errorf("smudge: resolve LFS objects root: %w", err)
+	}
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -53,7 +59,7 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, config.ErrNoDefaultRemote) {
 			logger.Debug("smudge: no default remote configured; passing through pointer", "pathname", pathname)
-			return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, nil)
+			return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, pathname, os.Stdin, os.Stdout, logger, nil)
 		}
 		return fmt.Errorf("smudge: get default remote: %w", err)
 	}
@@ -62,6 +68,12 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("smudge: create DRS client: %w", err)
 	}
+	worktreeRoot, err := gitrepo.GitTopLevel()
+	if err != nil {
+		return fmt.Errorf("smudge: resolve worktree root: %w", err)
+	}
+	drsCtx.LFSObjectsRoot = objectsRoot
+	drsCtx.RepositoryRoot = worktreeRoot
 
 	var downloadFn internalfilter.SmudgeDownloadFunc
 	if !internalfilter.ShouldSkipSmudge() {
@@ -83,7 +95,5 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	return internalfilter.SmudgeContent(ctx, pathname, os.Stdin, os.Stdout, logger, downloadFn)
+	return internalfilter.SmudgeContentWithObjectsRoot(ctx, objectsRoot, pathname, os.Stdin, os.Stdout, logger, downloadFn)
 }
-
-func init() {}

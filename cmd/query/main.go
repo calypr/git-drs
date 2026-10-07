@@ -10,7 +10,7 @@ import (
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
+	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/client/hash"
 	"github.com/spf13/cobra"
 )

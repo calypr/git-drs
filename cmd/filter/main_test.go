@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"testing"
 
 	internalfilter "github.com/calypr/git-drs/internal/filter"
@@ -42,8 +42,10 @@ func TestSmudgeHandlerUsesTerraResolver(t *testing.T) {
 	defer server.Close()
 
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".git", "lfs", "objects"), 0o755); err != nil {
-		t.Fatal(err)
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repo
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
 	}
 	oldWD, err := os.Getwd()
 	if err != nil {

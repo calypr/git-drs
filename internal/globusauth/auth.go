@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/scttfrdmn/globus-go-sdk/v4/pkg/authorizers"
@@ -86,6 +87,40 @@ type Client struct {
 	authorizer core.Authorizer
 	httpClient *http.Client
 	baseURL    string
+}
+
+type persistentRefreshAuthorizer struct {
+	core.Authorizer
+	mu      sync.Mutex
+	saveErr error
+}
+
+func (a *persistentRefreshAuthorizer) recordSaveError(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.saveErr = err
+}
+
+func (a *persistentRefreshAuthorizer) storageError() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.saveErr
+}
+
+func (a *persistentRefreshAuthorizer) GetAuthorizationHeader(ctx context.Context) (string, error) {
+	header, err := a.Authorizer.GetAuthorizationHeader(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := a.storageError(); err != nil {
+		return "", fmt.Errorf("save refreshed Globus token: %w", err)
+	}
+	return header, nil
+}
+
+func (a *persistentRefreshAuthorizer) HandleMissingAuthorization(ctx context.Context) bool {
+	refreshed := a.Authorizer.HandleMissingAuthorization(ctx)
+	return refreshed && a.storageError() == nil
 }
 
 type TransferItem struct {
@@ -271,7 +306,8 @@ func newClient(ctx context.Context, allowEnvironmentToken bool) (*Client, error)
 				storage.Close()
 				return nil, err
 			}
-			authorizer = authorizers.NewRefreshTokenAuthorizer(
+			persistent := &persistentRefreshAuthorizer{}
+			persistent.Authorizer = authorizers.NewRefreshTokenAuthorizer(
 				token.RefreshToken,
 				clientID,
 				strings.TrimSpace(os.Getenv(ClientSecretEnv)),
@@ -280,9 +316,10 @@ func newClient(ctx context.Context, allowEnvironmentToken bool) (*Client, error)
 					token.AccessToken = accessToken
 					token.RefreshToken = refreshToken
 					token.ExpiresAt = expiresAt
-					_ = storage.Store(token)
+					persistent.recordSaveError(storage.Store(token))
 				}),
 			)
+			authorizer = persistent
 		}
 	}
 

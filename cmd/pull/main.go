@@ -113,6 +113,11 @@ var Cmd = &cobra.Command{
 		}
 		pointers := collectPointerFiles(inventory, patterns, gitPaths.DRSObjectsDir())
 		if len(pointers) == 0 {
+			if path, exact := exactIncludePath(patterns); exact {
+				if _, statErr := os.Stat(filepath.Join(inventoryRoot, filepath.FromSlash(path))); os.IsNotExist(statErr) {
+					return fmt.Errorf("include path %q does not exist in this repository", path)
+				}
+			}
 			logg.Debug("no matching pointer files to hydrate")
 			return nil
 		}

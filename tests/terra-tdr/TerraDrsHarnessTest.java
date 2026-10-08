@@ -139,11 +139,7 @@ class TerraDrsHarnessTest {
   // Prefixing 1614321 avoids colliding with the original fixture path used by existing scenarios.
   private static final List<FixtureObject> FIXTURE_OBJECTS =
       List.of(
-          new FixtureObject(
-              OBJECT_ID,
-              FILE_ID,
-              "1614321.merge_output.gvcf.gz",
-              FIXTURE_BYTES),
+          new FixtureObject(OBJECT_ID, FILE_ID, "1614321.merge_output.gvcf.gz", FIXTURE_BYTES),
           new FixtureObject(
               "v2_c5ae75de-1f5c-3d40-bcd9-02f827fbf2d3",
               GREGOR_1614321_FILE_ID,
@@ -377,7 +373,9 @@ class TerraDrsHarnessTest {
         SNAPSHOT_ID,
         DATASET_ID);
     List<DrsId> objectIds =
-        FIXTURE_OBJECTS.stream().map(fixture -> drsIdService.fromObjectId(fixture.drsId())).toList();
+        FIXTURE_OBJECTS.stream()
+            .map(fixture -> drsIdService.fromObjectId(fixture.drsId()))
+            .toList();
     if (drsDao.recordDrsIdToSnapshot(SNAPSHOT_ID, objectIds) != FIXTURE_OBJECTS.size()) {
       throw new IllegalStateException("TDR DrsDao did not insert all fixture DRS mappings");
     }

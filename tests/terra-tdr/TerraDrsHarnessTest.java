@@ -30,7 +30,6 @@ import java.util.zip.CRC32C;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
@@ -59,7 +58,8 @@ class TerraDrsHarnessTest {
   private static final String OBJECT_ID = "v2_4f770147-e372-339b-b9fa-0a7a83cf30cf";
   private static final String ACCESS_ID = "https-access";
   private static final byte[] FIXTURE_BYTES =
-      "git-drs Terra DRS HTTP integration fixture\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      "git-drs Terra DRS HTTP integration fixture\n"
+          .getBytes(java.nio.charset.StandardCharsets.UTF_8);
   private static final Duration STOP_TIMEOUT = Duration.ofMinutes(2);
 
   @LocalServerPort private int port;

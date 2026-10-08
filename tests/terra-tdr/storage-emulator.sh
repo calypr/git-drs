@@ -14,6 +14,10 @@ start_storage_emulator() {
   mkdir -p "$seed_dir/fixture-bucket"
   printf 'git-drs Terra DRS HTTP integration fixture\n' \
     >"$seed_dir/fixture-bucket/1614321.merge_output.gvcf.gz"
+  printf 'synthetic GREGoR 1614321 fixture; not genomic data\n' \
+    >"$seed_dir/fixture-bucket/gregor-1614321.merge_output.gvcf.gz"
+  printf 'synthetic GREGoR 1614322 fixture; not genomic data\n' \
+    >"$seed_dir/fixture-bucket/1614322.merge_output.gvcf.gz"
 
   docker run --detach --rm \
     --name "$STORAGE_CONTAINER" \
@@ -54,6 +58,11 @@ stop_storage_emulator() {
 }
 
 storage_object_download_count() {
+  local filename=${1:-}
+  local marker='GET /fixture-bucket/'
+  if [[ -n "$filename" ]]; then
+    marker="GET /fixture-bucket/$filename?X-Goog-Algorithm="
+  fi
   docker logs "$STORAGE_CONTAINER" 2>&1 |
-    python3 -c 'import sys; marker = "GET /fixture-bucket/1614321.merge_output.gvcf.gz?X-Goog-Algorithm="; print(sum(marker in line for line in sys.stdin))'
+    python3 -c 'import sys; marker = sys.argv[1]; print(sum(marker in line and "X-Goog-Algorithm=" in line for line in sys.stdin))' "$marker"
 }

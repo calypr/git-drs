@@ -182,6 +182,7 @@ cli_binary="$coord_dir/git-drs-linux"
 GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -o "$cli_binary" .
 if ! GIT_DRS_BINARY="$cli_binary" \
   GIT_DRS_HUB_HTTP_ENDPOINT="http://127.0.0.1:$hub_port" \
+  GIT_DRS_TDR_HTTP_ENDPOINT="http://127.0.0.1:$tdr_port" \
   GIT_DRS_TDR_PROXY_LOG="$proxy_log" \
   GIT_DRS_TDR_GCS_ENDPOINT="${STORAGE_EMULATOR_HTTP_ENDPOINT/127.0.0.1/host.docker.internal}" \
   GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE="$signing_public_key_file" \
@@ -195,8 +196,8 @@ if ! GIT_DRS_BINARY="$cli_binary" \
 fi
 
 downloads=$(storage_object_download_count)
-if [[ "$downloads" != 1 ]]; then
-  echo "GCS emulator served $downloads object downloads, want exactly one" >&2
+if [[ "$downloads" != 3 ]]; then
+  echo "GCS emulator served $downloads object downloads, want exactly three" >&2
   docker logs "$STORAGE_CONTAINER" >&2 || true
   exit 1
 fi

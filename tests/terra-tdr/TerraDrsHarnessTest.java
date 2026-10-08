@@ -120,6 +120,10 @@ class TerraDrsHarnessTest {
   private static final String OBJECT_ID = "v2_4f770147-e372-339b-b9fa-0a7a83cf30cf";
   private static final UUID SNAPSHOT_ID = UUID.fromString("11111111-2222-4333-8444-555555555555");
   private static final UUID FILE_ID = UUID.fromString("4f770147-e372-339b-b9fa-0a7a83cf30cf");
+  private static final UUID GREGOR_1614321_FILE_ID =
+      UUID.fromString("c5ae75de-1f5c-3d40-bcd9-02f827fbf2d3");
+  private static final UUID GREGOR_1614322_FILE_ID =
+      UUID.fromString("4872d195-f80a-3662-90a7-2aa90e0a7f53");
   private static final UUID BILLING_PROFILE_ID =
       UUID.fromString("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
   private static final UUID DATASET_ID = UUID.fromString("bbbbbbbb-cccc-4ddd-8eee-ffffffffffff");
@@ -130,6 +134,28 @@ class TerraDrsHarnessTest {
   private static final byte[] FIXTURE_BYTES =
       "git-drs Terra DRS HTTP integration fixture\n"
           .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  // IDs and sample names are inspired by GREGoR records; these payloads are tiny synthetic text,
+  // and each seeded size/checksum reflects the synthetic bytes rather than the public file.
+  // Prefixing 1614321 avoids colliding with the original fixture path used by existing scenarios.
+  private static final List<FixtureObject> FIXTURE_OBJECTS =
+      List.of(
+          new FixtureObject(
+              OBJECT_ID,
+              FILE_ID,
+              "1614321.merge_output.gvcf.gz",
+              FIXTURE_BYTES),
+          new FixtureObject(
+              "v2_c5ae75de-1f5c-3d40-bcd9-02f827fbf2d3",
+              GREGOR_1614321_FILE_ID,
+              "gregor-1614321.merge_output.gvcf.gz",
+              "synthetic GREGoR 1614321 fixture; not genomic data\n"
+                  .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+          new FixtureObject(
+              "v2_4872d195-f80a-3662-90a7-2aa90e0a7f53",
+              GREGOR_1614322_FILE_ID,
+              "1614322.merge_output.gvcf.gz",
+              "synthetic GREGoR 1614322 fixture; not genomic data\n"
+                  .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
   private static final Duration STOP_TIMEOUT = Duration.ofMinutes(20);
   @LocalServerPort private int port;
   private HttpServer tokenServer;
@@ -273,30 +299,35 @@ class TerraDrsHarnessTest {
   private void seedFirestoreFile() throws Exception {
     Snapshot snapshot = fixtureSnapshot();
     Dataset dataset = snapshot.getFirstSnapshotSource().getDataset();
-    fireStoreDao.upsertFileMetadata(
+    for (FixtureObject fixture : FIXTURE_OBJECTS) {
+      fireStoreDao.upsertFileMetadata(
+          dataset,
+          new FireStoreFile()
+              .fileId(fixture.fileId().toString())
+              .fileCreatedDate("2026-10-07T00:00:00Z")
+              .gspath("gs://fixture-bucket/" + fixture.filename())
+              .checksumCrc32c(crc32cHex(fixture.bytes()))
+              .checksumMd5(md5Hex(fixture.bytes()))
+              .size((long) fixture.bytes().length)
+              .mimeType("application/gzip")
+              .description("Synthetic CI fixture; no real genomic payload")
+              .bucketResourceId("fixture-bucket-resource")
+              .loadTag("git-drs-ci"));
+      fireStoreDao.createDirectoryEntry(
+          dataset,
+          new FireStoreDirectoryEntry()
+              .fileId(fixture.fileId().toString())
+              .isFileRef(true)
+              .path("/")
+              .name(fixture.filename())
+              .datasetId(dataset.getId().toString())
+              .fileCreatedDate("2026-10-07T00:00:00Z")
+              .loadTag("git-drs-ci"));
+    }
+    fireStoreDao.addFilesToSnapshot(
         dataset,
-        new FireStoreFile()
-            .fileId(FILE_ID.toString())
-            .fileCreatedDate("2026-10-07T00:00:00Z")
-            .gspath("gs://fixture-bucket/1614321.merge_output.gvcf.gz")
-            .checksumCrc32c(fixtureFile().getChecksumCrc32c())
-            .checksumMd5(fixtureFile().getChecksumMd5())
-            .size((long) FIXTURE_BYTES.length)
-            .mimeType("application/gzip")
-            .description("CI file fixture")
-            .bucketResourceId("fixture-bucket-resource")
-            .loadTag("git-drs-ci"));
-    fireStoreDao.createDirectoryEntry(
-        dataset,
-        new FireStoreDirectoryEntry()
-            .fileId(FILE_ID.toString())
-            .isFileRef(true)
-            .path("/")
-            .name("1614321.merge_output.gvcf.gz")
-            .datasetId(dataset.getId().toString())
-            .fileCreatedDate("2026-10-07T00:00:00Z")
-            .loadTag("git-drs-ci"));
-    fireStoreDao.addFilesToSnapshot(dataset, snapshot, java.util.List.of(FILE_ID.toString()));
+        snapshot,
+        FIXTURE_OBJECTS.stream().map(fixture -> fixture.fileId().toString()).toList());
   }
 
   private void migrateAndSeedDrsRecord() throws Exception {
@@ -345,9 +376,10 @@ class TerraDrsHarnessTest {
         "INSERT INTO snapshot_source (snapshot_id, dataset_id) VALUES (?, ?)",
         SNAPSHOT_ID,
         DATASET_ID);
-    DrsId objectId = drsIdService.fromObjectId(OBJECT_ID);
-    if (drsDao.recordDrsIdToSnapshot(SNAPSHOT_ID, java.util.List.of(objectId)) != 1) {
-      throw new IllegalStateException("TDR DrsDao did not insert the fixture DRS mapping");
+    List<DrsId> objectIds =
+        FIXTURE_OBJECTS.stream().map(fixture -> drsIdService.fromObjectId(fixture.drsId())).toList();
+    if (drsDao.recordDrsIdToSnapshot(SNAPSHOT_ID, objectIds) != FIXTURE_OBJECTS.size()) {
+      throw new IllegalStateException("TDR DrsDao did not insert all fixture DRS mappings");
     }
   }
 
@@ -388,29 +420,22 @@ class TerraDrsHarnessTest {
                                     .googleProjectId("fixture-dataset-project")))));
   }
 
-  private static FSFile fixtureFile() {
+  private static String crc32cHex(byte[] bytes) {
     java.util.zip.CRC32C crc32c = new java.util.zip.CRC32C();
-    crc32c.update(FIXTURE_BYTES, 0, FIXTURE_BYTES.length);
-    String crcHex = String.format("%08x", crc32c.getValue());
-    String md5Hex;
+    crc32c.update(bytes, 0, bytes.length);
+    return String.format("%08x", crc32c.getValue());
+  }
+
+  private static String md5Hex(byte[] bytes) {
     try {
-      md5Hex =
-          java.util.HexFormat.of()
-              .formatHex(java.security.MessageDigest.getInstance("MD5").digest(FIXTURE_BYTES));
+      return java.util.HexFormat.of()
+          .formatHex(java.security.MessageDigest.getInstance("MD5").digest(bytes));
     } catch (java.security.NoSuchAlgorithmException e) {
       throw new IllegalStateException(e);
     }
-    return new FSFile()
-        .fileId(FILE_ID)
-        .path("1614321.merge_output.gvcf.gz")
-        .cloudPath("gs://fixture-bucket/1614321.merge_output.gvcf.gz")
-        .cloudPlatform(CloudPlatform.GCP)
-        .bucketResourceId("fixture-bucket-resource")
-        .createdDate(java.time.Instant.parse("2026-10-07T00:00:00Z"))
-        .size((long) FIXTURE_BYTES.length)
-        .checksumCrc32c(crcHex)
-        .checksumMd5(md5Hex);
   }
+
+  private record FixtureObject(String drsId, UUID fileId, String filename, byte[] bytes) {}
 
   private static Path requiredPath(String envName) {
     String value = System.getenv(envName);

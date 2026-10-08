@@ -9,8 +9,8 @@ fi
 git_drs_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 tdr_root=$(cd "$1" && pwd)
 hub_root=$(cd "$2" && pwd)
-source "$git_drs_root/tests/terra-tdr/firestore-emulator.sh"
-source "$git_drs_root/tests/terra-tdr/storage-emulator.sh"
+source "$git_drs_root/tests/terra-drs-hub/firestore-emulator.sh"
+source "$git_drs_root/tests/terra-drs-hub/storage-emulator.sh"
 coord_dir=$(mktemp -d)
 port_file="$coord_dir/tdr-port"
 stop_file="$coord_dir/tdr-stop"
@@ -25,7 +25,7 @@ private_key="$coord_dir/localhost.key"
 truststore="$coord_dir/truststore.p12"
 signing_public_key_file="$coord_dir/tdr-signing-public-key.pem"
 
-cp "$git_drs_root/tests/terra-tdr/TerraDrsHarnessTest.java" \
+cp "$git_drs_root/tests/terra-drs-hub/TerraDrsHarnessTest.java" \
   "$tdr_root/src/test/java/bio/terra/service/filedata/TerraDrsHarnessTest.java"
 cp "$git_drs_root/tests/terra-drs-hub/TerraDrsHubIntegrationTest.java" \
   "$hub_root/service/src/test/java/bio/terra/drshub/controllers/TerraDrsHubIntegrationTest.java"

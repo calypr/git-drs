@@ -501,6 +501,9 @@ func TestIntegrationPullThroughTerraHubAndTDR(t *testing.T) {
 	}
 
 	// Remove the already verified object so this request must authenticate and resolve remotely.
+	if err := os.Remove(filepath.Join(repo, fixtures[0].filename)); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repo, fixtures[0].filename), []byte(pointers[fixtures[0].filename]), 0o644); err != nil {
 		t.Fatal(err)
 	}

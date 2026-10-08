@@ -24,8 +24,12 @@ import bio.terra.service.configuration.ConfigEnum;
 import bio.terra.service.configuration.ConfigurationService;
 import bio.terra.service.dataset.Dataset;
 import bio.terra.service.dataset.DatasetDao;
+import bio.terra.service.dataset.DatasetRelationshipDao;
 import bio.terra.service.dataset.DatasetService;
 import bio.terra.service.dataset.DatasetSummary;
+import bio.terra.service.dataset.DatasetTableDao;
+import bio.terra.service.dataset.AssetDao;
+import bio.terra.service.dataset.StorageResourceDao;
 import bio.terra.service.duos.DuosClient;
 import bio.terra.service.duos.DuosDao;
 import bio.terra.service.filedata.google.firestore.EncodeFixture;
@@ -52,6 +56,11 @@ import bio.terra.service.snapshot.SnapshotTableDao;
 import bio.terra.service.snapshotbuilder.SnapshotBuilderSettingsDao;
 import bio.terra.service.snapshotbuilder.SnapshotRequestDao;
 import bio.terra.service.tabulardata.google.bigquery.BigQuerySnapshotPdao;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import com.google.auth.oauth2.ServiceAccountCredentials;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
@@ -97,7 +106,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * A real HTTP harness for git-drs Terra DRS integration tests. The TDR API controller, generated
- * API mapping, DrsService, SnapshotService, SnapshotDao, FireStoreDao, and the GCS client are real.
+ * API mapping, DrsService, SnapshotService, SnapshotDao, DatasetDao, FireStoreDao, and the GCS
+ * client are real.
  * The test stays alive until the CI driver creates GIT_DRS_TDR_STOP_FILE.
  */
 @SpringBootTest(
@@ -131,13 +141,11 @@ class TerraDrsHarnessTest {
   @MockitoBean private DatasetService datasetService;
   @MockitoBean private LoadService loadService;
   @MockitoBean private ProfileService profileService;
-  @MockitoBean private DatasetDao datasetDao;
   @MockitoBean private JournalService journalService;
   @MockitoBean private DuosDao duosDao;
   @MockitoBean private FireStoreDependencyDao dependencyDao;
   @MockitoBean private BigQuerySnapshotPdao bigQuerySnapshotPdao;
   @MockitoBean private SnapshotRequestDao snapshotRequestDao;
-  @MockitoBean private SnapshotTableDao snapshotTableDao;
   @MockitoBean private SnapshotRelationshipDao snapshotRelationshipDao;
   @MockitoBean private MetadataDataAccessUtils metadataDataAccessUtils;
   @MockitoBean private EcmService ecmService;
@@ -180,16 +188,16 @@ class TerraDrsHarnessTest {
             });
     when(drsConfiguration.maxDrsLookups()).thenReturn(10);
     when(jobService.getActivePodCount()).thenReturn(1);
-    when(datasetDao.retrieve(DATASET_ID))
-        .thenReturn(fixtureSnapshot().getFirstSnapshotSource().getDataset());
-    when(snapshotTableDao.retrieveTables(SNAPSHOT_ID)).thenReturn(java.util.List.of());
     when(resourceService.getProjectResource(SNAPSHOT_PROJECT_RESOURCE_ID))
         .thenReturn(
             new GoogleProjectResource()
                 .id(SNAPSHOT_PROJECT_RESOURCE_ID)
                 .googleProjectId("fixture-snapshot-project"));
-    when(dataRepoJdbcConfiguration.getDataSource())
-        .thenReturn(org.mockito.Mockito.mock(org.apache.commons.dbcp2.PoolingDataSource.class));
+    when(resourceService.getProjectResource(DATASET_PROJECT_RESOURCE_ID))
+        .thenReturn(
+            new GoogleProjectResource()
+                .id(DATASET_PROJECT_RESOURCE_ID)
+                .googleProjectId("fixture-dataset-project"));
     when(configurationService.<Integer>getParameterValue(any()))
         .thenAnswer(
             invocation ->
@@ -215,11 +223,22 @@ class TerraDrsHarnessTest {
     tokenServer.start();
     var keyPairGenerator = KeyPairGenerator.getInstance("RSA");
     keyPairGenerator.initialize(2048);
+    var signingKeyPair = keyPairGenerator.generateKeyPair();
     String privateKeyPem =
         "-----BEGIN PRIVATE KEY-----\n"
             + Base64.getMimeEncoder(64, new byte[] {'\n'})
-                .encodeToString(keyPairGenerator.generateKeyPair().getPrivate().getEncoded())
+                .encodeToString(signingKeyPair.getPrivate().getEncoded())
             + "\n-----END PRIVATE KEY-----\n";
+    String publicKeyPath = System.getenv("GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE");
+    if (publicKeyPath == null || publicKeyPath.isBlank()) {
+      throw new IllegalStateException("GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE must be set");
+    }
+    Files.writeString(
+        Path.of(publicKeyPath),
+        "-----BEGIN PUBLIC KEY-----\n"
+            + Base64.getMimeEncoder(64, new byte[] {'\n'})
+                .encodeToString(signingKeyPair.getPublic().getEncoded())
+            + "\n-----END PUBLIC KEY-----\n");
     var storageCredentials =
         ServiceAccountCredentials.fromPkcs8(
             "git-drs-ci@fixture.invalid",
@@ -306,11 +325,17 @@ class TerraDrsHarnessTest {
         "100000000002",
         BILLING_PROFILE_ID);
     jdbcTemplate.update(
-        "INSERT INTO dataset (id, name, default_profile_id, project_resource_id, sharedlock, tags) VALUES (?, ?, ?, ?, '{}', ARRAY[]::TEXT[])",
+        "INSERT INTO dataset (id, name, default_profile_id, project_resource_id, self_hosted, sharedlock, tags) VALUES (?, ?, ?, ?, TRUE, '{}', ARRAY[]::TEXT[])",
         DATASET_ID,
         "git-drs-ci-fixture",
         BILLING_PROFILE_ID,
         DATASET_PROJECT_RESOURCE_ID);
+    jdbcTemplate.update(
+        "INSERT INTO storage_resource (dataset_id, region, cloud_resource, cloud_platform) VALUES (?, ?, ?, ?)",
+        DATASET_ID,
+        "US_CENTRAL1",
+        "FIRESTORE",
+        "GCP");
     jdbcTemplate.update(
         "INSERT INTO snapshot (id, name, profile_id, project_resource_id) VALUES (?, ?, ?, ?)",
         SNAPSHOT_ID,
@@ -414,11 +439,26 @@ class TerraDrsHarnessTest {
     DrsIdService.class,
     DrsService.class,
     FileService.class,
+    DatasetDao.class,
+    DatasetTableDao.class,
+    AssetDao.class,
+    DatasetRelationshipDao.class,
+    StorageResourceDao.class,
     SnapshotDao.class,
     SnapshotService.class,
-    SnapshotMapTableDao.class
+    SnapshotMapTableDao.class,
+    SnapshotTableDao.class
   })
   static class HarnessApplication {
+    @org.springframework.context.annotation.Bean(name = "daoObjectMapper")
+    ObjectMapper daoObjectMapper() {
+      return new ObjectMapper()
+          .registerModule(new ParameterNamesModule())
+          .registerModule(new Jdk8Module())
+          .registerModule(new JavaTimeModule())
+          .configure(MapperFeature.ACCEPT_CASE_INSENSITIVE_VALUES, true);
+    }
+
     @org.springframework.context.annotation.Bean
     ApplicationConfiguration applicationConfiguration() {
       ApplicationConfiguration configuration = new ApplicationConfiguration();

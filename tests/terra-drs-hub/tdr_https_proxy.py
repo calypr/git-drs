@@ -38,9 +38,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
             "path": self.path,
             "authorization": self.headers.get("Authorization", ""),
         }
-        with open(request_log, "a", encoding="utf-8") as log:
-            log.write(json.dumps(request) + "\n")
-
         connection = http.client.HTTPConnection(upstream.hostname, upstream.port, timeout=30)
         try:
             headers = {
@@ -50,6 +47,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             }
             connection.request(self.command, self.path, body=body, headers=headers)
             response = connection.getresponse()
+            request["status"] = response.status
             response_body = response.read()
             self.send_response(response.status, response.reason)
             for name, value in response.getheaders():
@@ -61,6 +59,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 self.wfile.write(response_body)
         except Exception as error:  # Return the forwarding failure to the real Hub client.
+            request["status"] = 502
             response_body = str(error).encode("utf-8")
             self.send_response(502)
             self.send_header("Content-Length", str(len(response_body)))
@@ -68,6 +67,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(response_body)
         finally:
+            with open(request_log, "a", encoding="utf-8") as log:
+                log.write(json.dumps(request) + "\n")
             connection.close()
 
     def log_message(self, format, *args):

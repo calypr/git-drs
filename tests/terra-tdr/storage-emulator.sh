@@ -16,7 +16,7 @@ start_storage_emulator() {
 
   docker run --detach --rm \
     --name "$STORAGE_CONTAINER" \
-    --publish "127.0.0.1:$requested_port:8000" \
+    --publish "$requested_port:8000" \
     --volume "$seed_dir:/seed:ro" \
     fsouza/fake-gcs-server@sha256:797ce226d62f947c009dc40246b30cfb456b8473d8241407f9d6f2c04e4d69ef \
     -backend filesystem \
@@ -24,7 +24,7 @@ start_storage_emulator() {
     -filesystem-root /storage \
     -scheme http \
     -port 8000 \
-    -public-host "$STORAGE_EMULATOR_HOST" >/dev/null
+    -public-host "host.docker.internal:$requested_port" >/dev/null
 
   for ((attempt = 0; attempt < 60; attempt++)); do
     if curl --fail --silent "$STORAGE_EMULATOR_HTTP_ENDPOINT/_internal/healthcheck" >/dev/null; then

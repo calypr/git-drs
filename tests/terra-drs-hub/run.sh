@@ -23,6 +23,7 @@ hub_compile_log="$coord_dir/hub-compile.log"
 certificate="$coord_dir/localhost.crt"
 private_key="$coord_dir/localhost.key"
 truststore="$coord_dir/truststore.p12"
+signing_public_key_file="$coord_dir/tdr-signing-public-key.pem"
 
 cp "$git_drs_root/tests/terra-tdr/TerraDrsHarnessTest.java" \
   "$tdr_root/src/test/java/bio/terra/service/filedata/TerraDrsHarnessTest.java"
@@ -72,6 +73,7 @@ start_storage_emulator "$coord_dir/gcs-seed"
 (
   cd "$tdr_root"
   GIT_DRS_TDR_PORT_FILE="$port_file" GIT_DRS_TDR_STOP_FILE="$stop_file" \
+    GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE="$signing_public_key_file" \
     FIRESTORE_EMULATOR_HOST="$FIRESTORE_EMULATOR_HOST" \
     GIT_DRS_TDR_GCS_ENDPOINT="$STORAGE_EMULATOR_HTTP_ENDPOINT" \
     ./gradlew testUnit --tests bio.terra.service.filedata.TerraDrsHarnessTest \
@@ -176,9 +178,13 @@ fi
 
 hub_port=$(cat "$hub_port_file")
 cd "$git_drs_root"
-if ! GIT_DRS_HUB_HTTP_ENDPOINT="http://127.0.0.1:$hub_port" \
+cli_binary="$coord_dir/git-drs-linux"
+GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -o "$cli_binary" .
+if ! GIT_DRS_BINARY="$cli_binary" \
+  GIT_DRS_HUB_HTTP_ENDPOINT="http://127.0.0.1:$hub_port" \
   GIT_DRS_TDR_PROXY_LOG="$proxy_log" \
-  GIT_DRS_TDR_GCS_ENDPOINT="$STORAGE_EMULATOR_HTTP_ENDPOINT" \
+  GIT_DRS_TDR_GCS_ENDPOINT="${STORAGE_EMULATOR_HTTP_ENDPOINT/127.0.0.1/host.docker.internal}" \
+  GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE="$signing_public_key_file" \
   go test -race -tags=integration -count=1 ./cmd/pull \
     -run '^TestIntegrationPullThroughTerraHubAndTDR$' -v; then
   cat "$hub_log" >&2

@@ -12,6 +12,7 @@ coord_dir=$(mktemp -d)
 port_file="$coord_dir/port"
 stop_file="$coord_dir/stop"
 tdr_log="$coord_dir/tdr.log"
+signing_public_key_file="$coord_dir/tdr-signing-public-key.pem"
 
 source "$git_drs_root/tests/terra-tdr/firestore-emulator.sh"
 source "$git_drs_root/tests/terra-tdr/storage-emulator.sh"
@@ -26,6 +27,7 @@ cp "$git_drs_root/tests/terra-tdr/TerraDrsHarnessTest.java" \
 (
   cd "$tdr_root"
   GIT_DRS_TDR_PORT_FILE="$port_file" GIT_DRS_TDR_STOP_FILE="$stop_file" \
+    GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE="$signing_public_key_file" \
     FIRESTORE_EMULATOR_HOST="$FIRESTORE_EMULATOR_HOST" \
     GIT_DRS_TDR_GCS_ENDPOINT="$STORAGE_EMULATOR_HTTP_ENDPOINT" \
     ./gradlew testUnit --tests bio.terra.service.filedata.TerraDrsHarnessTest \
@@ -64,6 +66,7 @@ port=$(cat "$port_file")
 cd "$git_drs_root"
 if ! GIT_DRS_TDR_HTTP_ENDPOINT="http://127.0.0.1:$port" \
   GIT_DRS_TDR_GCS_ENDPOINT="$STORAGE_EMULATOR_HTTP_ENDPOINT" \
+  GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE="$signing_public_key_file" \
   go test -race -tags=integration -count=1 ./cmd/pull \
     -run '^TestIntegrationPullAgainstTDRController$' -v; then
   cat "$tdr_log" >&2

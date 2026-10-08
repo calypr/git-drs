@@ -25,23 +25,28 @@ import (
 func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	endpoint := os.Getenv("GIT_DRS_TDR_HTTP_ENDPOINT")
 	gcsEndpoint := os.Getenv("GIT_DRS_TDR_GCS_ENDPOINT")
-	if endpoint == "" || gcsEndpoint == "" {
-		t.Skip("GIT_DRS_TDR_HTTP_ENDPOINT and GIT_DRS_TDR_GCS_ENDPOINT are required")
+	keyPath := os.Getenv("GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE")
+	if endpoint == "" || gcsEndpoint == "" || keyPath == "" {
+		t.Skip("GIT_DRS_TDR_HTTP_ENDPOINT, GIT_DRS_TDR_GCS_ENDPOINT, and GIT_DRS_TDR_SIGNING_PUBLIC_KEY_FILE are required")
+	}
+	publicKeyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read TDR signing public key: %v", err)
 	}
 	tdrURL, err := url.Parse(endpoint)
 	if err != nil || tdrURL.Scheme != "http" || tdrURL.Host == "" {
 		t.Fatalf("invalid local TDR endpoint %q", endpoint)
 	}
 
+	var requestMu sync.Mutex
+	var requestPaths []string
 	reverseProxy := httputil.NewSingleHostReverseProxy(tdrURL)
 	reverseProxy.ModifyResponse = func(response *http.Response) error {
 		if strings.Contains(response.Request.URL.Path, "/access/") {
-			return rewriteTDRSignedURLForEmulator(response, gcsEndpoint)
+			return rewriteTDRSignedURLForEmulator(response, gcsEndpoint, publicKeyPEM)
 		}
 		return nil
 	}
-	var requestMu sync.Mutex
-	var requestPaths []string
 	proxy := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestMu.Lock()
 		requestPaths = append(requestPaths, r.URL.Path)

@@ -75,3 +75,36 @@ jobs:
 
     - name: Run tests
       run: go test -v -race ./...
+
+  tdr-controller:
+    name: Pull through TDR controller
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Check out git-drs
+      uses: actions/checkout@v4
+
+    - name: Check out TDR
+      uses: actions/checkout@v4
+      with:
+        repository: DataBiosphere/jade-data-repo
+        ref: 6433cb4ea296edf873daa30f1da29e7caf848b8b
+        path: tdr
+        persist-credentials: false
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: tdr/build.gradle
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.6'
+
+    - name: Pull an AnVIL DRS pointer through TDR's controller
+      run: tests/terra-tdr/run.sh "$GITHUB_WORKSPACE/tdr"

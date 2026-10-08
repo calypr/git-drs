@@ -22,13 +22,13 @@ import bio.terra.service.auth.iam.IamService;
 import bio.terra.service.auth.ras.EcmService;
 import bio.terra.service.configuration.ConfigEnum;
 import bio.terra.service.configuration.ConfigurationService;
+import bio.terra.service.dataset.AssetDao;
 import bio.terra.service.dataset.Dataset;
 import bio.terra.service.dataset.DatasetDao;
 import bio.terra.service.dataset.DatasetRelationshipDao;
 import bio.terra.service.dataset.DatasetService;
 import bio.terra.service.dataset.DatasetSummary;
 import bio.terra.service.dataset.DatasetTableDao;
-import bio.terra.service.dataset.AssetDao;
 import bio.terra.service.dataset.StorageResourceDao;
 import bio.terra.service.duos.DuosClient;
 import bio.terra.service.duos.DuosDao;
@@ -107,8 +107,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 /**
  * A real HTTP harness for git-drs Terra DRS integration tests. The TDR API controller, generated
  * API mapping, DrsService, SnapshotService, SnapshotDao, DatasetDao, FireStoreDao, and the GCS
- * client are real.
- * The test stays alive until the CI driver creates GIT_DRS_TDR_STOP_FILE.
+ * client are real. The test stays alive until the CI driver creates GIT_DRS_TDR_STOP_FILE.
  */
 @SpringBootTest(
     classes = TerraDrsHarnessTest.HarnessApplication.class,

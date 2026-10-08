@@ -3,18 +3,30 @@ package pull
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"hash/crc32"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +37,7 @@ import (
 	"github.com/calypr/git-drs/internal/gitrepo"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/remoteruntime"
+	"github.com/calypr/git-drs/internal/resolver"
 	internaltransfer "github.com/calypr/git-drs/internal/transfer"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	syclient "github.com/calypr/syfon/client"
@@ -555,6 +568,392 @@ func TestPullSingleFileDoesNotRepeatFailedChecksumLookup(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("checksum lookup requests = %d, want one", requests)
 	}
+}
+
+type terraPullFixture struct {
+	repo          string
+	filename      string
+	oid           string
+	objectID      string
+	payload       []byte
+	resolver      *httptest.Server
+	data          *httptest.Server
+	mu            sync.Mutex
+	apiPaths      []string
+	dataRequests  []http.Header
+	tokenRequests int
+}
+
+type terraPullFixtureOptions struct {
+	resolverStatus int
+	useADC         bool
+	crcChecksum    string
+}
+
+func newTerraPullFixture(t *testing.T, checksum string, dataHandler http.HandlerFunc, options ...terraPullFixtureOptions) *terraPullFixture {
+	t.Helper()
+	resetPullFlagsForTest()
+	var opts terraPullFixtureOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	f := &terraPullFixture{
+		repo:     t.TempDir(),
+		filename: "1614321.merge_output.gvcf.gz",
+		oid:      "drs://drs.anv0:v2_4f770147-e372-339b-b9fa-0a7a83cf30cf",
+		objectID: "v2_4f770147-e372-339b-b9fa-0a7a83cf30cf",
+		payload:  []byte("AnVIL object content"),
+	}
+	actual := md5.Sum(f.payload)
+	if checksum == "" {
+		checksum = hex.EncodeToString(actual[:])
+	}
+	crcChecksum := fmt.Sprintf("%08x", crc32.Checksum(f.payload, crc32.MakeTable(crc32.Castagnoli)))
+	if opts.crcChecksum != "" {
+		crcChecksum = opts.crcChecksum
+	}
+	if dataHandler == nil {
+		dataHandler = func(w http.ResponseWriter, r *http.Request) {
+			if got := r.Header.Get("X-Access-Key"); got != "test-data-key" {
+				http.Error(w, "missing provider access header", http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write(f.payload)
+		}
+	}
+	f.data = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.dataRequests = append(f.dataRequests, r.Header.Clone())
+		f.mu.Unlock()
+		dataHandler(w, r)
+	}))
+	f.resolver = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" {
+			f.mu.Lock()
+			f.tokenRequests++
+			f.mu.Unlock()
+			if err := r.ParseForm(); err != nil || r.Form.Get("grant_type") != "urn:ietf:params:oauth:grant-type:jwt-bearer" || r.Form.Get("assertion") == "" {
+				http.Error(w, "invalid service-account token request", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"test-resolver-token","token_type":"Bearer","expires_in":3600}`))
+			return
+		}
+		f.mu.Lock()
+		f.apiPaths = append(f.apiPaths, r.URL.Path)
+		f.mu.Unlock()
+		if r.Header.Get("Authorization") != "Bearer test-resolver-token" {
+			http.Error(w, "missing resolver authorization", http.StatusUnauthorized)
+			return
+		}
+		if opts.resolverStatus != 0 {
+			http.Error(w, "resolver denied access", opts.resolverStatus)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/ga4gh/drs/v1/objects/" + f.objectID:
+			_, _ = fmt.Fprintf(w, `{"id":%q,"size":%d,"checksums":[{"type":"crc32c","checksum":%q},{"type":"md5","checksum":%q}],"access_methods":[{"type":"https","access_id":"access-1"}]}`, f.objectID, len(f.payload), crcChecksum, checksum)
+		case "/ga4gh/drs/v1/objects/" + f.objectID + "/access/access-1":
+			_, _ = fmt.Fprintf(w, `{"url":%q,"headers":["X-Access-Key: test-data-key"]}`, f.data.URL)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	if opts.useADC {
+		f.configureADC(t)
+	}
+
+	runGitCmdTest(t, f.repo, "init", "-q")
+	t.Chdir(f.repo)
+	if err := os.WriteFile(".gitattributes", []byte(f.filename+" filter=drs diff=drs merge=drs -text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pointer := fmt.Sprintf("version https://calypr.github.io/spec/v1\noid %s\nsize %d\n", f.oid, len(f.payload))
+	if err := os.WriteFile(f.filename, []byte(pointer), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmdTest(t, f.repo, "add", f.filename)
+
+	oldNewAnVILResolver := newAnVILResolver
+	t.Cleanup(func() {
+		newAnVILResolver = oldNewAnVILResolver
+		resetPullFlagsForTest()
+	})
+	if _, err := config.UpdateRemote("anvil", config.RemoteSelect{Terra: &config.TerraRemote{Endpoint: f.resolver.URL, Mode: "read-only"}}); err != nil {
+		t.Fatalf("configure Terra remote: %v", err)
+	}
+	newAnVILResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
+		if opts.useADC {
+			return resolver.NewAnVIL(ctx, endpoint)
+		}
+		client := f.resolver.Client()
+		base := client.Transport
+		client.Transport = pullRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			authorized := req.Clone(req.Context())
+			authorized.Header.Set("Authorization", "Bearer test-resolver-token")
+			return base.RoundTrip(authorized)
+		})
+		return resolver.NewAnVILWithClient(endpoint, client)
+	}
+	includePatterns = []string{f.filename}
+	t.Cleanup(func() {
+		f.resolver.Close()
+		f.data.Close()
+	})
+	return f
+}
+
+func (f *terraPullFixture) configureADC(t *testing.T) {
+	t.Helper()
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate service-account key: %v", err)
+	}
+	privateDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		t.Fatalf("marshal service-account key: %v", err)
+	}
+	credentials, err := json.Marshal(map[string]string{
+		"type":                        "service_account",
+		"project_id":                  "git-drs-test",
+		"private_key_id":              "test-key-id",
+		"private_key":                 string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER})),
+		"client_email":                "git-drs-test@example.iam.gserviceaccount.com",
+		"client_id":                   "1234567890",
+		"token_uri":                   f.resolver.URL + "/token",
+		"universe_domain":             "googleapis.com",
+		"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+	})
+	if err != nil {
+		t.Fatalf("marshal service-account credentials: %v", err)
+	}
+	credentialsPath := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(credentialsPath, credentials, 0o600); err != nil {
+		t.Fatalf("write service-account credentials: %v", err)
+	}
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", credentialsPath)
+
+	roots := x509.NewCertPool()
+	roots.AddCert(f.resolver.Certificate())
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Fatal("http.DefaultTransport is not an *http.Transport")
+	}
+	transport := baseTransport.Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	oldTransport, oldClient := http.DefaultTransport, http.DefaultClient
+	http.DefaultTransport = transport
+	client := *oldClient
+	client.Transport = transport
+	http.DefaultClient = &client
+	t.Cleanup(func() {
+		http.DefaultTransport = oldTransport
+		http.DefaultClient = oldClient
+	})
+}
+
+func (f *terraPullFixture) run(t *testing.T) error {
+	t.Helper()
+	return Cmd.RunE(Cmd, nil)
+}
+
+func (f *terraPullFixture) requests() ([]string, []http.Header) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	paths := append([]string(nil), f.apiPaths...)
+	data := make([]http.Header, len(f.dataRequests))
+	for i, headers := range f.dataRequests {
+		data[i] = headers.Clone()
+	}
+	return paths, data
+}
+
+func (f *terraPullFixture) tokenRequestCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.tokenRequests
+}
+
+func (f *terraPullFixture) assertHydrated(t *testing.T) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(f.repo, f.filename))
+	if err != nil {
+		t.Fatalf("read hydrated file: %v", err)
+	}
+	if !bytes.Equal(got, f.payload) {
+		t.Fatalf("hydrated content = %q, want %q", got, f.payload)
+	}
+}
+
+func (f *terraPullFixture) assertStillPointer(t *testing.T) {
+	t.Helper()
+	got, err := os.ReadFile(filepath.Join(f.repo, f.filename))
+	if err != nil {
+		t.Fatalf("read worktree pointer: %v", err)
+	}
+	if !bytes.Contains(got, []byte(f.oid)) {
+		t.Fatalf("worktree file after failed pull = %q, want original DRS pointer", got)
+	}
+}
+
+func TestPullTerraDRSURIUsesAuthenticatedAnVILResolverAndReusesCache(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil)
+	if err := f.run(t); err != nil {
+		t.Fatalf("Terra DRS URI pull failed: %v", err)
+	}
+	f.assertHydrated(t)
+	wantPaths := []string{
+		"/ga4gh/drs/v1/objects/" + f.objectID,
+		"/ga4gh/drs/v1/objects/" + f.objectID + "/access/access-1",
+	}
+	paths, dataRequests := f.requests()
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("AnVIL API paths = %v, want %v", paths, wantPaths)
+	}
+	if len(dataRequests) != 1 || dataRequests[0].Get("X-Access-Key") != "test-data-key" {
+		t.Fatalf("data request headers = %v, want one request with provider access header", dataRequests)
+	}
+	if err := f.run(t); err != nil {
+		t.Fatalf("second pull from local cache failed: %v", err)
+	}
+	pathsAfterReuse, dataAfterReuse := f.requests()
+	if !reflect.DeepEqual(pathsAfterReuse, paths) || len(dataAfterReuse) != len(dataRequests) {
+		t.Fatalf("cache reuse repeated network requests: API=%v data=%d; prior API=%v data=%d", pathsAfterReuse, len(dataAfterReuse), paths, len(dataRequests))
+	}
+	f.assertHydrated(t)
+}
+
+func TestPullTerraDRSURIUsesADCServiceAccountAgainstLocalTokenEndpoint(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil, terraPullFixtureOptions{useADC: true})
+	if err := f.run(t); err != nil {
+		t.Fatalf("Terra DRS URI pull with service-account ADC failed: %v", err)
+	}
+	f.assertHydrated(t)
+	if got := f.tokenRequestCount(); got != 1 {
+		t.Fatalf("OAuth token endpoint requests = %d, want one service-account token exchange", got)
+	}
+	paths, dataRequests := f.requests()
+	wantPaths := []string{
+		"/ga4gh/drs/v1/objects/" + f.objectID,
+		"/ga4gh/drs/v1/objects/" + f.objectID + "/access/access-1",
+	}
+	if !reflect.DeepEqual(paths, wantPaths) {
+		t.Fatalf("AnVIL API paths = %v, want %v", paths, wantPaths)
+	}
+	if len(dataRequests) != 1 || dataRequests[0].Get("X-Access-Key") != "test-data-key" {
+		t.Fatalf("data request headers = %v, want one request with provider access header", dataRequests)
+	}
+}
+
+func TestPullTerraDRSURIRejectsChecksumMismatch(t *testing.T) {
+	f := newTerraPullFixture(t, strings.Repeat("0", md5.Size*2), nil)
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("Terra pull error = %v, want checksum mismatch", err)
+	}
+	f.assertStillPointer(t)
+}
+
+func TestPullTerraDRSURIRejectsCRC32CMismatch(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil, terraPullFixtureOptions{crcChecksum: "00000000"})
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "crc32c") || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("Terra pull error = %v, want CRC32C checksum mismatch", err)
+	}
+	f.assertStillPointer(t)
+}
+
+func TestPullTerraDRSURIReportsUnauthorizedDataResponse(t *testing.T) {
+	f := newTerraPullFixture(t, "", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 401") {
+		t.Fatalf("Terra pull error = %v, want HTTP 401", err)
+	}
+	f.assertStillPointer(t)
+}
+
+func TestPullTerraDRSURIReportsUnauthorizedResolverResponse(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil, terraPullFixtureOptions{resolverStatus: http.StatusUnauthorized})
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "not authorized to access AnVIL DRS object") {
+		t.Fatalf("Terra pull error = %v, want resolver authorization error", err)
+	}
+	f.assertStillPointer(t)
+}
+
+func TestPullTerraDRSURIWithLargePointerReachesResolverBeforeAuthorizationFailure(t *testing.T) {
+	f := newTerraPullFixture(t, "", nil, terraPullFixtureOptions{resolverStatus: http.StatusUnauthorized})
+	pointer := "version https://calypr.github.io/spec/v1\n" +
+		"oid drs://drs.anv0:v2_4f770147-e372-339b-b9fa-0a7a83cf30cf\n" +
+		"size 6151668906\n"
+	if err := os.WriteFile(filepath.Join(f.repo, f.filename), []byte(pointer), 0o644); err != nil {
+		t.Fatalf("write large Terra pointer: %v", err)
+	}
+	runGitCmdTest(t, f.repo, "add", f.filename)
+
+	err := f.run(t)
+	if err == nil || !strings.Contains(err.Error(), "not authorized to access AnVIL DRS object") {
+		t.Fatalf("large Terra pointer pull error = %v, want resolver authorization error", err)
+	}
+	if strings.Contains(err.Error(), "DRS client unavailable") || strings.Contains(err.Error(), "by checksum") {
+		t.Fatalf("large Terra pointer was routed to checksum lookup: %v", err)
+	}
+	paths, _ := f.requests()
+	want := []string{"/ga4gh/drs/v1/objects/" + f.objectID}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("resolver API paths = %v, want object lookup %v", paths, want)
+	}
+	got, readErr := os.ReadFile(filepath.Join(f.repo, f.filename))
+	if readErr != nil || string(got) != pointer {
+		t.Fatalf("worktree pointer after resolver authorization failure = %q, %v", got, readErr)
+	}
+}
+
+func TestPullTerraDRSURIResumesInterruptedDownload(t *testing.T) {
+	const partialSize = 8
+	var dataCalls int
+	var f *terraPullFixture
+	f = newTerraPullFixture(t, "", func(w http.ResponseWriter, r *http.Request) {
+		dataCalls++
+		if dataCalls == 1 {
+			w.Header().Set("Content-Length", strconv.Itoa(len(f.payload)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(f.payload[:partialSize])
+			w.(http.Flusher).Flush()
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Errorf("hijack interrupted response: %v", err)
+				return
+			}
+			_ = conn.Close()
+			return
+		}
+		if got := r.Header.Get("Range"); got != "bytes=8-" {
+			http.Error(w, "expected resumed byte range", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", partialSize, len(f.payload)-1, len(f.payload)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(f.payload[partialSize:])
+	})
+	if err := f.run(t); err == nil {
+		t.Fatal("interrupted transfer unexpectedly succeeded")
+	}
+	if err := f.run(t); err != nil {
+		t.Fatalf("resumed Terra pull failed: %v", err)
+	}
+	if dataCalls != 2 {
+		t.Fatalf("data requests = %d, want initial transfer plus resumed request", dataCalls)
+	}
+	_, dataRequests := f.requests()
+	if len(dataRequests) != 2 || dataRequests[1].Get("Range") != "bytes=8-" {
+		t.Fatalf("resumption request headers = %v, want Range: bytes=8-", dataRequests)
+	}
+	f.assertHydrated(t)
 }
 
 func TestPullUsesTrackedInventoryForHydratedFiles(t *testing.T) {

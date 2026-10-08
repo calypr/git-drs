@@ -23,6 +23,7 @@ type GitContext struct {
 	Client                   *syclient.Client
 	RemoteType               config.RemoteType
 	Endpoint                 string
+	HubEndpoint              string
 	Organization             string
 	ProjectId                string
 	BucketName               string
@@ -102,7 +103,7 @@ func New(cfg *config.Config, remote config.Remote, logger *slog.Logger) (ctx *Gi
 		}
 		switch x.Generic.Provider {
 		case "terra":
-			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
+			return terraClient(config.TerraRemote{Endpoint: x.Generic.Endpoint, HubEndpoint: x.Generic.HubEndpoint, Auth: x.Generic.Auth, Mode: "read-only"}, logger)
 		case "gen3":
 			switch x.Generic.Auth {
 			case "bearer", "provider-helper", "provider-helper:gen3-profile":
@@ -133,6 +134,7 @@ func terraClient(remote config.TerraRemote, logger *slog.Logger) (*GitContext, e
 	return &GitContext{
 		RemoteType:   config.TerraServerType,
 		Endpoint:     remote.Endpoint,
+		HubEndpoint:  remote.HubEndpoint,
 		Logger:       logger,
 		Credential:   &syconf.Credential{APIEndpoint: remote.Endpoint},
 		Capabilities: Capabilities{Resolve: true, Download: true, ReadOnly: true},

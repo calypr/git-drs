@@ -8,8 +8,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -78,11 +80,29 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 		t.Fatalf("write source file: %v", err)
 	}
 	largePath := filepath.Join(repoDir, "data", "multipart.bin")
-	largeData := bytes.Repeat([]byte("syfon-git-drs-multipart-e2e-"), 7*1024*1024/len("syfon-git-drs-multipart-e2e-")+1)
-	largeData = largeData[:7*1024*1024]
-	if err := os.WriteFile(largePath, largeData, 0o644); err != nil {
-		t.Fatalf("write multipart file: %v", err)
+	largeMiB := int64(7)
+	if configured := os.Getenv("SYFON_E2E_LARGE_FILE_MIB"); configured != "" {
+		largeMiB, err = strconv.ParseInt(configured, 10, 64)
+		if err != nil || largeMiB < 1 {
+			t.Fatalf("invalid SYFON_E2E_LARGE_FILE_MIB: %q", configured)
+		}
 	}
+	largeSize := largeMiB * 1024 * 1024
+	block := bytes.Repeat([]byte("syfon-git-drs-multipart-e2e-"), 1024*1024/len("syfon-git-drs-multipart-e2e-")+1)[:1024*1024]
+	largeFile, err := os.Create(largePath)
+	if err != nil {
+		t.Fatalf("create multipart file: %v", err)
+	}
+	for i := int64(0); i < largeMiB; i++ {
+		if _, err := largeFile.Write(block); err != nil {
+			largeFile.Close()
+			t.Fatalf("write multipart block %d: %v", i, err)
+		}
+	}
+	if err := largeFile.Close(); err != nil {
+		t.Fatalf("close multipart file: %v", err)
+	}
+	largeSum := hashFile(t, largePath)
 	runCommand(t, repoDir, nil, "git", "drs", "track", "*.txt", "*.bin")
 	runCommand(t, repoDir, nil, "git", "config", "--local", "drs.multipart-threshold", fmt.Sprintf("%d", dockerE2EMultipartMB))
 	runCommand(t, repoDir, nil, "git", "add", ".gitattributes", "data/source.txt", "data/multipart.bin")
@@ -128,13 +148,15 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	runCommand(t, cloneDir, nil, "git", "config", "--local", "drs.multipart-threshold", fmt.Sprintf("%d", dockerE2EMultipartMB))
 	logRepoSnapshot(t, cloneDir, "pre-pull")
 
-	restoreLargeObject := temporarilyRemoveMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, largeDid, int64(len(largeData)))
-	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin"); err == nil {
-		t.Fatalf("expected first multipart pull to fail, but it succeeded:\n%s", out)
-	} else {
-		t.Logf("expected first multipart pull failure captured for retry path")
+	if largeMiB == 7 {
+		restoreLargeObject := temporarilyRemoveMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, largeDid, largeSize)
+		if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin"); err == nil {
+			t.Fatalf("expected first multipart pull to fail, but it succeeded:\n%s", out)
+		} else {
+			t.Logf("expected first multipart pull failure captured for retry path")
+		}
+		restoreLargeObject()
 	}
-	restoreLargeObject()
 	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin")
 	logRepoSnapshot(t, cloneDir, "post-pull")
 
@@ -145,17 +167,18 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	if !bytes.Equal(got, smallData) {
 		t.Fatalf("pulled bytes mismatch: got %q want %q", string(got), string(smallData))
 	}
-	gotLarge, err := os.ReadFile(filepath.Join(cloneDir, "data", "multipart.bin"))
-	if err != nil {
-		t.Fatalf("read pulled multipart file: %v", err)
+	gotLargePath := filepath.Join(cloneDir, "data", "multipart.bin")
+	gotLargeInfo, err := os.Stat(gotLargePath)
+	if err != nil || gotLargeInfo.Size() != largeSize {
+		t.Fatalf("pulled multipart size mismatch: info=%v err=%v want=%d", gotLargeInfo, err, largeSize)
 	}
-	if !bytes.Equal(gotLarge, largeData) {
-		t.Fatalf("pulled multipart bytes mismatch: got %d bytes want %d bytes", len(gotLarge), len(largeData))
+	if gotLargeSum := hashFile(t, gotLargePath); gotLargeSum != largeSum {
+		t.Fatalf("pulled multipart hash mismatch: got %x want %x", gotLargeSum, largeSum)
 	}
 	verifyProviderTransferMetrics(t, server.url, minioEnv, []providerTransferLogEvent{
 		newProviderDownloadEvent("docker-minio-download-small-"+smallDid, minioEnv, smallDid, int64(len(smallData))),
-		newProviderDownloadEvent("docker-minio-download-large-"+largeDid, minioEnv, largeDid, int64(len(largeData))),
-	}, int64(len(smallData)+len(largeData)))
+		newProviderDownloadEvent("docker-minio-download-large-"+largeDid, minioEnv, largeDid, largeSize),
+	}, int64(len(smallData))+largeSize)
 
 	smallSum := sha256.Sum256(smallData)
 	smallSumHex := hex.EncodeToString(smallSum[:])
@@ -164,7 +187,6 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 		t.Fatalf("small file checksum lookup mismatch: expected DID %s and hash %s in output %q", smallDid, smallSumHex, smallHashOut)
 	}
 
-	largeSum := sha256.Sum256(largeData)
 	largeSumHex := hex.EncodeToString(largeSum[:])
 	largeHashOut := runCommand(t, cloneDir, nil, "git", "drs", "query", "--remote", "origin", "--checksum", "--pretty", largeSumHex)
 	if !strings.Contains(largeHashOut, largeDid) || !strings.Contains(largeHashOut, largeSumHex) {
@@ -179,6 +201,22 @@ func TestGitDrsDockerMinIOE2E(t *testing.T) {
 	logRepoSnapshot(t, repoDir, "post-delete-push")
 	assertMinIOObjectExists(t, minioEnv.s3Client, minioEnv.bucket, smallDid)
 	assertDRSRecordExists(t, server.url, smallDid)
+}
+
+func hashFile(t *testing.T, path string) [32]byte {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		t.Fatal(err)
+	}
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
 
 func TestGitDrsDockerAddURLE2E(t *testing.T) {

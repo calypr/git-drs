@@ -16,7 +16,7 @@ import (
 
 var (
 	scopeFlag, authFlag, credentialFlag, providerFlag string
-	storageFlag, checkoutFlag                         string
+	storageFlag, checkoutFlag, hubEndpointFlag        string
 )
 
 func runUnified(cmd *cobra.Command, args []string) error {
@@ -58,6 +58,17 @@ func runUnified(cmd *cobra.Command, args []string) error {
 	if err := validateProviderAuth(provider, auth); err != nil {
 		return err
 	}
+	hubEndpoint := strings.TrimSpace(hubEndpointFlag)
+	if hubEndpoint != "" {
+		hubURL, parseErr := url.ParseRequestURI(hubEndpoint)
+		if provider != "terra" {
+			return fmt.Errorf("--hub-endpoint is only supported for the Terra provider")
+		}
+		if parseErr != nil || hubURL.Scheme != "https" || hubURL.Host == "" || hubURL.User != nil || hubURL.RawQuery != "" || hubURL.Fragment != "" {
+			return fmt.Errorf("--hub-endpoint must be an HTTPS URL without credentials")
+		}
+		hubEndpoint = hubURL.String()
+	}
 	u, err := url.ParseRequestURI(strings.TrimSpace(endpoint))
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 		return fmt.Errorf("endpoint must be an HTTPS URL without credentials, or a built-in alias")
@@ -91,8 +102,11 @@ func runUnified(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("remote %q already exists; choose an explicit name or remove it first", name)
 		}
 	}
-	r := &config.GenericRemote{Endpoint: u.String(), Provider: provider, Auth: auth, Credential: credentialFlag, Scope: scopeFlag, Storage: storageFlag, Checkout: checkoutFlag, Preset: presetName, PresetVersion: version, RegistryServiceID: registryID}
+	r := &config.GenericRemote{Endpoint: u.String(), HubEndpoint: hubEndpoint, Provider: provider, Auth: auth, Credential: credentialFlag, Scope: scopeFlag, Storage: storageFlag, Checkout: checkoutFlag, Preset: presetName, PresetVersion: version, RegistryServiceID: registryID}
 	fmt.Fprintf(cmd.OutOrStdout(), "Remote: %s\nEndpoint: %s\nProvider: %s\nAuth: %s\n", name, r.Endpoint, r.Provider, r.Auth)
+	if r.HubEndpoint != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "DRS resolver: %s\n", r.HubEndpoint)
+	}
 	if r.Preset != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Preset: %s (built-in catalog v%d)\n", r.Preset, r.PresetVersion)
 	}

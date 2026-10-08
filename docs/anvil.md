@@ -32,6 +32,17 @@ flag is needed. The command stores only public remote metadata in `.git/config`.
 Google ADC remains local user state. Each clone must run the command because
 `.git/config` is not tracked.
 
+To resolve DRS identifiers through Terra DRS Hub, add `--hub-endpoint` to the
+remote creation command:
+
+```bash
+git drs remote add anvil terra --checkout hydrate \
+  --hub-endpoint https://drshub.dsde-prod.broadinstitute.org
+```
+
+The `--hub-endpoint` option changes DRS resolution to Hub's `/api/v4/drs/resolve`
+API. The Terra `Endpoint` remains the TDR service URL used for service checks.
+
 ## Publish one reference
 
 Use the configured remote and choose the path that the data should occupy:

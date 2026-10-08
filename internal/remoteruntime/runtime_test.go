@@ -135,10 +135,31 @@ func TestNewTerraRemoteContext(t *testing.T) {
 	}
 }
 
+func TestNewTerraRemoteContextPreservesExplicitHubEndpoint(t *testing.T) {
+	setupTestRepo(t)
+	cfg, err := config.UpdateRemote(config.Remote("anvil"), config.RemoteSelect{
+		Terra: &config.TerraRemote{
+			Endpoint:    "https://data.terra.bio",
+			HubEndpoint: "https://drshub.dsde-prod.broadinstitute.org",
+			Mode:        "read-only",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitCtx, err := New(cfg, config.Remote("anvil"), drslog.GetLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gitCtx.Endpoint != "https://data.terra.bio" || gitCtx.HubEndpoint != "https://drshub.dsde-prod.broadinstitute.org" {
+		t.Fatalf("Terra endpoints = TDR:%q Hub:%q", gitCtx.Endpoint, gitCtx.HubEndpoint)
+	}
+}
+
 func TestNewGenericTerraUsesProviderAdapter(t *testing.T) {
 	setupTestRepo(t)
 	cfg := &config.Config{Remotes: map[config.Remote]config.RemoteSelect{
-		"anvil": {Generic: &config.GenericRemote{Endpoint: "https://data.terra.bio", Provider: "terra", Auth: "google-adc"}},
+		"anvil": {Generic: &config.GenericRemote{Endpoint: "https://data.terra.bio", HubEndpoint: "https://drshub.dsde-prod.broadinstitute.org", Provider: "terra", Auth: "google-adc"}},
 	}}
 	gitCtx, err := New(cfg, "anvil", drslog.GetLogger())
 	if err != nil {
@@ -146,6 +167,9 @@ func TestNewGenericTerraUsesProviderAdapter(t *testing.T) {
 	}
 	if gitCtx.RemoteType != config.TerraServerType || !gitCtx.IsReadOnly() || !gitCtx.CanDownload() {
 		t.Fatalf("generic Terra did not resolve through Terra adapter: %+v", gitCtx)
+	}
+	if gitCtx.Endpoint != "https://data.terra.bio" || gitCtx.HubEndpoint != "https://drshub.dsde-prod.broadinstitute.org" {
+		t.Fatalf("generic Terra endpoints = TDR:%q Hub:%q", gitCtx.Endpoint, gitCtx.HubEndpoint)
 	}
 }
 

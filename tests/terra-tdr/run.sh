@@ -62,3 +62,5 @@ if ! wait "$tdr_pid"; then
   cat "$tdr_log" >&2
   exit 1
 fi
+
+tail -n 20 "$tdr_log"

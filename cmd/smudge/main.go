@@ -79,7 +79,11 @@ func runSmudge(cmd *cobra.Command, args []string) error {
 	if !internalfilter.ShouldSkipSmudge() {
 		var terraResolver resolver.Resolver
 		if drsCtx.RemoteType == config.TerraServerType {
-			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if drsCtx.HubEndpoint != "" {
+				terraResolver, err = resolver.NewTerraHub(ctx, drsCtx.HubEndpoint)
+			} else {
+				terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			}
 			if err != nil {
 				return fmt.Errorf("smudge: create Terra resolver: %w", err)
 			}

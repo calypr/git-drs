@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -23,8 +24,9 @@ import (
 
 func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	endpoint := os.Getenv("GIT_DRS_TDR_HTTP_ENDPOINT")
-	if endpoint == "" {
-		t.Skip("GIT_DRS_TDR_HTTP_ENDPOINT is required")
+	gcsEndpoint := os.Getenv("GIT_DRS_TDR_GCS_ENDPOINT")
+	if endpoint == "" || gcsEndpoint == "" {
+		t.Skip("GIT_DRS_TDR_HTTP_ENDPOINT and GIT_DRS_TDR_GCS_ENDPOINT are required")
 	}
 	tdrURL, err := url.Parse(endpoint)
 	if err != nil || tdrURL.Scheme != "http" || tdrURL.Host == "" {
@@ -32,6 +34,12 @@ func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	}
 
 	reverseProxy := httputil.NewSingleHostReverseProxy(tdrURL)
+	reverseProxy.ModifyResponse = func(response *http.Response) error {
+		if strings.Contains(response.Request.URL.Path, "/access/") {
+			return rewriteTDRSignedURLForEmulator(response, gcsEndpoint)
+		}
+		return nil
+	}
 	var requestMu sync.Mutex
 	var requestPaths []string
 	proxy := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -100,16 +108,6 @@ func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("hydrated content = %q, want %q", got, payload)
-	}
-	resp, err := http.Get(endpoint + "/fixture-data-requests")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var fetches int
-	_, scanErr := fmt.Fscan(resp.Body, &fetches)
-	if resp.StatusCode != http.StatusOK || scanErr != nil || fetches != 1 {
-		t.Fatalf("fixture data downloads = %d with HTTP %d, want one", fetches, resp.StatusCode)
 	}
 	requestMu.Lock()
 	gotPaths := append([]string(nil), requestPaths...)

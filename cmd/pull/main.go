@@ -46,6 +46,9 @@ var (
 	newAnVILResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
 		return resolver.NewAnVIL(ctx, endpoint)
 	}
+	newHubResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
+		return resolver.NewTerraHub(ctx, endpoint)
+	}
 	loadWorktreeInventory = lfs.GetTrackedLfsFilesAt
 	loadWorktreeFile      = lfs.GetTrackedLfsFileAt
 )
@@ -158,7 +161,11 @@ var Cmd = &cobra.Command{
 			return fmt.Errorf("remote %q does not support resolving and downloading DRS objects", remote)
 		}
 		if drsCtx.IsReadOnly() {
-			anvil, err = newAnVILResolver(ctx, drsCtx.Endpoint)
+			if drsCtx.HubEndpoint != "" {
+				anvil, err = newHubResolver(ctx, drsCtx.HubEndpoint)
+			} else {
+				anvil, err = newAnVILResolver(ctx, drsCtx.Endpoint)
+			}
 			if err != nil {
 				return err
 			}

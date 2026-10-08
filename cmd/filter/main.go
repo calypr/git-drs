@@ -65,7 +65,11 @@ func runFilter(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			logger.Info("DRS server not configured or unreachable", "err", err)
 		} else if drsCtx.RemoteType == config.TerraServerType && !internalfilter.ShouldSkipSmudge() {
-			terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			if drsCtx.HubEndpoint != "" {
+				terraResolver, err = resolver.NewTerraHub(ctx, drsCtx.HubEndpoint)
+			} else {
+				terraResolver, err = resolver.NewAnVIL(ctx, drsCtx.Endpoint)
+			}
 			if err != nil {
 				return fmt.Errorf("filter: create Terra resolver: %w", err)
 			}

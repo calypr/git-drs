@@ -2,6 +2,7 @@
 package resolver
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -243,6 +245,11 @@ type AnVILResolver struct {
 	client   *http.Client
 }
 
+type TerraHubResolver struct {
+	endpoint *url.URL
+	client   *http.Client
+}
+
 func NewAnVIL(ctx context.Context, endpoint string) (*AnVILResolver, error) {
 	if _, err := trustedEndpoint(endpoint); err != nil {
 		return nil, err
@@ -252,6 +259,43 @@ func NewAnVIL(ctx context.Context, endpoint string) (*AnVILResolver, error) {
 		return nil, fmt.Errorf("%w: run `gcloud auth application-default login`: %v", ErrCredentials, err)
 	}
 	return NewAnVILWithClient(endpoint, &http.Client{Transport: &oauth2.Transport{Base: http.DefaultTransport, Source: creds.TokenSource}})
+}
+
+// NewTerraHub creates a resolver for Terra DRS Hub using Google ADC for its
+// bearer token. Hub then forwards that token to the selected DRS provider.
+func NewTerraHub(ctx context.Context, endpoint string) (*TerraHubResolver, error) {
+	if _, err := trustedTerraHubEndpoint(endpoint); err != nil {
+		return nil, err
+	}
+	creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+	if err != nil {
+		return nil, fmt.Errorf("%w: run `gcloud auth application-default login`: %v", ErrCredentials, err)
+	}
+	return NewTerraHubWithClient(endpoint, &http.Client{Transport: &oauth2.Transport{Base: http.DefaultTransport, Source: creds.TokenSource}})
+}
+
+// NewTerraHubWithClient uses a caller-supplied client. Plain HTTP is accepted
+// only for loopback endpoints so tests can exercise a local Hub instance.
+func NewTerraHubWithClient(endpoint string, client *http.Client) (*TerraHubResolver, error) {
+	u, err := trustedTerraHubEndpoint(endpoint)
+	if err != nil {
+		u, err = trustedLoopbackEndpoint(endpoint)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("Terra DRS Hub HTTP client is required")
+	}
+	return &TerraHubResolver{endpoint: u, client: client}, nil
+}
+
+func trustedTerraHubEndpoint(endpoint string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Host == "" || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("invalid Terra DRS Hub endpoint")
+	}
+	return u, nil
 }
 
 // NewAnVILWithClient uses a caller-supplied HTTP client for a trusted HTTPS
@@ -271,6 +315,18 @@ func trustedEndpoint(endpoint string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || u.Host == "" || u.Scheme != "https" || u.User != nil {
 		return nil, fmt.Errorf("invalid AnVIL resolver endpoint")
+	}
+	return u, nil
+}
+
+func trustedLoopbackEndpoint(endpoint string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(endpoint))
+	if err != nil || u.Host == "" || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("invalid Terra DRS Hub endpoint")
+	}
+	host := u.Hostname()
+	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		return nil, fmt.Errorf("invalid Terra DRS Hub endpoint")
 	}
 	return u, nil
 }
@@ -375,4 +431,94 @@ func (r *AnVILResolver) getJSON(ctx context.Context, endpoint string, dst any) e
 		return fmt.Errorf("decode AnVIL resolver response: %w", err)
 	}
 	return nil
+}
+
+type terraHubRequest struct {
+	URL    string   `json:"url"`
+	Fields []string `json:"fields"`
+}
+
+type terraHubResponse struct {
+	Name      string            `json:"name"`
+	FileName  string            `json:"fileName"`
+	Size      int64             `json:"size"`
+	Hashes    map[string]string `json:"hashes"`
+	AccessURL *struct {
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+	} `json:"accessUrl"`
+}
+
+// GetObject resolves an AnVIL DRS identifier through Terra DRS Hub. Hub's
+// resolve response includes the ephemeral access URL, so the caller can
+// download it without a second resolver request.
+func (r *TerraHubResolver) GetObject(ctx context.Context, drsURI string) (*ResolvedObject, error) {
+	canonical, id, err := NormalizeDRSURI(drsURI)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(terraHubRequest{
+		URL:    canonical,
+		Fields: []string{"size", "fileName", "hashes", "accessUrl"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	u := *r.endpoint
+	u.Path = path.Join(u.Path, "api", "v4", "drs", "resolve")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Terra DRS Hub unavailable: %w", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusNotFound:
+		return nil, ErrNotFound
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("Terra DRS Hub returned HTTP %d", resp.StatusCode)
+	}
+	var metadata terraHubResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("decode Terra DRS Hub response: %w", err)
+	}
+	if metadata.Size < 0 {
+		return nil, fmt.Errorf("Terra DRS Hub returned an invalid object size")
+	}
+	checksums := make([]Checksum, 0, len(metadata.Hashes))
+	for kind, checksum := range metadata.Hashes {
+		checksums = append(checksums, Checksum{Type: kind, Checksum: checksum})
+	}
+	sort.Slice(checksums, func(i, j int) bool { return checksums[i].Type < checksums[j].Type })
+	name := metadata.FileName
+	if name == "" {
+		name = metadata.Name
+	}
+	obj := &ResolvedObject{DRSURI: canonical, ID: id, Name: name, Size: metadata.Size, Checksums: checksums}
+	if metadata.AccessURL != nil && strings.TrimSpace(metadata.AccessURL.URL) != "" {
+		headerNames := make([]string, 0, len(metadata.AccessURL.Headers))
+		for key := range metadata.AccessURL.Headers {
+			headerNames = append(headerNames, key)
+		}
+		sort.Strings(headerNames)
+		headers := make([]string, 0, len(headerNames))
+		for _, key := range headerNames {
+			headers = append(headers, key+": "+metadata.AccessURL.Headers[key])
+		}
+		obj.AccessMethods = []AccessMethod{{AccessURL: &ResolvedAccess{URL: metadata.AccessURL.URL, Headers: headers}}}
+	}
+	return obj, nil
+}
+
+func (r *TerraHubResolver) GetAccess(context.Context, string, string) (*ResolvedAccess, error) {
+	return nil, fmt.Errorf("Terra DRS Hub resolves access URLs with object metadata")
 }

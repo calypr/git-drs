@@ -144,5 +144,10 @@ jobs:
           tdr/build.gradle
           drs-hub/service/build.gradle
 
-    - name: Resolve the AnVIL compact ID through DRS Hub and TDR
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.6'
+
+    - name: Pull an AnVIL DRS pointer through DRS Hub and TDR
       run: tests/terra-drs-hub/run.sh "$GITHUB_WORKSPACE/tdr" "$GITHUB_WORKSPACE/drs-hub"

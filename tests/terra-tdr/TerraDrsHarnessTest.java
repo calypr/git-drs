@@ -51,7 +51,8 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @SpringBootTest(
     classes = TerraDrsHarnessTest.HarnessApplication.class,
-    webEnvironment = WebEnvironment.RANDOM_PORT)
+    webEnvironment = WebEnvironment.RANDOM_PORT,
+    properties = "spring.cloud.gcp.firestore.enabled=false")
 @ActiveProfiles({"google", "unittest"})
 @Tag(Unit.TAG)
 class TerraDrsHarnessTest {

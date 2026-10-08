@@ -2,6 +2,7 @@
 
 start_storage_emulator() {
   local seed_dir=$1
+  local public_host=${2:-127.0.0.1}
   local requested_port
   requested_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
   STORAGE_CONTAINER="git-drs-storage-${PPID}-$$"
@@ -24,7 +25,7 @@ start_storage_emulator() {
     -filesystem-root /storage \
     -scheme http \
     -port 8000 \
-    -public-host "host.docker.internal:$requested_port" >/dev/null
+    -public-host "$public_host:$requested_port" >/dev/null
 
   for ((attempt = 0; attempt < 60; attempt++)); do
     if curl --fail --silent "$STORAGE_EMULATOR_HTTP_ENDPOINT/_internal/healthcheck" >/dev/null; then

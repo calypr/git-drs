@@ -223,6 +223,7 @@ func TestIntegrationPullThroughTerraHubAndTDR(t *testing.T) {
 	runPull := func() []byte {
 		command := exec.Command("docker", "run", "--rm",
 			"--add-host", "host.docker.internal:host-gateway",
+			"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 			"--volume", binary+":/usr/local/bin/git-drs:ro",
 			"--volume", repo+":/repo",
 			"--volume", credentialsPath+":/ci/service-account.json:ro",

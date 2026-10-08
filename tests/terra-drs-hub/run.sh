@@ -68,7 +68,7 @@ tls_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)
 FIRESTORE_CONTAINER=
 start_firestore_emulator
 STORAGE_CONTAINER=
-start_storage_emulator "$coord_dir/gcs-seed"
+start_storage_emulator "$coord_dir/gcs-seed" host.docker.internal
 
 (
   cd "$tdr_root"

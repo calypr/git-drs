@@ -48,6 +48,7 @@ if [[ -z "$java_home" ]]; then
   exit 1
 fi
 cp -L "$java_home/lib/security/cacerts" "$truststore"
+chmod u+w "$truststore"
 keytool -importcert -noprompt -alias git-drs-tdr-harness -file "$certificate" \
   -keystore "$truststore" -storepass changeit
 

@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/calypr/git-drs/internal/config"
+	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/resolver"
 )
 
@@ -73,6 +74,17 @@ func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	if _, err := config.UpdateRemote("anvil", config.RemoteSelect{Terra: &config.TerraRemote{Endpoint: proxy.URL, Mode: "read-only"}}); err != nil {
 		t.Fatal(err)
 	}
+	objectsRoot, err := lfs.ResolveObjectsRoot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cachePath, err := lfs.ObjectPath(objectsRoot, oid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		t.Fatalf("cache must be empty before pull: %s: %v", cachePath, err)
+	}
 	resetPullFlagsForTest()
 	includePatterns = []string{filename}
 	requestMu.Lock()
@@ -89,12 +101,22 @@ func TestIntegrationPullAgainstTDRController(t *testing.T) {
 	if !bytes.Equal(got, payload) {
 		t.Fatalf("hydrated content = %q, want %q", got, payload)
 	}
+	resp, err := http.Get(endpoint + "/fixture-data-requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var fetches int
+	_, scanErr := fmt.Fscan(resp.Body, &fetches)
+	if resp.StatusCode != http.StatusOK || scanErr != nil || fetches != 1 {
+		t.Fatalf("fixture data downloads = %d with HTTP %d, want one", fetches, resp.StatusCode)
+	}
 	requestMu.Lock()
 	gotPaths := append([]string(nil), requestPaths...)
 	requestMu.Unlock()
 	wantPaths := []string{
 		"/ga4gh/drs/v1/objects/v2_4f770147-e372-339b-b9fa-0a7a83cf30cf",
-		"/ga4gh/drs/v1/objects/v2_4f770147-e372-339b-b9fa-0a7a83cf30cf/access/https-access",
+		"/ga4gh/drs/v1/objects/v2_4f770147-e372-339b-b9fa-0a7a83cf30cf/access/gcp-us-central1*11111111-2222-4333-8444-555555555555",
 	}
 	if !reflect.DeepEqual(gotPaths, wantPaths) {
 		t.Fatalf("TDR controller requests = %v, want %v", gotPaths, wantPaths)

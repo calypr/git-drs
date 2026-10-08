@@ -14,12 +14,12 @@ stop_file="$coord_dir/stop"
 tdr_log="$coord_dir/tdr.log"
 
 cp "$git_drs_root/tests/terra-tdr/TerraDrsHarnessTest.java" \
-  "$tdr_root/src/test/java/bio/terra/app/controller/TerraDrsHarnessTest.java"
+  "$tdr_root/src/test/java/bio/terra/service/filedata/TerraDrsHarnessTest.java"
 
 (
   cd "$tdr_root"
   GIT_DRS_TDR_PORT_FILE="$port_file" GIT_DRS_TDR_STOP_FILE="$stop_file" \
-    ./gradlew testUnit --tests bio.terra.app.controller.TerraDrsHarnessTest \
+    ./gradlew testUnit --tests bio.terra.service.filedata.TerraDrsHarnessTest \
       --no-daemon --console=plain
 ) >"$tdr_log" 2>&1 &
 tdr_pid=$!

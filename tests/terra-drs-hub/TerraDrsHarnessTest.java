@@ -20,6 +20,7 @@ import bio.terra.model.BillingProfileModel;
 import bio.terra.model.CloudPlatform;
 import bio.terra.service.auth.iam.IamService;
 import bio.terra.service.auth.ras.EcmService;
+import bio.terra.service.common.gcs.GcsUriUtils;
 import bio.terra.service.configuration.ConfigEnum;
 import bio.terra.service.configuration.ConfigurationService;
 import bio.terra.service.dataset.AssetDao;
@@ -62,6 +63,7 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import com.google.auth.oauth2.ServiceAccountCredentials;
+import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Storage;
 import com.google.cloud.storage.StorageOptions;
 import com.sun.net.httpserver.HttpServer;
@@ -75,9 +77,11 @@ import java.security.KeyPairGenerator;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import liquibase.Contexts;
 import liquibase.Liquibase;
@@ -281,6 +285,21 @@ class TerraDrsHarnessTest {
             .build()
             .getService();
     when(gcsProjectFactory.getStorage(any())).thenReturn(storage);
+    // Stand in for SAM signing with the real GCS signer and the project supplied by TDR.
+    when(iamService.signUrlForBlob(any(), any(), any(), any()))
+        .thenAnswer(
+            invocation ->
+                storage
+                    .signUrl(
+                        BlobInfo.newBuilder(
+                                GcsUriUtils.parseBlobUri(invocation.getArgument(2, String.class)))
+                            .build(),
+                        invocation.getArgument(3, Duration.class).toMinutes(),
+                        TimeUnit.MINUTES,
+                        Storage.SignUrlOption.withQueryParams(
+                            Map.of("userProject", invocation.getArgument(1, String.class))),
+                        Storage.SignUrlOption.withV4Signature())
+                    .toString());
 
     Files.writeString(portFile, Integer.toString(port));
   }

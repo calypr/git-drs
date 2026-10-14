@@ -29,6 +29,7 @@ func TestRewriteTDRSignedURLVerifiesV4SignatureAndExpiry(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	date := now.Format("20060102T150405Z")
 	query := url.Values{
+		"userProject":          {terraBillingProject},
 		"X-Goog-Algorithm":     {gcsSigningAlgorithm},
 		"X-Goog-Credential":    {"git-drs-ci@fixture.invalid/" + now.Format("20060102") + "/auto/storage/goog4_request"},
 		"X-Goog-Date":          {date},
@@ -74,9 +75,18 @@ func TestRewriteTDRSignedURLVerifiesV4SignatureAndExpiry(t *testing.T) {
 	if !strings.Contains(string(rewrittenBody), "http://127.0.0.1:12345/fixture-bucket/object?") {
 		t.Fatalf("signed URL was not rewritten to emulator: %s", rewrittenBody)
 	}
+	rewrittenURL, err := signedURLFromJSON(rewrittenBody)
+	if err != nil || rewrittenURL.RawQuery != signedURL.RawQuery {
+		t.Fatalf("rewriting the authority changed the signed query: %s (error %v)", rewrittenBody, err)
+	}
 
 	for name, tamper := range map[string]func(*url.URL){
 		"path": func(value *url.URL) { value.Path = "/fixture-bucket/other" },
+		"billing project": func(value *url.URL) {
+			query := value.Query()
+			query.Set("userProject", "different-project")
+			value.RawQuery = query.Encode()
+		},
 		"signature": func(value *url.URL) {
 			query := value.Query()
 			signature := []byte(query.Get("X-Goog-Signature"))

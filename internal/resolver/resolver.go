@@ -434,8 +434,9 @@ func (r *AnVILResolver) getJSON(ctx context.Context, endpoint string, dst any) e
 }
 
 type terraHubRequest struct {
-	URL    string   `json:"url"`
-	Fields []string `json:"fields"`
+	URL         string   `json:"url"`
+	Fields      []string `json:"fields"`
+	UserProject string   `json:"userProject,omitempty"`
 }
 
 type terraHubResponse struct {
@@ -458,8 +459,9 @@ func (r *TerraHubResolver) GetObject(ctx context.Context, drsURI string) (*Resol
 		return nil, err
 	}
 	body, err := json.Marshal(terraHubRequest{
-		URL:    canonical,
-		Fields: []string{"size", "fileName", "hashes", "accessUrl"},
+		URL:         canonical,
+		Fields:      []string{"size", "fileName", "hashes", "accessUrl"},
+		UserProject: strings.TrimSpace(os.Getenv("GOOGLE_PROJECT")),
 	})
 	if err != nil {
 		return nil, err

@@ -438,9 +438,12 @@ func (s *batchSyncSession) ensureMetadataRegistered() error {
 func (s *batchSyncSession) metadataRecordForOID(oid string, obj *drsapi.DrsObject) internalapi.InternalRecord {
 	record := localdrsobject.ConvertToInternalRecord(obj, s.rt.Scope.Organization, s.rt.Scope.Project)
 	if s.filesByOID[oid].Placeholder {
-		hashes := internalapi.HashInfo{"git-drs-placeholder": oid}
+		hashes := internalapi.HashInfo{"git-drs-placeholder": localdrsobject.PlaceholderChecksumValue(oid)}
 		if record.Hashes != nil {
 			for checksumType, checksum := range *record.Hashes {
+				if strings.EqualFold(strings.TrimSpace(checksumType), "git-drs-placeholder") {
+					continue
+				}
 				if strings.EqualFold(checksumType, "sha256") && localdrsobject.NormalizeOid(checksum) == oid {
 					continue
 				}

@@ -121,7 +121,7 @@ func TestPlaceholderMetadataUsesTemporaryChecksumType(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := session.metadataRecordForOID(oid, obj)
-	if record.Hashes == nil || (*record.Hashes)["git-drs-placeholder"] != oid {
+	if record.Hashes == nil || (*record.Hashes)["git-drs-placeholder"] != localdrsobject.PlaceholderChecksumValue(oid) {
 		t.Fatalf("placeholder hashes = %+v", record.Hashes)
 	}
 	if (*record.Hashes)["sha256"] != realOID {

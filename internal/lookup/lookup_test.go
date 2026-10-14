@@ -111,6 +111,67 @@ func TestObjectsByHashesForScopeUsesOneBulkRequestAndFiltersByScope(t *testing.T
 	}
 }
 
+func TestObjectsByHashFallsBackToPlaceholderChecksumQuery(t *testing.T) {
+	t.Parallel()
+
+	oid := strings.Repeat("a", 64)
+	placeholderValue := "git-drs-placeholder/" + oid
+	placeholderHashes := internalapi.HashInfo{"git-drs-placeholder": placeholderValue}
+	requests := 0
+	httpClient := &http.Client{Transport: lookupRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requests++
+		var request internalapi.BulkHashesRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			return nil, err
+		}
+		var body string
+		switch requests {
+		case 1:
+			if !reflect.DeepEqual(request.Hashes, []string{oid}) {
+				t.Errorf("initial hashes = %v, want [%s]", request.Hashes, oid)
+			}
+			body = `{"results":{"` + oid + `":[]}}`
+		case 2:
+			if !reflect.DeepEqual(request.Hashes, []string{placeholderValue}) {
+				t.Errorf("fallback hashes = %v, want [%s]", request.Hashes, placeholderValue)
+			}
+			response, err := json.Marshal(map[string]any{
+				"results": map[string][]internalapi.InternalRecord{
+					placeholderValue: {{Did: "placeholder-object", Hashes: &placeholderHashes}},
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+			body = string(response)
+		default:
+			t.Errorf("unexpected request %d", requests)
+			return nil, io.EOF
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Request:    r,
+		}, nil
+	})}
+
+	raw, err := syclient.New("http://example.test", syclient.WithHTTPClient(httpClient))
+	if err != nil {
+		t.Fatalf("syclient.New: %v", err)
+	}
+	objects, err := ObjectsByHash(context.Background(), &remoteruntime.GitContext{Client: raw}, oid)
+	if err != nil {
+		t.Fatalf("ObjectsByHash returned error: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want two bulk requests", requests)
+	}
+	if len(objects) != 1 || objects[0].Id != "placeholder-object" {
+		t.Fatalf("placeholder lookup = %+v, want placeholder-object", objects)
+	}
+}
+
 func TestMissingSHA256ForScopeUsesProjectScopedEndpoint(t *testing.T) {
 	t.Parallel()
 	var gotRequest struct {

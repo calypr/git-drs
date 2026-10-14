@@ -562,3 +562,31 @@ func TestRemoveRemote_TerraCleansAuthAndMode(t *testing.T) {
 		}
 	}
 }
+
+func TestTerraHubEndpointRoundTripsWithoutChangingTdrEndpoint(t *testing.T) {
+	setupTestRepo(t)
+	remoteName := Remote("anvil")
+	_, err := UpdateRemote(remoteName, RemoteSelect{Terra: &TerraRemote{
+		Endpoint:    "https://data.terra.bio",
+		HubEndpoint: "https://drshub.dsde-prod.broadinstitute.org",
+		Mode:        "read-only",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := loaded.Remotes[remoteName].Terra
+	if remote == nil {
+		t.Fatal("Terra remote was not loaded")
+	}
+	if remote.Endpoint != "https://data.terra.bio" {
+		t.Errorf("TDR endpoint = %q", remote.Endpoint)
+	}
+	if remote.HubEndpoint != "https://drshub.dsde-prod.broadinstitute.org" {
+		t.Errorf("Hub endpoint = %q", remote.HubEndpoint)
+	}
+}

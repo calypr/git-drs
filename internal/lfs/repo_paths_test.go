@@ -146,6 +146,75 @@ func TestResolveLFSRoot_ConfigRelative(t *testing.T) {
 	}
 }
 
+func TestGetGitRootDirectoriesFromRepositorySubdirectory(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	repo := t.TempDir()
+	mustRun(t, repo, "git", "init")
+	canonicalGitDir, err := filepath.EvalSymlinks(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatalf("resolve temporary git directory path: %v", err)
+	}
+	subdir := filepath.Join(repo, "nested", "package")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir repository subdirectory: %v", err)
+	}
+
+	oldwd := mustChdir(t, subdir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	gitCommonDir, lfsRoot, err := GetGitRootDirectories(context.Background())
+	if err != nil {
+		t.Fatalf("GetGitRootDirectories from subdirectory: %v", err)
+	}
+	if want := canonicalGitDir; gitCommonDir != want {
+		t.Errorf("git common dir: want %q, got %q", want, gitCommonDir)
+	}
+	if want := filepath.Join(canonicalGitDir, "lfs"); lfsRoot != want {
+		t.Errorf("LFS root: want %q, got %q", want, lfsRoot)
+	}
+}
+
+func TestGetGitRootDirectoriesFromWorktreeSubdirectoryWithConfiguredStorage(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	repo := t.TempDir()
+	mustRun(t, repo, "git", "init")
+	canonicalGitDir, err := filepath.EvalSymlinks(filepath.Join(repo, ".git"))
+	if err != nil {
+		t.Fatalf("resolve temporary git directory path: %v", err)
+	}
+	mustRun(t, repo, "git", "config", "user.name", "git-drs test")
+	mustRun(t, repo, "git", "config", "user.email", "git-drs-test@example.invalid")
+	mustRun(t, repo, "git", "config", "lfs.storage", "shared-lfs")
+	mustRun(t, repo, "git", "-c", "user.name=git-drs test", "-c", "user.email=git-drs-test@example.invalid", "commit", "--allow-empty", "-m", "initial")
+
+	worktree := filepath.Join(t.TempDir(), "linked-worktree")
+	mustRun(t, repo, "git", "worktree", "add", worktree, "HEAD")
+	subdir := filepath.Join(worktree, "nested", "package")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("mkdir worktree subdirectory: %v", err)
+	}
+
+	oldwd := mustChdir(t, subdir)
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	gitCommonDir, lfsRoot, err := GetGitRootDirectories(context.Background())
+	if err != nil {
+		t.Fatalf("GetGitRootDirectories from linked worktree subdirectory: %v", err)
+	}
+	if want := canonicalGitDir; gitCommonDir != want {
+		t.Errorf("git common dir: want shared directory %q, got %q", want, gitCommonDir)
+	}
+	if want := filepath.Join(canonicalGitDir, "shared-lfs"); lfsRoot != want {
+		t.Errorf("LFS root: want configured path under shared git directory %q, got %q", want, lfsRoot)
+	}
+}
+
 // --- test helpers ---
 
 func mustRun(t *testing.T, dir string, name string, args ...string) {

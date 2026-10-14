@@ -333,7 +333,13 @@ type drsObjectGetter interface {
 
 func resolveAddRefObject(ctx context.Context, cfg *config.Config, primaryRemote config.Remote, primary *remoteruntime.GitContext, drsURI string) (drsapi.DrsObject, error) {
 	if primary != nil && primary.RemoteType == config.TerraServerType {
-		anvil, err := newAnVILResolver(ctx, primary.Endpoint)
+		var anvil resolver.Resolver
+		var err error
+		if primary.HubEndpoint != "" {
+			anvil, err = newHubResolver(ctx, primary.HubEndpoint)
+		} else {
+			anvil, err = newAnVILResolver(ctx, primary.Endpoint)
+		}
 		if err != nil {
 			return drsapi.DrsObject{}, err
 		}
@@ -374,6 +380,10 @@ func resolveAddRefObject(ctx context.Context, cfg *config.Config, primaryRemote 
 
 var newAnVILResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
 	return resolver.NewAnVIL(ctx, endpoint)
+}
+
+var newHubResolver = func(ctx context.Context, endpoint string) (resolver.Resolver, error) {
+	return resolver.NewTerraHub(ctx, endpoint)
 }
 
 func parseDRSURIForSource(drsURI string) (objectID string, endpoint string, ok bool) {

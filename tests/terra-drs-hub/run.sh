@@ -25,6 +25,7 @@ private_key="$coord_dir/localhost.key"
 truststore="$coord_dir/truststore.p12"
 signing_public_key_file="$coord_dir/tdr-signing-public-key.pem"
 
+# Inject the harness tests and Hub settings into the two external source trees.
 cp "$git_drs_root/tests/terra-drs-hub/TerraDrsHarnessTest.java" \
   "$tdr_root/src/test/java/bio/terra/service/filedata/TerraDrsHarnessTest.java"
 cp "$git_drs_root/tests/terra-drs-hub/TerraDrsHubIntegrationTest.java" \
@@ -43,6 +44,8 @@ drshub:
           fetchAccessUrl: true
 YAML
 
+# Hub calls the local TDR through HTTPS, so give it a localhost certificate
+# trusted only by this run's copied Java truststore.
 openssl req -new -newkey rsa:2048 -nodes -keyout "$private_key" -x509 -days 1 \
   -out "$certificate" -subj "/CN=localhost" \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
@@ -65,6 +68,7 @@ if ! JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -Djavax.net.ssl.trustStore=$trust
 fi
 
 tls_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')
+# TDR reads file metadata from Firestore and signs URLs for the local GCS fixture.
 FIRESTORE_CONTAINER=
 start_firestore_emulator
 STORAGE_CONTAINER=
@@ -83,6 +87,8 @@ tdr_pid=$!
 
 proxy_pid=
 hub_pid=
+# Java harnesses create their port files when ready and stop when signaled by
+# their stop files; keep cleanup installed while any service is running.
 stop_services() {
   touch "$hub_stop_file"
   touch "$stop_file"
@@ -117,6 +123,8 @@ if [[ ! -s "$port_file" ]]; then
 fi
 
 tdr_port=$(cat "$port_file")
+# The HTTPS bridge lets Hub use TDR's signed URL flow while the CLI reaches
+# the local storage emulator through its own network namespace.
 python3 "$git_drs_root/tests/terra-drs-hub/tdr_https_proxy.py" \
   "http://127.0.0.1:$tdr_port" "$tls_port" "$certificate" "$private_key" "$proxy_log" \
   >"$coord_dir/proxy.out" 2>&1 &
@@ -179,6 +187,7 @@ fi
 hub_port=$(cat "$hub_port_file")
 cd "$git_drs_root"
 cli_binary="$coord_dir/git-drs-linux"
+# The integration test runs the CLI inside a Linux container on this machine's architecture.
 GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -o "$cli_binary" .
 if ! GIT_DRS_BINARY="$cli_binary" \
   GIT_DRS_HUB_HTTP_ENDPOINT="http://127.0.0.1:$hub_port" \
@@ -196,6 +205,7 @@ if ! GIT_DRS_BINARY="$cli_binary" \
 fi
 
 downloads=$(storage_object_download_count)
+# One download per fixture object proves the repeated pull used the cache.
 if [[ "$downloads" != 3 ]]; then
   echo "GCS emulator served $downloads object downloads, want exactly three" >&2
   docker logs "$STORAGE_CONTAINER" >&2 || true

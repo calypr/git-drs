@@ -62,6 +62,8 @@ export PATH="$PATH:$HOME/.local/bin"
 
 ## Verify The Install
 
+Run either command from any directory; no Git repository or git-drs initialization is required.
+
 ```bash
 git-drs version
 git drs version

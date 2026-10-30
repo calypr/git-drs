@@ -29,9 +29,9 @@ type RemoteSelect struct {
 // GenericRemote is the compositional configuration produced by the unified
 // remote-add command. Credential contains a source identifier, never a secret.
 type GenericRemote struct {
-	Endpoint, Provider, Auth, Credential, Scope, Storage, Checkout string
-	Preset, RegistryServiceID                                      string
-	PresetVersion                                                  int
+	Endpoint, HubEndpoint, Provider, Auth, Credential, Scope, Storage, Checkout string
+	Preset, RegistryServiceID                                                   string
+	PresetVersion                                                               int
 }
 
 func (r GenericRemote) GetProjectId() string     { _, p, _ := strings.Cut(r.Scope, "/"); return p }
@@ -55,9 +55,10 @@ func (s Gen3Remote) GetBucketName() string    { return s.Bucket }
 func (s Gen3Remote) GetStoragePrefix() string { return s.StoragePrefix }
 
 type TerraRemote struct {
-	Endpoint string `yaml:"endpoint"`
-	Auth     string `yaml:"auth"`
-	Mode     string `yaml:"mode"`
+	Endpoint    string `yaml:"endpoint"`
+	HubEndpoint string `yaml:"hub_endpoint"`
+	Auth        string `yaml:"auth"`
+	Mode        string `yaml:"mode"`
 }
 
 func (t TerraRemote) GetProjectId() string     { return "" }

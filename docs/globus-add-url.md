@@ -1,5 +1,7 @@
 # Adding Globus Objects with `git drs add-url`
 
+> The single-object and Globus `add-url` examples on this page describe the previous command. See [the current manifest command](commands.md#git-drs-add-url-manifesttsv).
+
 `git drs add-url` creates Git pointers and local DRS metadata for files that
 already exist in a Globus collection. It does not stage or download source
 files during import.

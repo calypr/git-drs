@@ -379,41 +379,75 @@ Notes:
 
 For details on pointer file formats and lifecycle state, see [Pointer Files and Reference State](pointer-files.md).
 
-### `git drs add-url <object-url-or-key> [path]`
+### `git drs add-url <manifest.tsv>`
 
-Create a pointer plus local DRS metadata for an object that already exists in provider storage.
+Index existing S3 objects in Syfon. Run the command from a repository with a
+configured git-drs remote, or select one with `--repo`. The remote must specify
+an organization and project.
 
 ```bash
-git drs add-url path/to/object.bin data/from-bucket.bin --scheme s3
-git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin
-git drs add-url s3://my-bucket/path/to/object.bin data/from-bucket.bin --sha256 <hex>
-git drs add-url globus://<collection-id>/project/sample.bam data/sample.bam
-git drs add-url globus://<collection-id>/project/ data/project
-git drs add-url 'globus://<collection-id>/project/**/*.bam' data/bam --dry-run
+git drs add-url files.tsv --remote origin
 ```
 
-Notes:
+The tab-separated manifest needs `s3_path`, `repo_path`, `sha256`, and
+`size_bytes` columns. `s3_path` can be a physical `s3://bucket/key` URL or a
+key relative to the configured project scope. Extra columns are ignored.
+Paths are relative to the repository root. SHA-256 values must be unique.
 
-- object-key mode resolves against the configured bucket scope
-- explicit provider URL mode remains supported
-- `--scheme` is required for object-key mode
-- when `--sha256` is omitted, the pointer uses a derived local/cache OID and source URL metadata remains the retrieval identity
-- `globus://` URLs are detected automatically; a directory or wildcard import
-  does not require `--recursive` or `--manifest`
-- `--recursive` is deprecated and accepted only for compatibility
-- quote wildcard URLs; `*`, `?`, `[...]`, and recursive `**` are supported
-- Globus files without SHA-256 use a marked placeholder derived from URL, size,
-  and `last_modified`; hydration validates size rather than treating it as a
-  content hash
-- `--manifest` optionally supplies authoritative `path`, `size`, and `sha256`
-  values for a directory or wildcard selection
-- `--dry-run` prints planned Globus members without changing the worktree;
-  `--remote` selects the DRS registration scope
-- collection import writes one DRS pointer and local DRS object per member, plus
-  one `destination/**` read-only rule in `.gitattributes`
-- registration happens later on `git drs push`
+Syfon probes objects in batches and checks their sizes. The command trusts the
+manifest's checksums; it does not download objects or verify their hashes.
+To also create standard Git LFS pointers and a Git commit, add `--commit --branch main`.
+The selected branch must already be checked out and the working tree must be
+clean. Syfon records are registered first. Use plain `git push` to publish the
+resulting commit. Your Git LFS pre-push hook must be configured to use a Syfon
+endpoint that recognizes the indexed objects.
 
-See [Adding Globus Objects](globus-add-url.md) for wildcard and identity details.
+```bash
+git drs add-url files.tsv --repo /path/to/repository --remote origin \
+  --commit --branch main
+```
+
+#### Resolve manifest URLs through a scope
+
+By default, an `s3_path` that starts with `s3://` is a physical storage URL.
+Syfon probes that bucket and key directly. A value without a scheme is a key
+relative to the remote's organization/project scope; Syfon applies that scope's
+bucket and prefix before probing.
+
+Use `--strip-prefix` when every `s3_path` starts with the same prefix but the
+remaining path should be resolved through the scope. The option removes the
+exact, case-sensitive prefix from every row. If any row does not start with
+it, the command fails. For example, with this fictional manifest row:
+
+```text
+s3_path	repo_path	sha256	size_bytes
+s3://source-bucket/study/sample.bam	data/sample.bam	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	12345
+```
+
+This command removes `s3://source-bucket/`, leaving the scoped key
+`study/sample.bam`:
+
+```bash
+git drs add-url files.tsv --remote origin --strip-prefix s3://source-bucket/
+```
+
+If the server maps the scope to `s3://mapped-bucket/project-root/`, Syfon
+resolves that key to `s3://mapped-bucket/project-root/study/sample.bam`. The
+mapping belongs to the server; `--strip-prefix` does not create or change it.
+The checksum and size above are placeholders, not values for a real file.
+
+Use `--git-only --branch main` when the Syfon records already exist. This
+checks their checksum, size, scope, and storage location, creates the pointer
+commit, and runs `git push` with the Git LFS upload hook skipped. It does not
+write Syfon records or upload payloads. The branch needs a Git upstream. If
+the push fails, the commit remains local; retry with
+`GIT_LFS_SKIP_PUSH=1 git push`.
+
+The command prints the selected remote endpoint and scope before probing.
+
+Use `--dry-run` to probe without creating records or a commit. A failed import
+can leave registered records or local files; inspect the output and repository
+before retrying.
 
 ### `git drs add-ref <drs-id> <path>`
 
@@ -464,11 +498,11 @@ Remote behavior on push:
 Copy Syfon metadata records from one configured remote to another for one scope.
 
 ```bash
-git drs copy-records prod HTAN_INT/BForePC
-git drs copy-records dev prod HTAN_INT/BForePC
-git drs copy-records @local prod HTAN_INT/BForePC
-git drs copy-records @local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
-git drs copy-records local dev HTAN_INT/BForePC --include-path META --include-path CONFIG
+git drs copy-records prod example-org/example-project
+git drs copy-records dev prod example-org/example-project
+git drs copy-records @local prod example-org/example-project
+git drs copy-records @local dev example-org/example-project --include-path META --include-path CONFIG
+git drs copy-records local dev example-org/example-project --include-path META --include-path CONFIG
 ```
 
 Behavior:
@@ -511,8 +545,8 @@ Map an organization to a bucket path.
 
 ```bash
 git drs bucket add-organization production \
-  --organization HTAN_INT \
-  --path s3://cbds/htan-int
+  --organization example-org \
+  --path s3://example-bucket/example-prefix
 ```
 
 ### `git drs bucket add-project`
@@ -521,9 +555,9 @@ Map a project to a bucket path.
 
 ```bash
 git drs bucket add-project production \
-  --organization HTAN_INT \
-  --project BForePC \
-  --path s3://cbds/htan-int/bforepc
+  --organization example-org \
+  --project example-project \
+  --path s3://example-bucket/example-prefix
 ```
 
 ## Version

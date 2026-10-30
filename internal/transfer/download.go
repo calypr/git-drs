@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func ResolvedAccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitCo
 	if strings.HasPrefix(drsURI, "//") {
 		drsURI = "drs:" + drsURI
 	}
-	obj, err := drsCtx.Client.DRS().GetObject(ctx, drsURI)
+	obj, err := GetObjectForDRSURI(ctx, drsCtx, drsURI)
 	if err != nil {
 		return ResolvedAccess{}, nil, err
 	}
@@ -74,6 +75,19 @@ func ResolvedAccessURLForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitCo
 		return ResolvedAccess{}, nil, err
 	}
 	return access, &obj, nil
+}
+
+// GetObjectForDRSURI resolves local Syfon DRS URIs by their object ID.
+func GetObjectForDRSURI(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI string) (drsapi.DrsObject, error) {
+	if strings.HasPrefix(drsURI, "//") {
+		drsURI = "drs:" + drsURI
+	}
+	uri, uriErr := url.Parse(drsURI)
+	endpoint, endpointErr := url.Parse(drsCtx.Endpoint)
+	if uriErr == nil && endpointErr == nil && strings.EqualFold(uri.Scheme, "drs") && endpoint.Host != "" && strings.EqualFold(uri.Host, endpoint.Host) && strings.Trim(uri.Path, "/") != "" {
+		drsURI = strings.Trim(uri.Path, "/")
+	}
+	return drsCtx.Client.DRS().GetObject(ctx, drsURI)
 }
 
 func DownloadDRSURIToCachePath(ctx context.Context, drsCtx *remoteruntime.GitContext, drsURI, cachePath string) error {

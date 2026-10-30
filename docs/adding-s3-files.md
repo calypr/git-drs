@@ -1,5 +1,7 @@
 # Adding Provider Objects with `git drs add-url`
 
+> The single-object and Globus `add-url` examples on this page describe the previous command. See [the current manifest command](commands.md#git-drs-add-url-manifesttsv).
+
 `git drs add-url` prepares a Git pointer plus local DRS metadata for an object that already exists in provider storage.
 
 Important behavior:

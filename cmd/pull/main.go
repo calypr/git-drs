@@ -239,7 +239,7 @@ var Cmd = &cobra.Command{
 				for _, oid := range missingOIDs {
 					if lfs.IsDRSURI(oid) {
 						if anvil == nil {
-							obj, err := drsCtx.Client.DRS().GetObject(ctx, normalizeDRSPointerOID(oid))
+							obj, err := internaltransfer.GetObjectForDRSURI(ctx, drsCtx, normalizeDRSPointerOID(oid))
 							if err != nil {
 								return fmt.Errorf("look up DRS record %s: %w", oid, err)
 							}

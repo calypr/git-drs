@@ -530,7 +530,8 @@ git drs bucket add-project production \
 
 ### `git drs version`
 
-Display version information.
+Display version information. Works from any directory, without a Git repository
+or git-drs initialization, and does not create a repository log file.
 
 ```bash
 git drs version

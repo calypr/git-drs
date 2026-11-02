@@ -11,10 +11,12 @@ import (
 
 func main() {
 
-	_, err := drslog.NewLogger("", true)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to open log file: %v", err)
-		os.Exit(1)
+	// Version only reads build metadata and needs no repository log.
+	if len(os.Args) < 2 || os.Args[1] != "version" {
+		if _, err := drslog.NewLogger("", true); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to open log file: %v", err)
+			os.Exit(1)
+		}
 	}
 
 	// Keep credential helper out of the user-facing command tree/help output.

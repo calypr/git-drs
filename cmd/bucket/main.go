@@ -1,21 +1,20 @@
 package bucket
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/calypr/data-client/credentials"
-	"github.com/calypr/git-drs/internal/common"
+	"github.com/calypr/git-drs/internal/config"
 	"github.com/calypr/git-drs/internal/drslog"
 	"github.com/calypr/git-drs/internal/gitrepo"
-	conf "github.com/calypr/syfon/client/config"
+	"github.com/calypr/git-drs/internal/remoteruntime"
+	bucketapi "github.com/calypr/syfon/apigen/bucketapi"
+	syclient "github.com/calypr/syfon/client"
+	syconf "github.com/calypr/syfon/client/config"
 	"github.com/spf13/cobra"
 )
 
@@ -36,12 +35,8 @@ var (
 
 const defaultBucketAPITimeout = 30 * time.Second
 
-type putBucketPayload struct {
-	Bucket    string `json:"bucket"`
-	Region    string `json:"region,omitempty"`
-	AccessKey string `json:"access_key,omitempty"`
-	SecretKey string `json:"secret_key,omitempty"`
-	Endpoint  string `json:"endpoint,omitempty"`
+var newBucketHTTPClient = func() *http.Client {
+	return &http.Client{Timeout: defaultBucketAPITimeout}
 }
 
 type addBucketScopePayload struct {
@@ -131,12 +126,16 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		payload := putBucketPayload{
+		region := strings.TrimSpace(flagRegion)
+		accessKey := strings.TrimSpace(flagAccessKey)
+		secretKey := strings.TrimSpace(flagSecretKey)
+		s3Endpoint := strings.TrimSpace(flagS3Endpoint)
+		payload := bucketapi.PutBucketRequest{
 			Bucket:    bucket,
-			Region:    strings.TrimSpace(flagRegion),
-			AccessKey: strings.TrimSpace(flagAccessKey),
-			SecretKey: strings.TrimSpace(flagSecretKey),
-			Endpoint:  strings.TrimSpace(flagS3Endpoint),
+			Region:    &region,
+			AccessKey: &accessKey,
+			SecretKey: &secretKey,
+			Endpoint:  &s3Endpoint,
 		}
 		if err := upsertServerBucket(context.Background(), endpoint, token, payload); err != nil {
 			return err
@@ -226,7 +225,7 @@ func addScope(args []string, requireProject bool) error {
 }
 
 func resolveEndpointAndToken(remoteName string) (string, string, error) {
-	configure := conf.NewConfigure(drslog.GetLogger())
+	configure := syconf.NewConfigure(drslog.GetLogger())
 
 	// Resolve token
 	token := strings.TrimSpace(flagToken)
@@ -247,13 +246,19 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 	}
 	if token == "" {
 		if prof, err := configure.Load(remoteName); err == nil {
-			token = strings.TrimSpace(prof.AccessToken)
-			if token == "" {
-				if ensureErr := credentials.EnsureValidCredential(context.Background(), prof, drslog.GetLogger()); ensureErr == nil {
-					_ = configure.Save(prof)
-					token = strings.TrimSpace(prof.AccessToken)
+			previousToken := prof.AccessToken
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ensureErr := remoteruntime.EnsureValidCredential(ctx, prof, drslog.GetLogger())
+			cancel()
+			if ensureErr != nil {
+				return "", "", fmt.Errorf("validate credential for remote %q: %w", remoteName, ensureErr)
+			}
+			if prof.AccessToken != previousToken {
+				if err := configure.Save(prof); err != nil {
+					return "", "", fmt.Errorf("failed to save refreshed credential for remote %q: %w", remoteName, err)
 				}
 			}
+			token = strings.TrimSpace(prof.AccessToken)
 		}
 	}
 	if token == "" {
@@ -270,7 +275,7 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 		endpoint = strings.TrimSpace(endpoint)
 	}
 	if endpoint == "" {
-		parsed, err := common.ParseAPIEndpointFromToken(token)
+		parsed, err := config.ParseAPIEndpointFromToken(token)
 		if err != nil {
 			return "", "", fmt.Errorf("unable to resolve API endpoint from token: %w", err)
 		}
@@ -282,38 +287,22 @@ func resolveEndpointAndToken(remoteName string) (string, string, error) {
 	return strings.TrimRight(endpoint, "/"), token, nil
 }
 
-func upsertServerBucket(ctx context.Context, endpoint, token string, payload putBucketPayload) error {
+func upsertServerBucket(ctx context.Context, endpoint, token string, payload bucketapi.PutBucketRequest) error {
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, defaultBucketAPITimeout)
 		defer cancel()
 	}
 
-	body, err := json.Marshal(payload)
+	client, err := syclient.New(endpoint,
+		syclient.WithBearerToken(token),
+		syclient.WithHTTPClient(newBucketHTTPClient()),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to encode bucket request: %w", err)
+		return fmt.Errorf("failed to configure syfon client: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/data/buckets", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: defaultBucketAPITimeout}
-	resp, err := client.Do(req)
-	if err != nil {
+	if err := client.Buckets().Put(ctx, payload); err != nil {
 		return fmt.Errorf("bucket credential upsert request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		bodyText, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		if msg := strings.TrimSpace(string(bodyText)); msg != "" {
-			return fmt.Errorf("bucket credential upsert failed with status %d: %s", resp.StatusCode, msg)
-		}
-		return fmt.Errorf("bucket credential upsert failed with status %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -325,31 +314,25 @@ func addServerBucketScope(ctx context.Context, endpoint, token, bucket string, p
 		defer cancel()
 	}
 
-	body, err := json.Marshal(payload)
+	client, err := syclient.New(endpoint,
+		syclient.WithBearerToken(token),
+		syclient.WithHTTPClient(newBucketHTTPClient()),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to encode bucket scope request: %w", err)
+		return fmt.Errorf("failed to configure syfon client: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/data/buckets/"+url.PathEscape(bucket)+"/scopes", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: defaultBucketAPITimeout}
-	resp, err := client.Do(req)
-	if err != nil {
+	request := bucketapi.AddBucketScopeRequest{
+		Organization: payload.Organization,
+		ProjectId:    payload.ProjectID,
+	}
+	if payload.Path != "" {
+		path := payload.Path
+		request.Path = &path
+	}
+
+	if err := client.Buckets().AddScope(ctx, bucket, request); err != nil {
 		return fmt.Errorf("bucket scope request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		bodyText, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		if msg := strings.TrimSpace(string(bodyText)); msg != "" {
-			return fmt.Errorf("bucket scope failed with status %d: %s", resp.StatusCode, msg)
-		}
-		return fmt.Errorf("bucket scope failed with status %d", resp.StatusCode)
 	}
 	return nil
 }

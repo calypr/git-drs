@@ -2,6 +2,27 @@ package drsobject
 
 import "testing"
 
+func TestNormalizeOidPreservesLegacyChecksumSemantics(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "whitespace", input: "  abc123  ", want: "abc123"},
+		{name: "lowercase prefix", input: " sha256:abc123 ", want: "abc123"},
+		{name: "uppercase prefix unchanged", input: " SHA256:abc123 ", want: "SHA256:abc123"},
+		{name: "arbitrary short value", input: "abc123", want: "abc123"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := NormalizeOid(tt.input); got != tt.want {
+				t.Fatalf("NormalizeOid(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuilderDoesNotSynthesizeGen3StoragePrefix(t *testing.T) {
 	obj, err := BuildWithOptions("file.txt", "abc123", 10, "drs-1", LocationOptions{
 		Bucket:       "bucket",

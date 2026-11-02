@@ -5,8 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	drsapi "github.com/calypr/syfon/apigen/client/drs"
-	syfoncommon "github.com/calypr/syfon/common"
+	drsapi "github.com/calypr/syfon/apigen/drs"
+	internalapi "github.com/calypr/syfon/apigen/internalapi"
+	syfoncommon "github.com/calypr/syfon/client/access"
+	"github.com/calypr/syfon/client/hash"
 	"github.com/google/uuid"
 )
 
@@ -16,14 +18,8 @@ import (
 // with this exact namespace. Do not change it without a DRS ID migration plan.
 var UUIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
-func NormalizeChecksum(raw string) string {
-	raw = strings.TrimSpace(raw)
-	raw = strings.TrimPrefix(raw, "sha256:")
-	return strings.TrimSpace(raw)
-}
-
 func NormalizeOid(raw string) string {
-	return NormalizeChecksum(raw)
+	return hash.NormalizeChecksum(raw)
 }
 
 type Builder struct {
@@ -53,21 +49,36 @@ func BuildWithPrefix(fileName string, checksum string, size int64, drsID string,
 	})
 }
 
-func ConvertToCandidate(obj *drsapi.DrsObject) drsapi.DrsObjectCandidate {
+func ConvertToInternalRecord(obj *drsapi.DrsObject, organization string, project string) internalapi.InternalRecord {
 	if obj == nil {
-		return drsapi.DrsObjectCandidate{}
+		return internalapi.InternalRecord{}
 	}
-	return drsapi.DrsObjectCandidate{
-		AccessMethods: obj.AccessMethods,
-		Aliases:       obj.Aliases,
-		Checksums:     obj.Checksums,
-		Contents:      obj.Contents,
-		Description:   obj.Description,
-		MimeType:      obj.MimeType,
-		Name:          obj.Name,
-		Size:          obj.Size,
-		Version:       obj.Version,
+	hashes := make(internalapi.HashInfo, len(obj.Checksums))
+	for _, checksum := range obj.Checksums {
+		typ := strings.TrimSpace(checksum.Type)
+		val := strings.TrimSpace(checksum.Checksum)
+		if typ == "" || val == "" {
+			continue
+		}
+		hashes[typ] = val
 	}
+	record := internalapi.InternalRecord{
+		Did:              strings.TrimSpace(obj.Id),
+		AccessMethods:    obj.AccessMethods,
+		ControlledAccess: obj.ControlledAccess,
+		Description:      obj.Description,
+		Name:             obj.Name,
+		Hashes:           &hashes,
+		Size:             &obj.Size,
+		Version:          obj.Version,
+	}
+	if organization = strings.TrimSpace(organization); organization != "" {
+		record.Organization = &organization
+	}
+	if project = strings.TrimSpace(project); project != "" {
+		record.Project = &project
+	}
+	return record
 }
 
 type LocationOptions struct {
@@ -80,7 +91,7 @@ type LocationOptions struct {
 }
 
 func BuildWithOptions(fileName string, checksum string, size int64, drsID string, opts LocationOptions) (*drsapi.DrsObject, error) {
-	checksum = NormalizeChecksum(checksum)
+	checksum = hash.NormalizeChecksum(checksum)
 	if checksum == "" {
 		return nil, fmt.Errorf("checksum is required")
 	}
@@ -107,17 +118,15 @@ func BuildWithOptions(fileName string, checksum string, size int64, drsID string
 	}
 
 	am := drsapi.AccessMethod{
-		Type: drsapi.AccessMethodType(methodType),
-		AccessUrl: &struct {
-			Headers *[]string `json:"headers,omitempty"`
-			Url     string    `json:"url"`
-		}{Url: accessURL},
-	}
-	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
-		am.Authorizations = syfoncommon.AccessMethodAuthorizationsFromAuthzMap(authzMap)
+		Type:      drsapi.AccessMethodType(methodType),
+		AccessUrl: &drsapi.AccessURL{Url: accessURL},
 	}
 	ams := []drsapi.AccessMethod{am}
 	obj.AccessMethods = &ams
+	if authzMap := syfoncommon.AuthzMapFromScope(opts.Organization, opts.Project); authzMap != nil {
+		controlled := syfoncommon.AuthzMapToControlledAccess(authzMap)
+		obj.ControlledAccess = &controlled
+	}
 	return obj, nil
 }
 

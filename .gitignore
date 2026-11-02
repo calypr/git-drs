@@ -8,6 +8,7 @@ venv*
 .gocache/
 .gomodcache/
 .gopath/
+.audit/
 tests/venv/
 tests/monorepos/TEST/
 coverage/*.out
@@ -18,3 +19,12 @@ coverage/unit/
 admin/
 # Ignore any file named .env anywhere in the repository
 .env
+# ignore working dirs, files
+attic/
+patch.txt
+.pages-docs/
+_site/
+
+
+# Ignore local syfon working tree (kept for local dev)
+syfon/

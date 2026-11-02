@@ -43,24 +43,33 @@ lint-depends:
 	go install github.com/client9/misspell/cmd/misspell@latest
 
 # Run code style and other checks
-# Note: Using native Go tools instead of golangci-lint for Go 1.24 compatibility
 lint:
 	@echo "Running go vet..."
 	@go vet ./...
 	@echo "Running gofmt..."
-	@test -z "$$(gofmt -s -l . | tee /dev/stderr)" || (echo "Please run: gofmt -s -w ." && exit 1)
+	@files="$$(gofmt -s -l cmd/ internal/ tests/ git-drs.go)"; \
+	if [ -n "$$files" ]; then \
+		printf "%s\n" "$$files"; \
+		echo "Please run: gofmt -s -w cmd/ internal/ tests/ git-drs.go"; \
+		exit 1; \
+	fi
 	@echo "Running goimports..."
-	@test -z "$$(goimports -l . | tee /dev/stderr)" || (echo "Please run: goimports -w ." && exit 1)
+	@files="$$(goimports -l cmd/ internal/ tests/ git-drs.go)"; \
+	if [ -n "$$files" ]; then \
+		printf "%s\n" "$$files"; \
+		echo "Please run: goimports -w cmd/ internal/ tests/ git-drs.go"; \
+		exit 1; \
+	fi
 	@echo "Running misspell..."
-	@misspell -error .
+	@misspell -error cmd/ internal/ tests/ docs/ *.go *.md Makefile
 	@echo "✅ All lint checks passed!"
 
 # Auto-fix formatting issues
 fmt:
 	@echo "Formatting with gofmt..."
-	@gofmt -s -w .
+	@gofmt -s -w cmd/ internal/ tests/ git-drs.go
 	@echo "Formatting with goimports..."
-	@goimports -w .
+	@goimports -w cmd/ internal/ tests/ git-drs.go
 	@echo "✅ Formatting complete!"
 
 # Run all tests
@@ -117,4 +126,4 @@ full: proto install tidy lint test website webdash
 clean:
 	@rm -rf ./bin ./pkg ./test_tmp ./build ./buildtools
 
-.PHONY: proto proto-lint website docker webdash build debug coverage coverage-clients coverage-html-full
+.PHONY: proto proto-lint website docker webdash build debug coverage coverage-clients coverage-html-full test install

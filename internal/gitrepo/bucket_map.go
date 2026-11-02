@@ -74,19 +74,12 @@ func GetBucketMapping(org, project string) (BucketMapping, bool, error) {
 
 	// Project-specific mapping takes precedence.
 	if project != "" {
-		bucket, err := GetGitConfigString(projectBucketKey(org, project, "bucket"))
+		mapping, found, err := getExactBucketMapping(org, project)
 		if err != nil {
 			return BucketMapping{}, false, err
 		}
-		if strings.TrimSpace(bucket) != "" {
-			prefix, err := GetGitConfigString(projectBucketKey(org, project, "prefix"))
-			if err != nil {
-				return BucketMapping{}, false, err
-			}
-			return BucketMapping{
-				Bucket: strings.TrimSpace(bucket),
-				Prefix: strings.Trim(strings.TrimSpace(prefix), "/"),
-			}, true, nil
+		if found {
+			return mapping, true, nil
 		}
 	}
 

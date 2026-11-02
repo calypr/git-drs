@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -16,6 +17,11 @@ func TestNewLoggerAndClose(t *testing.T) {
 	}
 	if err := os.Chdir(tmp); err != nil {
 		t.Fatalf("chdir: %v", err)
+	}
+	gitInit := exec.Command("git", "init")
+	gitInit.Dir = tmp
+	if output, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
 	}
 	t.Cleanup(func() {
 		_ = os.Chdir(cwd)

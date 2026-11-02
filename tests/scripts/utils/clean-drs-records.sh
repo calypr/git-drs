@@ -93,7 +93,6 @@ echo "🚀 Executing cleanup SQL in pod: $POD_NAME"
 
 
 # Execute SQL inside the pod
-# Bash - replace the psql invocation in `tests/monorepos/clean-drs-records.sh`
 # Pipe the SQL into the pod and run psql reading from stdin
 printf '%s\n' "$SQL" | kubectl exec -i "$POD_NAME" -- \
     env PGPASSWORD="$POSTGRES_PASSWORD" \

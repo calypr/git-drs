@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestTerraHubResolverContract(t *testing.T) {
+	t.Setenv("GOOGLE_PROJECT", "requester-billing-project")
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v4/drs/resolve" {
 			t.Errorf("request = %s %s, want POST /api/v4/drs/resolve", r.Method, r.URL.Path)
@@ -17,8 +20,14 @@ func TestTerraHubResolverContract(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer hub-test-token" {
 			t.Errorf("Authorization = %q, want test bearer", got)
 		}
-		var request terraHubRequest
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		var request struct {
+			URL         string   `json:"url"`
+			Fields      []string `json:"fields"`
+			UserProject string   `json:"userProject"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
 		if request.URL != "drs://drs.anv0:v2_fixture" {
@@ -26,6 +35,9 @@ func TestTerraHubResolverContract(t *testing.T) {
 		}
 		if strings.Join(request.Fields, ",") != "size,fileName,hashes,accessUrl" {
 			t.Errorf("request fields = %v", request.Fields)
+		}
+		if request.UserProject != "requester-billing-project" {
+			t.Errorf("request userProject = %q", request.UserProject)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"size":43,"fileName":"fixture.vcf.gz","hashes":{"md5":"abc","crc32c":"def"},"accessUrl":{"url":"https://storage.example/object","headers":{"X-Fixture":"fixture-token","Accept":"application/octet-stream"}}}`))
@@ -58,6 +70,85 @@ func TestTerraHubResolverContract(t *testing.T) {
 	access := object.AccessMethods[0].AccessURL
 	if access.URL != "https://storage.example/object" || strings.Join(access.Headers, ",") != "Accept: application/octet-stream,X-Fixture: fixture-token" {
 		t.Fatalf("access URL = %+v", access)
+	}
+}
+
+func TestTerraHubResolverBillingProject(t *testing.T) {
+	for _, tc := range []struct {
+		name, value, want string
+	}{
+		{"empty", "", ""},
+		{"whitespace", " \t\n", ""},
+		{"trimmed", " requester-billing-project \n", "requester-billing-project"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("GOOGLE_PROJECT", tc.value)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				if _, ok := request["googleProject"]; ok {
+					t.Error("resolve request must use userProject, not googleProject")
+				}
+				project, present := request["userProject"]
+				if tc.want == "" {
+					if present {
+						t.Errorf("empty billing project must be omitted, got %s", project)
+					}
+				} else if string(project) != `"`+tc.want+`"` {
+					t.Errorf("userProject = %s, want %q", project, tc.want)
+				}
+				_, _ = w.Write([]byte(`{"size":0}`))
+			}))
+			defer server.Close()
+			r, err := NewTerraHubWithClient(server.URL, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.GetObject(context.Background(), "drs://drs.anv0:v2_fixture"); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestTerraHubDownloadPreservesBillingURL(t *testing.T) {
+	t.Setenv("GOOGLE_PROJECT", "requester-billing-project")
+	const target = "/object?userProject=requester-billing-project&X-Goog-Signature=fixture%2Bsignature"
+	download := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.RequestURI != target {
+			t.Errorf("download URL = %q, want %q", r.RequestURI, target)
+		}
+		if r.Header.Get("X-Fixture") != "download-token" || r.Header.Get("Authorization") != "" {
+			t.Errorf("unexpected download headers: %v", r.Header)
+		}
+		_, _ = w.Write([]byte("data"))
+	}))
+	defer download.Close()
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request["userProject"] != "requester-billing-project" {
+			t.Errorf("billing request = %v, error %v", request, err)
+			http.Error(w, "billing project required", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"size":      4,
+			"accessUrl": map[string]any{"url": download.URL + target, "headers": map[string]string{"X-Fixture": "download-token"}},
+		})
+	}))
+	defer hub.Close()
+	r, err := NewTerraHubWithClient(hub.URL, hub.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "object")
+	if err := DownloadToCache(context.Background(), r, "drs://drs.anv0:v2_fixture", destination); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(destination); err != nil || string(got) != "data" {
+		t.Fatalf("downloaded content = %q, error %v", got, err)
 	}
 }
 

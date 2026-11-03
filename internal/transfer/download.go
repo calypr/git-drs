@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/lfs"
 	"github.com/calypr/git-drs/internal/lookup"
 	"github.com/calypr/git-drs/internal/remoteruntime"
@@ -351,7 +352,7 @@ func hasPlaceholderChecksum(obj *drsapi.DrsObject, oid string) bool {
 		return false
 	}
 	for _, checksum := range obj.Checksums {
-		if strings.EqualFold(strings.TrimSpace(checksum.Type), "git-drs-placeholder") && strings.EqualFold(hash.NormalizeChecksum(checksum.Checksum), hash.NormalizeChecksum(oid)) {
+		if strings.EqualFold(strings.TrimSpace(checksum.Type), "git-drs-placeholder") && drsobject.IsPlaceholderChecksumValue(checksum.Checksum, oid) {
 			return true
 		}
 	}

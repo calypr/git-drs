@@ -35,6 +35,8 @@ import (
 	"github.com/calypr/git-drs/internal/lfs"
 )
 
+const terraBillingProject = "git-drs-requester-billing"
+
 func TestIntegrationPullThroughTerraHubAndTDR(t *testing.T) {
 	fixtures := []terraCLIObject{
 		{
@@ -283,6 +285,7 @@ func TestIntegrationPullThroughTerraHubAndTDR(t *testing.T) {
 			"--env", "HOME=/tmp/git-drs-ci-home",
 			"--env", "GIT_CONFIG_NOSYSTEM=1",
 			"--env", "GOOGLE_APPLICATION_CREDENTIALS=/ci/service-account.json",
+			"--env", "GOOGLE_PROJECT="+terraBillingProject,
 			"--env", "SSL_CERT_FILE=/ci/hub-proxy-ca.pem",
 			"--entrypoint", "/bin/sh", "alpine/git@sha256:062a01ad7a0eb17cff382bc5e26086b4d710e56dfdfdf001109a49b6d9bd378c", "-c",
 			commandLine)
@@ -616,12 +619,19 @@ func verifyTerraHubMetadata(response *http.Response, fixtures []terraCLIObject) 
 	_ = response.Body.Close()
 	response.Body = io.NopCloser(bytes.NewReader(body))
 	var metadata struct {
-		FileName string            `json:"fileName"`
-		Size     int64             `json:"size"`
-		Hashes   map[string]string `json:"hashes"`
+		FileName  string            `json:"fileName"`
+		Size      int64             `json:"size"`
+		Hashes    map[string]string `json:"hashes"`
+		AccessURL struct {
+			URL string `json:"url"`
+		} `json:"accessUrl"`
 	}
 	if err := json.Unmarshal(body, &metadata); err != nil {
 		return "", fmt.Errorf("decode Hub metadata: %w", err)
+	}
+	accessURL, err := url.Parse(metadata.AccessURL.URL)
+	if err != nil || accessURL.Query().Get("userProject") != terraBillingProject {
+		return "", fmt.Errorf("Hub signed URL must bill %q", terraBillingProject)
 	}
 	for _, fixture := range fixtures {
 		if metadata.FileName != fixture.filename {

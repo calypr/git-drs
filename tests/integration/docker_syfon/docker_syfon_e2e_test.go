@@ -347,10 +347,9 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	if out, err := runCommandOutput(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath); err == nil {
-		t.Fatalf("expected unknown-checksum add-url pull to fail, but it succeeded:\n%s", out)
-	} else if !strings.Contains(out, "no matching DRS record found for oid "+unknownPointerOID) {
-		t.Fatalf("unexpected unknown-checksum add-url pull failure:\n%s", out)
+	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath)
+	if got := mustReadFile(t, cloneDir, unknownPath); !bytes.Equal(got, unknownData) {
+		t.Fatalf("unknown-checksum add-url file mismatch: got %q want %q", got, unknownData)
 	}
 	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
 	t.Logf("add-url known round-trip and unknown-checksum registration verified")

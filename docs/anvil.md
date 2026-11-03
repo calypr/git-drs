@@ -43,6 +43,32 @@ git drs remote add anvil terra --checkout hydrate \
 The `--hub-endpoint` option changes DRS resolution to Hub's `/api/v4/drs/resolve`
 API. The Terra `Endpoint` remains the TDR service URL used for service checks.
 
+For requester-pays GCS data, set the billing project in your environment before
+running `git drs add-ref`, `git drs pull`, or Git checkout hydration:
+
+```bash
+export GOOGLE_PROJECT="your-billing-project-id"
+```
+
+When using Terra DRS Hub, `git-drs` sends this value as `userProject` in each
+`POST /api/v4/drs/resolve` request, following the
+[Hub API contract](https://github.com/DataBiosphere/terra-drs-hub/blob/618348c2efeb61d3fb50fd75c447d6ebf3f4192d/common/openapi.yml).
+The `googleProject` field belongs to Hub's separate `/api/v4/gcs/getSignedUrl`
+endpoint. Hub passes the billing project to the provider; `git-drs` downloads
+the returned access URL without changing its signed query parameters.
+
+The value is trimmed, and the field is omitted if it is unset, empty, or only
+whitespace. It is read from the process environment for each resolution and is
+not stored in Git config, pointers, or cached metadata. This applies to Hub
+resolution for `add-ref` (including manifests), `pull`, and checkout hydration
+through both Git filter modes. Direct TDR resolution without `--hub-endpoint`
+does not use this setting. Existing cached files do not need a new resolution.
+
+Use a billing-enabled Google Cloud project you are authorized to charge.
+Setting the variable does not grant dataset access or billing permissions. An
+omitted project remains valid for data that does not require requester billing;
+providers that require it may reject resolution or download without it.
+
 ## Publish one reference
 
 Use the configured remote and choose the path that the data should occupy:

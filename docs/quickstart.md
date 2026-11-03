@@ -6,43 +6,47 @@ If you want the workflow explained after setup, continue to [Getting Started](ge
 
 ## 1. Install `git-drs`
 
-This quick start uses release `v0.6.0`.
+Set the release you want to install before running the commands below:
+
+```bash
+export GIT_DRS_VERSION=v0.7.11
+```
 
 - [GitHub Releases](https://github.com/calypr/git-drs/releases)
 
 === "macOS (Apple Silicon)"
 
     ```bash
-    curl -L -o git-drs-darwin-arm64-v0.6.0.tar.gz \
-      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-darwin-arm64-v0.6.0.tar.gz
-    tar -xzf git-drs-darwin-arm64-v0.6.0.tar.gz
+    curl -L -o "git-drs-darwin-arm64-${GIT_DRS_VERSION}.tar.gz" \
+      "https://github.com/calypr/git-drs/releases/download/${GIT_DRS_VERSION}/git-drs-darwin-arm64-${GIT_DRS_VERSION}.tar.gz"
+    tar -xzf "git-drs-darwin-arm64-${GIT_DRS_VERSION}.tar.gz"
     install -m 0755 git-drs "$HOME/.local/bin/git-drs"
     ```
 
 === "macOS (Intel)"
 
     ```bash
-    curl -L -o git-drs-darwin-amd64-v0.6.0.tar.gz \
-      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-darwin-amd64-v0.6.0.tar.gz
-    tar -xzf git-drs-darwin-amd64-v0.6.0.tar.gz
+    curl -L -o "git-drs-darwin-amd64-${GIT_DRS_VERSION}.tar.gz" \
+      "https://github.com/calypr/git-drs/releases/download/${GIT_DRS_VERSION}/git-drs-darwin-amd64-${GIT_DRS_VERSION}.tar.gz"
+    tar -xzf "git-drs-darwin-amd64-${GIT_DRS_VERSION}.tar.gz"
     install -m 0755 git-drs "$HOME/.local/bin/git-drs"
     ```
 
 === "Linux (x86_64)"
 
     ```bash
-    curl -L -o git-drs-linux-amd64-v0.6.0.tar.gz \
-      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-linux-amd64-v0.6.0.tar.gz
-    tar -xzf git-drs-linux-amd64-v0.6.0.tar.gz
+    curl -L -o "git-drs-linux-amd64-${GIT_DRS_VERSION}.tar.gz" \
+      "https://github.com/calypr/git-drs/releases/download/${GIT_DRS_VERSION}/git-drs-linux-amd64-${GIT_DRS_VERSION}.tar.gz"
+    tar -xzf "git-drs-linux-amd64-${GIT_DRS_VERSION}.tar.gz"
     install -m 0755 git-drs "$HOME/.local/bin/git-drs"
     ```
 
 === "Linux (arm64)"
 
     ```bash
-    curl -L -o git-drs-linux-arm64-v0.6.0.tar.gz \
-      https://github.com/calypr/git-drs/releases/download/v0.6.0/git-drs-linux-arm64-v0.6.0.tar.gz
-    tar -xzf git-drs-linux-arm64-v0.6.0.tar.gz
+    curl -L -o "git-drs-linux-arm64-${GIT_DRS_VERSION}.tar.gz" \
+      "https://github.com/calypr/git-drs/releases/download/${GIT_DRS_VERSION}/git-drs-linux-arm64-${GIT_DRS_VERSION}.tar.gz"
+    tar -xzf "git-drs-linux-arm64-${GIT_DRS_VERSION}.tar.gz"
     install -m 0755 git-drs "$HOME/.local/bin/git-drs"
     ```
 

@@ -29,6 +29,7 @@ func init() {
 	Cmd.PersistentFlags().StringVar(&providerFlag, "provider", "auto", "DRS provider adapter")
 	Cmd.PersistentFlags().StringVar(&storageFlag, "storage", "", "Advanced publishing bucket/prefix")
 	Cmd.PersistentFlags().StringVar(&checkoutFlag, "checkout", "", "Checkout mode: pointers or hydrate")
+	Cmd.PersistentFlags().StringVar(&hubEndpointFlag, "hub-endpoint", "", "Terra DRS Hub resolver base URL (for example https://drshub.dsde-prod.broadinstitute.org)")
 	Gen3Cmd.Flags().StringVar(&credFile, "cred", "", "[gen3] Import a Gen3 credential file into this profile")
 	Gen3Cmd.Flags().StringVar(&fenceToken, "token", "", "[gen3] Use a temporary bearer token issued from fence")
 	Gen3Cmd.Flags().StringVar(&selectedBucket, "bucket", "", "[gen3] Select a specific visible bucket when multiple buckets match the scope")

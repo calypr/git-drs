@@ -157,6 +157,24 @@ func TrackReadOnly(ctx context.Context, path string) (bool, error) {
 	return trackReadOnly(ctx, path, true)
 }
 
+// TrackReadOnlyFiles tracks literal repository paths in a single attributes update.
+func TrackReadOnlyFiles(ctx context.Context, paths []string) error {
+	root, err := GitTopLevel()
+	if err != nil {
+		return err
+	}
+	attributes := filepath.Join(root, ".gitattributes")
+	if _, err := trackPatternsAtPath(paths, false, false, attributes, true); err != nil {
+		return err
+	}
+	encoded := make([]string, 0, len(paths))
+	for _, p := range paths {
+		encoded = append(encoded, escapeLiteralAttrPattern(p))
+	}
+	_, err = UpsertDRSRouteLines(attributes, "ro", encoded)
+	return err
+}
+
 func TrackReadOnlyPattern(ctx context.Context, pattern string) (bool, error) {
 	return trackReadOnly(ctx, pattern, false)
 }

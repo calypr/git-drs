@@ -1,5 +1,7 @@
 # Pointer Files and Reference State
 
+> The single-object and Globus `add-url` examples on this page describe the previous command. See [the current manifest command](commands.md#git-drs-add-url-manifesttsv).
+
 `git-drs` keeps large payload bytes out of Git history by committing small pointer files. A pointer records enough identity to let `git-drs` find or rebuild the payload later, while the payload itself lives in local cache, provider storage, or behind a DRS server.
 
 This page documents the pointer shapes used by reference-first workflows and how state changes as commands create references, download content, and obtain temporary access URLs (the resolved "real" download URLs used for the transfer).

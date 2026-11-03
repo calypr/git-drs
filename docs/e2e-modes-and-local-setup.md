@@ -1,5 +1,7 @@
 # E2E Modes And Local Setup
 
+> The single-object and Globus `add-url` examples on this page describe the previous command. See [the current manifest command](commands.md#git-drs-add-url-manifesttsv).
+
 This guide documents how `git-drs` test suites run in:
 
 - `remote` mode (Gen3 token auth)

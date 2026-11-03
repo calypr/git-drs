@@ -8,24 +8,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func NewAnVILWithClient(endpoint string, client *http.Client) (*AnVILResolver, error) {
-	// Local HTTP test servers use a caller supplied client without ADC tokens.
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	if client == nil {
-		return nil, fmt.Errorf("HTTP client is required")
-	}
-	return &AnVILResolver{endpoint: u, client: client}, nil
-}
 
 func TestAnVILTrustedEndpointRequiresHTTPS(t *testing.T) {
 	if _, err := trustedEndpoint("http://resolver.example"); err == nil {
@@ -37,7 +24,7 @@ func TestAnVILTrustedEndpointRequiresHTTPS(t *testing.T) {
 }
 
 func TestAnVILResolverContract(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ga4gh/drs/v1/objects/object-1":
 			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"checksums":[{"type":"sha256","checksum":"abcd"}],"access_methods":[{"type":"https","access_id":"a1"}]}`))
@@ -77,7 +64,7 @@ func TestDownloadToCacheUsesAccessURLHeaders(t *testing.T) {
 	}))
 	defer download.Close()
 
-	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resolverServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ga4gh/drs/v1/objects/object-1":
 			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"https","access_id":"a1"}]}`))
@@ -109,7 +96,7 @@ func TestDownloadToCacheUsesInlineAccessURL(t *testing.T) {
 	}))
 	defer download.Close()
 
-	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resolverServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
 			t.Errorf("inline access URL should not require an access endpoint request: %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -136,7 +123,7 @@ func TestDownloadToCacheSelectsUsableAccessMethodAfterFirst(t *testing.T) {
 	}))
 	defer download.Close()
 
-	resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	resolverServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/ga4gh/drs/v1/objects/object-1":
 			_, _ = w.Write([]byte(`{"id":"object-1","size":4,"access_methods":[{"type":"gs","access_url":{"url":"gs://anvil-bucket/object-1"}},{"type":"https","access_id":"a2"}]}`))
@@ -228,7 +215,7 @@ func TestDownloadToCacheValidatesSHA256BeforePromotion(t *testing.T) {
 			}))
 			defer download.Close()
 
-			resolverServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			resolverServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/ga4gh/drs/v1/objects/object-1" {
 					http.NotFound(w, r)
 					return
@@ -273,7 +260,7 @@ func TestDownloadToCacheValidatesSHA256BeforePromotion(t *testing.T) {
 
 func TestAnVILResolverAcceptsCompactDRSURI(t *testing.T) {
 	const compactURI = "drs://drs.anv0:v2_e68887be-c583-375a-a773-48771192c8fa"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/ga4gh/drs/v1/objects/v2_e68887be-c583-375a-a773-48771192c8fa" {
 			t.Fatalf("unexpected resolver path: %s", r.URL.Path)
 		}
@@ -295,7 +282,7 @@ func TestAnVILResolverAcceptsCompactDRSURI(t *testing.T) {
 }
 
 func TestAnVILResolverRedactsErrorBodiesAndClassifiesAuthorization(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "Bearer secret signed=https://secret", http.StatusForbidden)
 	}))
 	defer server.Close()

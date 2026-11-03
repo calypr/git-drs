@@ -1,6 +1,7 @@
 package drsobject
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strings"
@@ -20,6 +21,29 @@ var UUIDNamespace = uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 func NormalizeOid(raw string) string {
 	return hash.NormalizeChecksum(raw)
+}
+
+// PlaceholderChecksumValue keeps the synthetic OID out of Syfon's SHA-256
+// lookup path, which only searches checksums explicitly typed as sha256.
+func PlaceholderChecksumValue(oid string) string {
+	normalized := NormalizeOid(oid)
+	if len(normalized) != 64 {
+		return ""
+	}
+	if _, err := hex.DecodeString(normalized); err != nil {
+		return ""
+	}
+	return "git-drs-placeholder/" + normalized
+}
+
+// IsPlaceholderChecksumValue also accepts the original raw-OID representation.
+func IsPlaceholderChecksumValue(value, oid string) bool {
+	normalized := NormalizeOid(oid)
+	if normalized == "" {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(value), normalized) ||
+		strings.EqualFold(strings.TrimSpace(value), PlaceholderChecksumValue(normalized))
 }
 
 type Builder struct {

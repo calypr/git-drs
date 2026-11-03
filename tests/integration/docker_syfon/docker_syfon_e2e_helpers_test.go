@@ -53,7 +53,11 @@ func runCommandMust(t *testing.T, dir string, extraEnv []string, name string, ar
 func runCommandOutput(t *testing.T, dir string, extraEnv []string, name string, args ...string) (string, error) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	timeout := 2 * time.Minute
+	if os.Getenv("SYFON_E2E_LARGE_FILE_MIB") != "" {
+		timeout = time.Hour
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, name, args...)

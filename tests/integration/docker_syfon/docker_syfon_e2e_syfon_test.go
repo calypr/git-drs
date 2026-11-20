@@ -55,6 +55,7 @@ func startSyfonServerProcess(t *testing.T, minioEnv *minioContainer) *syfonServe
 
 	waitErrCh := make(chan error, 1)
 	go func() {
+		defer close(waitErrCh)
 		waitErrCh <- cmd.Wait()
 	}()
 
@@ -78,8 +79,10 @@ func stopSyfonServerProcess(t *testing.T, server *syfonServerProcess) {
 	if server == nil || server.cmd == nil || server.cmd.Process == nil {
 		return
 	}
-	if server.cmd.ProcessState != nil {
+	select {
+	case <-server.waitErrCh:
 		return
+	default:
 	}
 
 	_ = syscall.Kill(-server.cmd.Process.Pid, syscall.SIGINT)

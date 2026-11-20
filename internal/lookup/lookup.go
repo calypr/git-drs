@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/calypr/git-drs/internal/drsobject"
 	"github.com/calypr/git-drs/internal/remoteruntime"
 	drsapi "github.com/calypr/syfon/apigen/drs"
 	"github.com/calypr/syfon/apigen/errorapi"
@@ -93,6 +94,39 @@ func ObjectsByHashes(ctx context.Context, drsCtx *remoteruntime.GitContext, chec
 	}
 	if resp.JSON200 == nil {
 		return nil, apierror.FromResponse(resp.HTTPResponse, resp.Body)
+	}
+
+	// A synthetic placeholder OID looks like SHA-256 to Syfon, so retry missing
+	// values under the non-SHA-shaped placeholder checksum key.
+	placeholderQueries := make(map[string]string)
+	for _, normalized := range queryChecksums {
+		if len(resp.JSON200.Results[normalized]) != 0 {
+			continue
+		}
+		if query := drsobject.PlaceholderChecksumValue(normalized); query != "" {
+			placeholderQueries[query] = normalized
+		}
+	}
+	if len(placeholderQueries) > 0 {
+		queries := make([]string, 0, len(placeholderQueries))
+		for _, normalized := range queryChecksums {
+			if query := drsobject.PlaceholderChecksumValue(normalized); query != "" && placeholderQueries[query] != "" {
+				queries = append(queries, query)
+			}
+		}
+		fallback, err := drsCtx.Client.InternalAPI().InternalBulkHashesWithResponse(ctx, internalapi.BulkHashesRequest{Hashes: queries})
+		if err != nil {
+			return nil, fmt.Errorf("batch placeholder objects by checksum: %w", err)
+		}
+		if fallback.JSON200 == nil {
+			return nil, apierror.FromResponse(fallback.HTTPResponse, fallback.Body)
+		}
+		if resp.JSON200.Results == nil {
+			resp.JSON200.Results = make(map[string][]internalapi.InternalRecord)
+		}
+		for query, normalized := range placeholderQueries {
+			resp.JSON200.Results[normalized] = append(resp.JSON200.Results[normalized], fallback.JSON200.Results[query]...)
+		}
 	}
 
 	results := make(map[string][]drsapi.DrsObject, len(normalizedToOriginal))

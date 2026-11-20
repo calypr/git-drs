@@ -75,3 +75,46 @@ jobs:
 
     - name: Run tests
       run: go test -v -race ./...
+
+  terra-drs-hub:
+    name: Resolve through DRS Hub and TDR
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: Check out git-drs
+      uses: actions/checkout@v4
+
+    - name: Check out TDR
+      uses: actions/checkout@v4
+      with:
+        repository: DataBiosphere/jade-data-repo
+        ref: 6433cb4ea296edf873daa30f1da29e7caf848b8b
+        path: tdr
+        persist-credentials: false
+
+    - name: Check out DRS Hub
+      uses: actions/checkout@v4
+      with:
+        repository: DataBiosphere/terra-drs-hub
+        ref: 618348c2efeb61d3fb50fd75c447d6ebf3f4192d
+        path: drs-hub
+        persist-credentials: false
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+        cache: gradle
+        cache-dependency-path: |
+          tdr/build.gradle
+          drs-hub/service/build.gradle
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.6'
+
+    - name: Pull an AnVIL DRS pointer through DRS Hub and TDR
+      run: tests/terra-drs-hub/run.sh "$GITHUB_WORKSPACE/tdr" "$GITHUB_WORKSPACE/drs-hub"

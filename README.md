@@ -43,7 +43,7 @@ At a high level:
 ```bash
 git drs install
 git drs remote add production https://example-gen3.org --provider gen3 \
-  --scope HTAN_INT/BForePC --auth provider-helper:gen3-profile \
+  --scope example-org/example-project --auth provider-helper:gen3-profile \
   --credential file:/path/to/credentials.json
 git drs track "*.bam"
 git add .gitattributes
@@ -72,7 +72,7 @@ The cleaned CLI intentionally removed legacy commands:
 Example:
 
 ```bash
-git drs remote add production calypr --scope HTAN_INT/BForePC \
+git drs remote add production calypr --scope example-org/example-project \
   --credential file:/path/to/credentials.json
 ```
 
@@ -83,7 +83,7 @@ Current command split:
 - `git drs pull` hydrates tracked pointer files already present in the checkout
 - `git drs ls-files` lists visible files and directories; use `--all` for
   the tracked DRS/LFS pointer inventory
-- `git drs add-url` prepares pointer plus local metadata for existing provider objects
+- `git drs add-url` indexes existing S3 objects from a TSV manifest, with optional pointer commits
 
 ## Bucket Mapping Model
 
@@ -108,7 +108,7 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 | `git drs ls-files` | List visible files and directories |
 | `git drs pull` | Hydrate pointer files in the current checkout |
 | `git drs push` | Register/upload objects and push refs |
-| `git drs add-url` | Add an existing provider object by URL or scoped key |
+| `git drs add-url` | Index existing S3 objects from a TSV manifest |
 | `git drs add-ref` | Add a local reference to an existing DRS object |
 | `git drs query` | Query a DRS object by ID |
 | `git drs copy-records` | Copy Syfon records between remotes for one scope |
@@ -119,7 +119,6 @@ Push and pull depend on server-side bucket mapping for the requested scope. That
 - [Getting Started](docs/getting-started.md)
 - [Commands Reference](docs/commands.md)
 - [Access-Method Selection](docs/access-method-selection-and-authentication.md)
-- [Adding Globus Objects](docs/globus-add-url.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Publishing documentation with GitHub Pages](docs/github-pages.md)

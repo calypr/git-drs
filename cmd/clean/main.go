@@ -27,7 +27,7 @@ var Cmd = &cobra.Command{
 	Use:   "clean -- <path>",
 	Short: "Clean a file by converting its content to an LFS pointer (invoked by git)",
 	Long: `git drs clean reads raw file content from stdin, hashes it, stores it in
-the local object cache (.git/lfs/objects), and writes an LFS pointer
+the configured local LFS object cache, and writes an LFS pointer
 to stdout.  It also records a DRS map entry so that 'git drs push' can upload
 the object to the configured DRS server.
 

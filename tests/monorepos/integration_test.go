@@ -1,7 +1,7 @@
 // File: `./tests/monorepos/integration_test.go`
 //go:build integration
 
-package integration_test
+package main_test
 
 import (
 	"bytes"

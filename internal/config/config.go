@@ -255,6 +255,9 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	} else if remote.Terra != nil {
 		remoteSubsection.SetOption("type", "terra")
 		remoteSubsection.SetOption("endpoint", remote.Terra.Endpoint)
+		if remote.Terra.HubEndpoint != "" {
+			remoteSubsection.SetOption("hub-endpoint", remote.Terra.HubEndpoint)
+		}
 		if remote.Terra.Auth != "" {
 			remoteSubsection.SetOption("auth", remote.Terra.Auth)
 		}
@@ -282,7 +285,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 		remoteSubsection.SetOption("endpoint", r.Endpoint)
 		remoteSubsection.SetOption("provider", r.Provider)
 		remoteSubsection.SetOption("auth", r.Auth)
-		for key, value := range map[string]string{"credential": r.Credential, "scope": r.Scope, "storage": r.Storage, "checkout": r.Checkout, "preset": r.Preset, "registry-service-id": r.RegistryServiceID} {
+		for key, value := range map[string]string{"hub-endpoint": r.HubEndpoint, "credential": r.Credential, "scope": r.Scope, "storage": r.Storage, "checkout": r.Checkout, "preset": r.Preset, "registry-service-id": r.RegistryServiceID} {
 			if value != "" {
 				remoteSubsection.SetOption(key, value)
 			}
@@ -307,7 +310,7 @@ func UpdateRemote(name Remote, remote RemoteSelect) (*Config, error) {
 	return LoadConfig()
 }
 
-func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string, auth string, mode string) {
+func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, endpoint string, project string, bucket string, organization string, storagePrefix string, auth string, mode string, hubEndpoint string) {
 	if !strings.HasPrefix(subsectionName, remoteSubsectionPrefix) {
 		return
 	}
@@ -325,9 +328,10 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 		}
 	} else if remoteType == "terra" {
 		rs.Terra = &TerraRemote{
-			Endpoint: endpoint,
-			Auth:     auth,
-			Mode:     mode,
+			Endpoint:    endpoint,
+			HubEndpoint: hubEndpoint,
+			Auth:        auth,
+			Mode:        mode,
 		}
 	} else if remoteType == "local" {
 		rs.Local = &LocalRemote{
@@ -345,7 +349,7 @@ func parseAndAddRemote(cfg *Config, subsectionName string, remoteType string, en
 func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
 	version, _ := strconv.Atoi(opts["preset-version"])
 	cfg.Remotes[name] = RemoteSelect{AccessMethod: opts["access-method"], Generic: &GenericRemote{
-		Endpoint: opts["endpoint"], Provider: opts["provider"], Auth: opts["auth"],
+		Endpoint: opts["endpoint"], HubEndpoint: opts["hub-endpoint"], Provider: opts["provider"], Auth: opts["auth"],
 		Credential: opts["credential"], Scope: opts["scope"], Storage: opts["storage"],
 		Checkout: opts["checkout"], Preset: opts["preset"], PresetVersion: version,
 		RegistryServiceID: opts["registry-service-id"],
@@ -355,6 +359,13 @@ func addGenericRemote(cfg *Config, name Remote, opts map[string]string) {
 func withGenericEndpoint(remote RemoteSelect, endpoint string) RemoteSelect {
 	generic := *remote.Generic
 	generic.Endpoint = endpoint
+	remote.Generic = &generic
+	return remote
+}
+
+func withGenericHubEndpoint(remote RemoteSelect, endpoint string) RemoteSelect {
+	generic := *remote.Generic
+	generic.HubEndpoint = endpoint
 	remote.Generic = &generic
 	return remote
 }
@@ -459,12 +470,18 @@ func loadGitConfigOverrides(cfg *Config) error {
 			scalars[key] = last(values)
 		}
 		shared := cfg.Remotes[name]
-		localEndpoint := scalars["type"] != "" || scalars["endpoint"] != ""
+		localEndpoint := scalars["type"] != "" || scalars["endpoint"] != "" || scalars["hub-endpoint"] != ""
 		if scalars["type"] == "ga4gh" {
 			addGenericRemote(cfg, name, scalars)
-		} else if scalars["type"] == "" && scalars["endpoint"] != "" && shared.Generic != nil {
-			cfg.Remotes[name] = withGenericEndpoint(shared, scalars["endpoint"])
-		} else if scalars["type"] != "" || scalars["endpoint"] != "" {
+		} else if scalars["type"] == "" && shared.Generic != nil && (scalars["endpoint"] != "" || scalars["hub-endpoint"] != "") {
+			cfg.Remotes[name] = shared
+			if scalars["endpoint"] != "" {
+				cfg.Remotes[name] = withGenericEndpoint(cfg.Remotes[name], scalars["endpoint"])
+			}
+			if scalars["hub-endpoint"] != "" {
+				cfg.Remotes[name] = withGenericHubEndpoint(cfg.Remotes[name], scalars["hub-endpoint"])
+			}
+		} else if scalars["type"] != "" || scalars["endpoint"] != "" || scalars["hub-endpoint"] != "" {
 			parseAndAddRemote(
 				cfg,
 				remoteSubsectionPrefix+string(name),
@@ -476,6 +493,7 @@ func loadGitConfigOverrides(cfg *Config) error {
 				scalars["storage-prefix"],
 				scalars["auth"],
 				scalars["mode"],
+				scalars["hub-endpoint"],
 			)
 		}
 		remote := cfg.Remotes[name]
@@ -534,16 +552,22 @@ func LoadConfig() (*Config, error) {
 			}
 			name := Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix))
 			shared := cfg.Remotes[name]
-			localEndpoint := subsection.Option("type") != "" || subsection.Option("endpoint") != ""
+			localEndpoint := subsection.Option("type") != "" || subsection.Option("endpoint") != "" || subsection.Option("hub-endpoint") != ""
 			if subsection.Option("type") == "ga4gh" {
 				opts := make(map[string]string)
-				for _, key := range []string{"endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id", "access-method"} {
+				for _, key := range []string{"endpoint", "hub-endpoint", "provider", "auth", "credential", "scope", "storage", "checkout", "preset", "preset-version", "registry-service-id", "access-method"} {
 					opts[key] = subsection.Option(key)
 				}
 				addGenericRemote(cfg, Remote(strings.TrimPrefix(subsection.Name, remoteSubsectionPrefix)), opts)
-			} else if subsection.Option("type") == "" && subsection.Option("endpoint") != "" && shared.Generic != nil {
-				cfg.Remotes[name] = withGenericEndpoint(shared, subsection.Option("endpoint"))
-			} else if subsection.Option("type") != "" || subsection.Option("endpoint") != "" {
+			} else if subsection.Option("type") == "" && shared.Generic != nil && (subsection.Option("endpoint") != "" || subsection.Option("hub-endpoint") != "") {
+				cfg.Remotes[name] = shared
+				if subsection.Option("endpoint") != "" {
+					cfg.Remotes[name] = withGenericEndpoint(cfg.Remotes[name], subsection.Option("endpoint"))
+				}
+				if subsection.Option("hub-endpoint") != "" {
+					cfg.Remotes[name] = withGenericHubEndpoint(cfg.Remotes[name], subsection.Option("hub-endpoint"))
+				}
+			} else if subsection.Option("type") != "" || subsection.Option("endpoint") != "" || subsection.Option("hub-endpoint") != "" {
 				parseAndAddRemote(
 					cfg,
 					subsection.Name,
@@ -555,6 +579,7 @@ func LoadConfig() (*Config, error) {
 					subsection.Option("storage-prefix"),
 					subsection.Option("auth"),
 					subsection.Option("mode"),
+					subsection.Option("hub-endpoint"),
 				)
 			}
 			remote := cfg.Remotes[name]

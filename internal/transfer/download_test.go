@@ -672,3 +672,18 @@ func TestDownloadResolvedToPathRefreshesSelectedAccessWithHeaders(t *testing.T) 
 		t.Fatalf("retry Authorization = %q, want refreshed header", retryHeader)
 	}
 }
+
+func TestSyfonDRSURIUsesObjectID(t *testing.T) {
+	var requestPath string
+	client, err := syclient.New("http://example.test", syclient.WithHTTPClient(&http.Client{Transport: downloadRoundTripFunc(func(r *http.Request) (*http.Response, error) { requestPath = r.URL.Path; return nil, io.EOF })}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = GetObjectForDRSURI(context.Background(), &remoteruntime.GitContext{Client: client, Endpoint: "http://example.test"}, "drs://example.test/object-1")
+	if err == nil {
+		t.Fatal("expected fixture transport error")
+	}
+	if !strings.HasSuffix(requestPath, "/objects/object-1") {
+		t.Fatalf("request path = %q", requestPath)
+	}
+}

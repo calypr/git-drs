@@ -31,6 +31,36 @@ func TestUnifiedAddExpandsPreset(t *testing.T) {
 	}
 }
 
+func TestUnifiedAddOptsTerraRemoteIntoDrsHub(t *testing.T) {
+	testutils.SetupTestGitRepo(t)
+	resetUnifiedFlags(t)
+	hubEndpointFlag = "https://drshub.dsde-prod.broadinstitute.org"
+	if err := runUnified(Cmd, []string{"anvil", "terra"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Remotes["anvil"].Generic
+	if r == nil || r.Endpoint != "https://data.terra.bio" || r.HubEndpoint != hubEndpointFlag || r.Provider != "terra" {
+		t.Fatalf("unexpected Terra Hub remote: %+v", r)
+	}
+}
+
+func TestUnifiedAddRejectsHubEndpointForNonTerraProvider(t *testing.T) {
+	repo := testutils.SetupTestGitRepo(t)
+	resetUnifiedFlags(t)
+	providerFlag = "ga4gh"
+	hubEndpointFlag = "https://drshub.dsde-prod.broadinstitute.org"
+	if err := runUnified(Cmd, []string{"https://drs.example.org"}); err == nil {
+		t.Fatal("expected Hub endpoint to be restricted to Terra")
+	}
+	if _, err := os.Stat(repo + "/.git-drs"); !os.IsNotExist(err) {
+		t.Fatalf("invalid remote modified repository state: %v", err)
+	}
+}
+
 func TestUnifiedAddDerivesURLNameAndRejectsHTTP(t *testing.T) {
 	testutils.SetupTestGitRepo(t)
 	resetUnifiedFlags(t)
@@ -127,9 +157,9 @@ func TestUnifiedAddRejectsStdinCredentialBeforePersisting(t *testing.T) {
 }
 
 func resetUnifiedFlags(t *testing.T) {
-	old := []string{scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag}
-	scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag = "", "auto", "", "auto", "", ""
+	old := []string{scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag, hubEndpointFlag}
+	scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag, hubEndpointFlag = "", "auto", "", "auto", "", "", ""
 	t.Cleanup(func() {
-		scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag = old[0], old[1], old[2], old[3], old[4], old[5]
+		scopeFlag, authFlag, credentialFlag, providerFlag, storageFlag, checkoutFlag, hubEndpointFlag = old[0], old[1], old[2], old[3], old[4], old[5], old[6]
 	})
 }

@@ -41,7 +41,7 @@ func TestReadImportManifestRequiresSHA256Value(t *testing.T) {
 	if err := os.WriteFile(file, []byte(contents), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readImportManifest(file); err == nil || !strings.Contains(err.Error(), "sha256") {
+	if _, err := readImportManifest(file); err == nil || !strings.Contains(err.Error(), "invalid SHA-256") {
 		t.Fatalf("readImportManifest error = %v, want missing SHA-256 rejection", err)
 	}
 }

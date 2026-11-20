@@ -287,28 +287,26 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 
 	t.Logf("STEP 6: Registering the objects via git-drs add-url...")
 	knownPath := filepath.Join("data", "from-bucket.bin")
+	unknownPath := filepath.Join("data", "from-bucket-unknown.bin")
+	manifestPath := filepath.Join(workDir, "add-url.tsv")
+	manifest := strings.Join([]string{
+		"s3_path\trepo_path\tsha256\tsize_bytes",
+		"s3://" + minioEnv.bucket + "/" + knownKey + "\t" + filepath.ToSlash(knownPath) + "\t" + knownOID + "\t" + strconv.Itoa(len(knownData)),
+		"s3://" + minioEnv.bucket + "/" + unknownKey + "\t" + filepath.ToSlash(unknownPath) + "\t" + unknownOID + "\t" + strconv.Itoa(len(unknownData)),
+	}, "\n") + "\n"
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
+		t.Fatalf("write add-url manifest: %v", err)
+	}
 	knownOut := runCommandMust(t, repoDir, []string{
 		"TEST_BUCKET_REGION=" + minioEnv.region,
 		"TEST_BUCKET_ENDPOINT=" + minioEnv.endpoint,
 		"TEST_BUCKET_ACCESS_KEY=" + minioEnv.accessKey,
 		"TEST_BUCKET_SECRET_KEY=" + minioEnv.secretKey,
-	}, "git", "drs", "add-url", "s3://"+minioEnv.bucket+"/"+knownKey, knownPath, "--sha256", knownOID)
+	}, "git", "drs", "add-url", manifestPath, "--commit", "--branch", "main")
 	if strings.TrimSpace(knownOut) == "" {
-		t.Log("known add-url completed")
+		t.Fatal("add-url manifest completed without output")
 	}
-	t.Logf("known add-url output:\n%s", knownOut)
-
-	unknownPath := filepath.Join("data", "from-bucket-unknown.bin")
-	unknownOut := runCommandMust(t, repoDir, []string{
-		"TEST_BUCKET_REGION=" + minioEnv.region,
-		"TEST_BUCKET_ENDPOINT=" + minioEnv.endpoint,
-		"TEST_BUCKET_ACCESS_KEY=" + minioEnv.accessKey,
-		"TEST_BUCKET_SECRET_KEY=" + minioEnv.secretKey,
-	}, "git", "drs", "add-url", "s3://"+minioEnv.bucket+"/"+unknownKey, unknownPath)
-	if strings.TrimSpace(unknownOut) == "" {
-		t.Log("unknown add-url completed")
-	}
-	t.Logf("unknown add-url output:\n%s", unknownOut)
+	t.Logf("add-url output:\n%s", knownOut)
 
 	knownPointer := mustReadFile(t, repoDir, knownPath)
 	knownPointerOID := parsePointerOID(t, knownPointer)
@@ -326,8 +324,6 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	}
 	t.Logf("add-url pointer checks complete: known=%s unknown=%s", knownPointerOID, unknownPointerOID)
 
-	runCommand(t, repoDir, nil, "git", "add", ".gitattributes", knownPath, unknownPath)
-	runCommand(t, repoDir, nil, "git", "commit", "-m", "docker e2e add-url")
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
 	logRepoSnapshot(t, repoDir, "post-add-url-push")
 

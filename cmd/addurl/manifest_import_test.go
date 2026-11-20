@@ -35,6 +35,17 @@ func TestReadImportManifest(t *testing.T) {
 	}
 }
 
+func TestReadImportManifestRequiresSHA256Value(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "input.tsv")
+	contents := "s3_path\trepo_path\tsha256\tsize_bytes\n" + "s3://source/a\tdir/a\t\t45\n"
+	if err := os.WriteFile(file, []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readImportManifest(file); err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("readImportManifest error = %v, want missing SHA-256 rejection", err)
+	}
+}
+
 func TestProbeManifestUsesScopeAndResolvedLocation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

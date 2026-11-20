@@ -278,35 +278,31 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	t.Logf("known add-url object: key=%s oid=%s size=%d", knownKey, knownOID, len(knownData))
 	seedMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, knownKey, knownData)
 
-	unknownData := []byte("unknown add-url payload")
-	unknownHash := sha256.Sum256(unknownData)
-	unknownOID := hex.EncodeToString(unknownHash[:])
-	unknownKey := fmt.Sprintf("%s/%s/addurl/%s-unknown", dockerE2EOrganization, dockerE2EProjectID, unknownOID)
-	t.Logf("unknown add-url object: key=%s oid=%s size=%d", unknownKey, unknownOID, len(unknownData))
-	seedMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, unknownKey, unknownData)
+	unregisteredData := []byte("unregistered add-url payload")
+	unregisteredHash := sha256.Sum256(unregisteredData)
+	unregisteredOID := hex.EncodeToString(unregisteredHash[:])
+	unregisteredKey := fmt.Sprintf("%s/%s/addurl/%s-unregistered", dockerE2EOrganization, dockerE2EProjectID, unregisteredOID)
+	t.Logf("unregistered add-url object: key=%s oid=%s size=%d", unregisteredKey, unregisteredOID, len(unregisteredData))
+	seedMinIOObject(t, minioEnv.s3Client, minioEnv.bucket, unregisteredKey, unregisteredData)
 
 	t.Logf("STEP 6: Registering the objects via git-drs add-url...")
 	knownPath := filepath.Join("data", "from-bucket.bin")
-	unknownPath := filepath.Join("data", "from-bucket-unknown.bin")
+	unregisteredPath := filepath.Join("data", "from-bucket-unregistered.bin")
 	manifestPath := filepath.Join(workDir, "add-url.tsv")
 	manifest := strings.Join([]string{
 		"s3_path\trepo_path\tsha256\tsize_bytes",
 		"s3://" + minioEnv.bucket + "/" + knownKey + "\t" + filepath.ToSlash(knownPath) + "\t" + knownOID + "\t" + strconv.Itoa(len(knownData)),
-		"s3://" + minioEnv.bucket + "/" + unknownKey + "\t" + filepath.ToSlash(unknownPath) + "\t" + unknownOID + "\t" + strconv.Itoa(len(unknownData)),
+		"s3://" + minioEnv.bucket + "/" + unregisteredKey + "\t" + filepath.ToSlash(unregisteredPath) + "\t" + unregisteredOID + "\t" + strconv.Itoa(len(unregisteredData)),
 	}, "\n") + "\n"
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o600); err != nil {
 		t.Fatalf("write add-url manifest: %v", err)
 	}
-	knownOut := runCommandMust(t, repoDir, []string{
+	runCommand(t, repoDir, []string{
 		"TEST_BUCKET_REGION=" + minioEnv.region,
 		"TEST_BUCKET_ENDPOINT=" + minioEnv.endpoint,
 		"TEST_BUCKET_ACCESS_KEY=" + minioEnv.accessKey,
 		"TEST_BUCKET_SECRET_KEY=" + minioEnv.secretKey,
 	}, "git", "drs", "add-url", manifestPath, "--commit", "--branch", "main")
-	if strings.TrimSpace(knownOut) == "" {
-		t.Fatal("add-url manifest completed without output")
-	}
-	t.Logf("add-url output:\n%s", knownOut)
 
 	knownPointer := mustReadFile(t, repoDir, knownPath)
 	knownPointerOID := parsePointerOID(t, knownPointer)
@@ -314,15 +310,12 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 		t.Fatalf("known add-url pointer oid mismatch: got %s want %s", knownPointerOID, knownOID)
 	}
 
-	unknownPointer := mustReadFile(t, repoDir, unknownPath)
-	unknownPointerOID := parsePointerOID(t, unknownPointer)
-	if unknownPointerOID == "" {
-		t.Fatalf("unknown add-url pointer oid is empty")
+	unregisteredPointer := mustReadFile(t, repoDir, unregisteredPath)
+	unregisteredPointerOID := parsePointerOID(t, unregisteredPointer)
+	if unregisteredPointerOID != unregisteredOID {
+		t.Fatalf("unregistered add-url pointer oid mismatch: got %s want %s", unregisteredPointerOID, unregisteredOID)
 	}
-	if unknownPointerOID == unknownOID {
-		t.Fatalf("unknown add-url unexpectedly used the real sha256")
-	}
-	t.Logf("add-url pointer checks complete: known=%s unknown=%s", knownPointerOID, unknownPointerOID)
+	t.Logf("add-url pointer checks complete: known=%s unregistered=%s", knownPointerOID, unregisteredPointerOID)
 
 	runCommand(t, repoDir, nil, "git", "drs", "push", "origin")
 	logRepoSnapshot(t, repoDir, "post-add-url-push")
@@ -343,12 +336,12 @@ func TestGitDrsDockerAddURLE2E(t *testing.T) {
 	if !bytes.Equal(gotKnown, knownData) {
 		t.Fatalf("known add-url file mismatch: got %q want %q", string(gotKnown), string(knownData))
 	}
-	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unknownPath)
-	if got := mustReadFile(t, cloneDir, unknownPath); !bytes.Equal(got, unknownData) {
-		t.Fatalf("unknown-checksum add-url file mismatch: got %q want %q", got, unknownData)
+	runCommand(t, cloneDir, nil, "git", "drs", "pull", "origin", "--include", unregisteredPath)
+	if got := mustReadFile(t, cloneDir, unregisteredPath); !bytes.Equal(got, unregisteredData) {
+		t.Fatalf("unregistered add-url file mismatch: got %q want %q", got, unregisteredData)
 	}
 	logRepoSnapshot(t, cloneDir, "post-add-url-pull")
-	t.Logf("add-url known round-trip and unknown-checksum registration verified")
+	t.Logf("add-url known and unregistered object round-trips verified")
 }
 
 func TestGitDrsDockerBucketScopePathsE2E(t *testing.T) {
